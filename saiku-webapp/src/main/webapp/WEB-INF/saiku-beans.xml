@@ -1193,6 +1193,36 @@
         <constructor-arg ref="selfEmailAlertChannel"/>
     </bean>
 
+    <!-- ====================================================================
+         #943: DASHBOARD_DIGEST handler — the link-based scheduled subscription.
+
+         On its cadence it reads a small set of key measures (reusing the SAME
+         off-request aiMeasureValueReader as the threshold-alert handler — a
+         fresh ThinQueryService per run from singleton collaborators, NEVER the
+         session-scoped thinQueryBean, so it is safe on a scheduler worker
+         thread) and emails an HTML summary table plus a prominent deep link to
+         the LIVE dashboard (built from the ops public base URL via
+         mailLinkBuilder — SSRF-safe, no request-controlled host).
+
+         *** LEAN, LINK-BASED. *** No dashboard renderer, no headless browser,
+         no PDF — the renderer (#1810) is out of scope.
+
+         Delivery honours the send gate: named recipients go ONLY through
+         multiRecipientMailService (default-OFF master flag + RecipientGate:
+         not suppressed AND allowlisted AND consent CONFIRMED); with the flag
+         off (the default) subscriptions to others send NOTHING and the handler
+         falls back to the server's own self-address (mailConfig.selfTo()) via
+         the #1098 self-send pattern, so a self-subscription still works out of
+         the box. It NEVER composes a non-self message that bypasses the gate.
+         ==================================================================== -->
+    <bean id="dashboardDigestJobHandler" class="org.saiku.service.schedule.digest.DashboardDigestJobHandler">
+        <constructor-arg ref="aiMeasureValueReader"/>
+        <constructor-arg ref="multiRecipientMailService"/>
+        <constructor-arg ref="mailSender"/>
+        <constructor-arg ref="mailConfig"/>
+        <constructor-arg ref="mailLinkBuilder"/>
+    </bean>
+
     <!-- The live engine. init-method="start" starts the ticker at boot; destroy-method="shutdown"
          stops both the ticker and worker pools cleanly on context close. Registered handlers: the
          no-op ("NOOP") and the threshold-alert ("THRESHOLD_ALERT", #1098). -->
@@ -1205,6 +1235,7 @@
             <map>
                 <entry key="NOOP" value-ref="noOpJobHandler"/>
                 <entry key="THRESHOLD_ALERT" value-ref="thresholdAlertJobHandler"/>
+                <entry key="DASHBOARD_DIGEST" value-ref="dashboardDigestJobHandler"/>
             </map>
         </property>
     </bean>

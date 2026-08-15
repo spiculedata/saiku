@@ -46,6 +46,9 @@ public final class MailLinkBuilder {
     private static final String UNSUBSCRIBE_PATH = "/rest/saiku/mail/unsubscribe";
     private static final String CONFIRM_PATH = "/rest/saiku/mail/consent/confirm";
 
+    /** The SvelteKit route prefix that opens a saved dashboard by its repository path (saiku#943). */
+    private static final String DASHBOARD_PATH_PREFIX = "/ui/dashboards/";
+
     /** The resolved base URL with any trailing slash removed, or null when unconfigured. */
     private final String baseUrl;
 
@@ -101,7 +104,47 @@ public final class MailLinkBuilder {
         return baseUrl + CONFIRM_PATH + "?t=" + enc(token) + "&e=" + enc(address);
     }
 
+    /**
+     * The absolute deep link that opens the saved dashboard at repository path {@code repoPath} in the
+     * live UI (saiku#943 — the link-based digest subscription). Returns {@code null} when the public base
+     * URL is unconfigured or the path is blank.
+     *
+     * <p><b>SSRF-safe.</b> The host comes ONLY from the ops-configured base URL — never from a request or
+     * job payload — exactly like {@link #unsubscribeUrl} / {@link #confirmUrl}. The repository path is a
+     * server-validated JCR path; each of its slash-delimited segments is URL-encoded so a crafted path
+     * cannot inject a different host, an authority, a scheme, or query/fragment control characters (a
+     * raw {@code ..} segment survives encoding harmlessly — it addresses a sibling repo path, never a URL
+     * host). The result is always {@code <opsBaseUrl>/ui/dashboards/<encoded/path>}.
+     */
+    public String dashboardUrl(String repoPath) {
+        if (baseUrl == null || isBlank(repoPath)) {
+            return null;
+        }
+        return baseUrl + DASHBOARD_PATH_PREFIX + encodePath(repoPath);
+    }
+
     // ---- internals ----
+
+    /**
+     * URL-encode a repository path segment-by-segment: encode each segment but preserve the {@code /}
+     * separators so the multi-segment JCR path stays a path (not a single encoded blob), while any
+     * host/scheme/authority/query metacharacter inside a segment is neutralised.
+     */
+    private static String encodePath(String repoPath) {
+        String p = repoPath.replace("\r", "").replace("\n", "").trim();
+        while (p.startsWith("/")) {
+            p = p.substring(1);
+        }
+        String[] segments = p.split("/", -1);
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < segments.length; i++) {
+            if (i > 0) {
+                sb.append('/');
+            }
+            sb.append(enc(segments[i]));
+        }
+        return sb.toString();
+    }
 
     private static String resolve(Function<String, String> env, Function<String, String> prop) {
         String v = env.apply(ENV_KEY);

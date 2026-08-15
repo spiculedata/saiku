@@ -26,12 +26,15 @@ import org.saiku.service.olap.ai.AiFilterSelection;
  * Object>} of {@code String}/{@code Number}/{@code Boolean}/{@code List}/{@code Map}) into the typed
  * fields a {@link ThresholdAlertSpec} needs (saiku#1098). Kept separate so the spec + channel-config
  * parsers share exactly one interpretation of the wire shape.
+ *
+ * <p>Public so the sibling {@code DASHBOARD_DIGEST} digest package (saiku#943) reuses exactly this one
+ * interpretation of the payload wire shape rather than re-deriving it.
  */
-final class PayloadParsing {
+public final class PayloadParsing {
 
     private PayloadParsing() {}
 
-    static String readString(Object v) {
+    public static String readString(Object v) {
         if (v == null) {
             return null;
         }
@@ -40,7 +43,7 @@ final class PayloadParsing {
     }
 
     /** Accepts a JSON number or a numeric string; returns null when absent, throws on a non-number. */
-    static Double readDouble(Object v) {
+    public static Double readDouble(Object v) {
         if (v == null) {
             return null;
         }
@@ -58,7 +61,7 @@ final class PayloadParsing {
      * A cube ref, accepting either a {@code "conn/catalog/schema/cube"} string or a
      * {@code {connectionName, catalog, schema, cubeName}} map. Null / malformed returns null.
      */
-    static AiCubeRef readCube(Object v) {
+    public static AiCubeRef readCube(Object v) {
         if (v == null) {
             return null;
         }
@@ -96,7 +99,7 @@ final class PayloadParsing {
      * mapped to {@link AiFilterSelection}. Absent / non-list returns an empty list.
      */
     @SuppressWarnings("unchecked")
-    static List<AiFilterSelection> readFilters(Object v) {
+    public static List<AiFilterSelection> readFilters(Object v) {
         List<AiFilterSelection> out = new ArrayList<>();
         if (!(v instanceof List<?> list)) {
             return out;
