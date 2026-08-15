@@ -396,6 +396,14 @@
         <property name="demoGate" ref="demoGate"/>
     </bean>
 
+    <!-- saiku#1868: per-user preferences (/saiku/api/preferences). Gives the UI an account-level
+         place to remember a decision — the onboarding-tour flag was in localStorage, so it replayed
+         on every new browser or device. Singleton is fine: it holds no per-request state, and the
+         caller is resolved from the SecurityContext on each call rather than injected. -->
+    <bean id="userPreferencesResource" class="org.saiku.web.rest.resources.UserPreferencesResource">
+        <property name="datasourceManager" ref="repositoryDsManager"/>
+    </bean>
+
     <bean id="asyncQueryServiceBean"
           class="org.saiku.service.async.AsyncQueryService"
           destroy-method="shutdown">
