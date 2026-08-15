@@ -35,6 +35,7 @@ import mondrian.rolap.M3ToM4Converter;
 import org.saiku.datasources.connection.ISaikuConnection;
 import org.saiku.datasources.datasource.SaikuDatasource;
 import org.saiku.service.datasource.DatasourceService;
+import org.saiku.service.datasource.MondrianCatalogResolver;
 import org.saiku.service.olap.ai.cubedesigner.CubeDesignerAiService;
 import org.saiku.service.schema.generate.introspect.JdbcIntrospector;
 import org.saiku.service.schema.generate.model.DbColumn;
@@ -392,14 +393,11 @@ public class CubeDesignerResource {
                 return in == null ? null : new String(in.readAllBytes(), StandardCharsets.UTF_8);
             }
         }
-        // Repository-stored schema. addSchema writes it at `/datasources/<name>.xml`, so try the
-        // reference verbatim first, then the conventional path for a `mondrian://Name` catalog.
-        String name = c.startsWith("mondrian://") ? c.substring("mondrian://".length()) : c;
-        String data = datasourceService.getInternalFileData(name);
-        if (data == null) {
-            data = datasourceService.getInternalFileData("/datasources/" + name + ".xml");
-        }
-        return data;
+        // Repository-stored schema. saiku#1844: the lookup rule now lives in
+        // MondrianCatalogResolver, shared with the handler that resolves the same references on
+        // the CONNECT path. It used to be duplicated here, which is how the designer could read a
+        // `mondrian://` schema that the connection manager could not load.
+        return MondrianCatalogResolver.resolve(c, datasourceService::getInternalFileData);
     }
 
     /**
