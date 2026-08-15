@@ -93,9 +93,50 @@ describe('ossCubeDesignerBackend', () => {
 		});
 	});
 
-	it('tryQuery is a graceful 501 (no run-against-unsaved-proposal endpoint in OSS)', async () => {
-		const resp = await ossCubeDesignerBackend.tryQuery({});
-		expect(resp.status).toBe(501);
+	// saiku#1872: OSS used to answer 501 here. It now runs the UNSAVED schema server-side.
+	it('tryQuery refuses locally when there is no schema to run, without calling the server', async () => {
+		const resp = await ossCubeDesignerBackend.tryQuery({ connectionId: 'ds', mdx: 'SELECT' });
+
+		expect(resp.status).toBe(400);
 		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it('tryQuery posts the exported XML and the datasource id', async () => {
+		fetchMock.mockResolvedValueOnce(
+			new Response(JSON.stringify({ columns: ['a'], rows: [['1']] }), { status: 200 })
+		);
+
+		await ossCubeDesignerBackend.tryQuery({
+			connectionId: 'ds-1',
+			mdx: 'SELECT FROM [Sales]',
+			mondrianXml: '<Schema name="S"/>'
+		});
+
+		const [url, init] = fetchMock.mock.calls[0];
+		expect(String(url)).toContain('/admin/cube-designer/try-query');
+		expect(init.method).toBe('POST');
+		const sent = JSON.parse(init.body as string);
+		expect(sent.mondrianXml).toBe('<Schema name="S"/>');
+		// The seam calls it connectionId; the endpoint calls it dataSourceId.
+		expect(sent.dataSourceId).toBe('ds-1');
+		expect(sent.mdx).toBe('SELECT FROM [Sales]');
+	});
+
+	it('tryQuery surfaces the server error message rather than a bare status', async () => {
+		fetchMock.mockResolvedValueOnce(
+			new Response(JSON.stringify({ error: 'MDX object [Measures].[Nope] not found' }), {
+				status: 200
+			})
+		);
+
+		const resp = await ossCubeDesignerBackend.tryQuery({
+			connectionId: 'ds-1',
+			mdx: 'SELECT',
+			mondrianXml: '<Schema/>'
+		});
+
+		// A schema that does not work yet is normal mid-edit: 200 with an `error` the tab renders.
+		expect(resp.status).toBe(200);
+		expect((await resp.json()).error).toContain('not found');
 	});
 });

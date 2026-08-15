@@ -36,6 +36,7 @@ import org.saiku.datasources.connection.ISaikuConnection;
 import org.saiku.datasources.datasource.SaikuDatasource;
 import org.saiku.service.datasource.DatasourceService;
 import org.saiku.service.datasource.MondrianCatalogResolver;
+import org.saiku.service.datasource.SaikuVirtualFileHandler;
 import org.saiku.service.datasource.SchemaFileAccessGuard;
 import org.saiku.service.olap.ai.cubedesigner.CubeDesignerAiService;
 import org.saiku.service.schema.generate.introspect.JdbcIntrospector;
@@ -70,6 +71,9 @@ public class CubeDesignerResource {
     private static final Logger LOG = LoggerFactory.getLogger(CubeDesignerResource.class);
     private static final int DEFAULT_SAMPLE_LIMIT = 25;
     private static final int MAX_SAMPLE_LIMIT = 500;
+    private static final int DEFAULT_PREVIEW_ROWS = 50;
+    private static final int MAX_PREVIEW_ROWS = 500;
+    private static final int PREVIEW_TIMEOUT_SECONDS = 30;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -115,6 +119,16 @@ public class CubeDesignerResource {
     public record SchemaResult(String mondrianXml, String label) {}
 
     public record TurnRequest(JsonNode messages, String canvasSummary) {}
+
+    /** Body for {@code POST /try-query} (saiku#1872). {@code maxRows} is optional and clamped. */
+    public record TryQueryRequest(String mondrianXml, String dataSourceId, String mdx, Integer maxRows) {}
+
+    /**
+     * Preview result. {@code error} carries a readable reason instead of an HTTP failure, because a
+     * schema that does not work yet is the expected state while someone is editing one.
+     */
+    public record TryQueryResult(
+            List<String> columns, List<List<Object>> rows, boolean truncated, long durationMs, String error) {}
 
     // ── (1) introspect ───────────────────────────────────────────────────────
     @GET
@@ -295,6 +309,211 @@ public class CubeDesignerResource {
             // The typed token lets the UI show an actionable reason.
             return Response.status(422).entity(e.token()).build();
         }
+    }
+
+    // ── (5) try-query (run an UNSAVED schema) ──────────────────────────────────
+    /**
+     * Run MDX against a schema the user has not saved yet.
+     *
+     * <p>saiku#1872: OSS had no way to do this, so the designer's "Try a query" tab returned a 501
+     * and the only way to see whether a cube worked was to publish it and hope. Cloud does this
+     * gateway-side; this is the OSS equivalent.
+     *
+     * <p>How it avoids touching disk or the datasource: the proposed XML is registered in memory
+     * under a reserved catalog path, served by the {@code VirtualFileHandler} Mondrian already
+     * consults (the same seam added for repository-hosted schemas in saiku#1844), and the
+     * connection is opened by taking the datasource's OWN stored location and swapping only the
+     * {@code Catalog=} component. The warehouse, credentials and driver are therefore exactly the
+     * real ones, and the request cannot supply a JDBC URL — a preview that accepted one would be a
+     * way to make the server connect anywhere.
+     *
+     * <p>Admin-only, and no new privilege: an admin can already save this schema and query it. The
+     * schema is discarded and its Mondrian cache entry flushed before the response returns, so a
+     * long editing session cannot accumulate RolapSchema instances.
+     */
+    @POST
+    @Path("/try-query")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response tryQuery(TryQueryRequest req) {
+        Response forbidden = adminGuard();
+        if (forbidden != null) {
+            return forbidden;
+        }
+        if (req == null || req.mondrianXml() == null || req.mondrianXml().isBlank()) {
+            return badRequest("missing 'mondrianXml'");
+        }
+        if (req.mdx() == null || req.mdx().isBlank()) {
+            return badRequest("missing 'mdx'");
+        }
+
+        SaikuDatasource ds = datasourceService.getDatasourceByIdOrName(req.dataSourceId());
+        if (ds == null || ds.getProperties() == null) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity(new TryQueryResult(null, null, false, 0, "unknown datasource '" + req.dataSourceId() + "'"))
+                    .build();
+        }
+        String location = ds.getProperties().getProperty(ISaikuConnection.URL_KEY);
+        String previewLocation;
+        try {
+            previewLocation = MondrianLocation.parse(location).withCatalog(null);
+        } catch (IllegalStateException notMondrian) {
+            // A plain-JDBC (or Ossie) datasource has no Mondrian coordinates to borrow.
+            return Response.status(422)
+                    .entity(new TryQueryResult(
+                            null, null, false, 0, "datasource '" + req.dataSourceId() + "' is not a Mondrian source"))
+                    .build();
+        }
+
+        int cap = req.maxRows() == null ? DEFAULT_PREVIEW_ROWS : Math.min(Math.max(req.maxRows(), 1), MAX_PREVIEW_ROWS);
+        String previewRef = SaikuVirtualFileHandler.registerPreview(req.mondrianXml());
+        long started = System.currentTimeMillis();
+        try {
+            String url = MondrianLocation.parse(location).withCatalog(MondrianCatalogResolver.SCHEME + previewRef);
+            return runPreview(url, ds, req.mdx(), cap, started);
+        } catch (Exception e) {
+            // A broken schema or bad MDX is the NORMAL case here — the user is mid-edit. Report it
+            // as a readable message rather than a stack trace, and keep the 200 shape the tab
+            // renders, so "this cube doesn't work yet" is information, not an error page.
+            LOG.debug("cube-designer preview failed", e);
+            return Response.ok(
+                            new TryQueryResult(null, null, false, System.currentTimeMillis() - started, rootMessage(e)))
+                    .build();
+        } finally {
+            SaikuVirtualFileHandler.unregisterPreview(previewRef);
+        }
+    }
+
+    /**
+     * Open a one-shot Mondrian connection, run the MDX, and flatten the result.
+     *
+     * <p>Credentials are applied the same way {@code SaikuOlapConnection.connect} applies them,
+     * and that detail is load-bearing: for a {@code jdbc:mondrian:} URL the INNER warehouse
+     * credentials travel as {@code JdbcUser=} / {@code JdbcPassword=} inside the URL. Passing them
+     * only as {@code DriverManager} arguments — the obvious thing — gets you
+     * "Wrong user name or password" from the warehouse.
+     */
+    private Response runPreview(String url, SaikuDatasource ds, String mdx, int cap, long started) throws Exception {
+        Properties props = ds.getProperties();
+        String user = props.getProperty(ISaikuConnection.USERNAME_KEY);
+        String password = props.getProperty(ISaikuConnection.PASSWORD_KEY);
+        if ("true".equals(props.getProperty(ISaikuConnection.PASSWORD_ENCRYPT_KEY)) && password != null) {
+            password = org.saiku.datasources.connection.encrypt.CryptoUtil.decrypt(password);
+        }
+        String driver = props.getProperty(ISaikuConnection.DRIVER_KEY);
+
+        if (!url.endsWith(";")) {
+            url += ";";
+        }
+        if (user != null && !user.isEmpty()) {
+            url += "JdbcUser=" + user + ";";
+        }
+        if (password != null && !password.isEmpty()) {
+            url += "JdbcPassword=" + password + ";";
+        }
+        if (driver != null && !driver.isEmpty()) {
+            Class.forName(driver);
+        }
+
+        try (java.sql.Connection raw = java.sql.DriverManager.getConnection(url, user, password)) {
+            org.olap4j.OlapConnection olap = raw.unwrap(org.olap4j.OlapConnection.class);
+            try (org.olap4j.OlapStatement st = olap.createStatement()) {
+                st.setQueryTimeout(PREVIEW_TIMEOUT_SECONDS);
+                org.olap4j.CellSet cs = st.executeOlapQuery(mdx);
+                TryQueryResult body = flatten(cs, cap, System.currentTimeMillis() - started);
+                flushPreviewSchema(olap);
+                return Response.ok(body).build();
+            }
+        }
+    }
+
+    /**
+     * Drop the preview's schema from Mondrian's pool.
+     *
+     * <p>Every preview uses a fresh catalog path, so without this an editing session would leave a
+     * RolapSchema behind for each run. Best-effort: failing to flush must not fail the preview the
+     * user actually asked for.
+     */
+    private void flushPreviewSchema(org.olap4j.OlapConnection olap) {
+        if (!mondrian.olap4j.SaikuMondrianHelper.flushSchema(olap)) {
+            LOG.debug("could not flush the preview schema from Mondrian's cache");
+        }
+    }
+
+    /** Cellset → columns + rows, capped. Row headers come first, then each measure cell. */
+    private static TryQueryResult flatten(org.olap4j.CellSet cs, int cap, long durationMs) {
+        List<org.olap4j.CellSetAxis> axes = cs.getAxes();
+        List<String> columns = new ArrayList<>();
+        List<List<Object>> rows = new ArrayList<>();
+
+        List<org.olap4j.Position> rowPositions = axes.size() > 1 ? axes.get(1).getPositions() : List.of();
+        List<org.olap4j.Position> colPositions =
+                axes.isEmpty() ? List.of() : axes.get(0).getPositions();
+
+        // One column per row-axis hierarchy, then one per column-axis position.
+        if (!rowPositions.isEmpty()) {
+            for (org.olap4j.metadata.Member m : rowPositions.get(0).getMembers()) {
+                columns.add(m.getHierarchy().getName());
+            }
+        }
+        for (org.olap4j.Position p : colPositions) {
+            columns.add(caption(p));
+        }
+
+        boolean truncated = false;
+        if (rowPositions.isEmpty()) {
+            // Measures-only query: a single row of cells.
+            List<Object> only = new ArrayList<>();
+            for (int c = 0; c < colPositions.size(); c++) {
+                only.add(cs.getCell(colPositions.get(c)).getFormattedValue());
+            }
+            if (!only.isEmpty()) {
+                rows.add(only);
+            }
+        } else {
+            for (int r = 0; r < rowPositions.size(); r++) {
+                if (rows.size() >= cap) {
+                    truncated = true;
+                    break;
+                }
+                List<Object> row = new ArrayList<>();
+                for (org.olap4j.metadata.Member m : rowPositions.get(r).getMembers()) {
+                    row.add(m.getCaption());
+                }
+                for (org.olap4j.Position cp : colPositions) {
+                    row.add(cs.getCell(cp, rowPositions.get(r)).getFormattedValue());
+                }
+                rows.add(row);
+            }
+        }
+        return new TryQueryResult(columns, rows, truncated, durationMs, null);
+    }
+
+    private static String caption(org.olap4j.Position p) {
+        StringBuilder sb = new StringBuilder();
+        for (org.olap4j.metadata.Member m : p.getMembers()) {
+            if (sb.length() > 0) {
+                sb.append(" / ");
+            }
+            sb.append(m.getCaption());
+        }
+        return sb.toString();
+    }
+
+    /** Deepest useful message — Mondrian nests the real reason several causes down. */
+    private static String rootMessage(Throwable t) {
+        Throwable c = t;
+        while (c.getCause() != null && c.getCause() != c) {
+            c = c.getCause();
+        }
+        String m = c.getMessage();
+        return (m == null || m.isBlank()) ? c.getClass().getSimpleName() : m;
+    }
+
+    private static Response badRequest(String message) {
+        return Response.status(Response.Status.BAD_REQUEST)
+                .entity(new TryQueryResult(null, null, false, 0, message))
+                .build();
     }
 
     // ── (5) DimSum AI turn ─────────────────────────────────────────────────────

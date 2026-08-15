@@ -192,4 +192,76 @@ public class SaikuVirtualFileHandlerTest {
         assertEquals(
                 SaikuVirtualFileHandler.class.getName(), System.getProperty(SaikuVirtualFileHandler.HANDLER_PROPERTY));
     }
+
+    // ── preview schemas (saiku#1872) ────────────────────────────────────────
+
+    @Test
+    public void aRegisteredPreviewIsServedInsteadOfHittingTheRepository() throws Exception {
+        SaikuVirtualFileHandler.setRepositoryReader(path -> "<Schema name=\"FromRepository\"/>");
+        String ref = SaikuVirtualFileHandler.registerPreview("<Schema name=\"Unsaved\"/>");
+        try {
+            String got = new String(
+                    new SaikuVirtualFileHandler().readVirtualFile(ref).readAllBytes(), StandardCharsets.UTF_8);
+
+            assertTrue("preview did not win over the repository: " + got, got.contains("Unsaved"));
+        } finally {
+            SaikuVirtualFileHandler.unregisterPreview(ref);
+        }
+    }
+
+    /** Mondrian may present the reference with its scheme attached; both spellings must hit. */
+    @Test
+    public void aPreviewResolvesWithOrWithoutTheMondrianScheme() throws Exception {
+        String ref = SaikuVirtualFileHandler.registerPreview("<Schema name=\"Unsaved\"/>");
+        try {
+            String withScheme = "mondrian://" + ref;
+            String got = new String(
+                    new SaikuVirtualFileHandler().readVirtualFile(withScheme).readAllBytes(), StandardCharsets.UTF_8);
+
+            assertTrue("scheme-qualified preview did not resolve: " + got, got.contains("Unsaved"));
+        } finally {
+            SaikuVirtualFileHandler.unregisterPreview(ref);
+        }
+    }
+
+    /** THE cleanup property: a preview must not outlive the request that made it. */
+    @Test
+    public void unregisteringAPreviewStopsServingIt() throws Exception {
+        SaikuVirtualFileHandler.setRepositoryReader(path -> null);
+        String ref = SaikuVirtualFileHandler.registerPreview("<Schema name=\"Unsaved\"/>");
+        SaikuVirtualFileHandler.unregisterPreview(ref);
+
+        try {
+            new SaikuVirtualFileHandler().readVirtualFile(ref);
+            fail("an unregistered preview must no longer resolve");
+        } catch (FileNotFoundException expected) {
+            // exactly right: nothing serves it, and it does NOT fall through to the filesystem
+        }
+        assertEquals("a preview leaked", 0, SaikuVirtualFileHandler.previewCount());
+    }
+
+    @Test
+    public void unregisteringIsIdempotentAndNullSafe() {
+        String ref = SaikuVirtualFileHandler.registerPreview("<Schema/>");
+        SaikuVirtualFileHandler.unregisterPreview(ref);
+        SaikuVirtualFileHandler.unregisterPreview(ref);
+        SaikuVirtualFileHandler.unregisterPreview(null);
+
+        assertEquals(0, SaikuVirtualFileHandler.previewCount());
+    }
+
+    /** Two concurrent previews must not see each other's schema. */
+    @Test
+    public void previewsAreIsolatedFromEachOther() throws Exception {
+        String a = SaikuVirtualFileHandler.registerPreview("<Schema name=\"AAA\"/>");
+        String b = SaikuVirtualFileHandler.registerPreview("<Schema name=\"BBB\"/>");
+        try {
+            SaikuVirtualFileHandler h = new SaikuVirtualFileHandler();
+            assertTrue(new String(h.readVirtualFile(a).readAllBytes(), StandardCharsets.UTF_8).contains("AAA"));
+            assertTrue(new String(h.readVirtualFile(b).readAllBytes(), StandardCharsets.UTF_8).contains("BBB"));
+        } finally {
+            SaikuVirtualFileHandler.unregisterPreview(a);
+            SaikuVirtualFileHandler.unregisterPreview(b);
+        }
+    }
 }
