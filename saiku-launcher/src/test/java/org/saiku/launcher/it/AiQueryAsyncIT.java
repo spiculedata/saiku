@@ -26,6 +26,36 @@ public class AiQueryAsyncIT {
     @BeforeClass
     public static void boot() throws Exception {
         harness = SaikuItHarness.shared();
+        warmCube();
+    }
+
+    /**
+     * saiku#1849: warm the Sales cube with a cheap SYNCHRONOUS query BEFORE any timed async
+     * assertion runs. On a cold launcher the very first query against a cube pays for Mondrian's
+     * Calcite backend JIT-compiling the metadata provider (a one-shot, multi-second cost). If that
+     * cold-compile lands inside the 30s polled window of {@link #asyncQueryRoundTrip_submitPollResult},
+     * the async task can miss the deadline (or fail outright) and the IT reds intermittently on CI —
+     * a re-run then clears it. Paying the cold-start here, synchronously and un-timed, means the
+     * subsequent async path measures steady-state execution, not first-query compilation. The sync
+     * {@code /ai/query} endpoint drives the identical cube/plan through the same Mondrian stack, so
+     * the warm-up is representative. Failures here are non-fatal: if the warm-up itself errors we
+     * let the actual test surface the real diagnostic rather than masking it in @BeforeClass.
+     */
+    private static void warmCube() throws Exception {
+        String body =
+                """
+                {
+                  "cube": "%s",
+                  "measures": [{"name": "Store Sales"}],
+                  "rows": [{"dimension": "Product", "hierarchy": "Products", "level": "Product Family"}]
+                }
+                """
+                        .formatted(CUBE);
+        try {
+            harness.postAuthJson(BASE + "/query", body);
+        } catch (Exception ignored) {
+            // Warm-up is best-effort; the timed test below owns the real assertion + diagnostics.
+        }
     }
 
     @Test
@@ -48,19 +78,31 @@ public class AiQueryAsyncIT {
         String queryId = submitBody.path("queryId").asText();
         assertFalse("queryId must be present on submit", queryId.isBlank());
 
-        // Poll until DONE.
-        long deadline = System.currentTimeMillis() + Duration.ofSeconds(30).toMillis();
+        // Poll until DONE. The cube is warmed in @BeforeClass, so this window measures steady-state
+        // async execution rather than Mondrian/Calcite cold-compile (saiku#1849). Deadline is 60s
+        // to give slow CI runners headroom above the warmed steady-state cost — comfortably under
+        // the 2-minute failsafe budget.
+        long deadline = System.currentTimeMillis() + Duration.ofSeconds(60).toMillis();
         String lastStatus = null;
+        String lastError = null;
         while (System.currentTimeMillis() < deadline) {
             HttpResponse<String> status = harness.getAuth(BASE + "/query/status/" + queryId);
             assertEquals(200, status.statusCode());
-            lastStatus = harness.parse(status).path("status").asText();
+            JsonNode statusBody = harness.parse(status);
+            lastStatus = statusBody.path("status").asText();
+            lastError = statusBody.path("error").asText(null);
             if ("DONE".equals(lastStatus) || "FAILED".equals(lastStatus) || "CANCELLED".equals(lastStatus)) {
                 break;
             }
             Thread.sleep(100);
         }
-        assertEquals("query should complete with DONE, last status was " + lastStatus, "DONE", lastStatus);
+        // Surface the async error body on a terminal FAILED so a genuine regression is distinguishable
+        // from a flake (saiku#1849) — never silently retried away.
+        assertEquals(
+                "query should complete with DONE, last status was " + lastStatus
+                        + (lastError != null ? " (error: " + lastError + ")" : ""),
+                "DONE",
+                lastStatus);
 
         // Fetch result.
         HttpResponse<String> result = harness.getAuth(BASE + "/query/result/" + queryId);
