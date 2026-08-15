@@ -69,6 +69,14 @@
       <version>${project.version}</version>
       <scope>test</scope>
     </dependency>
+    <!-- saiku#1852: the YAML semantic layer had no property coverage at all, largely because
+         this module couldn't see it. -->
+    <dependency>
+      <groupId>org.saikuanalytics</groupId>
+      <artifactId>saiku-semantic</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
