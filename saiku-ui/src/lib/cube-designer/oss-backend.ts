@@ -93,10 +93,19 @@ export const ossCubeDesignerBackend: CubeDesignerBackend = {
 	},
 
 	tryQuery() {
-		// No OSS endpoint runs a query against an unsaved proposal (Cloud does this
-		// gateway-side). Save the schema, then query it in Studio.
+		// No OSS endpoint runs a query against an *unsaved* proposal (Cloud does this
+		// gateway-side). Save publishes the schema and attaches it to the datasource, so
+		// the round trip through Studio is the supported path here — say that, rather
+		// than leaving the user at a bare "not available".
 		return Promise.resolve(
-			jsonResponse({ message: 'Query preview is not available in this build.' }, 501)
+			jsonResponse(
+				{
+					message:
+						'Preview queries against an unsaved schema are not available in this build. ' +
+						'Hit Save to publish the schema, then use "Open in Saiku" to query the cube.'
+				},
+				501
+			)
 		);
 	},
 

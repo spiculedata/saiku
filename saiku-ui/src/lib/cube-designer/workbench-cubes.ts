@@ -210,3 +210,39 @@ export function renderCalcTokens(c: FactsCalc): string {
 export function calcMode(c: FactsCalc): FactsCalcMode {
 	return c.mode ?? 'build';
 }
+
+/**
+ * Resolve "the fact table of this cube" across the two places a fact table can be bound.
+ *
+ * saiku#1858: the designer has two notions of fact table and they are not the same thing.
+ * Step 1's cube-level picker writes `factsSelectedTableId`, but the Mondrian 4 flow the
+ * workbench actually walks a user through binds a fact table *per measure group*
+ * (`mg.factTableId`) — that is the binding the Model tab renders. Readiness checks that
+ * consulted only the cube-level pick therefore told users to "Pick a fact table" while the
+ * screen beside them displayed one, with no way to reconcile the two.
+ *
+ * Priority, most explicit first:
+ *  1. the cube-level pick, when it still names a table on the canvas
+ *  2. any measure group's bound fact table (confirmed groups first)
+ *  3. a table carrying `role === 'fact'` — legacy and freshly-imported canvases
+ *
+ * @returns the resolved table id, or null when no fact table is bound anywhere.
+ */
+export function resolveCubeFactTableId(
+	factsSelectedTableId: string | null | undefined,
+	measureGroups: readonly Pick<WorkbenchMeasureGroup, 'factTableId' | 'factConfirmed'>[],
+	tables: readonly { id: string; role: string }[]
+): string | null {
+	const onCanvas = new Set(tables.map((t) => t.id));
+
+	if (factsSelectedTableId && onCanvas.has(factsSelectedTableId)) {
+		return factsSelectedTableId;
+	}
+
+	const bound = measureGroups.filter((g) => !!g.factTableId && onCanvas.has(g.factTableId!));
+	const confirmed = bound.find((g) => g.factConfirmed);
+	if (confirmed?.factTableId) return confirmed.factTableId;
+	if (bound[0]?.factTableId) return bound[0].factTableId;
+
+	return tables.find((t) => t.role === 'fact')?.id ?? null;
+}

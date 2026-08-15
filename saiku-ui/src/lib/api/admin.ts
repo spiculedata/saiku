@@ -56,7 +56,7 @@ async function get<T>(path: string): Promise<T> {
 }
 
 async function json<T>(
-	method: 'POST' | 'PUT' | 'DELETE',
+	method: 'GET' | 'POST' | 'PUT' | 'DELETE',
 	path: string,
 	body?: unknown
 ): Promise<T | null> {
@@ -178,9 +178,20 @@ export function fromDatasourceWire(w: DatasourceWire): AdminDatasource {
 
 export const adminDatasources = {
 	list: async () => (await get<DatasourceWire[]>('/datasources')).map(fromDatasourceWire),
-	refresh: async (id: string) => {
-		const w = await json<DatasourceWire>('PUT', `/datasources/${encodeURIComponent(id)}/refresh`);
-		return w ? fromDatasourceWire(w) : null;
+	/**
+	 * Re-open a datasource's OLAP connection so schema edits take effect without a restart.
+	 *
+	 * saiku#1862: two things were wrong here and they cancelled out into a silent no-op.
+	 * `AdminResource.refreshDatasource` is `@GET`, not `@PUT`, so every call 405'd — the
+	 * Admin › Datasources "Refresh" button has never actually refreshed anything. And the
+	 * `{id}` path param is a misnomer: it is passed straight to
+	 * `OlapDiscoverService.refreshConnection`, which keys the connection map on the
+	 * datasource NAME. Passing the UUID id 500s.
+	 *
+	 * @param connectionName the datasource's `name` (`connectionname` on the wire), NOT its id.
+	 */
+	refresh: async (connectionName: string) => {
+		await json<unknown>('GET', `/datasources/${encodeURIComponent(connectionName)}/refresh`);
 	},
 	create: async (ds: AdminDatasource) => {
 		const w = await json<DatasourceWire>('POST', '/datasources', toDatasourceWire(ds));

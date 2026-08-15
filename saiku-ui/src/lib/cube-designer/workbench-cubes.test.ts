@@ -8,6 +8,7 @@ import {
 	calcFromDoc,
 	renderCalcTokens,
 	calcMode,
+	resolveCubeFactTableId,
 	type WorkbenchCube
 } from './workbench-cubes.js';
 import { exportToMondrianXml } from './mondrian-export.js';
@@ -304,5 +305,78 @@ describe('preview == export parity (#1038)', () => {
 		);
 		// M4 only — never the legacy M3 markers.
 		expect(xml).not.toContain('foreignKey=');
+	});
+});
+
+describe('resolveCubeFactTableId (saiku#1858)', () => {
+	const tables = [
+		{ id: 't-sales', role: 'fact' },
+		{ id: 't-time', role: 'dimension' },
+		{ id: 't-orders', role: 'dimension' }
+	];
+
+	it('prefers the cube-level pick when it is still on the canvas', () => {
+		const got = resolveCubeFactTableId('t-orders', [{ factTableId: 't-sales' }], tables);
+
+		expect(got).toBe('t-orders');
+	});
+
+	it('ignores a cube-level pick naming a table removed from the canvas', () => {
+		const got = resolveCubeFactTableId('t-deleted', [{ factTableId: 't-orders' }], tables);
+
+		expect(got).toBe('t-orders');
+	});
+
+	// The regression itself: the Mondrian 4 flow binds per measure group, so a cube with a
+	// confirmed MG fact table used to resolve to null and the UI demanded a pick it already had.
+	it('falls back to a measure group fact table when no cube-level pick was made', () => {
+		const got = resolveCubeFactTableId(null, [{ factTableId: 't-orders' }], tables);
+
+		expect(got).toBe('t-orders');
+	});
+
+	it('prefers a confirmed measure group over an unconfirmed one', () => {
+		const got = resolveCubeFactTableId(
+			null,
+			[
+				{ factTableId: 't-time', factConfirmed: false },
+				{ factTableId: 't-orders', factConfirmed: true }
+			],
+			tables
+		);
+
+		expect(got).toBe('t-orders');
+	});
+
+	it('skips a measure group bound to a table no longer on the canvas', () => {
+		const got = resolveCubeFactTableId(
+			null,
+			[{ factTableId: 't-deleted', factConfirmed: true }, { factTableId: 't-orders' }],
+			tables
+		);
+
+		expect(got).toBe('t-orders');
+	});
+
+	it('falls back to a role==="fact" table for legacy and imported canvases', () => {
+		const got = resolveCubeFactTableId(null, [], tables);
+
+		expect(got).toBe('t-sales');
+	});
+
+	it('returns null when nothing anywhere binds a fact table', () => {
+		const got = resolveCubeFactTableId(null, [], [{ id: 't-time', role: 'dimension' }]);
+
+		expect(got).toBeNull();
+	});
+
+	it('returns null for a measure group whose factTableId is unset', () => {
+		const got = resolveCubeFactTableId(
+			null,
+			[{ factTableId: null }],
+			[{ id: 't-time', role: 'dimension' }]
+		);
+
+		expect(got).toBeNull();
 	});
 });
