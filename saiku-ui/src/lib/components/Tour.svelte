@@ -4,6 +4,7 @@
 	import { onMount } from 'svelte';
 	import { i18n } from '$lib/stores/i18n.svelte';
 	import { session } from '$lib/stores/session.svelte';
+	import { fetchPreferences, setPreference } from '$lib/api/preferences';
 
 	interface Step {
 		selector: string;
@@ -33,6 +34,14 @@
 		return u ? `saiku.tour.done.${u}` : STORAGE_KEY_FALLBACK;
 	}
 
+	/**
+	 * saiku#1868: the flag above is per-user but still per-BROWSER, so the tour replayed on every
+	 * new machine, browser or private window — which is not what "show it once" means to a person.
+	 * It now also lives in server-side user preferences. localStorage stays as the fast path: it
+	 * decides synchronously on mount so the tour cannot flash before a round-trip resolves.
+	 */
+	const PREF_KEY = 'tourDone';
+
 	let active = $state<boolean>(false);
 	let stepIdx = $state<number>(0);
 	let anchor = $state<DOMRect | null>(null);
@@ -51,6 +60,15 @@
 		return !!document.querySelector(STEPS[0].selector);
 	}
 
+	/** Wait a tick for the workspace render, then start — or bail if it isn't here. */
+	function startWhenWorkspaceIsVisible(): void {
+		requestAnimationFrame(() => {
+			if (!workspaceVisible()) return;
+			active = true;
+			updateAnchor();
+		});
+	}
+
 	onMount(() => {
 		if (!browser) return;
 		if (localStorage.getItem(storageKey()) === '1') return;
@@ -61,12 +79,21 @@
 			localStorage.setItem(storageKey(), '1');
 			return;
 		}
-		// Wait a tick for the workspace render then bail if it isn't here.
-		requestAnimationFrame(() => {
-			if (!workspaceVisible()) return;
-			active = true;
-			updateAnchor();
-		});
+		// Nothing known locally — this browser may still be new to a user who dismissed the tour
+		// elsewhere, so ask the server before showing anything. Deliberately awaited BEFORE the
+		// tour is activated: showing it and retracting it a moment later is worse than a short
+		// delay, and the tour is not time-critical.
+		void (async () => {
+			const username = session.current?.username;
+			if (username) {
+				const prefs = await fetchPreferences(username);
+				if (prefs[PREF_KEY] === true) {
+					localStorage.setItem(storageKey(), '1');
+					return;
+				}
+			}
+			startWhenWorkspaceIsVisible();
+		})();
 		const onResize = () => updateAnchor();
 		window.addEventListener('resize', onResize);
 		window.addEventListener('scroll', onResize, true);
@@ -102,12 +129,20 @@
 
 	function finish() {
 		active = false;
-		if (browser) localStorage.setItem(storageKey(), '1');
+		if (!browser) return;
+		localStorage.setItem(storageKey(), '1');
+		// And record it against the ACCOUNT, so the next browser or device doesn't replay it.
+		// Fire-and-forget: the local flag already hid it here, and a failed write must not turn
+		// dismissing a tour into an error the user has to care about (saiku#1868).
+		const username = session.current?.username;
+		if (username) void setPreference(username, PREF_KEY, true);
 	}
 
 	export function restart() {
 		if (!browser) return;
 		localStorage.removeItem(storageKey());
+		const username = session.current?.username;
+		if (username) void setPreference(username, PREF_KEY, null);
 		stepIdx = 0;
 		active = true;
 		requestAnimationFrame(updateAnchor);
