@@ -224,8 +224,19 @@ public class DataSourceMapper {
             JdbcUrlValidator.validate(location);
 
             props.setProperty("location", location);
-            props.setProperty("username", this.username);
-            props.setProperty("password", this.password);
+            // saiku#1843: null-guarded, because Properties.setProperty throws NPE on a
+            // null value. A data source with no password is completely ordinary — H2
+            // with `sa`, or Postgres on trust auth — and the admin form sends null for
+            // an empty field, so creating one 500'd with a bare NullPointerException.
+            // The Ossie branch above already guards these two; this branch never did.
+            // Omitting (rather than defaulting to "") matches that branch, and every
+            // consumer reads these through Properties.getProperty, which is null-safe.
+            if (this.username != null) {
+                props.setProperty("username", this.username);
+            }
+            if (this.password != null) {
+                props.setProperty("password", this.password);
+            }
             if (this.security_type != null) {
                 props.setProperty("security.type", this.security_type);
             }
