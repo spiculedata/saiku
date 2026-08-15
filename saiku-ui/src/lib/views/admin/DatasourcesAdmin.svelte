@@ -125,7 +125,8 @@
 
 	async function refreshDs(ds: AdminDatasource) {
 		try {
-			await adminDatasources.refresh(ds.id);
+			// The refresh endpoint keys on the datasource NAME, not the id (saiku#1862).
+			await adminDatasources.refresh(ds.name);
 			toasts.success('Refreshed', ds.name);
 			await refresh();
 		} catch (e) {

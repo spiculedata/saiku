@@ -8,7 +8,12 @@
  * boundary mapping so the wire body only ever carries DataSourceMapper keys.
  */
 import { describe, expect, it, test } from 'vitest';
-import { toDatasourceWire, fromDatasourceWire, type AdminDatasource } from './admin';
+import {
+	toDatasourceWire,
+	fromDatasourceWire,
+	adminDatasources,
+	type AdminDatasource
+} from './admin';
 
 const uiDatasource: AdminDatasource = {
 	id: '',
@@ -165,5 +170,44 @@ describe('fromDatasourceWire — every bindable field is defined (saiku#1856)', 
 		expect(form.driver).toBe('org.h2.Driver');
 		expect(form.location).toBe('jdbc:h2:/data/foodmart');
 		expect(form.username).toBe('sa');
+	});
+});
+
+describe('adminDatasources.refresh (saiku#1862)', () => {
+	// Two independent defects that combined into a silent no-op: the client sent PUT to a
+	// @GET-only endpoint (405 every time, so Admin › Datasources "Refresh" never refreshed
+	// anything), and callers passed the UUID id to a path param that is resolved as the
+	// connection NAME (500 when it got that far).
+	function captureFetch() {
+		const calls: Array<{ url: string; method: string }> = [];
+		const original = globalThis.fetch;
+		globalThis.fetch = (async (url: RequestInfo | URL, init?: RequestInit) => {
+			calls.push({ url: String(url), method: init?.method ?? 'GET' });
+			return new Response('', { status: 200 });
+		}) as typeof fetch;
+		return { calls, restore: () => (globalThis.fetch = original) };
+	}
+
+	it('issues a GET, because the server exposes refresh as @GET only', async () => {
+		const { calls, restore } = captureFetch();
+		try {
+			await adminDatasources.refresh('unknown_foodmart');
+		} finally {
+			restore();
+		}
+
+		expect(calls).toHaveLength(1);
+		expect(calls[0].method).toBe('GET');
+	});
+
+	it('addresses the datasource by name, and escapes it', async () => {
+		const { calls, restore } = captureFetch();
+		try {
+			await adminDatasources.refresh('unknown_my ds');
+		} finally {
+			restore();
+		}
+
+		expect(calls[0].url).toContain('/datasources/unknown_my%20ds/refresh');
 	});
 });

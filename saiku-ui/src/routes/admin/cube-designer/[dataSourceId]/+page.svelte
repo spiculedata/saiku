@@ -24,7 +24,8 @@
 	import { exportToMondrianXml } from '$lib/cube-designer/mondrian-export';
 	import { parseProfileTables } from '$lib/cube-designer/profile-types';
 	import type { SourceTableCandidate } from '$lib/cube-designer/types';
-	import { adminSchemas } from '$lib/api/admin';
+	import { adminSchemas, adminDatasources, type AdminDatasource } from '$lib/api/admin';
+	import { buildLaunchUrl, repositorySchemaPath, resolveSchemaName } from './publish';
 	import { platform } from '$lib/stores/platform.svelte';
 	import { trackDemo } from '$lib/analytics/demoAnalytics';
 	import { Button } from '$lib/components/ui';
@@ -43,6 +44,50 @@
 	let sourceError = $state<string | null>(null);
 	let saving = $state(false);
 	let saveMsg = $state<{ tone: 'success' | 'error'; text: string } | null>(null);
+
+	// The datasource row we are designing against. Needed for two things Save has to do
+	// beyond writing the file: the PUT that attaches the schema, and the *registered*
+	// connection name (the server prefixes it with the workspace, so it is not the
+	// datasource id) that Studio's starterCube contract wants.
+	let datasource = $state<AdminDatasource | null>(null);
+
+	// `doc.updatedAt` is bumped by every store mutation, so remembering its value at save
+	// time is all the dirty-tracking the Confirm-cube rail needs. Without this the pane's
+	// `isSchemaDirty` sat at its `true` default forever and the "Open in Saiku" button was
+	// permanently stuck in its disabled branch (saiku#1859).
+	// Force-remount key for the workbench. Bumped only where cubes are written into the doc
+	// from OUTSIDE WorkbenchView — currently just the edit-mode hydrate. See the `#key` below.
+	let workbenchKey = $state<number>(0);
+
+	let savedAtStamp = $state<string | null>(null);
+	const isSchemaDirty = $derived(savedAtStamp === null || store.doc.updatedAt !== savedAtStamp);
+
+	// Schema name — surfaced in the header so it is editable and visible BEFORE save.
+	// It becomes the `<Schema name>` attribute, the repository filename and the catalog
+	// name users see in Studio, so leaving it to an invisible export-time default was how
+	// every designed cube ended up called "Untitled" (saiku#1861).
+	let schemaName = $state<string>('');
+	const effectiveSchemaName = $derived(resolveSchemaName(schemaName, dataSourceId));
+
+	/**
+	 * Commit a typed schema name to the doc immediately, so the XML preview, the Try-a-query
+	 * payload and the export all agree with what the header shows — rather than only catching
+	 * up at save time.
+	 */
+	function renameSchema(next: string): void {
+		schemaName = next;
+		const resolved = resolveSchemaName(next, dataSourceId);
+		if (store.doc.label !== resolved) store.setLabel(resolved);
+	}
+
+	/** Studio URL for a cube in the Confirm-cube rail, once the schema is published. */
+	function launchUrlFor(cube: { name: string }): string {
+		return buildLaunchUrl({
+			connection: datasource?.connectionName ?? datasource?.name ?? dataSourceId,
+			schema: effectiveSchemaName,
+			cube: cube.name
+		});
+	}
 
 	// saiku#1636: on a public demo, don't let visitors persist a (possibly broken)
 	// schema that would take cubes down for everyone. Save is disabled in demo mode.
@@ -79,11 +124,40 @@
 		} finally {
 			store.sourceLoading = false;
 		}
+		await loadDatasource();
 		// saiku#1634 edit mode: if this datasource already has a Mondrian schema,
 		// hydrate the canvas from it. Runs after profiling so the importer can
 		// enrich imported tables against the live source catalog.
 		await loadExistingSchema();
+		// Seed the header field last, so an imported schema's own label wins over the
+		// generated default.
+		schemaName = resolveSchemaName(store.doc.label, dataSourceId);
 	});
+
+	/**
+	 * Load the datasource row so Save can attach to it and Studio links can be built.
+	 *
+	 * The route param is the datasource NAME, not its id — see `generateSchemaHref`, and the
+	 * server's `/cube-designer/schema/{dataSourceId}` which resolves through
+	 * `DatasourceService.getDatasource` (keyed on name). Matching on id here found nothing,
+	 * because the ids are UUIDs. The id is still what the update PUT needs, so we keep the
+	 * whole row rather than just the key.
+	 */
+	async function loadDatasource() {
+		try {
+			const all = await adminDatasources.list();
+			datasource =
+				all.find((d) => d.name === dataSourceId) ??
+				all.find((d) => d.connectionName === dataSourceId) ??
+				all.find((d) => d.id === dataSourceId) ??
+				null;
+			if (!datasource) {
+				sourceError = `Datasource "${dataSourceId}" was not found. Save can still write the schema file, but will not be able to attach it.`;
+			}
+		} catch (e) {
+			sourceError = e instanceof Error ? e.message : 'could not load the datasource';
+		}
+	}
 
 	/**
 	 * Fetch the datasource's attached Mondrian schema (if any) and load it onto
@@ -101,15 +175,37 @@
 			// Mark the canvas as editing a saved schema so the workbench shows saved
 			// (not draft) state; Save then writes back under this name.
 			store.doc.lineageId = body.label?.trim() || dataSourceId;
+			// A schema loaded straight from the server is saved AND clean, so baseline the
+			// dirty stamp here too. Without this, opening an already-published cube for edit
+			// would show it as dirty and keep "Open in Saiku" disabled until a pointless save.
+			savedAtStamp = store.doc.updatedAt;
+			// The workbench has already mounted against the pre-hydrate (blank) doc by now.
+			workbenchKey += 1;
 		} catch (e) {
 			sourceError = e instanceof Error ? e.message : 'could not load the existing schema';
 		}
 	}
 
+	/**
+	 * Publish the designed schema — upload, attach, refresh.
+	 *
+	 * saiku#1860: this used to stop after the upload. The XML landed in the repository but
+	 * nothing pointed the datasource at it, so the cube never appeared in Studio and the only
+	 * way to finish the job was to know to go and paste `/datasources/<name>.xml` into the
+	 * datasource by hand. Attaching is not an extra convenience — without it "Save" does not
+	 * produce a queryable cube, which is the entire point of the designer.
+	 */
 	async function save() {
 		if (demoMode) return; // saving disabled in demo mode
 		saving = true;
 		saveMsg = null;
+
+		// Commit the header's name to the doc BEFORE exporting: `exportToMondrianXml` reads
+		// `doc.label` for the `<Schema name>` attribute, and that name has to match the one we
+		// upload under or the file and the catalog disagree.
+		const name = effectiveSchemaName;
+		if (store.doc.label !== name) store.setLabel(name);
+
 		let xml: string;
 		try {
 			xml = exportToMondrianXml(store.doc);
@@ -121,13 +217,48 @@
 			saving = false;
 			return;
 		}
-		const name = store.doc.label?.trim() || `${dataSourceId}-cube`;
+
 		try {
 			await adminSchemas.upload(name, xml);
-			store.doc.lineageId = name; // mark saved for the workbench's saved/dirty state
-			saveMsg = { tone: 'success', text: `Saved schema "${name}".` };
 		} catch (e) {
 			saveMsg = { tone: 'error', text: e instanceof Error ? e.message : 'Save failed.' };
+			saving = false;
+			return;
+		}
+
+		// From here the file IS saved. Attach failures must say so rather than reading as a
+		// total failure, because re-running Save would otherwise look like the only recourse.
+		store.doc.lineageId = name;
+		savedAtStamp = store.doc.updatedAt;
+
+		if (!datasource) {
+			saveMsg = {
+				tone: 'error',
+				text: `Saved schema "${name}", but the datasource could not be loaded, so it was not attached. Set its schema to ${repositorySchemaPath(name)} in Admin › Datasources.`
+			};
+			saving = false;
+			return;
+		}
+
+		try {
+			const path = repositorySchemaPath(name);
+			if (datasource.schemaName !== path) {
+				const updated = await adminDatasources.update({ ...datasource, schemaName: path });
+				if (updated) datasource = updated;
+			}
+			// Reopen the connection so the freshly attached schema is live without a restart.
+			await adminDatasources.refresh(datasource.name);
+			saveMsg = {
+				tone: 'success',
+				text: `Published "${name}" — attached to ${datasource.name} and ready to query.`
+			};
+		} catch (e) {
+			saveMsg = {
+				tone: 'error',
+				text: `Saved schema "${name}", but attaching it to the datasource failed${
+					e instanceof Error ? `: ${e.message}` : ''
+				}. Set the datasource's schema to ${repositorySchemaPath(name)} in Admin › Datasources.`
+			};
 		} finally {
 			saving = false;
 		}
@@ -168,6 +299,25 @@
 			{/each}
 		</nav>
 		<div class="ml-auto flex items-center gap-2">
+			<!-- Schema name.  Visible and editable up front because it becomes the catalog
+			     name users see in Studio — leaving it to an export-time default is how every
+			     designed cube came out called "Untitled" (saiku#1861). -->
+			<label class="flex items-center gap-1.5 text-xs text-muted-foreground">
+				<span>Schema</span>
+				<!-- Deliberately NOT `bind:value` + `$effect`: pushing the name into the store
+				     from an effect would read and write `doc.label` in the same tick, which is
+				     the documented route to `effect_update_depth_exceeded` in this codebase.
+				     An input handler commits it once, on the event. -->
+				<input
+					type="text"
+					value={schemaName}
+					oninput={(e) => renameSchema(e.currentTarget.value)}
+					placeholder={`${dataSourceId}-cube`}
+					aria-label="Schema name"
+					data-testid="cube-designer-schema-name"
+					class="h-8 w-44 rounded border border-border bg-background px-2 text-xs text-foreground"
+				/>
+			</label>
 			<Button
 				size="sm"
 				onclick={save}
@@ -195,7 +345,24 @@
 		{#if store.mode === 'canvas'}
 			<SchemaCanvasView {store} />
 		{:else}
-			<WorkbenchView {store} isSchemaSaved={!!store.doc.lineageId} />
+			<!-- saiku#1863: WorkbenchView reads `doc.cubes` ONCE, on mount, and the edit-mode
+			     hydrate resolves asynchronously — well after that. Without a forced remount the
+			     workbench kept the blank "Cube 1" it mounted with while the real imported cube
+			     sat unseen in the doc, and Save then published that blank over the user's
+			     actual schema.
+
+			     Keyed on `workbenchKey`, NOT on `store.workbenchReloadNonce` directly: the
+			     workbench's own persistence effect calls `setCubes`, which bumps that nonce, so
+			     keying on it would remount the workbench on every edit — and if
+			     `cubeFromDoc ∘ cubeToDoc` is ever not an exact round-trip, remount forever. -->
+			{#key workbenchKey}
+				<WorkbenchView
+					{store}
+					isSchemaSaved={!!store.doc.lineageId}
+					{isSchemaDirty}
+					{launchUrlFor}
+				/>
+			{/key}
 		{/if}
 	</div>
 </div>

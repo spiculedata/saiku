@@ -240,7 +240,24 @@ public class OlapMetaExplorer {
         throw new SaikuOlapException("Cannot get native cube for ( " + cube + " )");
     }
 
+    /**
+     * Resolve the live olap4j connection registered under {@code name}.
+     *
+     * <p>saiku#1857: this used to answer {@code null} when the name was unknown, while
+     * {@link #getNativeCube} in this same class threw for an unknown cube. Not one of the production
+     * call sites null-checked the result — every one dereferences it on the very next line — so a
+     * typo'd or stale connection name reached the user as {@code Cannot invoke
+     * "OlapConnection.setCatalog(String)" because "con" is null}, naming neither the connection that
+     * was missing nor the ones that exist. Failing here, typed and named, is what every caller
+     * already assumed happened.
+     *
+     * @throws SaikuOlapException when {@code name} is blank, unregistered, or registered but has no
+     *     live connection behind it. The message carries the requested name and the available ones.
+     */
     public OlapConnection getNativeConnection(String name) throws SaikuOlapException {
+        if (StringUtils.isBlank(name)) {
+            throw new SaikuOlapException("No connection name was given. Available connections: " + availableConnections());
+        }
         try {
             OlapConnection con = connections.getOlapConnection(name);
             if (con != null) {
@@ -249,7 +266,24 @@ public class OlapMetaExplorer {
         } catch (Exception e) {
             throw new SaikuOlapException("Cannot get native connection for ( " + name + " )", e);
         }
-        return null;
+        throw new SaikuOlapException(
+                "Unknown connection ( " + name + " ). Available connections: " + availableConnections());
+    }
+
+    /**
+     * The registered connection names, for the self-correction hint on a failed lookup. Never throws
+     * — this only ever runs on a path that is already failing, and a secondary failure here would
+     * mask the real one.
+     */
+    private String availableConnections() {
+        try {
+            List<String> names = new ArrayList<>(connections.getAllOlapConnections().keySet());
+            Collections.sort(names);
+            return names.isEmpty() ? "(none)" : String.join(", ", names);
+        } catch (Exception e) {
+            log.debug("Could not list available connections for the error message", e);
+            return "(unavailable)";
+        }
     }
 
     public List<SaikuDimension> getAllDimensions(SaikuCube cube) throws SaikuOlapException {
