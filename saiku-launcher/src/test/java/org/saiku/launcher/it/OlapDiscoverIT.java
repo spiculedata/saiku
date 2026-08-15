@@ -21,6 +21,10 @@ public class OlapDiscoverIT {
 
     private static SaikuItHarness harness;
     private static final String BASE = "/rest/saiku/admin/discover";
+    // saiku#1871 dropped the `unknown_` workspace decoration, so discover now REPORTS `foodmart`.
+    // These paths deliberately keep the OLD spelling: every saved query, dashboard and app in an
+    // existing install has it baked in, so them still resolving is the property that makes the
+    // rename safe. If the compatibility alias ever regresses, these are the tests that catch it.
     private static final String FOODMART_CUBE_PATH = "/unknown_foodmart/FoodMart/FoodMart/Sales";
 
     @BeforeClass
@@ -36,12 +40,12 @@ public class OlapDiscoverIT {
         assertTrue("connections must be a JSON array", body.isArray());
         boolean foodmartFound = false;
         for (JsonNode c : body) {
-            if ("unknown_foodmart".equals(c.path("name").asText())) {
+            if ("foodmart".equals(c.path("name").asText())) {
                 foodmartFound = true;
                 break;
             }
         }
-        assertTrue("unknown_foodmart connection must be present, body=" + resp.body(), foodmartFound);
+        assertTrue("foodmart connection must be present, body=" + resp.body(), foodmartFound);
     }
 
     @Test
@@ -51,6 +55,10 @@ public class OlapDiscoverIT {
         JsonNode body = harness.parse(resp);
         assertTrue("response must be a single-element array", body.isArray());
         assertEquals(1, body.size());
+        // saiku#1871: discover ECHOES the name you asked for. Requesting the legacy
+        // `unknown_foodmart` alias therefore reports it back, so a pre-rename client sees names
+        // consistent with the ones it already holds. Ask by the canonical `foodmart` and you get
+        // `foodmart` — covered by listAllConnections_returnsArrayWithFoodmart above.
         assertEquals("unknown_foodmart", body.get(0).path("name").asText());
     }
 
@@ -70,12 +78,13 @@ public class OlapDiscoverIT {
         assertTrue(body.isArray());
         boolean foodmartFound = false;
         for (JsonNode c : body) {
+            // Echoed alias, as above — this endpoint was asked for `unknown_foodmart`.
             if ("unknown_foodmart".equals(c.path("name").asText())) {
                 foodmartFound = true;
                 break;
             }
         }
-        assertTrue("unknown_foodmart must still be in the connection list after refresh", foodmartFound);
+        assertTrue("the refreshed connection must still be listed", foodmartFound);
     }
 
     @Test

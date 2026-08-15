@@ -16,7 +16,9 @@
 package org.saiku.service.datasource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
@@ -123,6 +125,55 @@ class DatasourceNameDecorationTest {
         assertNull(DatasourceNameDecoration.decorate(null, "unknown"));
         assertEquals("foo", DatasourceNameDecoration.decorate("foo", null));
         assertEquals("foo", DatasourceNameDecoration.decorate("foo", ""));
+    }
+
+    // ── sameConnection: lets content that stored the old prefixed spelling keep resolving (#1871)
+
+    @Test
+    void sameConnectionMatchesEitherSpelling() {
+        assertTrue(DatasourceNameDecoration.sameConnection("unknown_foodmart", "foodmart"));
+        assertTrue(DatasourceNameDecoration.sameConnection("foodmart", "unknown_foodmart"));
+        assertTrue(DatasourceNameDecoration.sameConnection("foodmart", "foodmart"));
+        assertTrue(DatasourceNameDecoration.sameConnection("unknown_foodmart", "unknown_foodmart"));
+    }
+
+    @Test
+    void sameConnectionIsCaseInsensitiveLikeTheRestOfTheMatching() {
+        assertTrue(DatasourceNameDecoration.sameConnection("UNKNOWN_FoodMart", "foodmart"));
+    }
+
+    /**
+     * THE safety property. Widening the match must not make unrelated datasources interchangeable,
+     * or a query silently reads the wrong warehouse.
+     */
+    @Test
+    void sameConnectionNeverMatchesUnrelatedNames() {
+        assertFalse(DatasourceNameDecoration.sameConnection("foodmart", "bank"));
+        assertFalse(DatasourceNameDecoration.sameConnection("unknown_foodmart", "unknown_bank"));
+        assertFalse(DatasourceNameDecoration.sameConnection("foodmart", "foodmart2"));
+        // A shared suffix is not a prefix relationship — "myfoodmart" is its own datasource.
+        assertFalse(DatasourceNameDecoration.sameConnection("myfoodmart", "foodmart"));
+    }
+
+    /** Only ONE prefix segment is tolerated, so a doubly-decorated name stays distinct. */
+    @Test
+    void sameConnectionToleratesExactlyOnePrefix() {
+        assertTrue(DatasourceNameDecoration.sameConnection("unknown_foodmart", "foodmart"));
+        assertFalse(DatasourceNameDecoration.sameConnection("unknown_unknown_foodmart", "foodmart"));
+    }
+
+    @Test
+    void sameConnectionHandlesNulls() {
+        assertTrue(DatasourceNameDecoration.sameConnection(null, null));
+        assertFalse(DatasourceNameDecoration.sameConnection("foodmart", null));
+        assertFalse(DatasourceNameDecoration.sameConnection(null, "foodmart"));
+    }
+
+    /** An empty name must not become a wildcard that matches everything with an underscore. */
+    @Test
+    void sameConnectionDoesNotTreatAnEmptyNameAsAWildcard() {
+        assertFalse(DatasourceNameDecoration.sameConnection("unknown_foodmart", ""));
+        assertFalse(DatasourceNameDecoration.sameConnection("", "foodmart"));
     }
 
     @Test

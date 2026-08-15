@@ -42,6 +42,56 @@ public final class DatasourceNameDecoration {
     private DatasourceNameDecoration() {}
 
     /**
+     * True when two connection names refer to the same datasource, tolerating the workspace
+     * decoration on either side.
+     *
+     * <p>saiku#1871: dropping the {@code unknown_} prefix is only safe if content that stored the
+     * OLD spelling still resolves. The lookup alias in saiku#1869 covers name→datasource lookups,
+     * but not the places that match a stored connection name against a DISCOVERED one — notably
+     * {@code OlapAiCubeMetadataService.matchesRef}, which every AI-query cube reference goes
+     * through, and therefore every app tile and embed built on one. Without this, a saved app
+     * referencing {@code unknown_foodmart} 400s the moment the prefix stops being emitted.
+     *
+     * <p>The rule is deliberately narrow: equal, or equal once a single {@code <something>_}
+     * prefix is removed from one side. It cannot match {@code foo} against {@code bar}, and the
+     * cube, catalog and schema still have to match exactly, so a false positive needs a real
+     * datasource whose name is another's with a prefix glued on. With workspaces off — the only
+     * mode where the decoration was ever applied — there is a single workspace, so that collision
+     * is not reachable.
+     */
+    public static boolean sameConnection(String a, String b) {
+        if (a == null || b == null) {
+            return a == null && b == null;
+        }
+        if (a.equalsIgnoreCase(b)) {
+            return true;
+        }
+        return isPrefixedForm(a, b) || isPrefixedForm(b, a);
+    }
+
+    /**
+     * True when {@code decorated} is {@code bare} carrying exactly one {@code <segment>_} prefix.
+     *
+     * <p>The prefix itself must contain no underscore, so exactly one workspace segment is
+     * tolerated: {@code unknown_foodmart} matches {@code foodmart}, but the doubly-decorated
+     * {@code unknown_unknown_foodmart} does not. Note the constraint is on the PREFIX only — a
+     * datasource legitimately named {@code sales_2024} still matches {@code unknown_sales_2024}.
+     */
+    private static boolean isPrefixedForm(String decorated, String bare) {
+        if (bare.isEmpty() || decorated.length() <= bare.length() + 1) {
+            return false;
+        }
+        int split = decorated.length() - bare.length() - 1;
+        if (decorated.charAt(split) != '_') {
+            return false;
+        }
+        if (decorated.lastIndexOf('_', split - 1) >= 0) {
+            return false; // more than one prefix segment — not a workspace decoration
+        }
+        return decorated.regionMatches(true, split + 1, bare, 0, bare.length());
+    }
+
+    /**
      * Strip the load-time {@code <workspace>_} prefix from a datasource name, so what gets written
      * matches what was originally stored.
      *

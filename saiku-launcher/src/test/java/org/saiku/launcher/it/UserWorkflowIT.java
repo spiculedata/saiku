@@ -20,6 +20,8 @@ import org.junit.Test;
 public class UserWorkflowIT {
 
     private static SaikuItHarness harness;
+    // Deliberately the pre-saiku#1871 spelling — this whole workflow exercising the legacy
+    // `unknown_` name end to end is what proves existing saved content survives the rename.
     private static final String CUBE = "unknown_foodmart/FoodMart/FoodMart/Sales";
 
     @BeforeClass
@@ -81,7 +83,7 @@ public class UserWorkflowIT {
         assertEquals(200, conns.statusCode());
         boolean foundFoodmart = false;
         for (JsonNode c : harness.parse(conns)) {
-            if ("unknown_foodmart".equals(c.path("name").asText())) {
+            if ("foodmart".equals(c.path("name").asText())) {
                 foundFoodmart = true;
                 break;
             }
