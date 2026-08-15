@@ -76,6 +76,55 @@ class DatasourceNameDecorationTest {
         assertEquals("unknown_foo", DatasourceNameDecoration.undecorate("unknown_foo", ""));
     }
 
+    // ── decorate: the inverse, used to key the in-memory cache and to alias lookups (saiku#1869)
+
+    @Test
+    void decorateAddsThePrefixAStoredNameWillBeSurfacedUnder() {
+        assertEquals("unknown_designer_e2e", DatasourceNameDecoration.decorate("designer_e2e", "unknown"));
+    }
+
+    /** Idempotent — decorating an already-decorated name must not stack a second prefix. */
+    @Test
+    void decorateIsIdempotent() {
+        assertEquals("unknown_designer_e2e", DatasourceNameDecoration.decorate("unknown_designer_e2e", "unknown"));
+    }
+
+    /**
+     * decorate and undecorate are inverses for every name that can actually be STORED.
+     *
+     * <p>Since saiku#1864 the save path strips the decoration before writing, so a stored name never
+     * begins with the workspace prefix — which is what makes the pair well-defined.
+     */
+    @Test
+    void decorateAndUndecorateAreInversesForStorableNames() {
+        for (String stored : new String[] {"foodmart", "designer_e2e", "a.b-c", "unknownish"}) {
+            String decorated = DatasourceNameDecoration.decorate(stored, "unknown");
+            assertEquals(
+                    stored, DatasourceNameDecoration.undecorate(decorated, "unknown"), "round trip lost " + stored);
+        }
+    }
+
+    /**
+     * The one name the pair CANNOT round-trip, documented rather than wished away: a datasource
+     * literally called {@code unknown_foo} is indistinguishable from {@code foo} decorated, so
+     * decorate leaves it alone (no double prefix) while undecorate strips it to {@code foo}.
+     *
+     * <p>Harmless in practice — the save-side strip means such a name is never stored — and the
+     * alias lookup tries both spellings anyway, so either reading resolves.
+     */
+    @Test
+    void aNameThatLooksAlreadyDecoratedIsAmbiguousAndIsNotRoundTripped() {
+        assertEquals("unknown_foo", DatasourceNameDecoration.decorate("unknown_foo", "unknown"));
+        assertEquals("foo", DatasourceNameDecoration.undecorate("unknown_foo", "unknown"));
+    }
+
+    @Test
+    void decorateToleratesNulls() {
+        assertNull(DatasourceNameDecoration.decorate(null, "unknown"));
+        assertEquals("foo", DatasourceNameDecoration.decorate("foo", null));
+        assertEquals("foo", DatasourceNameDecoration.decorate("foo", ""));
+    }
+
     @Test
     void nullsAreToleratedRatherThanThrowing() {
         assertNull(DatasourceNameDecoration.undecorate(null, "unknown"));

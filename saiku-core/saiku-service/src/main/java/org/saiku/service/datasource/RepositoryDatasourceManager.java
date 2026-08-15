@@ -399,7 +399,43 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
     }
 
     public SaikuDatasource getDatasource(String datasourceName) {
-        return datasourcesForCurrentWorkspace().get(datasourceName);
+        return lookup(datasourcesForCurrentWorkspace(), datasourceName);
+    }
+
+    /**
+     * Resolve a datasource by name, accepting it with OR without the workspace decoration.
+     *
+     * <p>saiku#1869: every datasource is surfaced as {@code <workspace>_<storedName>} — in
+     * single-tenant OSS that is always {@code unknown_}, a multi-tenant artefact carrying no
+     * information. It is baked into saved queries, dashboards and apps, both as the connection name
+     * and inside MDX unique names ({@code [unknown_foodmart].[FoodMart]...}), so it cannot simply be
+     * dropped without breaking every existing install.
+     *
+     * <p>Accepting both spellings here is step one, and it is deliberately harmless on its own:
+     * nothing is renamed yet, so this only widens what already resolves. It is what lets the
+     * decoration be switched off later without a migration — old content keeps resolving through
+     * the alias, and if some path is missed it degrades to a lookup that still works rather than a
+     * connection that cannot be found.
+     *
+     * <p>Every by-name path funnels through here ({@code getConnection}, {@code getOlapConnection},
+     * {@code refreshConnection}, discover, query), which is why the alias lives at this one point
+     * rather than at each caller.
+     */
+    private SaikuDatasource lookup(Map<String, SaikuDatasource> pool, String datasourceName) {
+        if (pool == null || datasourceName == null) {
+            return null;
+        }
+        SaikuDatasource exact = pool.get(datasourceName);
+        if (exact != null) {
+            return exact;
+        }
+        String workspace = currentWorkspaceKey();
+        // Asked for "foodmart" but stored/keyed as "unknown_foodmart", or vice versa.
+        SaikuDatasource decorated = pool.get(DatasourceNameDecoration.decorate(datasourceName, workspace));
+        if (decorated != null) {
+            return decorated;
+        }
+        return pool.get(DatasourceNameDecoration.undecorate(datasourceName, workspace));
     }
 
     @Override
@@ -407,7 +443,7 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
         Map<String, SaikuDatasource> current = datasourcesForCurrentWorkspace();
         if (!refresh) {
             if (current.size() > 0) {
-                return current.get(datasourceName);
+                return lookup(current, datasourceName);
             }
         } else {
             return getDatasource(datasourceName);
