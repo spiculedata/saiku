@@ -31,7 +31,7 @@
 		AlertCircle,
 		KeyRound
 	} from '@lucide/svelte';
-	import Popover from '$lib/design-system/primitives/Popover.svelte';
+	import { Popover } from '$lib/components/ui';
 	import { SortableColumnHeader } from '$lib/design-system';
 	import { dimKeyIdentity, resolveKeyAttribute } from './state.svelte.js';
 	import type { SchemaCanvasStore } from './state.svelte.js';
