@@ -557,11 +557,44 @@ public class EmbedPiiInspector {
      */
     static String lastBracketSegment(String name) {
         if (name == null || name.isEmpty()) return name;
-        int open = name.lastIndexOf('[');
-        if (open < 0) return name;
-        int close = name.indexOf(']', open);
-        if (close < 0) return name.substring(open + 1);
-        return name.substring(open + 1, close);
+        if (name.indexOf('[') < 0) return name;
+
+        // saiku#1850: parse segments properly rather than scanning for the last '['. MDX escapes a
+        // literal ']' inside a name by DOUBLING it, so a hierarchy genuinely called Foo]Bar is
+        // written [Foo]]Bar]. The previous implementation took the last '[' and stopped at the
+        // first ']', yielding "Foo" — which then failed to match the schema's PII-flagged name, so
+        // the embed grant was allowed and the column served. The check failed OPEN.
+        String last = null;
+        int i = 0;
+        while (i < name.length()) {
+            if (name.charAt(i) != '[') {
+                i++;
+                continue;
+            }
+            StringBuilder segment = new StringBuilder();
+            i++; // step over '['
+            boolean closed = false;
+            while (i < name.length()) {
+                char c = name.charAt(i);
+                if (c == ']') {
+                    if (i + 1 < name.length() && name.charAt(i + 1) == ']') {
+                        segment.append(']'); // escaped ]] -> a literal ]
+                        i += 2;
+                        continue;
+                    }
+                    i++; // step over the true closing bracket
+                    closed = true;
+                    break;
+                }
+                segment.append(c);
+                i++;
+            }
+            last = segment.toString();
+            if (!closed) {
+                break; // unterminated segment — take what we have, as before
+            }
+        }
+        return last == null ? name : last;
     }
 
     private static String cubeKey(AiCubeRef ref) {

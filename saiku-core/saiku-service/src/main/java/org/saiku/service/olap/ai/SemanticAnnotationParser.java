@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -129,16 +130,43 @@ public final class SemanticAnnotationParser {
         return out;
     }
 
+    /** Spellings a schema author might reasonably use to mean "yes". */
+    private static final List<String> AFFIRMATIVE = Arrays.asList("true", "yes", "y", "on", "1");
+
+    /** Spellings that unambiguously mean "no". */
+    private static final List<String> NEGATIVE = Arrays.asList("false", "no", "n", "off", "0");
+
     /**
-     * Parse a string as a boolean. Accepts {@code "true"} / {@code "false"}
-     * case-insensitively after trimming. Anything else (including null,
-     * empty, garbage) → {@code false}. Mirrors XML attribute parsing in the
-     * Mondrian schema layer — schema authors get the conservative default if
-     * they mistype.
+     * Parse the {@code saiku.semantic.pii} flag (saiku#1849).
+     *
+     * <p>This used to match ONLY the literal {@code "true"}, so an author who wrote {@code pii=yes},
+     * {@code pii=1} or {@code pii=on} got no masking at all — silently, with nothing logged. Those
+     * are not typos; they are unambiguous ways of saying yes, and the flag strips values from AI
+     * responses and blocks drillthrough {@code returns=} on the column, so the omission left
+     * personal data flowing. They are now honoured.
+     *
+     * <p>Genuinely unrecognised values still resolve to {@code false}, preserving the deliberate
+     * trade-off recorded with the original behaviour: for an analytics product, masking working data
+     * on a slip is a worse everyday failure than a schema author having to correct a value. What is
+     * new is that the slip no longer passes in silence — it is logged at WARN naming the value and
+     * the accepted spellings, so it is discoverable rather than invisible.
+     *
+     * <p>Absent and blank stay {@code false}: the annotation's absence genuinely means "not PII",
+     * which is the overwhelming majority of columns.
      */
     private static boolean parseBoolean(String raw) {
         if (raw == null) return false;
-        return "true".equalsIgnoreCase(raw.trim());
+        String norm = raw.trim().toLowerCase(Locale.ROOT);
+        if (norm.isEmpty()) return false;
+        if (AFFIRMATIVE.contains(norm)) return true;
+        if (NEGATIVE.contains(norm)) return false;
+        log.warn(
+                "Unrecognised saiku.semantic.pii value '{}' — treating the column as NOT PII. "
+                        + "Use one of {} to flag it, or one of {} to clear it.",
+                raw,
+                AFFIRMATIVE,
+                NEGATIVE);
+        return false;
     }
 
     private static String trimToNull(String raw) {

@@ -90,30 +90,47 @@ class EmbedPiiInspectorNamePropertyTest {
     }
 
     /**
-     * HAZARD, pinned rather than hidden. Mondrian escapes a literal {@code ]} inside a name by
-     * DOUBLING it, so a hierarchy genuinely called {@code Foo]Bar} appears as {@code [Foo]]Bar]}.
+     * saiku#1850. Mondrian escapes a literal {@code ]} inside a name by DOUBLING it, so a hierarchy
+     * genuinely called {@code Foo]Bar} is written {@code [Foo]]Bar]}. That name must normalise back
+     * to {@code Foo]Bar}.
      *
-     * <p>{@code lastBracketSegment} stops at the first {@code ]} it finds, so that name normalises
-     * to {@code Foo} instead of {@code Foo]Bar}. In the PII path the normalised name is compared
-     * against the schema's PII-flagged names — a truncated name simply does not match, the grant is
-     * allowed, and the column is served to an anonymous embed viewer.
-     *
-     * <p>Narrow in practice: it needs a {@code ]} in a dimension, hierarchy or measure name, which
-     * is legal in Mondrian but rare. Recorded here so the limitation is deliberate and the failure
-     * direction (OPEN) is written down. Fixing it means unescaping {@code ]]} before the split.
+     * <p>It used to normalise to {@code Foo} — the parser stopped at the first {@code ]} — which
+     * then failed to match the schema's PII-flagged name, so the embed grant was allowed and the
+     * column served to an anonymous viewer. The check failed OPEN.
      */
     @HegelTest
-    void mdxEscapedClosingBracketsTruncateTheName(TestCase tc) {
+    void anEscapedClosingBracketRoundTripsToALiteralBracket(TestCase tc) {
         String head = tc.draw(fromRegex("[A-Za-z]{1,8}"), "head");
         String tail = tc.draw(fromRegex("[A-Za-z]{1,8}"), "tail");
 
         // The MDX spelling of a name literally containing "]" between head and tail.
         String escaped = "[" + head + "]]" + tail + "]";
 
-        assertEquals(
-                head,
-                EmbedPiiInspector.lastBracketSegment(escaped),
-                "behaviour changed — ]] is now unescaped, so this hazard note can be removed");
+        assertEquals(head + "]" + tail, EmbedPiiInspector.lastBracketSegment(escaped), "for input " + escaped);
+    }
+
+    /** The same holds for an escaped bracket in the LAST segment of a qualified name. */
+    @HegelTest
+    void anEscapedBracketSurvivesInAQualifiedName(TestCase tc) {
+        String dim = tc.draw(fromRegex("[A-Za-z]{1,8}"), "dim");
+        String head = tc.draw(fromRegex("[A-Za-z]{1,8}"), "head");
+        String tail = tc.draw(fromRegex("[A-Za-z]{1,8}"), "tail");
+
+        String qualified = "[" + dim + "].[" + head + "]]" + tail + "]";
+
+        assertEquals(head + "]" + tail, EmbedPiiInspector.lastBracketSegment(qualified), "for input " + qualified);
+    }
+
+    /** An escaped bracket in an EARLIER segment must not derail the walk to the last one. */
+    @HegelTest
+    void anEscapedBracketInAnEarlierSegmentIsSkippedCorrectly(TestCase tc) {
+        String head = tc.draw(fromRegex("[A-Za-z]{1,6}"), "head");
+        String tail = tc.draw(fromRegex("[A-Za-z]{1,6}"), "tail");
+        String wanted = tc.draw(fromRegex("[A-Za-z]{1,8}"), "wanted");
+
+        String qualified = "[" + head + "]]" + tail + "].[" + wanted + "]";
+
+        assertEquals(wanted, EmbedPiiInspector.lastBracketSegment(qualified), "for input " + qualified);
     }
 
     /** Never throws, whatever bracket soup arrives from a client-supplied ref. */

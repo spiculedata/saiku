@@ -57,25 +57,38 @@ class SemanticAnnotationParserPropertyTest {
     }
 
     /**
-     * HAZARD, pinned rather than hidden. The flag matches ONLY the literal "true". Every other
-     * affirmative spelling a schema author might reasonably reach for — {@code yes}, {@code 1},
-     * {@code on}, {@code y} — silently reads as false, which means the column is NOT masked.
-     *
-     * <p>This fails OPEN. For a metadata field that would be a shrug; for a PII marker it means a
-     * plausible typo leaves personal data flowing to the AI layer and through drillthrough, with no
-     * warning logged. Contrast {@code validateEnum}, which logs when it drops an unrecognised value.
-     *
-     * <p>Asserted here so the behaviour is deliberate and discoverable rather than a surprise during
-     * an incident.
+     * saiku#1849: every unambiguous way of saying yes flags the column. These were never typos, but
+     * the flag used to match ONLY the literal {@code "true"}, so {@code pii=yes} silently read as
+     * false and the column was not masked — no redaction in {@code /ai/schema}, no drillthrough
+     * {@code returns=} block, and nothing logged.
      */
     @HegelTest
-    void otherAffirmativeSpellingsSilentlyFailOpen(TestCase tc) {
-        String affirmative =
-                tc.draw(sampledFrom(List.of("yes", "Yes", "YES", "1", "on", "y", "Y", "t")), "affirmative");
+    void everyUnambiguousAffirmativeFlagsTheColumn(TestCase tc) {
+        String affirmative = tc.draw(
+                sampledFrom(List.of("yes", "Yes", "YES", "1", "on", "ON", "y", "Y", "true", "TRUE")), "affirmative");
+        String pad = tc.draw(sampledFrom(List.of("", " ", "  ", "\t")), "pad");
+
+        assertTrue(
+                SemanticAnnotationParser.parseMeasure(ann("pii", pad + affirmative + pad)).pii,
+                "PII flag ignored for: [" + affirmative + "]");
+    }
+
+    /**
+     * A genuinely unrecognised value still resolves to NOT-PII, deliberately. The trade-off was
+     * argued when the flag was introduced and still holds: for an analytics product, masking working
+     * data on a slip is a worse everyday failure than an author correcting a value. What changed is
+     * that the slip is now logged at WARN instead of passing in silence.
+     */
+    @HegelTest
+    void anUnrecognisedValueStillMeansNotPii(TestCase tc) {
+        String junk = tc.draw(fromRegex("[a-zA-Z_]{2,15}"), "junk");
+        String norm = junk.trim().toLowerCase(Locale.ROOT);
+        tc.assume(!List.of("true", "yes", "y", "on", "1", "false", "no", "n", "off", "0")
+                .contains(norm));
 
         assertFalse(
-                SemanticAnnotationParser.parseMeasure(ann("pii", affirmative)).pii,
-                "behaviour changed — update this test AND the note in saiku#902: " + affirmative);
+                SemanticAnnotationParser.parseMeasure(ann("pii", junk)).pii,
+                "an unrecognised value masked the column: " + junk);
     }
 
     /** Absent, blank and explicitly-false annotations all leave the flag off. */

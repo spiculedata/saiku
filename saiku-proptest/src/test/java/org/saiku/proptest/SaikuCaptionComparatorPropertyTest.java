@@ -6,9 +6,11 @@ package org.saiku.proptest;
 
 import static dev.hegel.Generators.fromRegex;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.hegel.Generator;
+import dev.hegel.Generators;
 import dev.hegel.HegelTest;
 import dev.hegel.TestCase;
 import java.util.ArrayList;
@@ -28,14 +30,17 @@ import org.saiku.olap.util.SaikuCubeCaptionComparator;
  * green and fails in production on someone else's cube list. {@link SaikuUniqueNameComparator} is
  * already covered; these are its untested siblings.
  *
- * <p>Captions here are generated NON-NULL deliberately. The implementations return {@code 0} when
- * either caption is null, which is not transitive (null vs "a" is 0, null vs "b" is 0, but "a" vs
- * "b" is not) — a latent contract violation recorded in
- * {@link #nullCaptionsAreTheKnownContractHazard} rather than asserted away.
+ * <p>saiku#1851: a null caption used to short-circuit to {@code 0}, which is not transitive (null
+ * vs "a" is 0, null vs "b" is 0, but "a" vs "b" is not). Nulls now sort LAST, so the contract holds
+ * across null-bearing input too — see {@link #theContractHoldsWhenCaptionsMayBeNull}.
  */
 class SaikuCaptionComparatorPropertyTest {
 
     private static final Generator<String> CAPTION = fromRegex("[a-zA-Z0-9 ._-]{0,20}");
+
+    /** Captions including the null case — the shape that broke the old comparator's transitivity. */
+    private static final Generator<String> NULLABLE_CAPTION =
+            CAPTION.flatMap(c -> Generators.booleans().map(isNull -> isNull ? null : c));
 
     private static final SaikuCubeCaptionComparator CUBES = new SaikuCubeCaptionComparator();
 
@@ -98,17 +103,12 @@ class SaikuCaptionComparatorPropertyTest {
     }
 
     /**
-     * Documents — rather than hides — the null-caption hazard. Both comparators short-circuit to
-     * {@code 0} when either caption is null, which breaks transitivity: a null caption compares
-     * "equal" to every other caption while those captions do not compare equal to each other.
-     *
-     * <p>This is safe today only because captions are populated from olap4j metadata, which always
-     * supplies one. If a code path ever admits a null caption, sorting becomes a runtime
-     * {@code IllegalArgumentException} from TimSort. Asserted here so the behaviour is deliberate
-     * and the blast radius is written down.
+     * saiku#1851: a null caption used to short-circuit to {@code 0}, which is not transitive — a
+     * null compared "equal" to every caption while those captions were not equal to each other.
+     * Nulls now sort LAST, which is total and transitive.
      */
     @HegelTest
-    void nullCaptionsAreTheKnownContractHazard(TestCase tc) {
+    void nullCaptionsSortLastAndStayTransitive(TestCase tc) {
         String other = tc.draw(fromRegex("[a-zA-Z]{1,10}"), "other");
         String third = tc.draw(fromRegex("[a-zA-Z]{1,10}"), "third");
         tc.assume(!other.equals(third));
@@ -117,10 +117,53 @@ class SaikuCaptionComparatorPropertyTest {
         SaikuCube a = cube(other);
         SaikuCube b = cube(third);
 
-        // A null caption reads as "equal to everything"...
-        assertEquals(0, CUBES.compare(nul, a));
-        assertEquals(0, CUBES.compare(nul, b));
-        // ...while those two are NOT equal to each other. That is the transitivity break.
+        // A null caption sorts after any real caption, consistently in both directions.
+        assertTrue(CUBES.compare(nul, a) > 0, "null did not sort last");
+        assertTrue(CUBES.compare(a, nul) < 0, "null ordering is not antisymmetric");
+        assertEquals(0, CUBES.compare(nul, cube(null)), "two nulls should compare equal");
+        // ...and the two real captions still order against each other.
         Assertions.assertNotEquals(0, CUBES.compare(a, b));
+    }
+
+    /**
+     * The contract clauses hold across null-BEARING inputs too — this is the combination that made
+     * the old implementation non-transitive, and the one TimSort would have thrown on.
+     */
+    @HegelTest
+    void theContractHoldsWhenCaptionsMayBeNull(TestCase tc) {
+        SaikuCube a = cube(tc.draw(NULLABLE_CAPTION, "a"));
+        SaikuCube b = cube(tc.draw(NULLABLE_CAPTION, "b"));
+        SaikuCube c = cube(tc.draw(NULLABLE_CAPTION, "c"));
+
+        assertEquals(
+                Integer.signum(CUBES.compare(a, b)),
+                -Integer.signum(CUBES.compare(b, a)),
+                "compare must be antisymmetric with nulls present");
+
+        if (CUBES.compare(a, b) > 0 && CUBES.compare(b, c) > 0) {
+            assertTrue(CUBES.compare(a, c) > 0, "compare must be transitive with nulls present");
+        }
+    }
+
+    /** Sorting a list that CONTAINS nulls must not throw the TimSort contract violation. */
+    @HegelTest
+    void sortingAListContainingNullCaptionsSucceeds(TestCase tc) {
+        List<SaikuCube> cubes = new ArrayList<>();
+        int size = tc.draw(dev.hegel.Generators.integers().min(0).max(40), "size");
+        for (int i = 0; i < size; i++) {
+            cubes.add(cube(tc.draw(NULLABLE_CAPTION, "caption" + i)));
+        }
+
+        cubes.sort(CUBES); // must not throw "Comparison method violates its general contract!"
+
+        // Every null caption ends up after every non-null one.
+        boolean seenNull = false;
+        for (SaikuCube c : cubes) {
+            if (c.getCaption() == null) {
+                seenNull = true;
+            } else {
+                assertFalse(seenNull, "a non-null caption sorted after a null one");
+            }
+        }
     }
 }
