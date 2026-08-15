@@ -60,6 +60,12 @@ public class SaikuVirtualFileHandler implements VirtualFileHandler {
      */
     private static volatile Function<String, String> repositoryReader;
 
+    /**
+     * Confines {@code file:} catalogs to the Saiku data directories (saiku#1845). Null until
+     * startup wiring runs, which leaves Mondrian's stock behaviour in place.
+     */
+    private static volatile SchemaFileAccessGuard fileGuard;
+
     private final VirtualFileHandler delegate = new ApacheVfs2VirtualFileHandler();
 
     /**
@@ -89,22 +95,51 @@ public class SaikuVirtualFileHandler implements VirtualFileHandler {
         repositoryReader = reader;
     }
 
+    /** Confine {@code file:} catalogs to the given roots (saiku#1845). Null disables containment. */
+    public static void setFileGuard(SchemaFileAccessGuard guard) {
+        fileGuard = guard;
+    }
+
     @Override
     public InputStream readVirtualFile(String url) throws IOException {
         Function<String, String> reader = repositoryReader;
-        if (reader != null && MondrianCatalogResolver.isRepositoryReference(url)) {
-            String xml = MondrianCatalogResolver.resolve(url, reader);
-            if (xml != null) {
-                return new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8));
+        if (MondrianCatalogResolver.isRepositoryReference(url)) {
+            if (reader != null) {
+                String xml = MondrianCatalogResolver.resolve(url, reader);
+                if (xml != null) {
+                    return new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8));
+                }
             }
-            // Fall through to the delegate rather than failing outright: a bare path with no
-            // scheme is also a legal relative file reference, and the delegate's error message
-            // for a genuinely missing file is more useful than one invented here.
-            if (url != null && url.trim().startsWith(MondrianCatalogResolver.SCHEME)) {
-                throw new FileNotFoundException("No schema in the Saiku repository for catalog " + url + " (tried "
-                        + MondrianCatalogResolver.candidatePaths(url) + ")");
-            }
+            // saiku#1845: a repository reference that didn't resolve must NOT fall through to the
+            // filesystem. A bare path like "../../etc/shadow" satisfies isRepositoryReference()
+            // (no scheme), and handing it to the VFS delegate would resolve it against the
+            // process working directory — turning a failed repository lookup into a file read.
+            throw new FileNotFoundException("No schema in the Saiku repository for catalog " + url + " (tried "
+                    + MondrianCatalogResolver.candidatePaths(url) + ")");
+        }
+        SchemaFileAccessGuard guard = fileGuard;
+        if (guard != null && url != null && url.trim().startsWith("file:")) {
+            guard.assertReadable(java.nio.file.Path.of(stripFileScheme(url.trim())));
         }
         return delegate.readVirtualFile(url);
+    }
+
+    /**
+     * Strip the {@code file:} scheme (and any {@code //authority}) off a file URL, leaving the path.
+     *
+     * <p>saiku#1661: on Windows a file URL for a local path is {@code file:/C:/...}, which leaves a
+     * leading slash before the drive letter that {@link java.nio.file.Path#of} rejects. Drop it so
+     * {@code /C:/x} becomes {@code C:/x}; genuine POSIX absolute paths are untouched.
+     */
+    static String stripFileScheme(String fileUrl) {
+        String path = fileUrl.substring("file:".length());
+        if (path.startsWith("//")) {
+            int slash = path.indexOf('/', 2);
+            path = slash >= 0 ? path.substring(slash) : path.substring(2);
+        }
+        if (path.length() > 2 && path.charAt(0) == '/' && path.charAt(2) == ':') {
+            path = path.substring(1);
+        }
+        return path;
     }
 }

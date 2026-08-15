@@ -44,6 +44,7 @@ public class SaikuVirtualFileHandlerTest {
             System.setProperty(SaikuVirtualFileHandler.HANDLER_PROPERTY, previousProperty);
         }
         SaikuVirtualFileHandler.setRepositoryReader(null);
+        SaikuVirtualFileHandler.setFileGuard(null);
     }
 
     private static String read(InputStream in) throws IOException {
@@ -113,6 +114,58 @@ public class SaikuVirtualFileHandlerTest {
             // The old failure was a bare "Virtual file is not readable" with no hint where it
             // looked. An admin needs the candidate paths to fix their schema field.
             assertTrue(e.getMessage(), e.getMessage().contains("/datasources/Missing.xml"));
+        }
+    }
+
+    // --- saiku#1845 containment -------------------------------------------------
+
+    @Test
+    public void refusesAFileCatalogOutsideThePermittedRoots() throws Exception {
+        File allowed = Files.createTempDirectory("saiku-allowed").toFile();
+        allowed.deleteOnExit();
+        File secret = File.createTempFile("outside", ".txt");
+        secret.deleteOnExit();
+        Files.writeString(secret.toPath(), "SECRET", StandardCharsets.UTF_8);
+
+        SaikuVirtualFileHandler.setRepositoryReader(p -> null);
+        SaikuVirtualFileHandler.setFileGuard(new SchemaFileAccessGuard(java.util.List.of(allowed.toPath())));
+
+        try {
+            new SaikuVirtualFileHandler().readVirtualFile(secret.toURI().toString());
+            fail("expected the read to be refused");
+        } catch (IOException expected) {
+            assertTrue(expected.getMessage(), expected.getMessage().contains("outside the Saiku data directories"));
+        }
+    }
+
+    @Test
+    public void stillAllowsAFileCatalogInsideThePermittedRoots() throws Exception {
+        File allowed = Files.createTempDirectory("saiku-allowed").toFile();
+        allowed.deleteOnExit();
+        File schema = new File(allowed, "FoodMart4.xml");
+        schema.deleteOnExit();
+        Files.writeString(schema.toPath(), "<Schema name='FoodMart'/>", StandardCharsets.UTF_8);
+
+        SaikuVirtualFileHandler.setRepositoryReader(p -> null);
+        SaikuVirtualFileHandler.setFileGuard(new SchemaFileAccessGuard(java.util.List.of(allowed.toPath())));
+
+        try (InputStream in =
+                new SaikuVirtualFileHandler().readVirtualFile(schema.toURI().toString())) {
+            assertEquals("<Schema name='FoodMart'/>", read(in));
+        }
+    }
+
+    @Test
+    public void anUnresolvedBarePathNeverFallsThroughToTheFilesystem() throws Exception {
+        // "../../etc/shadow" carries no scheme, so it looks like a repository reference. When the
+        // repository doesn't have it, the old code handed it to the VFS delegate, which resolves
+        // relative paths against the process working directory — a failed lookup becoming a read.
+        SaikuVirtualFileHandler.setRepositoryReader(p -> null);
+        try {
+            new SaikuVirtualFileHandler().readVirtualFile("../../etc/shadow");
+            fail("expected the read to be refused");
+        } catch (FileNotFoundException expected) {
+            assertTrue(expected.getMessage(), expected.getMessage().contains("Saiku repository"));
         }
     }
 

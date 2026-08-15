@@ -36,6 +36,7 @@ import org.saiku.datasources.connection.ISaikuConnection;
 import org.saiku.datasources.datasource.SaikuDatasource;
 import org.saiku.service.datasource.DatasourceService;
 import org.saiku.service.datasource.MondrianCatalogResolver;
+import org.saiku.service.datasource.SchemaFileAccessGuard;
 import org.saiku.service.olap.ai.cubedesigner.CubeDesignerAiService;
 import org.saiku.service.schema.generate.introspect.JdbcIntrospector;
 import org.saiku.service.schema.generate.model.DbColumn;
@@ -76,6 +77,13 @@ public class CubeDesignerResource {
     private final DatasourceService datasourceService;
     private UserService userService; // optional; see class doc
     private CubeDesignerAiService aiService; // optional; absent ⇒ /turn 503s
+
+    /**
+     * Confines {@code file:} schema reads to the Saiku data directories (saiku#1845). Built from the
+     * environment rather than injected so the containment holds even for a deployment that predates
+     * the bean wiring — an unconfigured guard degrades to the old permissive behaviour and warns.
+     */
+    private final SchemaFileAccessGuard fileGuard = SchemaFileAccessGuard.fromEnvironment(null);
 
     public CubeDesignerResource(
             DatasourceJdbcConnectionProvider connectionProvider, DatasourceService datasourceService) {
@@ -385,7 +393,15 @@ public class CubeDesignerResource {
     private String resolveSchemaXml(String catalog) throws IOException {
         String c = catalog.trim();
         if (c.startsWith("file:")) {
-            return Files.readString(java.nio.file.Path.of(stripFileScheme(c)), StandardCharsets.UTF_8);
+            // saiku#1845: this endpoint returns whatever it reads straight to the caller, so an
+            // unconstrained path here is an arbitrary file read — `Catalog=file:/etc/shadow` was
+            // answered with the file's contents. Confine it to the Saiku data directories.
+            java.nio.file.Path target = java.nio.file.Path.of(stripFileScheme(c));
+            SchemaFileAccessGuard guard = this.fileGuard;
+            if (guard != null) {
+                guard.assertReadable(target);
+            }
+            return Files.readString(target, StandardCharsets.UTF_8);
         }
         if (c.startsWith("res:")) {
             String resource = c.substring("res:".length());

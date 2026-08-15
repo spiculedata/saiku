@@ -131,6 +131,9 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
         // never loaded. Installed after irm.start() so the reader is usable the moment
         // loadDatasources() below triggers the first connection.
         SaikuVirtualFileHandler.install(this::readRepositoryFileQuietly);
+        // saiku#1845: and confine file: catalogs to the Saiku data directories, so a data source
+        // can't be pointed at an arbitrary host file.
+        SaikuVirtualFileHandler.setFileGuard(SchemaFileAccessGuard.fromEnvironment(datadir));
 
         // Load the datasources
         loadDatasources(ext);
