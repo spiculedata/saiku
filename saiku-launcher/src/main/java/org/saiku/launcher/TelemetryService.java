@@ -80,6 +80,16 @@ public final class TelemetryService {
                 LOG.log(System.Logger.Level.DEBUG, "Saiku telemetry skipped: no release version (dev/test run)");
                 return;
             }
+            // saiku#1866: the version check above only catches IDE and unit runs, where there is no
+            // manifest to read. A locally BUILT fat-JAR carries the real pom version in its
+            // Implementation-Version, so `java -jar saiku-launcher/target/saiku-<v>.jar` — the exact
+            // command every developer runs to test a change — looked identical to a customer
+            // install and was counted as one. The install id lives in saiku-home, so a dev machine
+            // also pinged under a stable id for as long as that home survived.
+            if (isRunningFromBuildTree()) {
+                LOG.log(System.Logger.Level.DEBUG, "Saiku telemetry skipped: running from a build tree");
+                return;
+            }
             TelemetryService svc = new TelemetryService(saikuHome, version, endpointFromConfig());
             svc.announce();
             svc.schedule();
@@ -160,6 +170,45 @@ public final class TelemetryService {
     }
 
     // --- configuration ------------------------------------------------------
+
+    /**
+     * True when the running code sits inside a Maven build tree, which means somebody is building
+     * and testing Saiku rather than running an install of it.
+     *
+     * <p>Deliberately keyed on the code source path rather than on a marker file or an env var: it
+     * needs no discipline from the developer, and it cannot be forgotten. A released artifact — the
+     * Docker image, the dist zip, a copied fat-JAR — never runs out of a {@code target/} directory.
+     *
+     * <p>Fails toward NOT reporting: any problem resolving the path is treated as "not a build
+     * tree" only when we genuinely cannot tell, and a false positive merely under-counts, which is
+     * the harmless direction for an install metric.
+     */
+    static boolean isRunningFromBuildTree() {
+        try {
+            java.security.CodeSource cs =
+                    TelemetryService.class.getProtectionDomain().getCodeSource();
+            if (cs == null || cs.getLocation() == null) {
+                return false;
+            }
+            return isBuildTreePath(Path.of(cs.getLocation().toURI()));
+        } catch (Exception e) {
+            LOG.log(System.Logger.Level.DEBUG, "could not resolve code source: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /** Path-only half of {@link #isRunningFromBuildTree}, split out so it is testable. */
+    static boolean isBuildTreePath(Path codeSource) {
+        if (codeSource == null) {
+            return false;
+        }
+        for (Path segment : codeSource) {
+            if ("target".equals(segment.toString())) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     static boolean isEnabled() {
         if (isTruthy(System.getenv("DO_NOT_TRACK"))) {
