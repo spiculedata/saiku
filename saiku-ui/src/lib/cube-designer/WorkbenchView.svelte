@@ -2089,7 +2089,11 @@
 				proposal,
 				connectionId,
 				mdx,
-				cubeName: cube.name
+				cubeName: cube.name,
+				// saiku#1872: the OSS preview endpoint runs the actual schema rather than a
+				// gateway-side IR, so hand it the same XML the export produces. Additive —
+				// Saiku Cloud builds from `proposal` and ignores this field.
+				mondrianXml: workbenchPreviewXml()
 			});
 			const body = (await resp.json().catch(() => null)) as {
 				columns?: string[];

@@ -16,8 +16,8 @@
  *  - `convertSchema`: the designer sends `{ mondrianXml, connectionId }`; the
  *    OSS endpoint wants `{ mondrianXml, dataSourceId }`, and returns a plain
  *    failure token on 4xx which we wrap as `{ message }`.
- *  - `tryQuery`: OSS has no run-against-an-unsaved-proposal endpoint yet, so the
- *    Try-a-query tab is unavailable in this build (graceful 501).
+ *  - `tryQuery`: posts the exported Mondrian XML to `/try-query`, which runs the
+ *    UNSAVED schema against the datasource (saiku#1872). Previously a 501 stub.
  */
 import type { CubeDesignerBackend, CubeDesignerAI } from './backend';
 
@@ -92,21 +92,44 @@ export const ossCubeDesignerBackend: CubeDesignerBackend = {
 		return fetch(url, CREDS);
 	},
 
-	tryQuery() {
-		// No OSS endpoint runs a query against an *unsaved* proposal (Cloud does this
-		// gateway-side). Save publishes the schema and attaches it to the datasource, so
-		// the round trip through Studio is the supported path here — say that, rather
-		// than leaving the user at a bare "not available".
-		return Promise.resolve(
-			jsonResponse(
-				{
-					message:
-						'Preview queries against an unsaved schema are not available in this build. ' +
-						'Hit Save to publish the schema, then use "Open in Saiku" to query the cube.'
-				},
-				501
-			)
-		);
+	async tryQuery(body) {
+		// saiku#1872: OSS can now run an UNSAVED schema. The server registers the proposed XML
+		// in memory under a reserved catalog path and connects with the datasource's OWN stored
+		// location, swapping only the Catalog — so the preview hits the real warehouse with the
+		// real credentials, and no JDBC URL is ever taken from the client.
+		const b = (body ?? {}) as {
+			mondrianXml?: string;
+			connectionId?: string;
+			mdx?: string;
+			maxRows?: number;
+		};
+		if (!b.mondrianXml) {
+			return jsonResponse({ message: 'Nothing to preview yet — the schema is incomplete.' }, 400);
+		}
+		const r = await fetch(`${BASE}/try-query`, {
+			method: 'POST',
+			...CREDS,
+			headers: JSON_HEADERS,
+			body: JSON.stringify({
+				mondrianXml: b.mondrianXml,
+				dataSourceId: b.connectionId,
+				mdx: b.mdx,
+				maxRows: b.maxRows
+			})
+		});
+		if (r.ok) return r;
+		// The endpoint answers with the same {columns, rows, error} envelope on failure, so pass
+		// it straight through — the tab renders `error`/`message` inline.
+		const text = await r.text().catch(() => '');
+		try {
+			const parsed = JSON.parse(text) as { error?: string };
+			return jsonResponse(
+				{ message: parsed.error ?? `Preview failed (HTTP ${r.status})` },
+				r.status
+			);
+		} catch {
+			return jsonResponse({ message: text || `Preview failed (HTTP ${r.status})` }, r.status);
+		}
 	},
 
 	async loadSchema(entryId) {

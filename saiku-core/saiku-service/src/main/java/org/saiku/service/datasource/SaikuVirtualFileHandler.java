@@ -66,6 +66,46 @@ public class SaikuVirtualFileHandler implements VirtualFileHandler {
      */
     private static volatile SchemaFileAccessGuard fileGuard;
 
+    /**
+     * Unsaved schemas registered for a one-shot query preview (saiku#1872), keyed by the catalog
+     * path they are served under.
+     *
+     * <p>The Cube Designer needs to run a schema the user has not saved yet. Writing it to disk
+     * would leave litter behind on a crash and would have to satisfy the file guard; serving it
+     * from memory through the handler Mondrian already consults costs nothing and disappears the
+     * moment the preview finishes.
+     *
+     * <p>Consulted BEFORE the repository, so a preview id can never shadow or be shadowed by a real
+     * schema — the ids are random and the path prefix is reserved.
+     */
+    private static final java.util.Map<String, String> PREVIEWS = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Reserved path prefix for preview schemas. Not a real repository location. */
+    public static final String PREVIEW_PREFIX = "/__preview__/";
+
+    /**
+     * Serve {@code xml} under a fresh preview catalog path.
+     *
+     * @return the catalog reference to hand Mondrian; pass it to {@link #unregisterPreview} when done
+     */
+    public static String registerPreview(String xml) {
+        String path = PREVIEW_PREFIX + java.util.UUID.randomUUID() + ".xml";
+        PREVIEWS.put(path, xml);
+        return path;
+    }
+
+    /** Stop serving a preview. Safe to call twice; must be called in a finally. */
+    public static void unregisterPreview(String path) {
+        if (path != null) {
+            PREVIEWS.remove(path);
+        }
+    }
+
+    /** Test seam: how many previews are currently held. Should return to 0 after every request. */
+    static int previewCount() {
+        return PREVIEWS.size();
+    }
+
     private final VirtualFileHandler delegate = new ApacheVfs2VirtualFileHandler();
 
     /**
@@ -100,9 +140,41 @@ public class SaikuVirtualFileHandler implements VirtualFileHandler {
         fileGuard = guard;
     }
 
+    /**
+     * The registered preview XML for a catalog reference, or null.
+     *
+     * <p>Mondrian may hand back the reference with or without its {@code mondrian://} scheme
+     * depending on the path, so both spellings are tried — a preview that failed to resolve would
+     * silently fall through to a repository lookup and produce a confusing "no schema" error.
+     */
+    private static String previewFor(String url) {
+        if (url == null || PREVIEWS.isEmpty()) {
+            return null;
+        }
+        String trimmed = url.trim();
+        String direct = PREVIEWS.get(trimmed);
+        if (direct != null) {
+            return direct;
+        }
+        for (String candidate : MondrianCatalogResolver.candidatePaths(trimmed)) {
+            String hit = PREVIEWS.get(candidate);
+            if (hit != null) {
+                return hit;
+            }
+        }
+        return null;
+    }
+
     @Override
     public InputStream readVirtualFile(String url) throws IOException {
         Function<String, String> reader = repositoryReader;
+        // saiku#1872: an in-flight preview schema wins over the repository. Checked first so a
+        // preview never depends on repository state, and so the reserved prefix cannot be
+        // satisfied by a real file that happens to share the path.
+        String preview = previewFor(url);
+        if (preview != null) {
+            return new ByteArrayInputStream(preview.getBytes(StandardCharsets.UTF_8));
+        }
         if (MondrianCatalogResolver.isRepositoryReference(url)) {
             if (reader != null) {
                 String xml = MondrianCatalogResolver.resolve(url, reader);
