@@ -11,25 +11,23 @@ import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.PropertyAccessor;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.TreeSet;
 import org.saiku.olap.dto.SaikuCube;
-import org.saiku.olap.query2.ThinAxis;
-import org.saiku.olap.query2.ThinHierarchy;
-import org.saiku.olap.query2.ThinLevel;
-import org.saiku.olap.query2.ThinMember;
 import org.saiku.olap.query2.ThinQuery;
 import org.saiku.olap.query2.ThinQueryModel;
-import org.saiku.olap.query2.ThinSelection;
 
 /**
  * Deterministic cache key for a {@link ThinQuery}. The key is a SHA-256 hex
@@ -47,6 +45,9 @@ import org.saiku.olap.query2.ThinSelection;
 public final class QueryCacheKey {
 
     private static final ObjectMapper MAPPER = buildMapper();
+
+    /** The ThinSelection field holding the member list. */
+    private static final String MEMBERS_FIELD = "members";
 
     private QueryCacheKey() {}
 
@@ -87,11 +88,6 @@ public final class QueryCacheKey {
             throw new IllegalArgumentException("query");
         }
         try {
-            // Deliberately do NOT sort measure or hierarchy lists: their order is
-            // part of the query (outer-to-inner axis nesting, measure column
-            // order). Member selection order is semantically a set — safe to
-            // sort, and we do that below inside sortMembersOnly().
-            sortMembersOnly(query);
             // Canonical JSON excludes client-only fields like `name` (random UUID),
             // `parameters` (resolved into MDX already), `plugins`, and `metadata`.
             CanonicalView view = new CanonicalView();
@@ -103,7 +99,15 @@ public final class QueryCacheKey {
             view.cubeVersion = cubeVersion == null ? "" : cubeVersion;
             view.roles = canonicalRoles(roles);
 
-            byte[] json = MAPPER.writeValueAsBytes(view);
+            // Deliberately do NOT sort measure or hierarchy lists: their order is
+            // part of the query (outer-to-inner axis nesting, measure column
+            // order). Member selection order is semantically a set for HASHING —
+            // so it is canonicalised on the serialised tree, never on the caller's
+            // query. See sortMembersOnly() for why that distinction is load-bearing.
+            JsonNode tree = MAPPER.valueToTree(view);
+            sortMembersOnly(tree);
+
+            byte[] json = MAPPER.writeValueAsBytes(tree);
             MessageDigest md = MessageDigest.getInstance("SHA-256");
             byte[] hash = md.digest(json);
             return toHex(hash);
@@ -159,32 +163,60 @@ public final class QueryCacheKey {
         return s == null ? "" : s;
     }
 
-    /** Only sort member selections (semantically a set); leave measure and
-     *  hierarchy lists in their on-axis order. */
-    private static void sortMembersOnly(ThinQuery q) {
-        ThinQueryModel model = q.getQueryModel();
-        if (model == null) {
+    /**
+     * Canonicalise member selections on the SERIALISED tree — never on the caller's query.
+     *
+     * <p>Member order is semantically a set for hashing, so it must be normalised or two identical
+     * selections would miss each other in the cache. It is emphatically NOT a set for execution:
+     * {@code ThinQueryService.execute} builds the coalescing key BEFORE calling
+     * {@code executeInternalQuery}, which calls {@code updateQuery} → {@code Fat.convert} to
+     * regenerate the MDX from the query model. saiku#1847: this method used to sort the member list
+     * in place, so the alphabetised order became the order in the emitted MDX and the user got rows
+     * back sorted by member name rather than in the order they selected them. Hashing something must
+     * not change it.
+     *
+     * <p>Sorting the JSON keeps the key byte-identical to the previous implementation — same
+     * comparator, same lowercase-by-unique-name ordering — so existing on-disk caches keep hitting.
+     */
+    private static void sortMembersOnly(JsonNode tree) {
+        if (tree == null) {
             return;
         }
-        Map<ThinQueryModel.AxisLocation, ThinAxis> axes = model.getAxes();
-        if (axes == null) {
-            return;
-        }
-        for (ThinAxis axis : axes.values()) {
-            if (axis.getHierarchies() == null) continue;
-            for (ThinHierarchy h : axis.getHierarchies()) {
-                if (h.getLevels() == null) continue;
-                for (ThinLevel level : h.getLevels().values()) {
-                    ThinSelection sel = level.getSelection();
-                    if (sel != null && sel.getMembers() != null) {
-                        List<ThinMember> members = new ArrayList<>(sel.getMembers());
-                        members.sort(Comparator.comparing(
-                                mm -> nullSafe(mm.getUniqueName()).toLowerCase(Locale.ROOT)));
-                        sel.setMembers(members);
-                    }
+        if (tree.isObject()) {
+            ObjectNode obj = (ObjectNode) tree;
+            Iterator<String> names = obj.fieldNames();
+            List<String> fields = new ArrayList<>();
+            while (names.hasNext()) {
+                fields.add(names.next());
+            }
+            for (String field : fields) {
+                JsonNode child = obj.get(field);
+                if (MEMBERS_FIELD.equals(field) && child != null && child.isArray()) {
+                    obj.set(field, sortedByUniqueName((ArrayNode) child));
+                } else {
+                    sortMembersOnly(child);
                 }
             }
+            return;
         }
+        if (tree.isArray()) {
+            for (JsonNode child : tree) {
+                sortMembersOnly(child);
+            }
+        }
+    }
+
+    /** Order members by lowercased unique name — the comparator the in-place sort used. */
+    private static ArrayNode sortedByUniqueName(ArrayNode members) {
+        List<JsonNode> sorted = new ArrayList<>(members.size());
+        members.forEach(sorted::add);
+        sorted.sort(Comparator.comparing(m -> {
+            JsonNode un = m.get("uniqueName");
+            return (un == null || un.isNull() ? "" : un.asText()).toLowerCase(Locale.ROOT);
+        }));
+        ArrayNode out = MAPPER.createArrayNode();
+        sorted.forEach(out::add);
+        return out;
     }
 
     private static String toHex(byte[] bytes) {
