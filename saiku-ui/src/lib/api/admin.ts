@@ -159,11 +159,19 @@ export function fromDatasourceWire(w: DatasourceWire): AdminDatasource {
 		connectionName: w.connectionname,
 		connectiontype: w.connectiontype,
 		type: typeFromConnectiontype(w.connectiontype),
-		driver: w.driver,
-		location: w.jdbcurl,
+		// saiku#1856: every field the edit modal binds with `bind:value` MUST be a string, never
+		// undefined. Svelte 5 throws props_invalid_value on a bindable prop receiving undefined —
+		// undefined means "use the default", and a two-way binding has none — which took the whole
+		// modal down silently, with only a console exception. Opening ANY existing datasource for
+		// edit was affected; "+ Add datasource" worked because startNew() already defaults these
+		// to ''. Do not "simplify" these back to bare `w.x`.
+		driver: w.driver ?? '',
+		location: w.jdbcurl ?? '',
 		schemaName: w.schema ?? null,
-		username: w.username,
-		// Server never returns the password (DataSourceMapper marks it WRITE_ONLY).
+		username: w.username ?? '',
+		// The server never returns the password (DataSourceMapper marks it WRITE_ONLY), so it is
+		// always absent on the wire — but the form still binds it, so it has to be '' not undefined.
+		password: '',
 		ossieYaml: w.ossieYaml ?? null
 	};
 }
