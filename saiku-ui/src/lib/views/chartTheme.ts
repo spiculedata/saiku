@@ -140,6 +140,28 @@ export function applyColorBlindSafe(tokens: ThemeTokens, enabled: boolean): Them
 	return { ...tokens, chartColors: COLORBLIND_SAFE_COLORS, highContrast: true };
 }
 
+/**
+ * saiku#1836: tokens.css stores colours as BARE HSL TRIPLES (`220 15% 99%`)
+ * because every consumer wraps them — `hsl(var(--fg))`. ECharts is not a CSS
+ * consumer: hand it `220 15% 99%` and it cannot parse a colour, so the axis
+ * labels, axis line and split lines silently render as nothing. The series
+ * colours were unaffected because `--chart-*` are stored as hex, which is
+ * exactly why this looked like "the axis doesn't follow the theme" rather than
+ * a parsing bug.
+ *
+ * Wrap a triple; pass anything already colour-shaped (hex / rgb() / hsl())
+ * straight through, so the hex fallbacks and `--chart-*` keep working.
+ */
+export function asChartColor(value: string, fallback: string): string {
+	const v = (value ?? '').trim();
+	if (!v) return fallback;
+	if (v.startsWith('#') || v.startsWith('rgb') || v.startsWith('hsl') || v.startsWith('var('))
+		return v;
+	// `H S% L%`, optionally with an alpha suffix (`220 15% 99% / 0.4`).
+	if (/^-?[\d.]+\s+[\d.]+%\s+[\d.]+%/.test(v)) return `hsl(${v})`;
+	return v;
+}
+
 /** Resolve the active theme tokens from :root's computed style. Falls back
  *  to DEFAULT_THEME_TOKENS per-token (and wholesale when there's no document,
  *  e.g. during SSR), so callers always get a complete token set. When the
@@ -150,7 +172,7 @@ export function resolveThemeTokens(): ThemeTokens {
 		return applyColorBlindSafe(DEFAULT_THEME_TOKENS, theme.colorBlindSafe);
 	}
 	const cs = getComputedStyle(document.documentElement);
-	const get = (name: string, fallback: string) => cs.getPropertyValue(name).trim() || fallback;
+	const get = (name: string, fallback: string) => asChartColor(cs.getPropertyValue(name), fallback);
 	const chartColors = CHART_FALLBACK_COLORS.map((fallback, i) => get(`--chart-${i + 1}`, fallback));
 	const tokens: ThemeTokens = {
 		fg: get('--fg', DEFAULT_THEME_TOKENS.fg),

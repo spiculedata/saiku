@@ -11,6 +11,7 @@
 import { describe, test, expect } from 'vitest';
 import {
 	applyColorBlindSafe,
+	asChartColor,
 	COLORBLIND_SAFE_COLORS,
 	COLORBLIND_WATERFALL,
 	DEFAULT_THEME_TOKENS,
@@ -76,5 +77,29 @@ describe('COLORBLIND_WATERFALL', () => {
 		expect(COLORBLIND_WATERFALL.positive).not.toBe(COLORBLIND_WATERFALL.negative);
 		expect(COLORBLIND_SAFE_COLORS).toContain(COLORBLIND_WATERFALL.positive);
 		expect(COLORBLIND_SAFE_COLORS).toContain(COLORBLIND_WATERFALL.negative);
+	});
+});
+
+describe('asChartColor (saiku#1836)', () => {
+	test('wraps a bare HSL triple so ECharts can parse it', () => {
+		// tokens.css stores `--fg: 220 15% 99%` for `hsl(var(--fg))`. Handed raw
+		// to ECharts it is not a colour, and the axis renders invisible.
+		expect(asChartColor('220 15% 99%', '#000')).toBe('hsl(220 15% 99%)');
+	});
+
+	test('keeps an alpha suffix intact', () => {
+		expect(asChartColor('220 13% 22% / 0.5', '#000')).toBe('hsl(220 13% 22% / 0.5)');
+	});
+
+	test('passes through values that are already colours', () => {
+		// --chart-* are stored as hex, which is why the series were never broken.
+		expect(asChartColor('#b0182a', '#000')).toBe('#b0182a');
+		expect(asChartColor('rgb(1 2 3)', '#000')).toBe('rgb(1 2 3)');
+		expect(asChartColor('hsl(220 15% 99%)', '#000')).toBe('hsl(220 15% 99%)');
+	});
+
+	test('falls back when the token is missing', () => {
+		expect(asChartColor('', '#abcdef')).toBe('#abcdef');
+		expect(asChartColor('   ', '#abcdef')).toBe('#abcdef');
 	});
 });
