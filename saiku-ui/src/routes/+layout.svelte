@@ -22,6 +22,10 @@
   // preserve the existing base CSS in app.css). Must load AFTER tokens.css
   // so the @theme bridge can reference --fg / --bg / etc.
   import "@concepttocloud/saiku-design-system/tailwind.css";
+  // Motion baseline (overlay/panel keyframes + the prefers-reduced-motion
+  // guard). Package-side because design-system components animate against
+  // those keyframes by name.
+  import "@concepttocloud/saiku-design-system/motion.css";
   import "$lib/styles/app.css";
 
   let { children } = $props();

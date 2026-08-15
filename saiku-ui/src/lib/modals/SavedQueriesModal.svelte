@@ -19,7 +19,7 @@
   import { session } from "$lib/stores/session.svelte";
   import { repository } from "$lib/stores/repository.svelte";
   import PermissionsModal from "$lib/modals/PermissionsModal.svelte";
-  import Skeleton from "$lib/components/Skeleton.svelte";
+  import { Skeleton } from "$lib/design-system";
   import EmptyState from "$lib/components/EmptyState.svelte";
   import type { ThinQuery } from "$lib/api/query";
   import { toasts } from "$lib/stores/toasts.svelte";

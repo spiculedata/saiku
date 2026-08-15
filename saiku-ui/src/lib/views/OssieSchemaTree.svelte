@@ -2,7 +2,7 @@
   import { selection } from "$lib/stores/selection.svelte";
   import { ossieQuery } from "$lib/stores/ossieQuery.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
-  import Skeleton from "$lib/components/Skeleton.svelte";
+  import { Skeleton } from "$lib/design-system";
   import { Tooltip } from "$lib/components/ui";
   import { Calendar, Info, Lock, Sigma, Table2 } from "@lucide/svelte";
 

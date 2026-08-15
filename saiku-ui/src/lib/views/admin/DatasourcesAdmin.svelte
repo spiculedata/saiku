@@ -8,7 +8,7 @@
   import { platform } from "$lib/stores/platform.svelte";
   import ConfirmModal from "$lib/modals/ConfirmModal.svelte";
   import Modal from "$lib/components/Modal.svelte";
-  import Skeleton from "$lib/components/Skeleton.svelte";
+  import { Skeleton } from "$lib/design-system";
   import { generateSchemaHref, generateSchemaLabel } from "./dataSourceActions";
 
   let list = $state<AdminDatasource[]>([]);

@@ -24,6 +24,8 @@ export { default as SectionCard } from './SectionCard.svelte';
 export { default as Toast } from './Toast.svelte';
 export { default as FormField } from './FormField.svelte';
 export { default as SortableColumnHeader } from './SortableColumnHeader.svelte';
+export { default as ContextMenu, type ContextMenuItem } from './ContextMenu.svelte';
+export { default as Skeleton } from './Skeleton.svelte';
 
 // Tokens — typed contract for tone / size vocabulary.
 export { TONES, TONE_CLASSES, SIZES, type Tone, type Size } from './tokens';

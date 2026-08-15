@@ -1,32 +1,100 @@
+<!--
+	Button — the action primitive.
+
+	Renders a real <button>, or an <a> when `href` is set (same shape, so an
+	anchor-as-button doesn't need hand-written classes).
+
+	Ergonomics carried over from saiku-cloud's newer primitive set:
+	  - `loading` disables the control and swaps the leading icon for a spinner
+	  - `iconLeft` / `iconRight` snippets are sized and spaced by the component
+	  - `fullWidth` stretches to the container
+	  - `href` polymorphism
+
+	Composability carried over from the older shadcn-shaped one:
+	  - `class` merges with the variant classes (via cn / tailwind-merge), so a
+	    caller can override without !important or a wrapper
+	  - every other attribute spreads onto the element, which is what keeps
+	    `title`, `aria-*`, `role` and `data-testid` working on ~25 call sites
+	  - the class contract lives in ./button-variants and is importable on its
+	    own, for code that wants the classes without the component
+
+	The spinner is an inline SVG rather than a lucide import: this ships in a
+	published package and shouldn't force an icon-library dependency on
+	consumers for one glyph.
+-->
 <script lang="ts">
-	import type { HTMLButtonAttributes } from 'svelte/elements';
+	import type { HTMLAnchorAttributes, HTMLButtonAttributes } from 'svelte/elements';
+	import type { Snippet } from 'svelte';
 	import { cn } from '../utils';
-	// The class contract lives in a plain .ts module so non-component code can
-	// import it without pulling the component graph in behind it — see the note
-	// in ./button-variants.ts.
-	//
-	// This component does NOT re-export it. The `/ui` barrel sources the variants
-	// straight from ./button-variants, and the package's exports map never exposes
-	// button.svelte on its own, so nothing can reach the variants through here.
-	// (Re-exporting an imported binding from a Svelte <script module> also trips
-	// eslint's no-import-assign, since svelte-eslint-parser shares one scope
-	// across the two script blocks.)
 	import { buttonVariants, type ButtonVariant, type ButtonSize } from './button-variants';
 
-	interface Props extends HTMLButtonAttributes {
+	type Props = {
 		variant?: ButtonVariant;
 		size?: ButtonSize;
-	}
+		loading?: boolean;
+		fullWidth?: boolean;
+		href?: string | null;
+		children?: Snippet;
+		iconLeft?: Snippet;
+		iconRight?: Snippet;
+		class?: string;
+	} & Omit<HTMLButtonAttributes & HTMLAnchorAttributes, 'class' | 'href' | 'size'>;
 
 	let {
-		variant = 'default',
-		size = 'default',
+		variant = 'primary',
+		size = 'md',
+		loading = false,
+		fullWidth = false,
+		href = null,
+		disabled = false,
 		class: className,
 		children,
+		iconLeft,
+		iconRight,
 		...restProps
 	}: Props = $props();
+
+	const classes = $derived(
+		cn(buttonVariants({ variant, size }), fullWidth && 'w-full', className)
+	);
+	// `loading` implies non-interactive: a caller shouldn't have to pass both.
+	const isDisabled = $derived(disabled || loading);
 </script>
 
-<button class={cn(buttonVariants({ variant, size }), className)} {...restProps}>
-	{@render children?.()}
-</button>
+{#snippet lead()}
+	{#if loading}
+		<svg
+			class="size-3.5 animate-spin"
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="2"
+			stroke-linecap="round"
+			aria-hidden="true"
+		>
+			<path d="M21 12a9 9 0 1 1-6.219-8.56" />
+		</svg>
+	{:else}
+		{@render iconLeft?.()}
+	{/if}
+{/snippet}
+
+{#if href}
+	<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
+	<a
+		href={isDisabled ? undefined : href}
+		class={classes}
+		aria-disabled={isDisabled ? 'true' : undefined}
+		{...restProps}
+	>
+		{@render lead()}
+		{@render children?.()}
+		{@render iconRight?.()}
+	</a>
+{:else}
+	<button class={classes} disabled={isDisabled} {...restProps}>
+		{@render lead()}
+		{@render children?.()}
+		{@render iconRight?.()}
+	</button>
+{/if}

@@ -15,7 +15,7 @@ npm install @concepttocloud/saiku-design-system
 | Entry | Contents |
 | --- | --- |
 | `@concepttocloud/saiku-design-system` | Compounds: `PageHeader`, `FeedbackBanner`, `Badge`, `EmptyState`, `SectionCard`, `Toast`, `FormField`, `SortableColumnHeader`, plus the `TONES` / `TONE_CLASSES` / `SIZES` vocabulary. |
-| `@concepttocloud/saiku-design-system/ui` | shadcn-shaped primitives: `Button` (+ `buttonVariants`), `Card` group, `Input`, `Tooltip`. |
+| `@concepttocloud/saiku-design-system/ui` | Primitives. Action: `Button` (+ `buttonVariants`). Surface: `Card` group, `Divider`. Form: `Input`, `Textarea`, `Checkbox`, `Radio`, `Select`, `Switch`. Overlay: `Tooltip`, `Popover`, `Dialog`, `DropdownMenu`, `MenuItem`. Misc: `Kbd`. |
 | `@concepttocloud/saiku-design-system/ui/button-variants` | Just the button class contract (`buttonVariants` + its types). Import from here, not the `/ui` barrel, when you only want the classes — the barrel pulls in every primitive, `Tooltip`'s `bits-ui` dependency included. |
 | `@concepttocloud/saiku-design-system/tokens.css` | The token layer — every colour, space, radius, type, weight, shadow and duration token, with light + dark values. |
 | `@concepttocloud/saiku-design-system/tailwind.css` | Tailwind v4 entry: `@theme inline` bridge mapping the tokens onto Tailwind's namespace, plus the `dark:` custom variant. |
@@ -76,6 +76,33 @@ white-on-500 sits at roughly 2.8:1.
 > (which resolves through `--on-success-action`) rather than assuming white reads on it.
 > Tone fills that need a dark-mode-safe background should use the `-soft` variants
 > (`bg-success-soft`), which are built for exactly that.
+
+## The Button, and the two generations behind it
+
+saiku-cloud grew a second primitive set after this one, with better ergonomics —
+`loading` state, `iconLeft` / `iconRight` snippets, `href` polymorphism, `fullWidth` — but
+hand-rolled classes, so it had no exportable class contract and no `class` or attribute
+passthrough. The older shadcn-shaped set had the contract and the composability and none of
+the ergonomics. The migration between them stalled at 3 call sites against 195.
+
+`Button` here is the union of both, so nothing was thrown away:
+
+```svelte
+<Button variant="outline" size="sm" loading={saving} onclick={save}>Save</Button>
+<Button href="/docs" variant="link">Docs</Button>
+<Button variant="ghost" size="icon" title="Close" aria-label="Close">…</Button>
+```
+
+- **Variants**: `primary` (default), `secondary`, `outline`, `ghost`, `destructive`, `link`,
+  `text`. `default` is kept as an alias for `primary`.
+- **Sizes**: `sm`, `md` (default), `lg`, `icon`, `none`. `default` is an alias for `md`.
+- `class` merges through `tailwind-merge`, and every other attribute spreads onto the
+  element — so `title`, `aria-*`, `role` and `data-testid` all work.
+
+> **Sizing changed with 2.0.0.** The scale is the newer, tighter one: `sm` is `h-7` (was
+> `h-9`) and the default is `h-9` (was `h-10`). That's a deliberate visual change across
+> every button, not a regression. If a specific button needs the old height, pass
+> `size="lg"` (`h-10`) or override with `class`.
 
 ## Adding a component
 
