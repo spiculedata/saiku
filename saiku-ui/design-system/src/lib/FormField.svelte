@@ -37,8 +37,20 @@
 	let { label, hint, error, required = false, testid, children }: Props = $props();
 </script>
 
+<!--
+	Label treatment matches saiku-ui's legacy `.field__label` — 13px (text-sm
+	resolves to --fs-sm through the token bridge), normal weight, --fg-muted.
+	NOT a bolder full-strength label, which is what this component used to have.
+
+	The reason is migration cost, not taste. `.field` is on 117 controls across
+	42 files and this component on 10; matching the incumbent makes replacing
+	`.field` a visually neutral swap instead of a 117-control form redesign, and
+	keeps 2.0.0's visual change to one thing (the button scale) so a regression
+	is attributable. If the bolder label is wanted, change it here deliberately
+	once the migration has landed — not as a side effect of it.
+-->
 <label class="flex flex-col gap-1 text-sm" data-testid={testid}>
-	<span class="font-medium">
+	<span class="text-fg-muted">
 		{label}{#if required}<span class="ml-0.5 text-destructive" aria-hidden="true">*</span>{/if}
 	</span>
 	{@render children()}
