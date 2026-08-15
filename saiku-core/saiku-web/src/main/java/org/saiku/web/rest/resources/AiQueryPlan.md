@@ -24,6 +24,7 @@
 > | Member-search endpoint | (not in plan) | `GET /ai/members/search` |
 > | Drillthrough payload | "raw row detail" (unspecified) | Rows of `{column → AiCell{value, formatted, unit}}` |
 > | Error envelope | Bespoke `{ error: "validation", field, message }` | Same `AiQueryResponse` shape with `status:VALIDATION_ERROR`, `field`, `available` |
+> | Dropped measures | (not in plan; silently omitted) | A requested measure with no join path to a filtered dimension is surfaced explicitly as a typed cell `{value:null, formatted:null, unavailable:"no join path to filtered dimension(s): …"}`, not dropped (saiku#1780) |
 > | File locations | `saiku-web/.../rest/objects/ai/` | `saiku-service/.../service/olap/ai/` (request types live with the converter, not the resource) |
 > | Phase-3 enrichment | Separate `enrichedDimensions` field | Overlay merged in-place onto each level/dimension; `displayName` alongside `name` |
 >

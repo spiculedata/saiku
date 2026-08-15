@@ -495,8 +495,55 @@ public class AiQueryResource {
             }
         }
 
-        AiQueryResponse resp = buildResponse(tq, cds, start, format);
+        // saiku#1780: pass the requested measure labels + slicer dimensions so
+        // buildResponse can surface any measure Mondrian dropped for lack of a
+        // join path to a filtered dimension (instead of silently omitting it).
+        AiQueryResponse resp =
+                buildResponse(tq, cds, start, format, requestedMeasureLabels(req, schema), filterDimensionLabels(req));
         return Response.ok(resp).type(MediaType.APPLICATION_JSON).build();
+    }
+
+    /**
+     * saiku#1780 — collect the labels an agent might recognise for every
+     * requested measure: the raw name it sent, plus (resolved via the schema)
+     * the canonical name and the display name. Carrying all three lets
+     * {@link #detectDroppedMeasures} match a request against result columns
+     * regardless of whether the caller used the canonical or the display label.
+     */
+    private static List<String> requestedMeasureLabels(AiQueryRequest req, AiSchema schema) {
+        List<String> labels = new ArrayList<>();
+        if (req == null || req.getMeasures() == null) return labels;
+        for (org.saiku.service.olap.ai.AiMeasureSelection m : req.getMeasures()) {
+            if (m == null || m.getName() == null || m.getName().trim().isEmpty()) continue;
+            String requested = m.getName().trim();
+            if (!labels.contains(requested)) labels.add(requested);
+            if (schema != null) {
+                AiSchema.Measure resolved = schema.measures.get(AiSchema.key(requested));
+                if (resolved == null) {
+                    String canonKey = schema.measureAliases.get(AiSchema.key(requested));
+                    if (canonKey != null) resolved = schema.measures.get(canonKey);
+                }
+                if (resolved != null) {
+                    if (resolved.name != null && !labels.contains(resolved.name)) labels.add(resolved.name);
+                    if (resolved.displayName != null && !labels.contains(resolved.displayName)) {
+                        labels.add(resolved.displayName);
+                    }
+                }
+            }
+        }
+        return labels;
+    }
+
+    /** saiku#1780 — the dimension names on the slicer, for the drop reason. */
+    private static List<String> filterDimensionLabels(AiQueryRequest req) {
+        List<String> dims = new ArrayList<>();
+        if (req == null || req.getFilters() == null) return dims;
+        for (org.saiku.service.olap.ai.AiFilterSelection f : req.getFilters()) {
+            if (f == null || f.getDimension() == null || f.getDimension().trim().isEmpty()) continue;
+            String d = f.getDimension().trim();
+            if (!dims.contains(d)) dims.add(d);
+        }
+        return dims;
     }
 
     /**
@@ -2371,6 +2418,26 @@ public class AiQueryResource {
     }
 
     private AiQueryResponse buildResponse(ThinQuery tq, CellDataSet cds, long startedAt, String format) {
+        return buildResponse(
+                tq, cds, startedAt, format, java.util.Collections.emptyList(), java.util.Collections.emptyList());
+    }
+
+    /**
+     * @param requestedMeasureLabels every measure the caller asked for, as
+     *     the labels an agent would recognise (canonical name + display name).
+     *     Used to detect requested-but-absent measures (saiku#1780) — a measure
+     *     with no join path to a filtered dimension is dropped from the result
+     *     by Mondrian, and would otherwise vanish silently.
+     * @param filterDimensions dimensions on the slicer, used to phrase the
+     *     "no join path" reason. May be empty.
+     */
+    private AiQueryResponse buildResponse(
+            ThinQuery tq,
+            CellDataSet cds,
+            long startedAt,
+            String format,
+            List<String> requestedMeasureLabels,
+            List<String> filterDimensions) {
         boolean useMatrix = "matrix".equalsIgnoreCase(format);
         AiQueryResponse resp = new AiQueryResponse();
         resp.setQueryId(tq.getName());
@@ -2493,7 +2560,9 @@ public class AiQueryResource {
 
                     if (useMatrix) {
                         Map<String, AiCell> cells = new LinkedHashMap<>();
-                        for (int c = rowHeaderCount; c < totalWidth; c++) {
+                        // saiku#1780: guard row[c] — a ragged/short row (fewer
+                        // cells than totalWidth) must not throw AIOOBE.
+                        for (int c = rowHeaderCount; c < totalWidth && c < row.length; c++) {
                             int colIdx = c - rowHeaderCount;
                             cells.put(String.valueOf(colIdx), toCell(row[c]));
                             if (matrixColumnCaptions.size() <= colIdx) {
@@ -2509,8 +2578,9 @@ public class AiQueryResource {
                             String key = c < rowHeaderCaptions.size() ? rowHeaderCaptions.get(c) : ("row" + c);
                             record.put(key, row[c] == null ? "" : safe(row[c].getFormattedValue()));
                         }
-                        // Data cells next, named by column caption.
-                        for (int c = rowHeaderCount; c < totalWidth; c++) {
+                        // Data cells next, named by column caption. saiku#1780:
+                        // guard row[c] — a short row must not throw AIOOBE.
+                        for (int c = rowHeaderCount; c < totalWidth && c < row.length; c++) {
                             int colIdx = c - rowHeaderCount;
                             String colKey =
                                     colIdx < cols.size() ? cols.get(colIdx).getCaption() : ("col" + colIdx);
@@ -2527,6 +2597,64 @@ public class AiQueryResource {
 
             List<String> measureNames = new ArrayList<>();
             for (AiQueryMetadata.Caption c : cols) measureNames.add(c.getCaption());
+
+            // saiku#1780: a requested measure with no join path to a filtered
+            // dimension is dropped from the result by Mondrian — it never
+            // becomes a column. Previously it vanished silently: the agent got
+            // fewer columns than it asked for with no explanation. Detect those
+            // and surface each explicitly with a null-valued, self-describing
+            // "unavailable" cell (VALIDATION-style reason) so the caller can act
+            // on it. Additive: normal queries (nothing dropped) are unchanged.
+            //
+            // Present columns come from the ACTUAL emitted payload (record keys
+            // minus row-headers / matrix captions), not just header-derived
+            // `cols` — the measures-only shape puts measure captions in the
+            // record keys with an empty header, so `cols` would be empty there.
+            List<String> presentColumns = new ArrayList<>();
+            if (useMatrix) {
+                presentColumns.addAll(matrixColumnCaptions);
+            } else {
+                java.util.Set<String> rowHeaderKeys = new java.util.HashSet<>(rowHeaderCaptions);
+                java.util.LinkedHashSet<String> seen = new java.util.LinkedHashSet<>();
+                for (Map<String, Object> record : records) {
+                    for (String k : record.keySet()) {
+                        if (!rowHeaderKeys.contains(k)) seen.add(k);
+                    }
+                }
+                presentColumns.addAll(seen);
+            }
+            Map<String, AiCell> dropped =
+                    detectDroppedMeasures(requestedMeasureLabels, presentColumns, filterDimensions);
+            if (!dropped.isEmpty()) {
+                // Record the dropped names in metadata.measures too, so the
+                // measures list reflects everything requested, not just what
+                // produced a column.
+                for (String d : dropped.keySet()) {
+                    if (!measureNames.contains(d)) measureNames.add(d);
+                }
+                if (useMatrix) {
+                    // Matrix cells are keyed by column index; append the dropped
+                    // measures as fresh trailing columns on every row.
+                    int base = matrixColumnCaptions.size();
+                    for (Map.Entry<String, AiCell> e : dropped.entrySet()) {
+                        matrixColumnCaptions.add(e.getKey());
+                    }
+                    if (matrix.isEmpty()) matrix.add(new LinkedHashMap<>());
+                    for (Map<String, AiCell> rowCells : matrix) {
+                        int idx = base;
+                        for (Map.Entry<String, AiCell> e : dropped.entrySet()) {
+                            rowCells.put(String.valueOf(idx++), e.getValue());
+                        }
+                    }
+                } else {
+                    if (records.isEmpty()) records.add(new LinkedHashMap<>());
+                    for (Map<String, Object> record : records) {
+                        for (Map.Entry<String, AiCell> e : dropped.entrySet()) {
+                            record.putIfAbsent(e.getKey(), e.getValue());
+                        }
+                    }
+                }
+            }
             meta.setMeasures(measureNames);
 
             // saiku#905 / #1324: k-anonymity small-cell suppression on BOTH
@@ -2541,6 +2669,68 @@ public class AiQueryResource {
         }
         resp.setRuntimeMs(System.currentTimeMillis() - startedAt);
         return resp;
+    }
+
+    /**
+     * saiku#1780 — compare the measures the caller requested against the
+     * columns that actually came back, and build a self-describing
+     * "unavailable" cell for every requested measure that produced no column.
+     *
+     * <p>A measure with no join path to a filtered/sliced dimension is dropped
+     * from the result by Mondrian, so it never appears as a result column.
+     * Matching is normalised (trim + case-insensitive) so a request that used a
+     * measure's display name still matches its canonical caption column, and
+     * vice-versa — {@code requestedMeasureLabels} is expected to carry BOTH the
+     * canonical name and the display name for each requested measure.
+     *
+     * <p>Package-private + static for unit-testability.
+     *
+     * @return an insertion-ordered map of dropped measure label → unavailable
+     *     cell. Empty (never null) when nothing was dropped — the common case.
+     */
+    static Map<String, AiCell> detectDroppedMeasures(
+            List<String> requestedMeasureLabels, List<String> presentColumns, List<String> filterDimensions) {
+        Map<String, AiCell> dropped = new LinkedHashMap<>();
+        if (requestedMeasureLabels == null || requestedMeasureLabels.isEmpty()) return dropped;
+
+        java.util.Set<String> present = new java.util.HashSet<>();
+        if (presentColumns != null) {
+            for (String col : presentColumns) {
+                if (col != null) present.add(col.trim().toLowerCase(java.util.Locale.ROOT));
+            }
+        }
+
+        String reason = droppedMeasureReason(filterDimensions);
+
+        // requestedMeasureLabels alternates/carries canonical+display labels for
+        // each measure. Dedup on the label we surface, and treat a measure as
+        // present if ANY of its labels matched a present column.
+        java.util.Set<String> requestedSeen = new java.util.LinkedHashSet<>();
+        for (String label : requestedMeasureLabels) {
+            if (label == null || label.trim().isEmpty()) continue;
+            requestedSeen.add(label.trim());
+        }
+        for (String label : requestedSeen) {
+            if (present.contains(label.toLowerCase(java.util.Locale.ROOT))) continue;
+            // Not present under this label. Only emit once per surfaced label.
+            if (!dropped.containsKey(label)) {
+                dropped.put(label, AiCell.unavailable(reason));
+            }
+        }
+        return dropped;
+    }
+
+    /** Phrase the "no join path" reason from the filtered dimensions. */
+    private static String droppedMeasureReason(List<String> filterDimensions) {
+        if (filterDimensions == null || filterDimensions.isEmpty()) {
+            return "no join path to a filtered dimension";
+        }
+        java.util.LinkedHashSet<String> dims = new java.util.LinkedHashSet<>();
+        for (String d : filterDimensions) {
+            if (d != null && !d.trim().isEmpty()) dims.add(d.trim());
+        }
+        if (dims.isEmpty()) return "no join path to a filtered dimension";
+        return "no join path to filtered dimension(s): " + String.join(", ", dims);
     }
 
     /**
