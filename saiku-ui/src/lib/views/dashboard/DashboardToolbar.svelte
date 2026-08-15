@@ -65,7 +65,7 @@
 		saving?: boolean;
 		dirty?: boolean;
 		onSave?: () => void;
-		onAddTile?: (type: TileType) => void;
+		onAddTile?: (type: TileType, chartType?: string) => void;
 		/** Issue #927 — true iff any click-filter exists OR any panel
 		 *  widget's members[] differs from its saved default. Drives the
 		 *  Reset filters button's disabled state. */
@@ -479,7 +479,7 @@
 			</Button>
 		</div>
 
-		<AddTileMenu onPick={(t) => onAddTile?.(t)} disabled={!onAddTile} />
+		<AddTileMenu onPick={(t, ct) => onAddTile?.(t, ct)} disabled={!onAddTile} />
 	{/if}
 
 	<!-- #929/#1610: Export the current dashboard view (PNG / PDF) stays INLINE.

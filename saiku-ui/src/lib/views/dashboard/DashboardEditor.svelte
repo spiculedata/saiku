@@ -127,11 +127,14 @@
 		dashboardStore.updateTags(tags);
 	}
 
-	function handleAddTile(type: TileType): void {
+	// saiku#1837: the add menu picks the chart TYPE up front, so a new chart
+	// tile arrives as the type the author chose rather than always a bar.
+	// `chartType` is undefined for non-chart tiles.
+	function handleAddTile(type: TileType, chartType?: string): void {
 		const layout = dashboardStore.current?.layout;
 		if (!layout) return;
 		const tile = buildTile(layout, type, newTileId());
-		dashboardStore.addTile(tile);
+		dashboardStore.addTile(chartType ? { ...tile, chartType } : tile);
 	}
 
 	// Issue #927: Reset filters button enable-state. True when there are

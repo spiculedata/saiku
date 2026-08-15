@@ -50,6 +50,22 @@ export interface TileRenderer {
 	label: string;
 	/** Optional icon (emoji or glyph) for the picker entry. */
 	icon?: string;
+	/** One-line description shown in the add-tile picker. Without it every
+	 *  renderer reads as the same generic "custom renderer" entry, which tells
+	 *  an app author nothing about what it draws. */
+	description?: string;
+	/** Where this renderer belongs in the add-tile UI.
+	 *
+	 *  'chart'    — it draws data, so it appears INSIDE the Chart type gallery
+	 *               alongside the built-in chart types. An app author picking a
+	 *               visualisation shouldn't have to know that Graph happens to
+	 *               be implemented as a custom renderer while Bar isn't.
+	 *  'advanced' — an escape hatch (raw ECharts JSON, sandboxed JS). Real, but
+	 *               not a peer of "Chart" for someone assembling an app.
+	 *
+	 *  Defaults to 'advanced' so a newly registered third-party renderer can't
+	 *  quietly appear in the primary gallery. */
+	placement?: 'chart' | 'advanced';
 	/** In-app tile body component. Receives the same props built-in tiles get. */
 	component: Component;
 	/** Token-scoped embed tile body. Omit → "Unsupported" in the embed surface. */
