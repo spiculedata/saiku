@@ -57,9 +57,11 @@ public class Query2ResourceIT {
 
     @Test
     public void executeMdx_unknownMeasure_returnsQueryResultWithErrorField() throws Exception {
-        // Query2Resource.execute catches Mondrian exceptions and returns
-        // 200 with a QueryResult body whose 'error' field carries the
-        // underlying message. SPA renders this as an inline error.
+        // saiku#1865: a measure that does not exist never reaches the warehouse — Mondrian fails
+        // to resolve it — so this is the caller's mistake and reports 400. The BODY is unchanged:
+        // still a QueryResult whose 'error' carries the underlying message, which the SPA renders
+        // as an inline error. Before #1865 this answered 200, which made the failure invisible to
+        // anything reasoning about transport.
         String body =
                 """
                 {
@@ -75,7 +77,7 @@ public class Query2ResourceIT {
                 }
                 """;
         HttpResponse<String> resp = harness.postAuthJson("/rest/saiku/api/query/execute", body);
-        assertEquals(200, resp.statusCode());
+        assertEquals("an unresolvable measure is the caller's mistake", 400, resp.statusCode());
         JsonNode r = harness.parse(resp);
         assertFalse(
                 "response should carry an 'error' field for bad MDX",

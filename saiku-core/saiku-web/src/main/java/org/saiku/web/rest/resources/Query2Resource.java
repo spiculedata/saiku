@@ -37,10 +37,14 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import mondrian.olap.MondrianException;
+import mondrian.olap.ResourceLimitExceededException;
+import mondrian.olap.ResultLimitExceededException;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.olap4j.CellSet;
+import org.olap4j.OlapException;
 import org.saiku.olap.dto.SimpleCubeElement;
 import org.saiku.olap.dto.resultset.AbstractBaseCell;
 import org.saiku.olap.dto.resultset.CellDataSet;
@@ -367,14 +371,45 @@ public class Query2Resource {
                 .build();
     }
 
-    /** True when the cause chain carries a resolution failure the caller can correct. */
+    /**
+     * True when the cause chain describes something the CALLER got wrong, rather than something
+     * that went wrong on our side.
+     *
+     * <p>Three signals, all by exception type — deliberately not by message text, which is
+     * localised, version-dependent and the first thing to drift:
+     *
+     * <ul>
+     *   <li>{@link SaikuOlapException} — Saiku could not resolve a connection or a cube.
+     *   <li>A {@link MondrianException} with no {@link SQLException} beneath it — the query failed
+     *       to parse or resolve, so it never reached the database. A typo'd measure lands here, and
+     *       it is by far the most common query failure there is.
+     *   <li>…except the resource-limit and cancellation subclasses, which mean the query was
+     *       perfectly valid and we could not finish it. Those are ours.
+     * </ul>
+     *
+     * <p>{@link OlapException} extends {@link SQLException}, so it is excluded from the
+     * reached-the-database test — otherwise every olap4j wrapper would look like a backend fault.
+     */
     private static boolean isClientError(Throwable t) {
+        boolean sawMondrianFailure = false;
         for (Throwable c = t; c != null; c = c.getCause() == c ? null : c.getCause()) {
             if (c instanceof SaikuOlapException) {
                 return true;
             }
+            // ResultLimitExceededException is the abstract base of the whole family —
+            // MemoryLimitExceededException, QueryTimeoutException and QueryCanceledException all
+            // extend it — so one check covers them.
+            if (c instanceof ResultLimitExceededException || c instanceof ResourceLimitExceededException) {
+                return false;
+            }
+            if (c instanceof SQLException && !(c instanceof OlapException)) {
+                return false; // the query reached the warehouse and the warehouse failed
+            }
+            if (c instanceof MondrianException) {
+                sawMondrianFailure = true;
+            }
         }
-        return false;
+        return sawMondrianFailure;
     }
 
     private boolean clientPrefersArrow(HttpHeaders headers) {

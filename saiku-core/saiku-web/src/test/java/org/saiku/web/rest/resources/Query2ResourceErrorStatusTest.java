@@ -12,6 +12,9 @@ import static org.junit.Assert.assertTrue;
 
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import mondrian.olap.MemoryLimitExceededException;
+import mondrian.olap.MondrianException;
+import mondrian.olap.QueryTimeoutException;
 import org.junit.Test;
 import org.saiku.olap.dto.resultset.CellDataSet;
 import org.saiku.olap.query2.ThinQuery;
@@ -108,6 +111,40 @@ public class Query2ResourceErrorStatusTest {
         assertTrue(
                 "the message lost the connection name: " + qr.getError(),
                 qr.getError().contains("nope"));
+    }
+
+    /**
+     * A typo'd measure — the commonest query failure there is — never reaches the warehouse, so it
+     * is the caller's to fix. Mondrian reports it as a bare MondrianException, which is why the
+     * classification cannot stop at SaikuOlapException.
+     */
+    @Test
+    public void anUnresolvableMdxReferenceIsABadRequest() {
+        Response resp = executeFailing(
+                new MondrianException("Mondrian Error:MDX object '[Measures].[Nope]' not found in cube 'Sales'"));
+
+        assertEquals(400, resp.getStatus());
+    }
+
+    /** A warehouse failure surfaced through Mondrian is ours, not the caller's. */
+    @Test
+    public void aMondrianFailureCausedByTheWarehouseIsAServerError() {
+        Response resp = executeFailing(new MondrianException(
+                "Mondrian Error:Internal error", new java.sql.SQLException("connection reset by peer")));
+
+        assertEquals(500, resp.getStatus());
+    }
+
+    /** Resource limits mean the query was valid and we could not finish it. */
+    @Test
+    public void aResourceLimitIsAServerErrorNotAClientError() {
+        // Both extend ResultLimitExceededException, which is the abstract base the production
+        // check keys on — so these two also pin that the base covers the whole family.
+        assertEquals(500, executeFailing(new QueryTimeoutException("timed out")).getStatus());
+        assertEquals(
+                500,
+                executeFailing(new MemoryLimitExceededException("cell cache full"))
+                        .getStatus());
     }
 
     /** JSON, so the client can parse the envelope off a non-2xx at all. */
