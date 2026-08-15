@@ -54,6 +54,18 @@ public final class DatasourceNameDecoration {
      *     means there is no decoration to remove)
      * @return the name to store on disk
      */
+    /**
+     * Add the workspace decoration, i.e. the name a stored datasource is surfaced under after a
+     * load. The exact inverse of {@link #undecorate}.
+     */
+    public static String decorate(String storedName, String workspace) {
+        if (storedName == null || workspace == null || workspace.isEmpty()) {
+            return storedName;
+        }
+        String prefix = workspace + "_";
+        return storedName.startsWith(prefix) ? storedName : prefix + storedName;
+    }
+
     public static String undecorate(String name, String workspace) {
         if (name == null || workspace == null || workspace.isEmpty()) {
             return name;
