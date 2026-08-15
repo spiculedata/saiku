@@ -1099,11 +1099,13 @@
          PR4 turns it on: the ticker starts (init-method="start"), an admin CRUD
          resource is exposed, and the owner enabled-gate is enforced.
 
-         *** NO MAIL IS SENT. *** There is NO real send handler in the app — only
-         the no-op handler is registered. Neither the ticker nor a manual run can
-         send anything. A job whose type has no registered handler is recorded
-         FAILED by the engine (it never throws), so the ticker survives an empty
-         store or an unknown-type job.
+         Handlers registered below: the no-op ("NOOP"), and — as of #1098 — the
+         first real handler THRESHOLD_ALERT (measure-crosses-threshold alerting).
+         The threshold-alert handler is scheduler-only: it fires to a
+         SSRF-validated webhook or the server's own self-address, and NEVER uses
+         the send-to-others recipient gate or the renderer. A job whose type has
+         no registered handler is recorded FAILED by the engine (it never
+         throws), so the ticker survives an empty store or an unknown-type job.
          ==================================================================== -->
 
     <!-- File-backed job store under ${saiku.home}/jobs (same ctor shape as mailConfigStore). -->
@@ -1129,13 +1131,71 @@
         <constructor-arg ref="ownerIdentityResolver"/>
     </bean>
 
-    <!-- The no-op handler — sends nothing, touches no external system, always succeeds. It is the ONLY
-         handler wired in PR4; a real EMAIL_SUBSCRIPTION / WEBHOOK_DIGEST handler lands in a later slice. -->
+    <!-- The no-op handler — sends nothing, touches no external system, always succeeds. -->
     <bean id="noOpJobHandler" class="org.saiku.service.schedule.NoOpJobHandler"/>
 
+    <!-- ====================================================================
+         #1098: THRESHOLD_ALERT handler — the first REAL JobHandler.
+
+         Evaluates a single measure on the job's cadence and, when it crosses
+         an admin-configured threshold (GT / LT / ABS_CHANGE / PCT_CHANGE),
+         fires an alert. It runs AS the job owner (the owner-identity runner
+         already established the owner's SecurityContext — the handler does NOT
+         re-impersonate), so the measure value honours exactly the owner's RLS.
+
+         *** SCHEDULER-ONLY. *** It NEVER uses the send-to-others recipient gate
+         or the analysis renderer. Alerts go to exactly two places:
+           - a WEBHOOK — an admin-authored, SSRF-validated https URL (no
+             internal / loopback / link-local host; no request-time host from
+             any untrusted source), OR
+           - EMAIL_SELF — the server's OWN configured self-address (the same
+             selfTo the /email/self endpoint uses), never an arbitrary
+             recipient.
+         ==================================================================== -->
+
+    <!-- Reads one measure's current value by reusing the typed AI Query stack
+         (AiCubeMetadataService -> AiSchemaConverter -> ThinQueryService) — no
+         hand-written MDX.
+
+         #1098 fix: the handler runs on a scheduler WORKER thread with NO bound
+         HTTP request, so it must NOT depend on the session-scoped thinQueryBean
+         (its scoped proxy throws "No thread-bound request found" off-request).
+         Instead we inject ThinQueryService's SINGLETON collaborators — the SAME
+         beans the thinQueryBean definition wires (olapDiscoverServiceBean,
+         saikuQueryCacheBean, userServiceBean, queryCoalescerBean,
+         ossieQueryServiceBean) — and the reader builds a fresh ThinQueryService
+         per run. Owner RLS is preserved via SecurityContextHolder (set by the
+         owner-identity runner) + userService, not the bean scope. -->
+    <bean id="aiMeasureValueReader" class="org.saiku.service.schedule.alert.AiMeasureValueReader">
+        <constructor-arg ref="aiCubeMetadataServiceBean"/>
+        <constructor-arg ref="olapDiscoverServiceBean"/>
+        <constructor-arg ref="saikuQueryCacheBean"/>
+        <constructor-arg ref="userServiceBean"/>
+        <constructor-arg ref="queryCoalescerBean"/>
+        <constructor-arg ref="ossieQueryServiceBean"/>
+    </bean>
+
+    <!-- Webhook channel: POSTs a small JSON body via the JDK HttpClient to the
+         admin-authored, SSRF-validated URL. -->
+    <bean id="webhookAlertChannel" class="org.saiku.service.schedule.alert.WebhookAlertChannel"/>
+
+    <!-- Email-to-self channel: reuses the mailSender + mailConfig beans; sends
+         ONLY to mailConfig.selfTo() — never a client / event-supplied recipient. -->
+    <bean id="selfEmailAlertChannel" class="org.saiku.service.schedule.alert.SelfEmailAlertChannel">
+        <constructor-arg ref="mailSender"/>
+        <constructor-arg ref="mailConfig"/>
+    </bean>
+
+    <!-- The THRESHOLD_ALERT handler itself, wired with both channels + the system clock (cooldown). -->
+    <bean id="thresholdAlertJobHandler" class="org.saiku.service.schedule.alert.ThresholdAlertJobHandler">
+        <constructor-arg ref="aiMeasureValueReader"/>
+        <constructor-arg ref="webhookAlertChannel"/>
+        <constructor-arg ref="selfEmailAlertChannel"/>
+    </bean>
+
     <!-- The live engine. init-method="start" starts the ticker at boot; destroy-method="shutdown"
-         stops both the ticker and worker pools cleanly on context close. The handler registry contains
-         ONLY the no-op handler (keyed "NOOP") — no send handler exists, so nothing can be delivered. -->
+         stops both the ticker and worker pools cleanly on context close. Registered handlers: the
+         no-op ("NOOP") and the threshold-alert ("THRESHOLD_ALERT", #1098). -->
     <bean id="jobScheduler" class="org.saiku.service.schedule.JobScheduler"
           init-method="start" destroy-method="shutdown">
         <constructor-arg ref="jobStore"/>
@@ -1144,6 +1204,7 @@
         <property name="handlers">
             <map>
                 <entry key="NOOP" value-ref="noOpJobHandler"/>
+                <entry key="THRESHOLD_ALERT" value-ref="thresholdAlertJobHandler"/>
             </map>
         </property>
     </bean>
