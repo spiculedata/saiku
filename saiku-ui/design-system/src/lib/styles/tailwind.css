@@ -19,119 +19,119 @@
  * names (`fg`, `bg-muted`, `border`, …) resolve to the same tokens.
  */
 @layer theme, base, components, utilities;
-@import "tailwindcss/theme.css" layer(theme);
-@import "tailwindcss/utilities.css" layer(utilities);
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
 
 /* Tailwind v4 `dark:` variant bound to OUR theme system (explicit
    [data-theme] override + system pref with the light guard), matching
    saiku-cloud so ported `dark:` utilities behave identically. */
 @custom-variant dark {
-  &:where(:root[data-theme="dark"], :root[data-theme="dark"] *) {
-    @slot;
-  }
-  @media (prefers-color-scheme: dark) {
-    &:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *) {
-      @slot;
-    }
-  }
+	&:where(:root[data-theme='dark'], :root[data-theme='dark'] *) {
+		@slot;
+	}
+	@media (prefers-color-scheme: dark) {
+		&:where(:root:not([data-theme='light']), :root:not([data-theme='light']) *) {
+			@slot;
+		}
+	}
 }
 
 @theme inline {
-  /* ---- Foreground / background surfaces (legacy names) ---- */
-  --color-fg: hsl(var(--fg));
-  --color-fg-muted: hsl(var(--fg-muted));
-  --color-fg-subtle: hsl(var(--fg-subtle));
-  --color-bg: hsl(var(--bg));
-  --color-bg-muted: hsl(var(--bg-muted));
-  --color-bg-subtle: hsl(var(--bg-subtle));
-  --color-bg-hover: hsl(var(--bg-hover));
-  --color-bg-overlay: var(--bg-overlay);
+	/* ---- Foreground / background surfaces (legacy names) ---- */
+	--color-fg: hsl(var(--fg));
+	--color-fg-muted: hsl(var(--fg-muted));
+	--color-fg-subtle: hsl(var(--fg-subtle));
+	--color-bg: hsl(var(--bg));
+	--color-bg-muted: hsl(var(--bg-muted));
+	--color-bg-subtle: hsl(var(--bg-subtle));
+	--color-bg-hover: hsl(var(--bg-hover));
+	--color-bg-overlay: var(--bg-overlay);
 
-  /* ---- shadcn-shaped names (cube-designer + shared primitives) ---- */
-  --color-foreground: hsl(var(--foreground));
-  --color-background: hsl(var(--background));
-  --color-card: hsl(var(--card));
-  --color-card-foreground: hsl(var(--card-foreground));
-  --color-popover: hsl(var(--popover));
-  --color-popover-foreground: hsl(var(--popover-foreground));
-  --color-muted: hsl(var(--muted));
-  --color-muted-foreground: hsl(var(--muted-foreground));
-  --color-input: hsl(var(--input));
-  --color-ring: hsl(var(--ring));
+	/* ---- shadcn-shaped names (cube-designer + shared primitives) ---- */
+	--color-foreground: hsl(var(--foreground));
+	--color-background: hsl(var(--background));
+	--color-card: hsl(var(--card));
+	--color-card-foreground: hsl(var(--card-foreground));
+	--color-popover: hsl(var(--popover));
+	--color-popover-foreground: hsl(var(--popover-foreground));
+	--color-muted: hsl(var(--muted));
+	--color-muted-foreground: hsl(var(--muted-foreground));
+	--color-input: hsl(var(--input));
+	--color-ring: hsl(var(--ring));
 
-  /* ---- Borders ---- */
-  --color-border: hsl(var(--border));
-  --color-border-strong: hsl(var(--border-strong));
+	/* ---- Borders ---- */
+	--color-border: hsl(var(--border));
+	--color-border-strong: hsl(var(--border-strong));
 
-  /* ---- Elevation surfaces (bg-elev-2 etc.) ---- */
-  --color-elev-0: hsl(var(--elev-0));
-  --color-elev-1: hsl(var(--elev-1));
-  --color-elev-2: hsl(var(--elev-2));
-  --color-elev-3: hsl(var(--elev-3));
-  --color-elev-4: hsl(var(--elev-4));
+	/* ---- Elevation surfaces (bg-elev-2 etc.) ---- */
+	--color-elev-0: hsl(var(--elev-0));
+	--color-elev-1: hsl(var(--elev-1));
+	--color-elev-2: hsl(var(--elev-2));
+	--color-elev-3: hsl(var(--elev-3));
+	--color-elev-4: hsl(var(--elev-4));
 
-  /* ---- Brand (primary) + pale accent surface ---- */
-  --color-primary: hsl(var(--primary));
-  --color-primary-foreground: hsl(var(--primary-foreground));
-  --color-primary-hover: hsl(var(--primary-hover));
-  --color-primary-strong: hsl(var(--primary-strong));
-  --color-secondary: hsl(var(--secondary));
-  --color-secondary-foreground: hsl(var(--secondary-foreground));
+	/* ---- Brand (primary) + pale accent surface ---- */
+	--color-primary: hsl(var(--primary));
+	--color-primary-foreground: hsl(var(--primary-foreground));
+	--color-primary-hover: hsl(var(--primary-hover));
+	--color-primary-strong: hsl(var(--primary-strong));
+	--color-secondary: hsl(var(--secondary));
+	--color-secondary-foreground: hsl(var(--secondary-foreground));
 
-  --color-accent: hsl(var(--accent));
-  --color-accent-foreground: hsl(var(--accent-foreground));
-  /* legacy accent-* Tailwind names → brand family (kept for any stragglers) */
-  --color-accent-hover: hsl(var(--primary-hover));
-  --color-accent-fg: hsl(var(--primary-foreground));
-  --color-accent-soft: hsl(var(--accent));
-  --color-accent-strong: hsl(var(--primary-strong));
+	--color-accent: hsl(var(--accent));
+	--color-accent-foreground: hsl(var(--accent-foreground));
+	/* legacy accent-* Tailwind names → brand family (kept for any stragglers) */
+	--color-accent-hover: hsl(var(--primary-hover));
+	--color-accent-fg: hsl(var(--primary-foreground));
+	--color-accent-soft: hsl(var(--accent));
+	--color-accent-strong: hsl(var(--primary-strong));
 
-  /* ---- Status tones ---- */
-  /* Foregrounds resolve through the --on-* tokens rather than a literal
+	/* ---- Status tones ---- */
+	/* Foregrounds resolve through the --on-* tokens rather than a literal
      #ffffff so a future theme can darken the on-tone text without editing
      the bridge. They all resolve to white today; saiku-cloud already did
      it this way and the two bridges are now identical in behaviour. */
-  --color-success: hsl(var(--success));
-  --color-success-soft: hsl(var(--success-soft));
-  --color-success-strong: hsl(var(--success-strong));
-  --color-success-foreground: hsl(var(--success-foreground));
-  --color-warning: hsl(var(--warning));
-  --color-warning-soft: hsl(var(--warning-soft));
-  --color-warning-strong: hsl(var(--warning-strong));
-  --color-warning-foreground: hsl(var(--warning-foreground));
-  --color-info: hsl(var(--info));
-  --color-info-foreground: hsl(var(--info-foreground));
-  --color-danger: hsl(var(--danger));
-  --color-danger-soft: hsl(var(--danger-soft));
-  --color-danger-strong: hsl(var(--danger-strong));
-  --color-danger-foreground: hsl(var(--destructive-foreground));
-  --color-destructive: hsl(var(--destructive));
-  --color-destructive-foreground: hsl(var(--destructive-foreground));
+	--color-success: hsl(var(--success));
+	--color-success-soft: hsl(var(--success-soft));
+	--color-success-strong: hsl(var(--success-strong));
+	--color-success-foreground: hsl(var(--success-foreground));
+	--color-warning: hsl(var(--warning));
+	--color-warning-soft: hsl(var(--warning-soft));
+	--color-warning-strong: hsl(var(--warning-strong));
+	--color-warning-foreground: hsl(var(--warning-foreground));
+	--color-info: hsl(var(--info));
+	--color-info-foreground: hsl(var(--info-foreground));
+	--color-danger: hsl(var(--danger));
+	--color-danger-soft: hsl(var(--danger-soft));
+	--color-danger-strong: hsl(var(--danger-strong));
+	--color-danger-foreground: hsl(var(--destructive-foreground));
+	--color-destructive: hsl(var(--destructive));
+	--color-destructive-foreground: hsl(var(--destructive-foreground));
 
-  /* ---- Spacing scale (1 unit = --spacing) ---- */
-  --spacing: 4px;
+	/* ---- Spacing scale (1 unit = --spacing) ---- */
+	--spacing: 4px;
 
-  /* ---- Radii ---- */
-  --radius-sm: var(--radius-sm);
-  --radius-md: var(--radius-md);
-  --radius-lg: var(--radius-lg);
+	/* ---- Radii ---- */
+	--radius-sm: var(--radius-sm);
+	--radius-md: var(--radius-md);
+	--radius-lg: var(--radius-lg);
 
-  /* ---- Fonts ---- */
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-mono);
+	/* ---- Fonts ---- */
+	--font-sans: var(--font-sans);
+	--font-mono: var(--font-mono);
 
-  /* ---- Type scale ---- */
-  --text-xs: var(--fs-xs);
-  --text-sm: var(--fs-sm);
-  --text-md: var(--fs-md);
-  --text-base: var(--fs-md);
-  --text-lg: var(--fs-lg);
-  --text-xl: var(--fs-xl);
-  --text-2xl: var(--fs-2xl);
+	/* ---- Type scale ---- */
+	--text-xs: var(--fs-xs);
+	--text-sm: var(--fs-sm);
+	--text-md: var(--fs-md);
+	--text-base: var(--fs-md);
+	--text-lg: var(--fs-lg);
+	--text-xl: var(--fs-xl);
+	--text-2xl: var(--fs-2xl);
 
-  /* ---- Font weights ---- */
-  --font-weight-normal: var(--weight-normal);
-  --font-weight-medium: var(--weight-medium);
-  --font-weight-semibold: var(--weight-semibold);
-  --font-weight-bold: var(--weight-bold);
+	/* ---- Font weights ---- */
+	--font-weight-normal: var(--weight-normal);
+	--font-weight-medium: var(--weight-medium);
+	--font-weight-semibold: var(--weight-semibold);
+	--font-weight-bold: var(--weight-bold);
 }

@@ -17,17 +17,20 @@
  * Pure: no DOM, no fetches. Tests live alongside.
  */
 
-import type { AiCell, AiQueryResponse } from "$lib/api/aiQuery";
-import type { ChartOptions } from "$lib/views/chartTypes";
-import { DEFAULT_CHART_OPTIONS, isChartType } from "$lib/views/chartTypes";
-import { type ThemeTokens, DEFAULT_THEME_TOKENS } from "$lib/views/chartTheme";
-import { buildChartOption as buildSharedChartOption, type ChartProjection } from "$lib/charts/build";
-import { applySortLimit } from "$lib/charts/sortLimit";
-import { partitionRollups } from "$lib/dashboard/rollupRows";
+import type { AiCell, AiQueryResponse } from '$lib/api/aiQuery';
+import type { ChartOptions } from '$lib/views/chartTypes';
+import { DEFAULT_CHART_OPTIONS, isChartType } from '$lib/views/chartTypes';
+import { type ThemeTokens, DEFAULT_THEME_TOKENS } from '$lib/views/chartTheme';
+import {
+	buildChartOption as buildSharedChartOption,
+	type ChartProjection
+} from '$lib/charts/build';
+import { applySortLimit } from '$lib/charts/sortLimit';
+import { partitionRollups } from '$lib/dashboard/rollupRows';
 
 /** All chart kinds the workspace exposes. Kept as an alias to the canonical
  *  ChartType so existing imports (`import type { ChartKind }`) still resolve. */
-export type { ChartType as ChartKind } from "$lib/views/chartTypes";
+export type { ChartType as ChartKind } from '$lib/views/chartTypes';
 
 /** Re-exported supported-kind guard (single source of truth in chartTypes.ts). */
 export const isSupportedChartKind = isChartType;
@@ -37,18 +40,18 @@ export const isSupportedChartKind = isChartType;
  *  for legacy tiles that have no per-tile {@link ChartOptions}; the chart-tile
  *  editor (#1077) overrides these per tile via the `options` arg below. */
 const DASHBOARD_BASELINE: ChartOptions = {
-  ...DEFAULT_CHART_OPTIONS,
-  title: "",
-  trendLine: "none",
-  dualAxis: false,
-  hideRollupRows: false,
-  // Tiles render the legend at the bottom (the compact builder keeps it a
-  // scroll legend); baseline must say "bottom" so legacy tiles are unchanged.
-  legendPosition: "bottom",
+	...DEFAULT_CHART_OPTIONS,
+	title: '',
+	trendLine: 'none',
+	dualAxis: false,
+	hideRollupRows: false,
+	// Tiles render the legend at the bottom (the compact builder keeps it a
+	// scroll legend); baseline must say "bottom" so legacy tiles are unchanged.
+	legendPosition: 'bottom'
 };
 
 function isAiCell(v: unknown): v is AiCell {
-  return typeof v === "object" && v !== null && "formatted" in (v as object);
+	return typeof v === 'object' && v !== null && 'formatted' in (v as object);
 }
 
 /** Normalise an AiQueryResponse into the shared {rowCategories,
@@ -63,51 +66,51 @@ function isAiCell(v: unknown): v is AiCell {
  *  want the raw shape (the a11y mirror's row count, the geo-coverage notice) opt
  *  in explicitly. */
 export function projectFromAiQueryResponse(
-  response: AiQueryResponse,
-  hideRollupRows = false,
+	response: AiQueryResponse,
+	hideRollupRows = false
 ): ChartProjection {
-  const all = response.data ?? [];
-  if (all.length === 0) return { rowCategories: [], columnCategories: [], matrix: [] };
+	const all = response.data ?? [];
+	if (all.length === 0) return { rowCategories: [], columnCategories: [], matrix: [] };
 
-  // Pick row-header columns (plain string keys) vs measure columns (AiCell
-  // keys) from the first row's shape — insertion order.
-  const firstRow = all[0];
-  const headerKeys: string[] = [];
-  const measureKeys: string[] = [];
-  for (const k of Object.keys(firstRow)) {
-    if (isAiCell(firstRow[k])) measureKeys.push(k);
-    else headerKeys.push(k);
-  }
+	// Pick row-header columns (plain string keys) vs measure columns (AiCell
+	// keys) from the first row's shape — insertion order.
+	const firstRow = all[0];
+	const headerKeys: string[] = [];
+	const measureKeys: string[] = [];
+	for (const k of Object.keys(firstRow)) {
+		if (isAiCell(firstRow[k])) measureKeys.push(k);
+		else headerKeys.push(k);
+	}
 
-  // Stand down when dropping rollups would empty the tile — a result that is
-  // ALL subtotals is a legitimate shape, not a bug to filter away. Same guard
-  // ChartView's `leaf.indices.length > 0 && < matrix.length` applies.
-  let rows = all;
-  if (hideRollupRows) {
-    const { leaves, allRollups } = partitionRollups(all);
-    if (!allRollups && leaves.length < all.length) rows = leaves;
-  }
+	// Stand down when dropping rollups would empty the tile — a result that is
+	// ALL subtotals is a legitimate shape, not a bug to filter away. Same guard
+	// ChartView's `leaf.indices.length > 0 && < matrix.length` applies.
+	let rows = all;
+	if (hideRollupRows) {
+		const { leaves, allRollups } = partitionRollups(all);
+		if (!allRollups && leaves.length < all.length) rows = leaves;
+	}
 
-  const rowCategories = rows.map((r, i) => {
-    const parts = headerKeys.map((k) => String(r[k] ?? "")).filter((s) => s.length > 0);
-    return parts.length > 0 ? parts.join(" / ") : `row ${i + 1}`;
-  });
+	const rowCategories = rows.map((r, i) => {
+		const parts = headerKeys.map((k) => String(r[k] ?? '')).filter((s) => s.length > 0);
+		return parts.length > 0 ? parts.join(' / ') : `row ${i + 1}`;
+	});
 
-  const matrix = rows.map((r) =>
-    measureKeys.map((k) => {
-      const v = r[k];
-      return isAiCell(v) ? v.value : null;
-    }),
-  );
+	const matrix = rows.map((r) =>
+		measureKeys.map((k) => {
+			const v = r[k];
+			return isAiCell(v) ? v.value : null;
+		})
+	);
 
-  // #1596: the row-header column keys ARE the row dimension/level names — expose
-  // them as the projection's default category-axis title (used by the builder
-  // when no explicit xAxisLabel is set). Auto-derived axis titles are drawn in
-  // roomy mode; dashboard tiles render compact (tile-tight) so this is the
-  // source-of-truth data an explicit per-tile label would otherwise override.
-  const categoryAxisName = headerKeys.filter((k) => k.length > 0).join(" / ") || undefined;
+	// #1596: the row-header column keys ARE the row dimension/level names — expose
+	// them as the projection's default category-axis title (used by the builder
+	// when no explicit xAxisLabel is set). Auto-derived axis titles are drawn in
+	// roomy mode; dashboard tiles render compact (tile-tight) so this is the
+	// source-of-truth data an explicit per-tile label would otherwise override.
+	const categoryAxisName = headerKeys.filter((k) => k.length > 0).join(' / ') || undefined;
 
-  return { rowCategories, columnCategories: measureKeys, matrix, categoryAxisName };
+	return { rowCategories, columnCategories: measureKeys, matrix, categoryAxisName };
 }
 
 /**
@@ -123,17 +126,17 @@ export function projectFromAiQueryResponse(
  * callers (tests) DOM-free and structurally unchanged.
  */
 export function buildChartOption(
-  response: AiQueryResponse,
-  kind: string,
-  aspect = 1,
-  tk: ThemeTokens = DEFAULT_THEME_TOKENS,
-  options?: ChartOptions,
+	response: AiQueryResponse,
+	kind: string,
+	aspect = 1,
+	tk: ThemeTokens = DEFAULT_THEME_TOKENS,
+	options?: ChartOptions
 ): Record<string, unknown> | null {
-  if (!isChartType(kind)) return null;
-  const effective = options ?? DASHBOARD_BASELINE;
-  const projection = projectForChart(response, effective);
-  if (projection.matrix.length === 0) return null;
-  return buildSharedChartOption(projection, kind, effective, tk, { aspect, compact: true });
+	if (!isChartType(kind)) return null;
+	const effective = options ?? DASHBOARD_BASELINE;
+	const projection = projectForChart(response, effective);
+	if (projection.matrix.length === 0) return null;
+	return buildSharedChartOption(projection, kind, effective, tk, { aspect, compact: true });
 }
 
 /**
@@ -153,13 +156,13 @@ export function buildChartOption(
  * `chartOptions` at all) render exactly as they did.
  */
 export function projectForChart(
-  response: AiQueryResponse,
-  options?: ChartOptions,
+	response: AiQueryResponse,
+	options?: ChartOptions
 ): ChartProjection {
-  if (!options) return projectFromAiQueryResponse(response);
-  return applySortLimit(projectFromAiQueryResponse(response, options.hideRollupRows), {
-    direction: options.sortDirection,
-    measureIndex: 0,
-    topN: options.topN,
-  });
+	if (!options) return projectFromAiQueryResponse(response);
+	return applySortLimit(projectFromAiQueryResponse(response, options.hideRollupRows), {
+		direction: options.sortDirection,
+		measureIndex: 0,
+		topN: options.topN
+	});
 }

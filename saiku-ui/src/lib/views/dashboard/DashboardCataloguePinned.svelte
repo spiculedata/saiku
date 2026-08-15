@@ -1,132 +1,153 @@
 <script module lang="ts">
-  /** A pinned dashboard row (favourite or recent) with its title already
-   *  resolved by the parent. Carrying the resolved title as plain reactive
-   *  data — rather than a `titleFor(node)` closure over the parent's
-   *  catalogue metadata — means the rows re-render the moment the friendly
-   *  title lands, keeping them consistent with the list + tree. (#1606) */
-  export interface PinnedDashboard {
-    /** Repo-relative path incl. `.saikudash`; used for the link + favourite toggle. */
-    path: string;
-    /** Friendly title — the dashboard's own name when loaded, else its filename slug. */
-    title: string;
-  }
+	/** A pinned dashboard row (favourite or recent) with its title already
+	 *  resolved by the parent. Carrying the resolved title as plain reactive
+	 *  data — rather than a `titleFor(node)` closure over the parent's
+	 *  catalogue metadata — means the rows re-render the moment the friendly
+	 *  title lands, keeping them consistent with the list + tree. (#1606) */
+	export interface PinnedDashboard {
+		/** Repo-relative path incl. `.saikudash`; used for the link + favourite toggle. */
+		path: string;
+		/** Friendly title — the dashboard's own name when loaded, else its filename slug. */
+		title: string;
+	}
 </script>
 
 <script lang="ts">
-  /*
-   * Pinned sections — Favourites + "Recently viewed" — extracted from
-   * DashboardIndex (saiku#1234 Phase 2). Both render a small list of
-   * dashboards above the main catalogue when in list view. The two
-   * snippets share the same `.row` / `.link` styling but differ in
-   * the action button set:
-   *
-   *   - favourites: a single "remove" star (always star--on)
-   *   - recents:    no action buttons; clicking the link is the
-   *                 whole interaction.
-   *
-   * Parent provides the resolved entry arrays (already filtered against
-   * the live listing for ACL / deleted paths). Each row carries its
-   * already-resolved friendly title; `toRepoRelative` is imported here to
-   * avoid threading the helper through a prop.
-   */
-  import { base } from "$app/paths";
-  import { Button } from "$lib/components/ui";
-  import { Star } from "@lucide/svelte";
-  import { toRepoRelative, displayPath } from "$lib/api/dashboards";
+	/*
+	 * Pinned sections — Favourites + "Recently viewed" — extracted from
+	 * DashboardIndex (saiku#1234 Phase 2). Both render a small list of
+	 * dashboards above the main catalogue when in list view. The two
+	 * snippets share the same `.row` / `.link` styling but differ in
+	 * the action button set:
+	 *
+	 *   - favourites: a single "remove" star (always star--on)
+	 *   - recents:    no action buttons; clicking the link is the
+	 *                 whole interaction.
+	 *
+	 * Parent provides the resolved entry arrays (already filtered against
+	 * the live listing for ACL / deleted paths). Each row carries its
+	 * already-resolved friendly title; `toRepoRelative` is imported here to
+	 * avoid threading the helper through a prop.
+	 */
+	import { base } from '$app/paths';
+	import { Button } from '$lib/components/ui';
+	import { Star } from '@lucide/svelte';
+	import { toRepoRelative, displayPath } from '$lib/api/dashboards';
 
-  interface Props {
-    favourites: PinnedDashboard[];
-    recents: PinnedDashboard[];
-    onToggleFavourite: (relPath: string) => void;
-  }
+	interface Props {
+		favourites: PinnedDashboard[];
+		recents: PinnedDashboard[];
+		onToggleFavourite: (relPath: string) => void;
+	}
 
-  let { favourites, recents, onToggleFavourite }: Props = $props();
+	let { favourites, recents, onToggleFavourite }: Props = $props();
 </script>
 
 {#if favourites.length > 0}
-  <section class="pinned" aria-labelledby="favourites-heading">
-    <h2 id="favourites-heading" class="pinned-heading">
-      <Star size={14} aria-hidden="true" /> Favourites
-    </h2>
-    <ul class="list-none m-0 p-0 flex flex-col gap-1">
-      {#each favourites as e (e.path)}
-        {@const relPath = toRepoRelative(e.path)}
-        <li class="row">
-          <a class="link" href="{base}/dashboards/{relPath}" aria-label={e.title} title={displayPath(relPath)}>
-            <span class="name">{e.title}</span>
-            <span class="text-fg-muted text-xs overflow-hidden text-ellipsis whitespace-nowrap">{displayPath(relPath)}</span>
-          </a>
-          <Button variant="outline" class="icon-only star star--on" onclick={() => onToggleFavourite(relPath)} title="Remove from favourites" aria-label="Remove from favourites" aria-pressed="true">
-            <Star size={14} fill="currentColor" />
-          </Button>
-        </li>
-      {/each}
-    </ul>
-  </section>
+	<section class="pinned" aria-labelledby="favourites-heading">
+		<h2 id="favourites-heading" class="pinned-heading">
+			<Star size={14} aria-hidden="true" /> Favourites
+		</h2>
+		<ul class="m-0 flex list-none flex-col gap-1 p-0">
+			{#each favourites as e (e.path)}
+				{@const relPath = toRepoRelative(e.path)}
+				<li class="row">
+					<a
+						class="link"
+						href="{base}/dashboards/{relPath}"
+						aria-label={e.title}
+						title={displayPath(relPath)}
+					>
+						<span class="name">{e.title}</span>
+						<span class="overflow-hidden text-xs text-ellipsis whitespace-nowrap text-fg-muted"
+							>{displayPath(relPath)}</span
+						>
+					</a>
+					<Button
+						variant="outline"
+						class="icon-only star star--on"
+						onclick={() => onToggleFavourite(relPath)}
+						title="Remove from favourites"
+						aria-label="Remove from favourites"
+						aria-pressed="true"
+					>
+						<Star size={14} fill="currentColor" />
+					</Button>
+				</li>
+			{/each}
+		</ul>
+	</section>
 {/if}
 
 {#if recents.length > 0}
-  <section class="pinned" aria-labelledby="recents-heading">
-    <h2 id="recents-heading" class="pinned-heading">🕒 Recently viewed</h2>
-    <ul class="list-none m-0 p-0 flex flex-col gap-1">
-      {#each recents as e (e.path)}
-        {@const relPath = toRepoRelative(e.path)}
-        <li class="row">
-          <a class="link" href="{base}/dashboards/{relPath}" aria-label={e.title} title={displayPath(relPath)}>
-            <span class="name">{e.title}</span>
-            <span class="text-fg-muted text-xs overflow-hidden text-ellipsis whitespace-nowrap">{displayPath(relPath)}</span>
-          </a>
-        </li>
-      {/each}
-    </ul>
-  </section>
+	<section class="pinned" aria-labelledby="recents-heading">
+		<h2 id="recents-heading" class="pinned-heading">🕒 Recently viewed</h2>
+		<ul class="m-0 flex list-none flex-col gap-1 p-0">
+			{#each recents as e (e.path)}
+				{@const relPath = toRepoRelative(e.path)}
+				<li class="row">
+					<a
+						class="link"
+						href="{base}/dashboards/{relPath}"
+						aria-label={e.title}
+						title={displayPath(relPath)}
+					>
+						<span class="name">{e.title}</span>
+						<span class="overflow-hidden text-xs text-ellipsis whitespace-nowrap text-fg-muted"
+							>{displayPath(relPath)}</span
+						>
+					</a>
+				</li>
+			{/each}
+		</ul>
+	</section>
 {/if}
 
 <style>
-/* Mirrors DashboardIndex's pinned + row styles. Duplicated because
+	/* Mirrors DashboardIndex's pinned + row styles. Duplicated because
      Svelte scoped CSS does not cross component boundaries. */
-  .pinned {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    padding: 0.5rem 0;
-  }
-  .pinned-heading {
-    font-size: 0.6875rem;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: hsl(var(--fg-muted));
-    font-weight: var(--weight-semibold);
-    margin: 0 0 0.25rem;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-  }
-  .row {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 0.625rem;
-    border: 1px solid hsl(var(--border));
-    border-radius: 6px;
-    background: hsl(var(--bg));
-  }
-  .link {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    text-decoration: none;
-    color: hsl(var(--fg));
-    min-width: 0;
-  }
-  .link:hover .name {
-    color: hsl(var(--primary));
-  }
-  .name {
-    font-weight: var(--weight-semibold);
-    font-size: 0.9375rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
+	.pinned {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		padding: 0.5rem 0;
+	}
+	.pinned-heading {
+		font-size: 0.6875rem;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: hsl(var(--fg-muted));
+		font-weight: var(--weight-semibold);
+		margin: 0 0 0.25rem;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
+	}
+	.row {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.5rem 0.625rem;
+		border: 1px solid hsl(var(--border));
+		border-radius: 6px;
+		background: hsl(var(--bg));
+	}
+	.link {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		text-decoration: none;
+		color: hsl(var(--fg));
+		min-width: 0;
+	}
+	.link:hover .name {
+		color: hsl(var(--primary));
+	}
+	.name {
+		font-weight: var(--weight-semibold);
+		font-size: 0.9375rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
 </style>

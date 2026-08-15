@@ -13,52 +13,51 @@
  * (Natural Earth 110m admin-0, public domain).
  */
 
-import * as echarts from "echarts";
-import { base } from "$app/paths";
+import * as echarts from 'echarts';
+import { base } from '$app/paths';
 
 const registered = new Set<string>();
 const inflight = new Map<string, Promise<void>>();
 
 /** Has this map already been registered with ECharts in this session? */
-export function isGeoMapRegistered(name = "world"): boolean {
-  return registered.has(name);
+export function isGeoMapRegistered(name = 'world'): boolean {
+	return registered.has(name);
 }
 
 /** Fetch + register a bundled GeoJSON map with ECharts, exactly once. Safe to
  *  call on every render — it resolves immediately once registered and
  *  de-dupes concurrent calls. Resolves when the map is ready; rejects only on
  *  fetch/parse failure (the caller can leave the canvas blank + log). */
-export async function ensureGeoMap(name = "world"): Promise<void> {
-  if (registered.has(name)) return;
-  const existing = inflight.get(name);
-  if (existing) return existing;
-  const p = (async () => {
-    const res = await fetch(`${base}/geo/${name}.json`, {
-      headers: { Accept: "application/json" },
-    });
-    if (!res.ok) throw new Error(`geo map "${name}" HTTP ${res.status}`);
-    const geo = await res.json();
-    echarts.registerMap(name, geo);
-    registered.add(name);
-  })();
-  inflight.set(name, p);
-  try {
-    await p;
-  } finally {
-    inflight.delete(name);
-  }
+export async function ensureGeoMap(name = 'world'): Promise<void> {
+	if (registered.has(name)) return;
+	const existing = inflight.get(name);
+	if (existing) return existing;
+	const p = (async () => {
+		const res = await fetch(`${base}/geo/${name}.json`, {
+			headers: { Accept: 'application/json' }
+		});
+		if (!res.ok) throw new Error(`geo map "${name}" HTTP ${res.status}`);
+		const geo = await res.json();
+		echarts.registerMap(name, geo);
+		registered.add(name);
+	})();
+	inflight.set(name, p);
+	try {
+		await p;
+	} finally {
+		inflight.delete(name);
+	}
 }
 
 /** The feature names in a registered map, or [] when it isn't registered yet.
  *  Lets a rendering surface report how much of its data actually placed
  *  (saiku#1758) — the pure builder can't, having no feature list. */
-export function geoFeatureNames(name = "world"): string[] {
-  if (!registered.has(name)) return [];
-  const map = echarts.getMap(name) as
-    | { geoJSON?: { features?: Array<{ properties?: { name?: unknown } }> } }
-    | undefined;
-  const features = map?.geoJSON?.features ?? [];
-  return features
-    .map((f) => f?.properties?.name)
-    .filter((n): n is string => typeof n === "string" && n.length > 0);
+export function geoFeatureNames(name = 'world'): string[] {
+	if (!registered.has(name)) return [];
+	const map = echarts.getMap(name) as
+		{ geoJSON?: { features?: Array<{ properties?: { name?: unknown } }> } } | undefined;
+	const features = map?.geoJSON?.features ?? [];
+	return features
+		.map((f) => f?.properties?.name)
+		.filter((n): n is string => typeof n === 'string' && n.length > 0);
 }

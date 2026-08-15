@@ -6,22 +6,22 @@
  * The URL state (`?q=...`) keeps working independently; embed piggybacks on it.
  */
 class EmbedStore {
-  active = $state(false);
+	active = $state(false);
 
-  bootstrap(): void {
-    if (typeof window === "undefined") return;
-    try {
-      const params = new URLSearchParams(window.location.search);
-      this.active = params.get("embed") === "1";
-      if (this.active) {
-        document.body.classList.add("saiku-embed");
-      } else {
-        document.body.classList.remove("saiku-embed");
-      }
-    } catch {
-      this.active = false;
-    }
-  }
+	bootstrap(): void {
+		if (typeof window === 'undefined') return;
+		try {
+			const params = new URLSearchParams(window.location.search);
+			this.active = params.get('embed') === '1';
+			if (this.active) {
+				document.body.classList.add('saiku-embed');
+			} else {
+				document.body.classList.remove('saiku-embed');
+			}
+		} catch {
+			this.active = false;
+		}
+	}
 }
 
 export const embed = new EmbedStore();

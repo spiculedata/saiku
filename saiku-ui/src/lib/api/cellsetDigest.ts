@@ -15,7 +15,7 @@
  * data rows; deep ones see them all up to 50.
  */
 
-import type { CellEntry, QueryResult } from "$lib/api/query";
+import type { CellEntry, QueryResult } from '$lib/api/query';
 
 const MAX_DATA_ROWS = 50;
 const MAX_HEADER_ROWS = 4;
@@ -25,67 +25,67 @@ const MAX_HEADER_ROWS = 4;
  * or all-empty grid). Drawer should omit the field when this returns "".
  */
 export function buildCellsetDigest(result: QueryResult | null | undefined): string {
-  if (!result || !result.cellset || result.cellset.length === 0) return "";
+	if (!result || !result.cellset || result.cellset.length === 0) return '';
 
-  const grid = result.cellset;
-  // Header rows = top rows where every populated cell is a COLUMN_HEADER or ROW_HEADER_HEADER (the
-  // corner pad). A pure data row would have at least one DATA_CELL.
-  let headerRowCount = 0;
-  for (const row of grid) {
-    if (row.some((c) => c.type === "DATA_CELL")) break;
-    headerRowCount++;
-    if (headerRowCount >= MAX_HEADER_ROWS) break;
-  }
-  if (headerRowCount === 0) {
-    // Defensive: if the cellset has no header rows (shouldn't happen with a queryModel render),
-    // synthesise an empty header so the table renders cleanly.
-    headerRowCount = 0;
-  }
+	const grid = result.cellset;
+	// Header rows = top rows where every populated cell is a COLUMN_HEADER or ROW_HEADER_HEADER (the
+	// corner pad). A pure data row would have at least one DATA_CELL.
+	let headerRowCount = 0;
+	for (const row of grid) {
+		if (row.some((c) => c.type === 'DATA_CELL')) break;
+		headerRowCount++;
+		if (headerRowCount >= MAX_HEADER_ROWS) break;
+	}
+	if (headerRowCount === 0) {
+		// Defensive: if the cellset has no header rows (shouldn't happen with a queryModel render),
+		// synthesise an empty header so the table renders cleanly.
+		headerRowCount = 0;
+	}
 
-  const headerRows = grid.slice(0, headerRowCount);
-  const dataRows = grid.slice(headerRowCount, headerRowCount + MAX_DATA_ROWS);
-  if (dataRows.length === 0) return "";
+	const headerRows = grid.slice(0, headerRowCount);
+	const dataRows = grid.slice(headerRowCount, headerRowCount + MAX_DATA_ROWS);
+	if (dataRows.length === 0) return '';
 
-  const colCount = Math.max(...grid.map((r) => r.length));
-  const truncated = grid.length - headerRowCount > MAX_DATA_ROWS;
+	const colCount = Math.max(...grid.map((r) => r.length));
+	const truncated = grid.length - headerRowCount > MAX_DATA_ROWS;
 
-  // For each header row, render `| h1 | h2 | ... |` so it appears as a markdown table head.
-  // Stack multi-row headers vertically by emitting one row each — markdown tables only render
-  // the FIRST header row visually but we keep the structure verbatim so the LLM sees the full
-  // hierarchy (Year / Quarter / Month nesting on a time axis, etc).
-  const lines: string[] = [];
-  lines.push(`Cellset: ${grid.length - headerRowCount} data rows × ${colCount} columns.`);
-  if (truncated) {
-    lines.push(`(Showing first ${MAX_DATA_ROWS} of ${grid.length - headerRowCount} rows.)`);
-  }
-  lines.push("");
+	// For each header row, render `| h1 | h2 | ... |` so it appears as a markdown table head.
+	// Stack multi-row headers vertically by emitting one row each — markdown tables only render
+	// the FIRST header row visually but we keep the structure verbatim so the LLM sees the full
+	// hierarchy (Year / Quarter / Month nesting on a time axis, etc).
+	const lines: string[] = [];
+	lines.push(`Cellset: ${grid.length - headerRowCount} data rows × ${colCount} columns.`);
+	if (truncated) {
+		lines.push(`(Showing first ${MAX_DATA_ROWS} of ${grid.length - headerRowCount} rows.)`);
+	}
+	lines.push('');
 
-  for (const row of headerRows) {
-    lines.push(formatRow(row, colCount));
-  }
-  if (headerRowCount > 0) {
-    // Separator row matching markdown spec (3 dashes per column).
-    lines.push("| " + Array.from({ length: colCount }, () => "---").join(" | ") + " |");
-  }
-  for (const row of dataRows) {
-    lines.push(formatRow(row, colCount));
-  }
+	for (const row of headerRows) {
+		lines.push(formatRow(row, colCount));
+	}
+	if (headerRowCount > 0) {
+		// Separator row matching markdown spec (3 dashes per column).
+		lines.push('| ' + Array.from({ length: colCount }, () => '---').join(' | ') + ' |');
+	}
+	for (const row of dataRows) {
+		lines.push(formatRow(row, colCount));
+	}
 
-  return lines.join("\n");
+	return lines.join('\n');
 }
 
 function formatRow(row: CellEntry[], width: number): string {
-  const cells: string[] = [];
-  for (let i = 0; i < width; i++) {
-    const cell = row[i];
-    cells.push(cellText(cell));
-  }
-  return "| " + cells.join(" | ") + " |";
+	const cells: string[] = [];
+	for (let i = 0; i < width; i++) {
+		const cell = row[i];
+		cells.push(cellText(cell));
+	}
+	return '| ' + cells.join(' | ') + ' |';
 }
 
 function cellText(cell: CellEntry | undefined): string {
-  if (!cell) return "";
-  if (cell.type === "EMPTY") return "";
-  // Strip pipes (would break the markdown table) and collapse whitespace.
-  return (cell.value ?? "").replace(/\|/g, "/").replace(/\s+/g, " ").trim();
+	if (!cell) return '';
+	if (cell.type === 'EMPTY') return '';
+	// Strip pipes (would break the markdown table) and collapse whitespace.
+	return (cell.value ?? '').replace(/\|/g, '/').replace(/\s+/g, ' ').trim();
 }

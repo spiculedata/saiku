@@ -11,18 +11,18 @@
  */
 
 export interface GenerateSchemaTarget {
-  id: string;
-  /** Datasource NAME — the key the backend resolves (getDatasource keys by
-   *  name, not id), so the cube-designer route must carry the name. Optional
-   *  here only so tests can omit it; real AdminDatasource always has one. */
-  name?: string;
-  schemaName?: string | null;
+	id: string;
+	/** Datasource NAME — the key the backend resolves (getDatasource keys by
+	 *  name, not id), so the cube-designer route must carry the name. Optional
+	 *  here only so tests can omit it; real AdminDatasource always has one. */
+	name?: string;
+	schemaName?: string | null;
 }
 
 export function canGenerateSchema(ds: GenerateSchemaTarget): boolean {
-  const name = ds.schemaName;
-  if (name === undefined || name === null) return true;
-  return name.trim().length === 0;
+	const name = ds.schemaName;
+	if (name === undefined || name === null) return true;
+	return name.trim().length === 0;
 }
 
 /**
@@ -32,10 +32,8 @@ export function canGenerateSchema(ds: GenerateSchemaTarget): boolean {
  * passing the UUID id yields a 500 "no Saiku datasource named …". The caller
  * must prefix the SvelteKit `base` (the app is served under `/ui`).
  */
-export function generateSchemaHref(
-  ds: Pick<GenerateSchemaTarget, "id" | "name">,
-): string {
-  return `/admin/cube-designer/${encodeURIComponent(ds.name ?? ds.id)}`;
+export function generateSchemaHref(ds: Pick<GenerateSchemaTarget, 'id' | 'name'>): string {
+	return `/admin/cube-designer/${encodeURIComponent(ds.name ?? ds.id)}`;
 }
 
 /**
@@ -43,5 +41,5 @@ export function generateSchemaHref(
  * source has no Mondrian schema yet; edit mode when one is attached.
  */
 export function generateSchemaLabel(ds: GenerateSchemaTarget): string {
-  return canGenerateSchema(ds) ? "Design cube" : "Edit cube schema";
+	return canGenerateSchema(ds) ? 'Design cube' : 'Edit cube schema';
 }

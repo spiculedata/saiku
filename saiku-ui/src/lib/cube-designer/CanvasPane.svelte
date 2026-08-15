@@ -61,7 +61,7 @@
 	}: Props = $props();
 
 	const nodeTypes = { table: TableNode };
-	 
+
 	const edgeTypes = { canvasJoin: CanvasEdge } as any;
 
 	const schemaFilteredSourceTables = $derived(

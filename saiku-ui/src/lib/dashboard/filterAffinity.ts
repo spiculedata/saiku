@@ -12,34 +12,34 @@
  * (typically schemaCache.peek) so this unit-tests cleanly.
  */
 
-import { resolveTarget, type SchemaLike } from "$lib/dashboard/effectiveQuery";
-import type { CubeRef, DashboardTile } from "$lib/api/dashboards";
+import { resolveTarget, type SchemaLike } from '$lib/dashboard/effectiveQuery';
+import type { CubeRef, DashboardTile } from '$lib/api/dashboards';
 // saiku#1803: model-backed tiles are reached through a semantic binding, not by
 // resolving a dim/hier/level in an MDX schema.
-import { isOssieSource } from "$lib/dashboard/tileSource";
-import { filterReachesSource, type SemanticFilter } from "$lib/dashboard/semanticFilter";
+import { isOssieSource } from '$lib/dashboard/tileSource';
+import { filterReachesSource, type SemanticFilter } from '$lib/dashboard/semanticFilter';
 
 /** The dim/hier/level a panel filter targets. */
 export interface FilterTarget {
-  dimension: string;
-  hierarchy: string;
-  level: string;
-  /** saiku#1803: per-source bindings, when the caller has them. Without these a
-   *  filter can only be judged against MDX tiles, which is what made the badge
-   *  under-report once semantic filters existed. */
-  bindings?: SemanticFilter["bindings"];
+	dimension: string;
+	hierarchy: string;
+	level: string;
+	/** saiku#1803: per-source bindings, when the caller has them. Without these a
+	 *  filter can only be judged against MDX tiles, which is what made the badge
+	 *  under-report once semantic filters existed. */
+	bindings?: SemanticFilter['bindings'];
 }
 
 /** Just the tile fields the affinity check reads — keeps callers (and
  *  tests) from having to build a whole DashboardTile. */
-export type AffinityTile = Pick<DashboardTile, "id" | "type" | "cube" | "query" | "kpi">;
+export type AffinityTile = Pick<DashboardTile, 'id' | 'type' | 'cube' | 'query' | 'kpi'>;
 
 export interface FilterAffinity {
-  /** ids of filterable tiles whose cube schema resolves the filter target. */
-  affected: Set<string>;
-  affectedCount: number;
-  /** total tiles on the dashboard — the denominator of "N of M". */
-  totalCount: number;
+	/** ids of filterable tiles whose cube schema resolves the filter target. */
+	affected: Set<string>;
+	affectedCount: number;
+	/** total tiles on the dashboard — the denominator of "N of M". */
+	totalCount: number;
 }
 
 /** Tiles a panel filter can actually narrow:
@@ -47,10 +47,10 @@ export interface FilterAffinity {
  *   - KPI tiles with a measure (they carry no query — slicing comes purely
  *     from the dashboard-active filters applied to their cube).
  *  Text and image tiles never consume filters, so they always dim. */
-export function isFilterableTile(tile: Pick<DashboardTile, "type" | "query" | "kpi">): boolean {
-  if (tile.type === "chart" || tile.type === "table") return !!tile.query;
-  if (tile.type === "kpi") return !!tile.kpi?.measure;
-  return false;
+export function isFilterableTile(tile: Pick<DashboardTile, 'type' | 'query' | 'kpi'>): boolean {
+	if (tile.type === 'chart' || tile.type === 'table') return !!tile.query;
+	if (tile.type === 'kpi') return !!tile.kpi?.measure;
+	return false;
 }
 
 /** Pure: which tiles a filter affects. `schemaFor` returns the loaded
@@ -64,31 +64,31 @@ export function isFilterableTile(tile: Pick<DashboardTile, "type" | "query" | "k
  *  badge reads "N of M" against the full board, and every non-affected
  *  tile (incl. text/image/kpi) dims. */
 export function computeFilterAffinity(
-  target: FilterTarget,
-  tiles: readonly AffinityTile[],
-  schemaFor: (cube: CubeRef) => SchemaLike | null,
+	target: FilterTarget,
+	tiles: readonly AffinityTile[],
+	schemaFor: (cube: CubeRef) => SchemaLike | null
 ): FilterAffinity {
-  const affected = new Set<string>();
-  for (const t of tiles) {
-    if (!isFilterableTile(t)) continue;
-    if (!t.cube) continue;
+	const affected = new Set<string>();
+	for (const t of tiles) {
+		if (!isFilterableTile(t)) continue;
+		if (!t.cube) continue;
 
-    // saiku#1803: a tile bound to an Ossie semantic model has no MDX schema to
-    // resolve a dim/hier/level against — it is reached through the filter's
-    // semantic BINDING instead. Counting only the MDX path made the badge
-    // actively wrong once semantic filters existed: a filter narrowing three
-    // cube tiles and three model tiles read "Affects 3 of 7", and the three it
-    // didn't mention moved anyway.
-    if (isOssieSource(t.cube)) {
-      if (filterReachesSource(target as SemanticFilter, t.cube)) affected.add(t.id);
-      continue;
-    }
+		// saiku#1803: a tile bound to an Ossie semantic model has no MDX schema to
+		// resolve a dim/hier/level against — it is reached through the filter's
+		// semantic BINDING instead. Counting only the MDX path made the badge
+		// actively wrong once semantic filters existed: a filter narrowing three
+		// cube tiles and three model tiles read "Affects 3 of 7", and the three it
+		// didn't mention moved anyway.
+		if (isOssieSource(t.cube)) {
+			if (filterReachesSource(target as SemanticFilter, t.cube)) affected.add(t.id);
+			continue;
+		}
 
-    const schema = schemaFor(t.cube);
-    if (!schema) continue;
-    if (resolveTarget(schema, target.dimension, target.hierarchy, target.level)) {
-      affected.add(t.id);
-    }
-  }
-  return { affected, affectedCount: affected.size, totalCount: tiles.length };
+		const schema = schemaFor(t.cube);
+		if (!schema) continue;
+		if (resolveTarget(schema, target.dimension, target.hierarchy, target.level)) {
+			affected.add(t.id);
+		}
+	}
+	return { affected, affectedCount: affected.size, totalCount: tiles.length };
 }

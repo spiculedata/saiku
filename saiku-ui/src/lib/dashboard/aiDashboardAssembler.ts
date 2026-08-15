@@ -18,29 +18,29 @@
  */
 
 import {
-  newDashboard,
-  newTileId,
-  type CubeRef,
-  type Dashboard,
-  type DashboardTile,
-  type TileType,
-} from "$lib/api/dashboards";
-import type { DashboardSpec } from "$lib/api/aiDashboard";
-import { defaultSizeFor, firstFreeSlot } from "$lib/dashboard/tilePlacement";
-import { isChartType } from "$lib/views/chartTypes";
+	newDashboard,
+	newTileId,
+	type CubeRef,
+	type Dashboard,
+	type DashboardTile,
+	type TileType
+} from '$lib/api/dashboards';
+import type { DashboardSpec } from '$lib/api/aiDashboard';
+import { defaultSizeFor, firstFreeSlot } from '$lib/dashboard/tilePlacement';
+import { isChartType } from '$lib/views/chartTypes';
 
 /** UI tile types the builder emits. The backend already constrains `type` to
  *  this set, but we validate defensively — an out-of-set value degrades to a
  *  table (mirroring the backend's own coerce default) rather than producing an
  *  unrenderable tile. */
-const ASSEMBLABLE_TILE_TYPES: ReadonlySet<string> = new Set<TileType>(["chart", "table", "kpi"]);
+const ASSEMBLABLE_TILE_TYPES: ReadonlySet<string> = new Set<TileType>(['chart', 'table', 'kpi']);
 
 /** Default chart kind for a chart tile whose spec chartType is missing /
  *  unrecognised — matches the backend's `coerceChartType` fallback. */
-const DEFAULT_CHART_TYPE = "bar";
+const DEFAULT_CHART_TYPE = 'bar';
 
 function coerceTileType(type: string | undefined): TileType {
-  return type && ASSEMBLABLE_TILE_TYPES.has(type) ? (type as TileType) : "table";
+	return type && ASSEMBLABLE_TILE_TYPES.has(type) ? (type as TileType) : 'table';
 }
 
 /**
@@ -65,42 +65,42 @@ function coerceTileType(type: string | undefined): TileType {
  * `spec.degraded`; this is a defensive backstop.
  */
 export function assembleDashboard(spec: DashboardSpec, cube: CubeRef): Dashboard {
-  if (spec.degraded) {
-    throw new Error("assembleDashboard: refusing to assemble a degraded spec");
-  }
+	if (spec.degraded) {
+		throw new Error('assembleDashboard: refusing to assemble a degraded spec');
+	}
 
-  const dashboard: Dashboard = newDashboard(spec.title ?? "AI dashboard");
+	const dashboard: Dashboard = newDashboard(spec.title ?? 'AI dashboard');
 
-  for (const tileSpec of spec.tiles) {
-    const type = coerceTileType(tileSpec.type);
-    const size = defaultSizeFor(type);
-    // Place against the growing layout so each tile clears the ones already
-    // positioned. newDashboard() seeds layout.cols = 12.
-    const slot = firstFreeSlot(dashboard.layout, size.w, size.h);
+	for (const tileSpec of spec.tiles) {
+		const type = coerceTileType(tileSpec.type);
+		const size = defaultSizeFor(type);
+		// Place against the growing layout so each tile clears the ones already
+		// positioned. newDashboard() seeds layout.cols = 12.
+		const slot = firstFreeSlot(dashboard.layout, size.w, size.h);
 
-    const tile: DashboardTile = {
-      id: newTileId(),
-      x: slot.x,
-      y: slot.y,
-      w: size.w,
-      h: size.h,
-      type,
-      // LLM-authored — rendered as TEXT by Tile.svelte, never @html (SEC).
-      title: tileSpec.title,
-      cube,
-      // Inline the full AiQueryRequest verbatim; the per-tile query path
-      // (useTileQuery → /ai/query) executes it exactly like any inline tile.
-      query: { kind: "inline", body: tileSpec.query },
-    };
+		const tile: DashboardTile = {
+			id: newTileId(),
+			x: slot.x,
+			y: slot.y,
+			w: size.w,
+			h: size.h,
+			type,
+			// LLM-authored — rendered as TEXT by Tile.svelte, never @html (SEC).
+			title: tileSpec.title,
+			cube,
+			// Inline the full AiQueryRequest verbatim; the per-tile query path
+			// (useTileQuery → /ai/query) executes it exactly like any inline tile.
+			query: { kind: 'inline', body: tileSpec.query }
+		};
 
-    if (type === "chart") {
-      tile.chartType = isChartType(tileSpec.chartType ?? "")
-        ? tileSpec.chartType
-        : DEFAULT_CHART_TYPE;
-    }
+		if (type === 'chart') {
+			tile.chartType = isChartType(tileSpec.chartType ?? '')
+				? tileSpec.chartType
+				: DEFAULT_CHART_TYPE;
+		}
 
-    dashboard.layout.tiles.push(tile);
-  }
+		dashboard.layout.tiles.push(tile);
+	}
 
-  return dashboard;
+	return dashboard;
 }

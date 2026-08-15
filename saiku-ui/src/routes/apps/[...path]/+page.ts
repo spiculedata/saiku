@@ -8,13 +8,13 @@
  * rather than blocking the route render.
  */
 
-import { normaliseRepoPath } from "$lib/api/dashboards";
-import type { PageLoad } from "./$types";
+import { normaliseRepoPath } from '$lib/api/dashboards';
+import type { PageLoad } from './$types';
 
 // Dynamic route, can't be prerendered — same as the dashboards route.
 export const prerender = false;
 
 export const load: PageLoad = ({ params }) => {
-  const path = normaliseRepoPath(params.path ?? "");
-  return { appPath: path };
+	const path = normaliseRepoPath(params.path ?? '');
+	return { appPath: path };
 };

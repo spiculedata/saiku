@@ -27,21 +27,21 @@
  */
 
 import type {
-  SaikuConnection,
-  SaikuCube,
-  SaikuDimension,
-  SaikuLevel,
-  SaikuMeasure,
-} from "$lib/api/discover";
-import type { ThinMeasure } from "$lib/api/query";
-import type { LevelDrop } from "$lib/stores/query.svelte";
+	SaikuConnection,
+	SaikuCube,
+	SaikuDimension,
+	SaikuLevel,
+	SaikuMeasure
+} from '$lib/api/discover';
+import type { ThinMeasure } from '$lib/api/query';
+import type { LevelDrop } from '$lib/stores/query.svelte';
 
 /** Inputs the URL handler extracts from `?starterCube*=...` params. */
 export interface StarterCubeRef {
-  connection: string;
-  catalog: string;
-  schema: string;
-  name: string;
+	connection: string;
+	catalog: string;
+	schema: string;
+	name: string;
 }
 
 /**
@@ -50,12 +50,12 @@ export interface StarterCubeRef {
  * Workspace bootstrap to fall through to the empty-workbench default.
  */
 export function parseStarterCubeRef(params: URLSearchParams): StarterCubeRef | null {
-  const connection = params.get("starterCubeConnection")?.trim();
-  const catalog = params.get("starterCubeCatalog")?.trim();
-  const schema = params.get("starterCubeSchema")?.trim();
-  const name = params.get("starterCubeName")?.trim();
-  if (!connection || !catalog || !schema || !name) return null;
-  return { connection, catalog, schema, name };
+	const connection = params.get('starterCubeConnection')?.trim();
+	const catalog = params.get('starterCubeCatalog')?.trim();
+	const schema = params.get('starterCubeSchema')?.trim();
+	const name = params.get('starterCubeName')?.trim();
+	if (!connection || !catalog || !schema || !name) return null;
+	return { connection, catalog, schema, name };
 }
 
 /**
@@ -67,22 +67,22 @@ export function parseStarterCubeRef(params: URLSearchParams): StarterCubeRef | n
  * versions of the same warehouse).
  */
 export function findCubeByRef(
-  connections: SaikuConnection[],
-  ref: StarterCubeRef,
+	connections: SaikuConnection[],
+	ref: StarterCubeRef
 ): SaikuCube | null {
-  for (const conn of connections) {
-    if (conn.name !== ref.connection) continue;
-    for (const cat of conn.catalogs) {
-      if (cat.name !== ref.catalog) continue;
-      for (const sch of cat.schemas) {
-        if (sch.name !== ref.schema) continue;
-        for (const cube of sch.cubes) {
-          if (cube.name === ref.name) return cube;
-        }
-      }
-    }
-  }
-  return null;
+	for (const conn of connections) {
+		if (conn.name !== ref.connection) continue;
+		for (const cat of conn.catalogs) {
+			if (cat.name !== ref.catalog) continue;
+			for (const sch of cat.schemas) {
+				if (sch.name !== ref.schema) continue;
+				for (const cube of sch.cubes) {
+					if (cube.name === ref.name) return cube;
+				}
+			}
+		}
+	}
+	return null;
 }
 
 /**
@@ -106,19 +106,19 @@ export function findCubeByRef(
  * default rather than render an obviously-broken starter.
  */
 export interface StarterPick {
-  measure: ThinMeasure;
-  drop: LevelDrop;
+	measure: ThinMeasure;
+	drop: LevelDrop;
 }
 
 export function pickStarterMeasureAndLevel(
-  measures: SaikuMeasure[],
-  dimensions: SaikuDimension[],
+	measures: SaikuMeasure[],
+	dimensions: SaikuDimension[]
 ): StarterPick | null {
-  const measure = pickStarterMeasure(measures);
-  if (!measure) return null;
-  const drop = pickStarterLevelDrop(dimensions);
-  if (!drop) return null;
-  return { measure, drop };
+	const measure = pickStarterMeasure(measures);
+	if (!measure) return null;
+	const drop = pickStarterLevelDrop(dimensions);
+	if (!drop) return null;
+	return { measure, drop };
 }
 
 /**
@@ -129,15 +129,15 @@ export function pickStarterMeasureAndLevel(
  * the less-surprising default ("revenue" beats "revenue per order").
  */
 export function pickStarterMeasure(measures: SaikuMeasure[]): ThinMeasure | null {
-  if (measures.length === 0) return null;
-  const base = measures.find((m) => !m.calculated);
-  const picked = base ?? measures[0];
-  return {
-    name: picked.name,
-    uniqueName: picked.uniqueName,
-    caption: picked.caption || picked.name,
-    type: picked.calculated ? "CALCULATED" : "EXACT",
-  };
+	if (measures.length === 0) return null;
+	const base = measures.find((m) => !m.calculated);
+	const picked = base ?? measures[0];
+	return {
+		name: picked.name,
+		uniqueName: picked.uniqueName,
+		caption: picked.caption || picked.name,
+		type: picked.calculated ? 'CALCULATED' : 'EXACT'
+	};
 }
 
 /**
@@ -146,32 +146,32 @@ export function pickStarterMeasure(measures: SaikuMeasure[]): ThinMeasure | null
  * splice onto an axis directly via {@code includeLevel}.
  */
 export function pickStarterLevelDrop(dimensions: SaikuDimension[]): LevelDrop | null {
-  // Pass 1: any hierarchy whose first level has a time-signalling name.
-  for (const dim of dimensions) {
-    for (const hier of dim.hierarchies ?? []) {
-      const levels = hier.levels ?? [];
-      for (const lvl of levels) {
-        if (isTimeLikeLevel(lvl)) {
-          return makeLevelDrop(dim, hier, lvl);
-        }
-      }
-    }
-  }
-  // Pass 2: any dimension whose caption / name signals time.
-  for (const dim of dimensions) {
-    if (isTimeLikeDimensionName(dim.caption || dim.name)) {
-      const hier = (dim.hierarchies ?? [])[0];
-      const lvl = hier?.levels?.[0];
-      if (hier && lvl) return makeLevelDrop(dim, hier, lvl);
-    }
-  }
-  // Pass 3: first dim, first hier, first level.
-  for (const dim of dimensions) {
-    const hier = (dim.hierarchies ?? [])[0];
-    const lvl = hier?.levels?.[0];
-    if (hier && lvl) return makeLevelDrop(dim, hier, lvl);
-  }
-  return null;
+	// Pass 1: any hierarchy whose first level has a time-signalling name.
+	for (const dim of dimensions) {
+		for (const hier of dim.hierarchies ?? []) {
+			const levels = hier.levels ?? [];
+			for (const lvl of levels) {
+				if (isTimeLikeLevel(lvl)) {
+					return makeLevelDrop(dim, hier, lvl);
+				}
+			}
+		}
+	}
+	// Pass 2: any dimension whose caption / name signals time.
+	for (const dim of dimensions) {
+		if (isTimeLikeDimensionName(dim.caption || dim.name)) {
+			const hier = (dim.hierarchies ?? [])[0];
+			const lvl = hier?.levels?.[0];
+			if (hier && lvl) return makeLevelDrop(dim, hier, lvl);
+		}
+	}
+	// Pass 3: first dim, first hier, first level.
+	for (const dim of dimensions) {
+		const hier = (dim.hierarchies ?? [])[0];
+		const lvl = hier?.levels?.[0];
+		if (hier && lvl) return makeLevelDrop(dim, hier, lvl);
+	}
+	return null;
 }
 
 /**
@@ -182,29 +182,29 @@ export function pickStarterLevelDrop(dimensions: SaikuDimension[]): LevelDrop | 
  * a real drag.
  */
 function makeLevelDrop(
-  dim: { name: string; caption: string; uniqueName: string },
-  hier: { name: string; caption: string; uniqueName: string },
-  lvl: SaikuLevel,
+	dim: { name: string; caption: string; uniqueName: string },
+	hier: { name: string; caption: string; uniqueName: string },
+	lvl: SaikuLevel
 ): LevelDrop {
-  return {
-    dimensionName: dim.name,
-    dimensionUniqueName: dim.uniqueName,
-    hierarchyName: hier.name,
-    hierarchyUniqueName: hier.uniqueName,
-    hierarchyCaption: hier.caption,
-    levelName: lvl.name,
-    levelCaption: lvl.caption,
-  };
+	return {
+		dimensionName: dim.name,
+		dimensionUniqueName: dim.uniqueName,
+		hierarchyName: hier.name,
+		hierarchyUniqueName: hier.uniqueName,
+		hierarchyCaption: hier.caption,
+		levelName: lvl.name,
+		levelCaption: lvl.caption
+	};
 }
 
 const TIME_NAME_REGEX = /\b(year|quarter|month|week|day|date|time)\b/i;
 
 function isTimeLikeLevel(level: SaikuLevel): boolean {
-  const caption = level.caption ?? "";
-  const name = level.name ?? "";
-  return TIME_NAME_REGEX.test(caption) || TIME_NAME_REGEX.test(name);
+	const caption = level.caption ?? '';
+	const name = level.name ?? '';
+	return TIME_NAME_REGEX.test(caption) || TIME_NAME_REGEX.test(name);
 }
 
 function isTimeLikeDimensionName(name: string): boolean {
-  return TIME_NAME_REGEX.test(name);
+	return TIME_NAME_REGEX.test(name);
 }

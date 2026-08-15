@@ -19,38 +19,38 @@
  * background must also claim the chrome foreground, or the next inheriting child
  * regresses the same way.
  */
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { describe, it, expect } from "vitest";
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { describe, it, expect } from 'vitest';
 
-const MODALS = ["TileEditorModal.svelte", "FilterSuggestionsModal.svelte"];
+const MODALS = ['TileEditorModal.svelte', 'FilterSuggestionsModal.svelte'];
 
 /** Extract the body of the first `.modal { … }` rule in a component's <style> block. */
 function modalRule(file: string): string {
-  const src = readFileSync(fileURLToPath(new URL(`./${file}`, import.meta.url)), "utf8");
-  const styleBlock = src.match(/<style[^>]*>([\s\S]*?)<\/style>/)?.[1] ?? "";
-  const rule = styleBlock.match(/(^|\n)\s*\.modal\s*\{([^}]*)\}/)?.[2];
-  expect(rule, `${file}: no .modal { } rule found`).toBeDefined();
-  return rule as string;
+	const src = readFileSync(fileURLToPath(new URL(`./${file}`, import.meta.url)), 'utf8');
+	const styleBlock = src.match(/<style[^>]*>([\s\S]*?)<\/style>/)?.[1] ?? '';
+	const rule = styleBlock.match(/(^|\n)\s*\.modal\s*\{([^}]*)\}/)?.[2];
+	expect(rule, `${file}: no .modal { } rule found`).toBeDefined();
+	return rule as string;
 }
 
-describe("modals rendered inside an app shell reset to chrome colours (saiku#1794)", () => {
-  for (const file of MODALS) {
-    it(`${file}: .modal claims the chrome background`, () => {
-      // Guard — the foreground assertion below is only meaningful for a surface
-      // that has actually opted out of the app's ground.
-      expect(modalRule(file)).toMatch(/background:\s*hsl\(var\(--bg\)\)/);
-    });
+describe('modals rendered inside an app shell reset to chrome colours (saiku#1794)', () => {
+	for (const file of MODALS) {
+		it(`${file}: .modal claims the chrome background`, () => {
+			// Guard — the foreground assertion below is only meaningful for a surface
+			// that has actually opted out of the app's ground.
+			expect(modalRule(file)).toMatch(/background:\s*hsl\(var\(--bg\)\)/);
+		});
 
-    it(`${file}: .modal also claims the chrome foreground`, () => {
-      const rule = modalRule(file);
-      expect(
-        /(^|[;{\s])color:\s*hsl\(var\(--fg\)\)/.test(rule),
-        `${file} sets the chrome background but not the chrome colour, so it ` +
-          `inherits --saiku-app-fg from the surrounding .saiku-app shell. Any ` +
-          `descendant that doesn't set its own colour (label.checkbox, label.radio) ` +
-          `renders app-dark ink on the modal's dark panel.`,
-      ).toBe(true);
-    });
-  }
+		it(`${file}: .modal also claims the chrome foreground`, () => {
+			const rule = modalRule(file);
+			expect(
+				/(^|[;{\s])color:\s*hsl\(var\(--fg\)\)/.test(rule),
+				`${file} sets the chrome background but not the chrome colour, so it ` +
+					`inherits --saiku-app-fg from the surrounding .saiku-app shell. Any ` +
+					`descendant that doesn't set its own colour (label.checkbox, label.radio) ` +
+					`renders app-dark ink on the modal's dark panel.`
+			).toBe(true);
+		});
+	}
 });

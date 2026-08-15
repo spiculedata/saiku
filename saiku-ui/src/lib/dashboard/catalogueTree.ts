@@ -14,57 +14,57 @@
 /** Minimal per-dashboard shape the tree builder consumes. Mirrors the
  *  subset of CatalogueEntry the folder view needs to render a leaf. */
 export interface CatalogueLeaf {
-  /** Repo-relative path including the `.saikudash` extension, e.g.
-   *  {@code homes/admin/Sales/q3.saikudash}. */
-  path: string;
-  /** Human-readable title (falls back to basename in the view). */
-  title: string | null;
-  /** Filename without the `.saikudash` extension. */
-  basename: string;
+	/** Repo-relative path including the `.saikudash` extension, e.g.
+	 *  {@code homes/admin/Sales/q3.saikudash}. */
+	path: string;
+	/** Human-readable title (falls back to basename in the view). */
+	title: string | null;
+	/** Filename without the `.saikudash` extension. */
+	basename: string;
 }
 
 /** A folder node in the catalogue tree. {@code path} is the repo-relative
  *  folder path (empty string for the synthetic root); {@code folders} and
  *  {@code dashboards} are its direct children. */
 export interface FolderNode {
-  /** Folder name (last path segment). Empty string for the root. */
-  name: string;
-  /** Full repo-relative folder path, e.g. {@code homes/admin/Sales}.
-   *  Empty string for the synthetic root. */
-  path: string;
-  /** Child folders, sorted by name (case-insensitive). */
-  folders: FolderNode[];
-  /** Dashboards that live directly in this folder, sorted by display
-   *  name (title ?? basename), case-insensitive. */
-  dashboards: CatalogueLeaf[];
+	/** Folder name (last path segment). Empty string for the root. */
+	name: string;
+	/** Full repo-relative folder path, e.g. {@code homes/admin/Sales}.
+	 *  Empty string for the synthetic root. */
+	path: string;
+	/** Child folders, sorted by name (case-insensitive). */
+	folders: FolderNode[];
+	/** Dashboards that live directly in this folder, sorted by display
+	 *  name (title ?? basename), case-insensitive. */
+	dashboards: CatalogueLeaf[];
 }
 
 /** Split a repo path into clean segments, dropping empties so leading /
  *  trailing / doubled slashes don't produce blank folders. */
 export function pathSegments(path: string): string[] {
-  return path.split("/").filter((s) => s.length > 0);
+	return path.split('/').filter((s) => s.length > 0);
 }
 
 /** The folder portion of a dashboard path (everything before the last
  *  segment). {@code homes/admin/Sales/q3.saikudash} → {@code homes/admin/Sales};
  *  a bare {@code q3.saikudash} → {@code ""} (the root). */
 export function parentFolder(path: string): string {
-  const segs = pathSegments(path);
-  segs.pop();
-  return segs.join("/");
+	const segs = pathSegments(path);
+	segs.pop();
+	return segs.join('/');
 }
 
 /** The last path segment (file or folder name). */
 export function lastSegment(path: string): string {
-  const segs = pathSegments(path);
-  return segs.length ? segs[segs.length - 1] : "";
+	const segs = pathSegments(path);
+	return segs.length ? segs[segs.length - 1] : '';
 }
 
 /** Join a folder path and a child name into a clean repo path. A blank
  *  folder yields just the child (root-level). */
 export function joinPath(folder: string, child: string): string {
-  const f = pathSegments(folder).join("/");
-  return f ? `${f}/${child}` : child;
+	const f = pathSegments(folder).join('/');
+	return f ? `${f}/${child}` : child;
 }
 
 /**
@@ -80,66 +80,66 @@ export function joinPath(folder: string, child: string): string {
  * {@code folders} / {@code dashboards} are the top level.
  */
 export function buildFolderTree(
-  leaves: ReadonlyArray<CatalogueLeaf>,
-  extraFolders: ReadonlyArray<string> = [],
+	leaves: ReadonlyArray<CatalogueLeaf>,
+	extraFolders: ReadonlyArray<string> = []
 ): FolderNode {
-  const root: FolderNode = { name: "", path: "", folders: [], dashboards: [] };
-  // Index folder nodes by full path for O(1) descent / reuse.
-  const byPath = new Map<string, FolderNode>([["", root]]);
+	const root: FolderNode = { name: '', path: '', folders: [], dashboards: [] };
+	// Index folder nodes by full path for O(1) descent / reuse.
+	const byPath = new Map<string, FolderNode>([['', root]]);
 
-  const ensureFolder = (folderPath: string): FolderNode => {
-    const segs = pathSegments(folderPath);
-    let current = root;
-    let acc = "";
-    for (const seg of segs) {
-      acc = acc ? `${acc}/${seg}` : seg;
-      let next = byPath.get(acc);
-      if (!next) {
-        next = { name: seg, path: acc, folders: [], dashboards: [] };
-        byPath.set(acc, next);
-        current.folders.push(next);
-      }
-      current = next;
-    }
-    return current;
-  };
+	const ensureFolder = (folderPath: string): FolderNode => {
+		const segs = pathSegments(folderPath);
+		let current = root;
+		let acc = '';
+		for (const seg of segs) {
+			acc = acc ? `${acc}/${seg}` : seg;
+			let next = byPath.get(acc);
+			if (!next) {
+				next = { name: seg, path: acc, folders: [], dashboards: [] };
+				byPath.set(acc, next);
+				current.folders.push(next);
+			}
+			current = next;
+		}
+		return current;
+	};
 
-  for (const folder of extraFolders) ensureFolder(folder);
+	for (const folder of extraFolders) ensureFolder(folder);
 
-  for (const leaf of leaves) {
-    const folder = ensureFolder(parentFolder(leaf.path));
-    folder.dashboards.push(leaf);
-  }
+	for (const leaf of leaves) {
+		const folder = ensureFolder(parentFolder(leaf.path));
+		folder.dashboards.push(leaf);
+	}
 
-  sortFolderNode(root);
-  return root;
+	sortFolderNode(root);
+	return root;
 }
 
 /** Recursively sort a folder node's children: folders by name, dashboards
  *  by display name (title ?? basename), both case-insensitive. */
 function sortFolderNode(node: FolderNode): void {
-  node.folders.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
-  node.dashboards.sort((a, b) => {
-    const ax = (a.title ?? a.basename).toLowerCase();
-    const bx = (b.title ?? b.basename).toLowerCase();
-    return ax.localeCompare(bx);
-  });
-  for (const child of node.folders) sortFolderNode(child);
+	node.folders.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+	node.dashboards.sort((a, b) => {
+		const ax = (a.title ?? a.basename).toLowerCase();
+		const bx = (b.title ?? b.basename).toLowerCase();
+		return ax.localeCompare(bx);
+	});
+	for (const child of node.folders) sortFolderNode(child);
 }
 
 /** Collect every folder path present in a tree (excluding the synthetic
  *  root), sorted depth-first by path. Used to populate a "move to folder"
  *  picker. */
 export function collectFolderPaths(root: FolderNode): string[] {
-  const out: string[] = [];
-  const walk = (node: FolderNode): void => {
-    for (const child of node.folders) {
-      out.push(child.path);
-      walk(child);
-    }
-  };
-  walk(root);
-  return out;
+	const out: string[] = [];
+	const walk = (node: FolderNode): void => {
+		for (const child of node.folders) {
+			out.push(child.path);
+			walk(child);
+		}
+	};
+	walk(root);
+	return out;
 }
 
 /**
@@ -151,8 +151,8 @@ export function collectFolderPaths(root: FolderNode): string[] {
  *     → "homes/admin/Archive/q3.saikudash"
  */
 export function moveDashboardPath(dashboardPath: string, targetFolder: string): string {
-  const file = lastSegment(dashboardPath);
-  return joinPath(targetFolder, file);
+	const file = lastSegment(dashboardPath);
+	return joinPath(targetFolder, file);
 }
 
 /**
@@ -169,46 +169,46 @@ export function moveDashboardPath(dashboardPath: string, targetFolder: string): 
  * stays under the same parent.
  */
 export function renameFolderMoves(
-  oldFolder: string,
-  newName: string,
-  dashboardPaths: ReadonlyArray<string>,
+	oldFolder: string,
+	newName: string,
+	dashboardPaths: ReadonlyArray<string>
 ): { from: string; to: string }[] {
-  const oldSegs = pathSegments(oldFolder);
-  if (oldSegs.length === 0) return []; // can't rename the root
-  const cleanNew = lastSegment(newName).trim();
-  if (!cleanNew) return []; // blank / whitespace-only name → no-op (#937)
-  const parent = oldSegs.slice(0, -1).join("/");
-  const newFolder = joinPath(parent, cleanNew);
-  if (newFolder === pathSegments(oldFolder).join("/")) return []; // no-op rename
+	const oldSegs = pathSegments(oldFolder);
+	if (oldSegs.length === 0) return []; // can't rename the root
+	const cleanNew = lastSegment(newName).trim();
+	if (!cleanNew) return []; // blank / whitespace-only name → no-op (#937)
+	const parent = oldSegs.slice(0, -1).join('/');
+	const newFolder = joinPath(parent, cleanNew);
+	if (newFolder === pathSegments(oldFolder).join('/')) return []; // no-op rename
 
-  const prefix = `${pathSegments(oldFolder).join("/")}/`;
-  const out: { from: string; to: string }[] = [];
-  for (const p of dashboardPaths) {
-    const clean = pathSegments(p).join("/");
-    if (clean.startsWith(prefix)) {
-      const rest = clean.slice(prefix.length);
-      out.push({ from: p, to: `${newFolder}/${rest}` });
-    }
-  }
-  return out;
+	const prefix = `${pathSegments(oldFolder).join('/')}/`;
+	const out: { from: string; to: string }[] = [];
+	for (const p of dashboardPaths) {
+		const clean = pathSegments(p).join('/');
+		if (clean.startsWith(prefix)) {
+			const rest = clean.slice(prefix.length);
+			out.push({ from: p, to: `${newFolder}/${rest}` });
+		}
+	}
+	return out;
 }
 
 /** True when {@code child} is the same as, or nested under, {@code folder}.
  *  Used to stop the UI offering "move into myself / my descendant". */
 export function isDescendantOf(child: string, folder: string): boolean {
-  const c = pathSegments(child).join("/");
-  const f = pathSegments(folder).join("/");
-  if (f === "") return true; // everything is under the root
-  return c === f || c.startsWith(`${f}/`);
+	const c = pathSegments(child).join('/');
+	const f = pathSegments(folder).join('/');
+	if (f === '') return true; // everything is under the root
+	return c === f || c.startsWith(`${f}/`);
 }
 
 /** Validate a proposed new folder name (single path segment). Returns an
  *  error key suffix string (for i18n) or {@code null} when valid. Rejects
  *  blanks, slashes, and the `.saikudash` reserved extension. */
-export function validateFolderName(name: string): "empty" | "slash" | "reserved" | null {
-  const t = name.trim();
-  if (!t) return "empty";
-  if (t.includes("/")) return "slash";
-  if (t.toLowerCase().endsWith(".saikudash")) return "reserved";
-  return null;
+export function validateFolderName(name: string): 'empty' | 'slash' | 'reserved' | null {
+	const t = name.trim();
+	if (!t) return 'empty';
+	if (t.includes('/')) return 'slash';
+	if (t.toLowerCase().endsWith('.saikudash')) return 'reserved';
+	return null;
 }

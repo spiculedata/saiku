@@ -20,19 +20,19 @@
  * Events batch and flush on a short debounce, on tab-hide (sendBeacon), and when
  * the queue fills. Failures are swallowed — analytics must never break the app.
  */
-import { browser } from "$app/environment";
-import { platform } from "$lib/stores/platform.svelte";
+import { browser } from '$app/environment';
+import { platform } from '$lib/stores/platform.svelte';
 
 /** Coarse event category. Keep the set small + stable so the report stays useful. */
-export type DemoEventType = "app" | "cube-designer" | "ai" | "query" | "dashboard" | "nav";
+export type DemoEventType = 'app' | 'cube-designer' | 'ai' | 'query' | 'dashboard' | 'nav';
 
 interface QueuedEvent {
-  type: DemoEventType;
-  name: string;
-  detail?: string;
+	type: DemoEventType;
+	name: string;
+	detail?: string;
 }
 
-const SESSION_KEY = "saiku.demo.session";
+const SESSION_KEY = 'saiku.demo.session';
 const FLUSH_DEBOUNCE_MS = 4000;
 const MAX_QUEUE = 40; // matches the Worker's per-request cap
 
@@ -42,76 +42,76 @@ let listenersBound = false;
 
 /** Analytics config from the capabilities probe, or null when off/unknown. */
 function config(): { enabled: boolean; endpoint: string } | null {
-  const c = platform.capabilities?.demoAnalytics;
-  return c && c.enabled && c.endpoint ? c : null;
+	const c = platform.capabilities?.demoAnalytics;
+	return c && c.enabled && c.endpoint ? c : null;
 }
 
 /** Random, anonymous, per-tab session id (sessionStorage). Coarse identifier the
  *  server hashes before storing — never a user id. */
 function sessionId(): string {
-  if (!browser) return "ssr";
-  try {
-    let id = sessionStorage.getItem(SESSION_KEY);
-    if (!id) {
-      id = crypto.randomUUID();
-      sessionStorage.setItem(SESSION_KEY, id);
-    }
-    return id;
-  } catch {
-    return "no-storage";
-  }
+	if (!browser) return 'ssr';
+	try {
+		let id = sessionStorage.getItem(SESSION_KEY);
+		if (!id) {
+			id = crypto.randomUUID();
+			sessionStorage.setItem(SESSION_KEY, id);
+		}
+		return id;
+	} catch {
+		return 'no-storage';
+	}
 }
 
 function scheduleFlush(): void {
-  if (flushTimer) return;
-  flushTimer = setTimeout(() => {
-    flushTimer = null;
-    void flush();
-  }, FLUSH_DEBOUNCE_MS);
+	if (flushTimer) return;
+	flushTimer = setTimeout(() => {
+		flushTimer = null;
+		void flush();
+	}, FLUSH_DEBOUNCE_MS);
 }
 
 /** POST the queued events. `beacon` uses sendBeacon (for tab-hide) so the
  *  request survives the page unloading. */
 function flush(beacon = false): void {
-  const cfg = config();
-  if (!cfg || queue.length === 0) return;
-  const events = queue;
-  queue = [];
-  const payload = JSON.stringify({
-    session: sessionId(),
-    version: platform.version ?? undefined,
-    events,
-  });
-  try {
-    if (beacon && browser && typeof navigator.sendBeacon === "function") {
-      navigator.sendBeacon(cfg.endpoint, new Blob([payload], { type: "application/json" }));
-      return;
-    }
-    void fetch(cfg.endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: payload,
-      keepalive: true,
-      // The collector is a different origin (telemetry.saiku.bi); we only send,
-      // never read the response, and carry no credentials.
-      credentials: "omit",
-      mode: "cors",
-    }).catch(() => {
-      /* analytics is best-effort */
-    });
-  } catch {
-    /* never throw from analytics */
-  }
+	const cfg = config();
+	if (!cfg || queue.length === 0) return;
+	const events = queue;
+	queue = [];
+	const payload = JSON.stringify({
+		session: sessionId(),
+		version: platform.version ?? undefined,
+		events
+	});
+	try {
+		if (beacon && browser && typeof navigator.sendBeacon === 'function') {
+			navigator.sendBeacon(cfg.endpoint, new Blob([payload], { type: 'application/json' }));
+			return;
+		}
+		void fetch(cfg.endpoint, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: payload,
+			keepalive: true,
+			// The collector is a different origin (telemetry.saiku.bi); we only send,
+			// never read the response, and carry no credentials.
+			credentials: 'omit',
+			mode: 'cors'
+		}).catch(() => {
+			/* analytics is best-effort */
+		});
+	} catch {
+		/* never throw from analytics */
+	}
 }
 
 function bindUnloadFlush(): void {
-  if (listenersBound || !browser) return;
-  listenersBound = true;
-  // Flush the tail on tab-hide — the most reliable "leaving" signal on mobile +
-  // desktop (visibilitychange > unload). sendBeacon so it survives teardown.
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") flush(true);
-  });
+	if (listenersBound || !browser) return;
+	listenersBound = true;
+	// Flush the tail on tab-hide — the most reliable "leaving" signal on mobile +
+	// desktop (visibilitychange > unload). sendBeacon so it survives teardown.
+	document.addEventListener('visibilitychange', () => {
+		if (document.visibilityState === 'hidden') flush(true);
+	});
 }
 
 /**
@@ -119,12 +119,12 @@ function bindUnloadFlush(): void {
  * is enabled. Safe to call from anywhere, any time — it never throws.
  */
 export function trackDemo(type: DemoEventType, name: string, detail?: string): void {
-  if (!browser || !config()) return;
-  bindUnloadFlush();
-  queue.push({ type, name, detail });
-  if (queue.length >= MAX_QUEUE) {
-    flush();
-    return;
-  }
-  scheduleFlush();
+	if (!browser || !config()) return;
+	bindUnloadFlush();
+	queue.push({ type, name, detail });
+	if (queue.length >= MAX_QUEUE) {
+		flush();
+		return;
+	}
+	scheduleFlush();
 }

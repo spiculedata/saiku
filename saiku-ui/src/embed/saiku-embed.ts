@@ -10,6 +10,6 @@
  * framework that wants to bypass the document parser). Not the usual
  * code path; the tag-based usage is the documented one.
  */
-import SaikuEmbed from "./SaikuEmbed.svelte";
+import SaikuEmbed from './SaikuEmbed.svelte';
 
 export default SaikuEmbed;

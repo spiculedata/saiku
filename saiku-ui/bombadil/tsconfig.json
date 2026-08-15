@@ -1,16 +1,16 @@
 {
-  // Standalone type-check config for the Bombadil fuzz spec. It lives outside
-  // `src/` so it's not part of the app build / svelte-check; type-check it on
-  // its own with: `npx tsc -p bombadil`.
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "strict": true,
-    "skipLibCheck": true,
-    "noEmit": true,
-    "types": []
-  },
-  "include": ["*.ts"]
+	// Standalone type-check config for the Bombadil fuzz spec. It lives outside
+	// `src/` so it's not part of the app build / svelte-check; type-check it on
+	// its own with: `npx tsc -p bombadil`.
+	"compilerOptions": {
+		"target": "ES2022",
+		"module": "ESNext",
+		"moduleResolution": "Bundler",
+		"lib": ["ES2022", "DOM", "DOM.Iterable"],
+		"strict": true,
+		"skipLibCheck": true,
+		"noEmit": true,
+		"types": []
+	},
+	"include": ["*.ts"]
 }

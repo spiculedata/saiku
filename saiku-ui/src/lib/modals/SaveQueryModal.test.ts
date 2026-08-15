@@ -11,72 +11,72 @@
  * the component source: every save path (footer button + Enter) routes
  * through one helper that preserves the onSave(folder, name) contract.
  */
-import { describe, it, expect, vi } from "vitest";
-import { render } from "svelte/server";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { describe, it, expect, vi } from 'vitest';
+import { render } from 'svelte/server';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 // Stub the heavy folder browser with a marker-only component so the
 // render doesn't pull in the repository store / fetch machinery.
-vi.mock("$lib/components/RepositoryBrowser.svelte", async () => ({
-  default: (await import("./__stubs__/RepositoryBrowserStub.svelte")).default,
+vi.mock('$lib/components/RepositoryBrowser.svelte', async () => ({
+	default: (await import('./__stubs__/RepositoryBrowserStub.svelte')).default
 }));
 
 // i18n: echo the key so assertions are locale-independent.
-vi.mock("$lib/stores/i18n.svelte", () => ({
-  i18n: { t: (key: string) => key },
+vi.mock('$lib/stores/i18n.svelte', () => ({
+	i18n: { t: (key: string) => key }
 }));
 
-import SaveQueryModal from "./SaveQueryModal.svelte";
+import SaveQueryModal from './SaveQueryModal.svelte';
 
 const SOURCE = readFileSync(
-  fileURLToPath(new URL("./SaveQueryModal.svelte", import.meta.url)),
-  "utf8",
+	fileURLToPath(new URL('./SaveQueryModal.svelte', import.meta.url)),
+	'utf8'
 );
 
 function bodyFor(props: Record<string, unknown>): string {
-  return render(SaveQueryModal, {
-    props: {
-      defaultName: "",
-      defaultFolder: "reports",
-      folders: [],
-      open: true,
-      onSave: vi.fn(),
-      onCancel: vi.fn(),
-      ...props,
-    },
-  }).body;
+	return render(SaveQueryModal, {
+		props: {
+			defaultName: '',
+			defaultFolder: 'reports',
+			folders: [],
+			open: true,
+			onSave: vi.fn(),
+			onCancel: vi.fn(),
+			...props
+		}
+	}).body;
 }
 
-describe("SaveQueryModal (saiku#1570)", () => {
-  it("renders the Name input before the folder browser in DOM order", () => {
-    const body = bodyFor({ open: true });
+describe('SaveQueryModal (saiku#1570)', () => {
+	it('renders the Name input before the folder browser in DOM order', () => {
+		const body = bodyFor({ open: true });
 
-    const nameIdx = body.indexOf("field__input");
-    const browserIdx = body.indexOf('data-testid="repo-browser"');
+		const nameIdx = body.indexOf('field__input');
+		const browserIdx = body.indexOf('data-testid="repo-browser"');
 
-    // Both must be present, and the Name input must come first.
-    expect(nameIdx).toBeGreaterThanOrEqual(0);
-    expect(browserIdx).toBeGreaterThanOrEqual(0);
-    expect(nameIdx).toBeLessThan(browserIdx);
-  });
+		// Both must be present, and the Name input must come first.
+		expect(nameIdx).toBeGreaterThanOrEqual(0);
+		expect(browserIdx).toBeGreaterThanOrEqual(0);
+		expect(nameIdx).toBeLessThan(browserIdx);
+	});
 
-  it("renders the Name field label and intro", () => {
-    const body = bodyFor({ open: true });
-    expect(body).toContain("modal.save.name");
-    expect(body).toContain("modal.save.intro");
-    expect(body).toContain("field__input");
-  });
+	it('renders the Name field label and intro', () => {
+		const body = bodyFor({ open: true });
+		expect(body).toContain('modal.save.name');
+		expect(body).toContain('modal.save.intro');
+		expect(body).toContain('field__input');
+	});
 
-  it("routes every save path through a single onSave(folder, name) helper", () => {
-    // The helper preserves the folder + trimmed-name contract.
-    expect(SOURCE).toMatch(
-      /function save\(\)\s*:\s*void\s*\{\s*onSave\(normalizeFolder\(folder\),\s*name\.trim\(\)\);\s*\}/,
-    );
-    // Footer Save button uses the helper.
-    expect(SOURCE).toMatch(/onclick=\{save\}/);
-    // Enter-to-save is wired and gated on `valid`.
-    expect(SOURCE).toMatch(/e\.key === "Enter" && valid/);
-    expect(SOURCE).toMatch(/use:autofocus/);
-  });
+	it('routes every save path through a single onSave(folder, name) helper', () => {
+		// The helper preserves the folder + trimmed-name contract.
+		expect(SOURCE).toMatch(
+			/function save\(\)\s*:\s*void\s*\{\s*onSave\(normalizeFolder\(folder\),\s*name\.trim\(\)\);\s*\}/
+		);
+		// Footer Save button uses the helper.
+		expect(SOURCE).toMatch(/onclick=\{save\}/);
+		// Enter-to-save is wired and gated on `valid`.
+		expect(SOURCE).toMatch(/e\.key === ['"']Enter['"'] && valid/);
+		expect(SOURCE).toMatch(/use:autofocus/);
+	});
 });

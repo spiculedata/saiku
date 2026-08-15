@@ -8,42 +8,39 @@
  */
 
 // ── Mount points ────────────────────────────────────────────────────────────
-export { default as SchemaCanvasView } from "./SchemaCanvasView.svelte";
-export { default as WorkbenchView } from "./WorkbenchView.svelte";
+export { default as SchemaCanvasView } from './SchemaCanvasView.svelte';
+export { default as WorkbenchView } from './WorkbenchView.svelte';
 
 // ── Store ───────────────────────────────────────────────────────────────────
-export { SchemaCanvasStore } from "./state.svelte";
+export { SchemaCanvasStore } from './state.svelte';
 
 // ── Backend seam (host provides the adapter) ─────────────────────────────────
 export {
-  setCubeDesignerBackend,
-  setCubeDesignerAI,
-  getCubeDesignerBackend,
-  getCubeDesignerAI,
-  type CubeDesignerBackend,
-  type CubeDesignerAI,
-} from "./backend";
+	setCubeDesignerBackend,
+	setCubeDesignerAI,
+	getCubeDesignerBackend,
+	getCubeDesignerAI,
+	type CubeDesignerBackend,
+	type CubeDesignerAI
+} from './backend';
 
 // ── Mondrian emit / import ───────────────────────────────────────────────────
-export { exportToMondrianXml, exportToMondrianYaml } from "./mondrian-export";
-export { importFromMondrianXml } from "./mondrian-import";
+export { exportToMondrianXml, exportToMondrianYaml } from './mondrian-export';
+export { importFromMondrianXml } from './mondrian-import';
 
 // ── Source profiling ─────────────────────────────────────────────────────────
-export { parseProfileTables } from "./profile-types";
-export type {
-  ProfileTableSummary,
-  ProfileColumnSummary,
-} from "./profile-types";
+export { parseProfileTables } from './profile-types';
+export type { ProfileTableSummary, ProfileColumnSummary } from './profile-types';
 
 // ── Core types ───────────────────────────────────────────────────────────────
 export type {
-  SchemaCanvasState,
-  SourceTableCandidate,
-  SchemaCanvasTable,
-  SchemaCanvasJoin,
-  SchemaCanvasDimension,
-  SchemaCanvasHierarchy,
-  SchemaCanvasLevel,
-  SchemaCanvasMeasure,
-  SchemaCanvasCube,
-} from "./types";
+	SchemaCanvasState,
+	SourceTableCandidate,
+	SchemaCanvasTable,
+	SchemaCanvasJoin,
+	SchemaCanvasDimension,
+	SchemaCanvasHierarchy,
+	SchemaCanvasLevel,
+	SchemaCanvasMeasure,
+	SchemaCanvasCube
+} from './types';

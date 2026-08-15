@@ -14,13 +14,13 @@
  * the standalone dashboard viewer. See the app-parity test.
  */
 
-import type { AppPage } from "$lib/api/apps";
+import type { AppPage } from '$lib/api/apps';
 import type {
-  Dashboard,
-  DashboardFilter,
-  DashboardFilterPanel,
-  DashboardTile,
-} from "$lib/api/dashboards";
+	Dashboard,
+	DashboardFilter,
+	DashboardFilterPanel,
+	DashboardTile
+} from '$lib/api/dashboards';
 
 /** Default column count when a page grid omits `cols` — mirrors
  *  {@code newDashboard()} / {@code emptyPage()} (both seed 12). */
@@ -32,17 +32,17 @@ const DEFAULT_COLS = 12;
  *  {@code filterPanel}). Every field is optional so a hand-authored or
  *  partially-populated grid still converts cleanly. */
 export interface PageGrid {
-  cols?: number;
-  tiles?: DashboardTile[];
-  filters?: DashboardFilter[];
-  filterPanel?: DashboardFilterPanel;
+	cols?: number;
+	tiles?: DashboardTile[];
+	filters?: DashboardFilter[];
+	filterPanel?: DashboardFilterPanel;
 }
 
 /** Narrow an opaque {@code page.grid} to {@link PageGrid}. Non-object grids
  *  (null / undefined / a stray primitive from a corrupt doc) collapse to an
  *  empty grid so the renderer shows its own empty state rather than throwing. */
 export function asPageGrid(grid: unknown): PageGrid {
-  return grid && typeof grid === "object" ? (grid as PageGrid) : {};
+	return grid && typeof grid === 'object' ? (grid as PageGrid) : {};
 }
 
 /** Convert an {@link AppPage} into the {@link Dashboard} the existing renderer
@@ -54,18 +54,18 @@ export function asPageGrid(grid: unknown): PageGrid {
  *  guarantee). `savedPath` stays empty when hydrated, so path-keyed server
  *  surfaces (Share / Embed / History / Comments) stay gated off for app pages. */
 export function pageGridToDashboard(page: AppPage): Dashboard {
-  const grid = asPageGrid(page.grid);
-  return {
-    id: page.id,
-    name: page.title,
-    version: 1,
-    layout: {
-      cols: grid.cols ?? DEFAULT_COLS,
-      tiles: grid.tiles ?? [],
-    },
-    filters: grid.filters ?? [],
-    filterPanel: grid.filterPanel,
-  };
+	const grid = asPageGrid(page.grid);
+	return {
+		id: page.id,
+		name: page.title,
+		version: 1,
+		layout: {
+			cols: grid.cols ?? DEFAULT_COLS,
+			tiles: grid.tiles ?? []
+		},
+		filters: grid.filters ?? [],
+		filterPanel: grid.filterPanel
+	};
 }
 
 /** Project a live {@link Dashboard} (as edited in the store) back into the
@@ -73,10 +73,10 @@ export function pageGridToDashboard(page: AppPage): Dashboard {
  *  {@link pageGridToDashboard}; used by the editable write-back so in-grid
  *  edits survive a page switch. Preserves references (no deep clone). */
 export function dashboardToPageGrid(dashboard: Dashboard): PageGrid {
-  return {
-    cols: dashboard.layout.cols,
-    tiles: dashboard.layout.tiles,
-    filters: dashboard.filters,
-    filterPanel: dashboard.filterPanel,
-  };
+	return {
+		cols: dashboard.layout.cols,
+		tiles: dashboard.layout.tiles,
+		filters: dashboard.filters,
+		filterPanel: dashboard.filterPanel
+	};
 }

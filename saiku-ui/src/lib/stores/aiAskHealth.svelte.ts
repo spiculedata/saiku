@@ -9,27 +9,27 @@
  * "not configured" so the feature stays hidden.
  */
 
-import { fetchAskHealth } from "$lib/api/aiAsk";
+import { fetchAskHealth } from '$lib/api/aiAsk';
 
 class AiAskHealthStore {
-  /** True iff the backend reports the provider is wired. Defaults to false until
-   *  the probe completes so the button doesn't flash visible→hidden. */
-  configured = $state(false);
+	/** True iff the backend reports the provider is wired. Defaults to false until
+	 *  the probe completes so the button doesn't flash visible→hidden. */
+	configured = $state(false);
 
-  /** True until the first probe completes — lets the toolbar defer rendering
-   *  until we know the answer. Most surfaces can ignore this. */
-  loading = $state(true);
+	/** True until the first probe completes — lets the toolbar defer rendering
+	 *  until we know the answer. Most surfaces can ignore this. */
+	loading = $state(true);
 
-  constructor() {
-    void this.refresh();
-  }
+	constructor() {
+		void this.refresh();
+	}
 
-  async refresh(): Promise<void> {
-    this.loading = true;
-    const h = await fetchAskHealth();
-    this.configured = h.configured;
-    this.loading = false;
-  }
+	async refresh(): Promise<void> {
+		this.loading = true;
+		const h = await fetchAskHealth();
+		this.configured = h.configured;
+		this.loading = false;
+	}
 }
 
 export const aiAskHealth = new AiAskHealthStore();

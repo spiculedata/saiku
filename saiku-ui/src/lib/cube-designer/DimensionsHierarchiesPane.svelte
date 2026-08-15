@@ -148,18 +148,18 @@
 		editingDimNameId = $bindable(),
 		editingHierNameId = $bindable(),
 		focusDimId = $bindable(),
-		 
+
 		hierarchyExplicitlyClicked = $bindable(),
 		manualAddDimName = $bindable(),
 		manualAddDimOpen = $bindable(),
 		manualAddDimSourceKey = $bindable(),
-		 
+
 		selectedAttributeKey = $bindable(),
 		selectedLevelId = $bindable(),
 		selectedDimensionId = $bindable(),
-		 
+
 		selectedHierarchyId = $bindable(),
-		 
+
 		selectedMeasureId = $bindable(),
 		focus,
 		isFocused,

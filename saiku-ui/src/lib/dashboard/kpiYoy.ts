@@ -18,8 +18,8 @@
 
 /** A level member as returned by /ai/members/search. */
 export interface LevelMember {
-  uniqueName: string;
-  caption: string;
+	uniqueName: string;
+	caption: string;
 }
 
 /** Split an MDX unique name into its bracketed segments.
@@ -27,18 +27,18 @@ export interface LevelMember {
  *  Falls back to a dot-split when the name isn't bracketed, so non-standard
  *  member keys still degrade gracefully rather than throwing. */
 export function splitMemberSegments(uniqueName: string): string[] {
-  const matches = uniqueName.match(/\[[^\]]*\]/g);
-  if (matches && matches.length > 0) return matches;
-  return uniqueName.split(".");
+	const matches = uniqueName.match(/\[[^\]]*\]/g);
+	if (matches && matches.length > 0) return matches;
+	return uniqueName.split('.');
 }
 
 /** The parent unique name: the member's unique name with its last segment
  *  removed. Returns "" when there's only one segment (a root member with no
  *  parent we can step back from). */
 export function parentKey(uniqueName: string): string {
-  const segs = splitMemberSegments(uniqueName);
-  if (segs.length <= 1) return "";
-  return segs.slice(0, -1).join(".");
+	const segs = splitMemberSegments(uniqueName);
+	if (segs.length <= 1) return '';
+	return segs.slice(0, -1).join('.');
 }
 
 /**
@@ -58,39 +58,39 @@ export function parentKey(uniqueName: string): string {
  * case — same fallback PR #991 introduced.
  */
 export function yearAgoMemberKey(
-  target: string,
-  orderedMembers: ReadonlyArray<LevelMember>,
+	target: string,
+	orderedMembers: ReadonlyArray<LevelMember>
 ): string | null {
-  if (!target || orderedMembers.length === 0) return null;
-  const targetParent = parentKey(target);
-  if (!targetParent) return null;
+	if (!target || orderedMembers.length === 0) return null;
+	const targetParent = parentKey(target);
+	if (!targetParent) return null;
 
-  // Group the ordered members by parent, preserving first-seen order. Each
-  // group keeps its members in their original (chronological) order.
-  const groupOrder: string[] = [];
-  const groups = new Map<string, LevelMember[]>();
-  for (const m of orderedMembers) {
-    const pk = parentKey(m.uniqueName);
-    let g = groups.get(pk);
-    if (!g) {
-      g = [];
-      groups.set(pk, g);
-      groupOrder.push(pk);
-    }
-    g.push(m);
-  }
+	// Group the ordered members by parent, preserving first-seen order. Each
+	// group keeps its members in their original (chronological) order.
+	const groupOrder: string[] = [];
+	const groups = new Map<string, LevelMember[]>();
+	for (const m of orderedMembers) {
+		const pk = parentKey(m.uniqueName);
+		let g = groups.get(pk);
+		if (!g) {
+			g = [];
+			groups.set(pk, g);
+			groupOrder.push(pk);
+		}
+		g.push(m);
+	}
 
-  const parentIdx = groupOrder.indexOf(targetParent);
-  if (parentIdx <= 0) return null; // unknown parent, or earliest parent → no year-ago.
-  const prevParent = groupOrder[parentIdx - 1];
-  const currentGroup = groups.get(targetParent)!;
-  const prevGroup = groups.get(prevParent)!;
+	const parentIdx = groupOrder.indexOf(targetParent);
+	if (parentIdx <= 0) return null; // unknown parent, or earliest parent → no year-ago.
+	const prevParent = groupOrder[parentIdx - 1];
+	const currentGroup = groups.get(targetParent)!;
+	const prevGroup = groups.get(prevParent)!;
 
-  const childIdx = currentGroup.findIndex((m) => m.uniqueName === target);
-  if (childIdx < 0) return null;
-  if (childIdx >= prevGroup.length) return null; // predecessor parent is shorter.
+	const childIdx = currentGroup.findIndex((m) => m.uniqueName === target);
+	if (childIdx < 0) return null;
+	if (childIdx >= prevGroup.length) return null; // predecessor parent is shorter.
 
-  return prevGroup[childIdx].uniqueName;
+	return prevGroup[childIdx].uniqueName;
 }
 
 /**
@@ -104,16 +104,16 @@ export function yearAgoMemberKey(
  * Returns an empty array when nothing resolved (caller leaves rows untouched).
  */
 export function expandYearOverYearRows(
-  slicerMembers: ReadonlyArray<string>,
-  orderedMembers: ReadonlyArray<LevelMember>,
+	slicerMembers: ReadonlyArray<string>,
+	orderedMembers: ReadonlyArray<LevelMember>
 ): string[] {
-  if (slicerMembers.length === 0 || orderedMembers.length === 0) return [];
-  const wanted = new Set<string>();
-  for (const m of slicerMembers) {
-    wanted.add(m);
-    const ago = yearAgoMemberKey(m, orderedMembers);
-    if (ago) wanted.add(ago);
-  }
-  // Preserve the cube's declared order.
-  return orderedMembers.filter((m) => wanted.has(m.uniqueName)).map((m) => m.uniqueName);
+	if (slicerMembers.length === 0 || orderedMembers.length === 0) return [];
+	const wanted = new Set<string>();
+	for (const m of slicerMembers) {
+		wanted.add(m);
+		const ago = yearAgoMemberKey(m, orderedMembers);
+		if (ago) wanted.add(ago);
+	}
+	// Preserve the cube's declared order.
+	return orderedMembers.filter((m) => wanted.has(m.uniqueName)).map((m) => m.uniqueName);
 }

@@ -36,5 +36,5 @@ export {
 	// Misc
 	Kbd,
 	type ButtonVariant,
-	type ButtonSize,
+	type ButtonSize
 } from '@concepttocloud/saiku-design-system/ui';

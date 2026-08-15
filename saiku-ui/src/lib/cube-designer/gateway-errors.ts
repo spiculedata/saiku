@@ -22,14 +22,9 @@
  *   here so migrating an inline copy is behaviour-preserving.
  */
 export function readGatewayErrorMessage(
-  status: number,
-  body: { message?: string; error?: string } | null | undefined,
-  fallback?: string,
+	status: number,
+	body: { message?: string; error?: string } | null | undefined,
+	fallback?: string
 ): string {
-  return (
-    body?.message ??
-    body?.error ??
-    fallback ??
-    `Request failed (HTTP ${status})`
-  );
+	return body?.message ?? body?.error ?? fallback ?? `Request failed (HTTP ${status})`;
 }

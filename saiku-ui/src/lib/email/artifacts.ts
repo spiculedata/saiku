@@ -15,8 +15,8 @@
  * there is no comma to split on.
  */
 export function stripDataUriPrefix(dataUri: string): string {
-  const idx = dataUri.indexOf(",");
-  return idx === -1 ? dataUri : dataUri.slice(idx + 1);
+	const idx = dataUri.indexOf(',');
+	return idx === -1 ? dataUri : dataUri.slice(idx + 1);
 }
 
 /**
@@ -25,9 +25,9 @@ export function stripDataUriPrefix(dataUri: string): string {
  * no chart canvas is rendered (e.g. table/pivot view mode).
  */
 export function chartPngBase64(): string | null {
-  const c = document.querySelector(".result-host canvas") as HTMLCanvasElement | null;
-  if (!c) return null;
-  return stripDataUriPrefix(c.toDataURL("image/png"));
+	const c = document.querySelector('.result-host canvas') as HTMLCanvasElement | null;
+	if (!c) return null;
+	return stripDataUriPrefix(c.toDataURL('image/png'));
 }
 
 /**
@@ -44,39 +44,39 @@ export function chartPngBase64(): string | null {
  * dashboard, so pagination was judged unnecessary for v1.
  */
 export async function resultToPdfBase64(node: HTMLElement | null): Promise<string | null> {
-  if (!node) return null;
+	if (!node) return null;
 
-  const [{ toPng }, { jsPDF }] = await Promise.all([import("html-to-image"), import("jspdf")]);
+	const [{ toPng }, { jsPDF }] = await Promise.all([import('html-to-image'), import('jspdf')]);
 
-  const dataUrl = await toPng(node, { pixelRatio: 2, cacheBust: true });
-  const img = await loadImage(dataUrl);
-  const imgW = img.naturalWidth;
-  const imgH = img.naturalHeight;
+	const dataUrl = await toPng(node, { pixelRatio: 2, cacheBust: true });
+	const img = await loadImage(dataUrl);
+	const imgW = img.naturalWidth;
+	const imgH = img.naturalHeight;
 
-  // A4 portrait in pt, matching dashboardExport's page setup.
-  const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
-  const pageW = pdf.internal.pageSize.getWidth();
-  const pageH = pdf.internal.pageSize.getHeight();
-  const margin = 24;
-  const contentW = pageW - margin * 2;
-  const contentH = pageH - margin * 2;
+	// A4 portrait in pt, matching dashboardExport's page setup.
+	const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+	const pageW = pdf.internal.pageSize.getWidth();
+	const pageH = pdf.internal.pageSize.getHeight();
+	const margin = 24;
+	const contentW = pageW - margin * 2;
+	const contentH = pageH - margin * 2;
 
-  // Scale the image to fit within one page, preserving aspect ratio.
-  const scale = Math.min(contentW / imgW, contentH / imgH);
-  const drawW = imgW * scale;
-  const drawH = imgH * scale;
+	// Scale the image to fit within one page, preserving aspect ratio.
+	const scale = Math.min(contentW / imgW, contentH / imgH);
+	const drawW = imgW * scale;
+	const drawH = imgH * scale;
 
-  pdf.addImage(dataUrl, "PNG", margin, margin, drawW, drawH, undefined, "FAST");
+	pdf.addImage(dataUrl, 'PNG', margin, margin, drawW, drawH, undefined, 'FAST');
 
-  return stripDataUriPrefix(pdf.output("datauristring"));
+	return stripDataUriPrefix(pdf.output('datauristring'));
 }
 
 /** Promise wrapper around HTMLImageElement load. */
 function loadImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = reject;
-    img.src = src;
-  });
+	return new Promise((resolve, reject) => {
+		const img = new Image();
+		img.onload = () => resolve(img);
+		img.onerror = reject;
+		img.src = src;
+	});
 }

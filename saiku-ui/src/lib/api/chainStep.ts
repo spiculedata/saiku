@@ -9,16 +9,17 @@
  * request), then insight / emailDraft / viewChange, then a plain built query.
  */
 
-import type { AskResponse } from "./aiAsk";
+import type { AskResponse } from './aiAsk';
 
-export type ChainStepKind = "query" | "report" | "degraded" | "viewChange" | "emailDraft" | "unknown";
+export type ChainStepKind =
+	'query' | 'report' | 'degraded' | 'viewChange' | 'emailDraft' | 'unknown';
 
 /** Classify one AskResponse envelope from the chain stream (a `step` or `final` event's payload). */
 export function classifyChainEnvelope(env: AskResponse): ChainStepKind {
-  if (env.degraded) return "degraded";
-  if (env.insight) return "report";
-  if (env.emailDraft) return "emailDraft";
-  if (env.viewChange) return "viewChange";
-  if (env.request) return "query";
-  return "unknown";
+	if (env.degraded) return 'degraded';
+	if (env.insight) return 'report';
+	if (env.emailDraft) return 'emailDraft';
+	if (env.viewChange) return 'viewChange';
+	if (env.request) return 'query';
+	return 'unknown';
 }

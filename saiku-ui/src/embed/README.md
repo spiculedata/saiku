@@ -18,7 +18,7 @@ npm install @concepttocloud/saiku-embed
 ```
 
 ```ts
-import "@concepttocloud/saiku-embed";
+import '@concepttocloud/saiku-embed';
 ```
 
 The import has the side effect of registering the `saiku-embed` tag
@@ -30,10 +30,10 @@ globally — no further setup.
 
 ```html
 <saiku-embed
-  server="https://YOUR-SAIKU.example.com"
-  token="..."
-  path="homes/admin/Examples/Trend.saiku"
-  height="400px"
+	server="https://YOUR-SAIKU.example.com"
+	token="..."
+	path="homes/admin/Examples/Trend.saiku"
+	height="400px"
 ></saiku-embed>
 ```
 
@@ -41,12 +41,12 @@ globally — no further setup.
 
 ```html
 <saiku-embed
-  server="..."
-  token="..."
-  path="homes/admin/Examples/Sales.saiku"
-  render="chart"
-  mode="bar"
-  height="500px"
+	server="..."
+	token="..."
+	path="homes/admin/Examples/Sales.saiku"
+	render="chart"
+	mode="bar"
+	height="500px"
 ></saiku-embed>
 ```
 
@@ -58,11 +58,11 @@ row-key map like `render="table"` does. Useful for pivot-style reports.
 
 ```html
 <saiku-embed
-  server="..."
-  token="..."
-  path="homes/admin/Examples/Sales.saiku"
-  render="matrix"
-  height="500px"
+	server="..."
+	token="..."
+	path="homes/admin/Examples/Sales.saiku"
+	render="matrix"
+	height="500px"
 ></saiku-embed>
 ```
 
@@ -76,11 +76,11 @@ scope. Requires an AI-kind token (see "Minting an AI token" below).
 
 ```html
 <saiku-embed
-  server="..."
-  token="..."
-  kind="ai"
-  path="foodmart/FoodMart/FoodMart/Sales"
-  height="200px"
+	server="..."
+	token="..."
+	kind="ai"
+	path="foodmart/FoodMart/FoodMart/Sales"
+	height="200px"
 ></saiku-embed>
 ```
 
@@ -93,11 +93,11 @@ when the query carries a prior measure column, a delta chip is shown.
 
 ```html
 <saiku-embed
-  server="..."
-  token="..."
-  path="homes/admin/Examples/NetRevenue.saiku"
-  render="kpi"
-  height="160px"
+	server="..."
+	token="..."
+	path="homes/admin/Examples/NetRevenue.saiku"
+	render="kpi"
+	height="160px"
 ></saiku-embed>
 ```
 
@@ -109,10 +109,10 @@ untouched, so a host can parameterise an embed without re-authoring the query.
 
 ```html
 <saiku-embed
-  server="..."
-  token="..."
-  path="homes/admin/Examples/Sales.saiku"
-  filter='[{"dimension":"Time","level":"Year","members":["[Time].[2024]"]}]'
+	server="..."
+	token="..."
+	path="homes/admin/Examples/Sales.saiku"
+	filter='[{"dimension":"Time","level":"Year","members":["[Time].[2024]"]}]'
 ></saiku-embed>
 ```
 
@@ -126,12 +126,12 @@ the space's allowlist excludes the pinned cube, the ask fails closed.
 
 ```html
 <saiku-embed
-  server="..."
-  token="..."
-  kind="ai"
-  path="foodmart/FoodMart/FoodMart/Sales"
-  space="foodmart-sales-analyst"
-  height="240px"
+	server="..."
+	token="..."
+	kind="ai"
+	path="foodmart/FoodMart/FoodMart/Sales"
+	space="foodmart-sales-analyst"
+	height="240px"
 ></saiku-embed>
 ```
 
@@ -139,11 +139,11 @@ the space's allowlist excludes the pinned cube, the ask fails closed.
 
 ```html
 <saiku-embed
-  server="..."
-  token="..."
-  kind="dashboard"
-  path="homes/admin/exec.saikudash"
-  height="700px"
+	server="..."
+	token="..."
+	kind="dashboard"
+	path="homes/admin/exec.saikudash"
+	height="700px"
 ></saiku-embed>
 ```
 
@@ -156,11 +156,11 @@ pages in place.
 
 ```html
 <saiku-embed
-  server="..."
-  token="..."
-  kind="app"
-  path="homes/admin/sales-portal.saikuapp"
-  height="800px"
+	server="..."
+	token="..."
+	kind="app"
+	path="homes/admin/sales-portal.saikuapp"
+	height="800px"
 ></saiku-embed>
 ```
 
@@ -191,27 +191,23 @@ If the resource is marked publicly embeddable on the server
 (see "Public grants" below), omit the token entirely:
 
 ```html
-<saiku-embed
-  server="..."
-  path="shared/public-chart.saiku"
-  render="chart"
-></saiku-embed>
+<saiku-embed server="..." path="shared/public-chart.saiku" render="chart"></saiku-embed>
 ```
 
 ## Attributes
 
-| Attribute | Default     | Notes                                                                  |
-|-----------|-------------|------------------------------------------------------------------------|
-| `server`  | _(optional)_| Origin of the Saiku launcher, e.g. `https://demo.saiku.bi`. Leave empty for same-origin (v3.19+) |
-| `path`    | _(required)_| `kind=query`: saved query path (`.saiku`) — `kind=dashboard`: dashboard path (`.saikudash`) — `kind=ai`: cube ref `connection/catalog/schema/cubeName` — `kind=app`: App Builder document path (`.saikuapp`) |
-| `kind`    | `query`     | `query`, `dashboard`, `ai`, or `app`                                   |
-| `token`   | _(none)_    | Embed token from `POST /saiku/api/embed/tokens`. Omit for public reads |
-| `render`  | `table`     | For `kind=query`: `table`, `matrix`, `chart`, or `kpi` (v3.20)         |
-| `mode`    | `bar`       | For `render=chart`: `bar`, `line`, or `pie`                            |
-| `height`  | `400px`     | CSS height of the rendered surface                                     |
-| `space`   | _(none)_    | For `kind=ai`: Agent Space persona id — scopes the ask server-side (v3.20) |
-| `filter`  | _(none)_    | For `kind=query`: JSON array of slicer overrides applied at embed time (v3.20) |
-| `theme`   | _(light)_   | `light`, `dark`, or `auto` (follow `prefers-color-scheme`) (v3.20)     |
+| Attribute | Default      | Notes                                                                                                                                                                                                        |
+| --------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `server`  | _(optional)_ | Origin of the Saiku launcher, e.g. `https://demo.saiku.bi`. Leave empty for same-origin (v3.19+)                                                                                                             |
+| `path`    | _(required)_ | `kind=query`: saved query path (`.saiku`) — `kind=dashboard`: dashboard path (`.saikudash`) — `kind=ai`: cube ref `connection/catalog/schema/cubeName` — `kind=app`: App Builder document path (`.saikuapp`) |
+| `kind`    | `query`      | `query`, `dashboard`, `ai`, or `app`                                                                                                                                                                         |
+| `token`   | _(none)_     | Embed token from `POST /saiku/api/embed/tokens`. Omit for public reads                                                                                                                                       |
+| `render`  | `table`      | For `kind=query`: `table`, `matrix`, `chart`, or `kpi` (v3.20)                                                                                                                                               |
+| `mode`    | `bar`        | For `render=chart`: `bar`, `line`, or `pie`                                                                                                                                                                  |
+| `height`  | `400px`      | CSS height of the rendered surface                                                                                                                                                                           |
+| `space`   | _(none)_     | For `kind=ai`: Agent Space persona id — scopes the ask server-side (v3.20)                                                                                                                                   |
+| `filter`  | _(none)_     | For `kind=query`: JSON array of slicer overrides applied at embed time (v3.20)                                                                                                                               |
+| `theme`   | _(light)_    | `light`, `dark`, or `auto` (follow `prefers-color-scheme`) (v3.20)                                                                                                                                           |
 
 The component re-renders whenever an attribute changes, so frameworks
 binding state to attrs (React's JSX, Vue's `:server="..."`, etc.) just
@@ -223,17 +219,17 @@ The element emits namespaced `CustomEvent`s so the host page can react to what
 happens inside the embed. All bubble and are `composed`, so a listener on the
 `<saiku-embed>` element receives them:
 
-| Event             | `detail`                          | Fires when                              |
-|-------------------|-----------------------------------|-----------------------------------------|
-| `saiku:load`      | `{ kind, rows }`                  | a query / matrix / kpi surface loads    |
-| `saiku:error`     | `{ message }`                     | a query load fails (friendly message)   |
-| `saiku:select`    | `{ row }`                         | a table row is clicked (`render=table`) |
-| `saiku:ai-query`  | `{ question, degraded }`          | an AI ask resolves (`kind=ai`)          |
+| Event            | `detail`                 | Fires when                              |
+| ---------------- | ------------------------ | --------------------------------------- |
+| `saiku:load`     | `{ kind, rows }`         | a query / matrix / kpi surface loads    |
+| `saiku:error`    | `{ message }`            | a query load fails (friendly message)   |
+| `saiku:select`   | `{ row }`                | a table row is clicked (`render=table`) |
+| `saiku:ai-query` | `{ question, degraded }` | an AI ask resolves (`kind=ai`)          |
 
 ```js
-const el = document.querySelector("saiku-embed");
-el.addEventListener("saiku:load", (e) => console.log("loaded", e.detail.rows, "rows"));
-el.addEventListener("saiku:select", (e) => showDetail(e.detail.row));
+const el = document.querySelector('saiku-embed');
+el.addEventListener('saiku:load', (e) => console.log('loaded', e.detail.rows, 'rows'));
+el.addEventListener('saiku:select', (e) => showDetail(e.detail.row));
 ```
 
 In React (via `@concepttocloud/saiku-embed-react`) the same events are exposed
@@ -325,15 +321,15 @@ To fine-tune individual colours, set CSS variables on the host page:
 
 ```css
 saiku-embed {
-  --saiku-embed-fg: #0f172a;
-  --saiku-embed-bg: transparent;
-  --saiku-embed-border: #cbd5e1;
-  --saiku-embed-header-bg: #f1f5f9;
-  --saiku-embed-tile-bg: #ffffff;
-  --saiku-embed-row-hover: #e2e8f0;
-  --saiku-embed-negative: #b91c1c;
-  --saiku-embed-error: #b91c1c;
-  --saiku-embed-muted: #64748b;
+	--saiku-embed-fg: #0f172a;
+	--saiku-embed-bg: transparent;
+	--saiku-embed-border: #cbd5e1;
+	--saiku-embed-header-bg: #f1f5f9;
+	--saiku-embed-tile-bg: #ffffff;
+	--saiku-embed-row-hover: #e2e8f0;
+	--saiku-embed-negative: #b91c1c;
+	--saiku-embed-error: #b91c1c;
+	--saiku-embed-muted: #64748b;
 }
 ```
 
@@ -345,14 +341,14 @@ shadow boundary, so the canvas chart picks them up):
 
 ```css
 saiku-embed {
-  /* Series colour cycle — set as many as you need, 1..8, contiguously.
+	/* Series colour cycle — set as many as you need, 1..8, contiguously.
      Any unset → the chart falls back to the built-in palette. */
-  --saiku-embed-chart-1: #2563eb;
-  --saiku-embed-chart-2: #16a34a;
-  --saiku-embed-chart-3: #dc2626;
-  /* …up to --saiku-embed-chart-8 */
+	--saiku-embed-chart-1: #2563eb;
+	--saiku-embed-chart-2: #16a34a;
+	--saiku-embed-chart-3: #dc2626;
+	/* …up to --saiku-embed-chart-8 */
 
-  /* Axis labels / legend / titles use --saiku-embed-fg;
+	/* Axis labels / legend / titles use --saiku-embed-fg;
      axis + split lines use --saiku-embed-muted (both shared with the chrome). */
 }
 ```
