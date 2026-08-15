@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Button } from '$lib/components/ui';
+	import { Button, Input } from '$lib/components/ui';
 	import { users, type AdminUser } from '$lib/api/admin';
 	import { toasts } from '$lib/stores/toasts.svelte';
 	import { i18n } from '$lib/stores/i18n.svelte';
 	import ConfirmModal from '$lib/modals/ConfirmModal.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { Skeleton } from '$lib/design-system';
+	import { FormField, Skeleton } from '$lib/design-system';
 
 	let list = $state<AdminUser[]>([]);
 	let loading = $state(true);
@@ -115,26 +115,18 @@
 	onClose={() => (editing = null)}
 >
 	{#if editing}
-		<label class="field">
-			<span class="field__label">Username</span>
-			<input class="field__input" bind:value={editing.username} disabled={editing.id !== 0} />
-		</label>
-		<label class="field">
-			<span class="field__label">Email</span>
-			<input class="field__input" bind:value={editing.email} />
-		</label>
-		<label class="field">
-			<span class="field__label">Password</span>
+		<FormField label="Username">
+			<Input bind:value={editing.username} disabled={editing.id !== 0} />
+		</FormField>
+		<FormField label="Email">
+			<Input bind:value={editing.email} />
+		</FormField>
+		<FormField label="Password">
 			<!-- saiku#1514: the bundled auth reads users.properties; this panel writes a store it
            never consults. Rotation is therefore impossible here in every deployment mode, so
            the control is disabled rather than left to fail on submit. The server refuses a
            password change with 501 regardless — this only stops us inviting the attempt. -->
-			<input
-				class="field__input"
-				type="password"
-				bind:value={editing.password}
-				disabled={editing.id !== 0}
-			/>
+			<Input type="password" bind:value={editing.password} disabled={editing.id !== 0} />
 			{#if editing.id === 0}
 				<p class="field__hint">
 					Adds the account to the @-mention directory. It cannot sign in until it is added to
@@ -148,7 +140,7 @@
 					>).
 				</p>
 			{/if}
-		</label>
+		</FormField>
 		<fieldset class="field">
 			<legend class="field__label">Roles</legend>
 			{#each ['ROLE_USER', 'ROLE_ADMIN'] as r}
