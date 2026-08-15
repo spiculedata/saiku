@@ -195,18 +195,47 @@ public class AiReturnsResolverTest {
     }
 
     @Test
-    public void preBracketedMdxStillPassesThroughEvenWhenItRefersToPii() {
-        // Documented design choice: pre-bracketed tokens are passed through
-        // verbatim. If the agent already wrote MDX referencing a PII column
-        // (only possible if they already knew the structure outside the
-        // describe endpoint, which we redact), we let Mondrian's RETURN
-        // clause handle it. PII gate at the resolver layer is for the
-        // bare-caption path the agent SHOULD use — preventing a
-        // copy-from-headers exploit. Document the choice via this test so
-        // future maintainers don't change it without understanding.
+    public void preBracketedMdxIsAlsoRefusedWhenItRefersToPii() {
+        // saiku#1848 — REVERSES a previously documented design choice, deliberately.
+        //
+        // This test used to assert the opposite: pre-bracketed tokens passed through verbatim even
+        // when they named a PII column. The stated rationale was that writing such MDX was "only
+        // possible if they already knew the structure outside the describe endpoint, which we
+        // redact".
+        //
+        // That premise does not hold. AiSchema.toAgentView() redacts a PII measure's
+        // displayName / description / synonyms / unit / currency — but KEEPS its `name` AND
+        // `uniqueName` (see redactMeasure). Verified against the real code:
+        //
+        //     PII measure present in agent view : true
+        //       name       : Salary
+        //       uniqueName : [Measures].[Salary]
+        //       description: null
+        //
+        // So the qualified spelling is handed to the agent by Saiku itself, and the refusal message
+        // for the bare form actively recommends it ("or a fully-qualified MDX identifier like
+        // [Time].[Time].[Year]"). An agent following its own self-correction hint walked around the
+        // gate by design rather than by malice — no out-of-band knowledge required.
+        //
+        // The gate is policy about a COLUMN, so it now applies to every spelling of that column.
+        // Unknown bracketed identifiers still pass through untouched (see
+        // unknownBracketedIdentifierStillPassesThrough) — this adds a refusal, never a new
+        // rejection, so Mondrian remains the judge of MDX it alone understands.
         schema.measures.get(AiSchema.key("Store Sales")).pii = true;
-        String out = AiReturnsResolver.resolve("[Measures].[Store Sales],Unit Sales", schema);
-        assertEquals("[Measures].[Store Sales],[Measures].[Unit Sales]", out);
+        try {
+            AiReturnsResolver.resolve("[Measures].[Store Sales],Unit Sales", schema);
+            fail("expected AiPiiException for the qualified spelling of a PII column");
+        } catch (AiPiiException expected) {
+            assertEquals("returns", expected.getField());
+        }
+    }
+
+    @Test
+    public void unknownBracketedIdentifierStillPassesThrough() {
+        // The saiku#1848 gate must not become a validator: an identifier the schema doesn't know
+        // is still handed to Mondrian unchanged, exactly as before.
+        String out = AiReturnsResolver.resolve("[Some].[Unknown].[Thing],Unit Sales", schema);
+        assertEquals("[Some].[Unknown].[Thing],[Measures].[Unit Sales]", out);
     }
 
     @Test

@@ -206,17 +206,33 @@ public final class QueryCacheKey {
         }
     }
 
-    /** Order members by lowercased unique name — the comparator the in-place sort used. */
+    /**
+     * Order members by lowercased unique name, tie-broken on the exact name.
+     *
+     * <p>The tie-break is load-bearing, and its absence was a long-standing bug this rewrite
+     * inherited. Sorting on the lowercased name alone leaves members whose names differ only by
+     * case ({@code [Store].[A]} vs {@code [Store].[a]}) comparing EQUAL. Java's sort is stable, so
+     * equal elements keep their input order — meaning the "canonical" form still depended on the
+     * order the caller happened to send, and two identical selections hashed differently and missed
+     * each other in the cache. Comparing the exact name second makes the order total, so
+     * canonicalisation is genuinely canonical.
+     *
+     * <p>Only affects selections containing case-colliding member names; every other key is
+     * unchanged.
+     */
     private static ArrayNode sortedByUniqueName(ArrayNode members) {
         List<JsonNode> sorted = new ArrayList<>(members.size());
         members.forEach(sorted::add);
-        sorted.sort(Comparator.comparing(m -> {
-            JsonNode un = m.get("uniqueName");
-            return (un == null || un.isNull() ? "" : un.asText()).toLowerCase(Locale.ROOT);
-        }));
+        sorted.sort(Comparator.<JsonNode, String>comparing(m -> uniqueNameOf(m).toLowerCase(Locale.ROOT))
+                .thenComparing(QueryCacheKey::uniqueNameOf));
         ArrayNode out = MAPPER.createArrayNode();
         sorted.forEach(out::add);
         return out;
+    }
+
+    private static String uniqueNameOf(JsonNode member) {
+        JsonNode un = member.get("uniqueName");
+        return un == null || un.isNull() ? "" : un.asText();
     }
 
     private static String toHex(byte[] bytes) {
