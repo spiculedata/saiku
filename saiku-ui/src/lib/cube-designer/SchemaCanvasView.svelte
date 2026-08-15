@@ -21,7 +21,7 @@
 	import DimSumChatDock from './DimSumChatDock.svelte';
 	import JoinsPanel from './JoinsPanel.svelte';
 	import CanvasPane from './CanvasPane.svelte';
-	import Toast from './primitives/Toast.svelte';
+	import { Toast } from '$lib/design-system';
 	import { computeJoinGroups, isSemanticGroup } from './join-groups.js';
 	import type {
 		AnthropicToolUseBlock,
