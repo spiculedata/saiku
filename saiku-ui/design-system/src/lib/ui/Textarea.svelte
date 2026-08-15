@@ -21,8 +21,8 @@
 
 	const toneClass = $derived(
 		tone === 'destructive'
-			? 'border-destructive focus-visible:ring-destructive/40'
-			: 'border-input focus-visible:ring-ring/40 focus-visible:border-ring'
+			? 'border-destructive focus-visible:ring-destructive'
+			: 'border-border-strong focus-visible:ring-ring'
 	);
 </script>
 
@@ -30,5 +30,5 @@
 	bind:value
 	{rows}
 	{...rest}
-	class="w-full resize-y rounded-md border bg-background px-3 py-2 text-sm text-foreground transition-colors placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 {toneClass}"
+	class="w-full resize-y rounded-sm border bg-background px-3 py-2 text-md text-foreground transition-colors placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 {toneClass}"
 ></textarea>
