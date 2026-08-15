@@ -13,7 +13,7 @@
    * has reorderPage(); wiring drag is a follow-up task).
    */
   import type { AppPage } from "$lib/api/apps";
-  import { Plus, PanelLeftClose, PanelLeftOpen, Settings } from "lucide-svelte";
+  import { Plus, PanelLeftClose, PanelLeftOpen, Settings } from "@lucide/svelte";
   // saiku#1805: the vocabulary lives in one module the picker reads too — the
   // rail and the inspector kept separate lists and had already drifted.
   import { pageIcon } from "$lib/views/app/pageIcons";

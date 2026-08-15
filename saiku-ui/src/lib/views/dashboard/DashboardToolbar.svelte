@@ -20,7 +20,7 @@
   // reusing the same ContextMenu primitive the tiles / dashboards list use.
   import ContextMenu from "$lib/components/ContextMenu.svelte";
   import type { TileType } from "$lib/api/dashboards";
-  import { Monitor, RotateCcw, X, Share2, History, Undo2, Redo2, Menu, MoreHorizontal, Download } from "lucide-svelte";
+  import { Monitor, RotateCcw, X, Share2, History, Undo2, Redo2, Menu, MoreHorizontal, Download } from "@lucide/svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
   // #929: client-side PNG / PDF export of the current dashboard view.
   import { activeFilters } from "$lib/stores/activeFilters.svelte";

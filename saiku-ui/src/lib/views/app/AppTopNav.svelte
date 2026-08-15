@@ -12,7 +12,7 @@
    * Deferred: reorder-drag of tabs is not implemented (store has reorderPage()).
    */
   import type { AppPage } from "$lib/api/apps";
-  import { Plus } from "lucide-svelte";
+  import { Plus } from "@lucide/svelte";
   // saiku#1805: the top nav drew the generic dashboard glyph on EVERY tab, so a
   // page icon an author set (and the rail honoured) silently did nothing here —
   // five differently-purposed pages all wearing the same mark.

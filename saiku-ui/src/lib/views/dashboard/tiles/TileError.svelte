@@ -7,7 +7,7 @@
    * message and an `onRetry` callback (which clears its fetch-dedupe cache
    * and re-fires the query effect).
    */
-  import { TriangleAlert, RotateCw } from "lucide-svelte";
+  import { TriangleAlert, RotateCw } from "@lucide/svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
 
   interface Props {

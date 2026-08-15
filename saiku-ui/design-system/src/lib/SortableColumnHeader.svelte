@@ -18,11 +18,12 @@
     </th>
 -->
 <script lang="ts" generics="K extends string">
-	// Arrows are inlined rather than imported from lucide. This component is
-	// published in @concepttocloud/saiku-design-system, and the two consuming
-	// apps are on different lucide packages (saiku-ui on `lucide-svelte`,
-	// saiku-cloud on `@lucide/svelte`) — importing either would force one app
-	// to carry a second icon library for three glyphs.
+	// Arrows are inlined rather than imported from lucide. This component ships
+	// in @concepttocloud/saiku-design-system, and a published package shouldn't
+	// force an icon-library peer dependency on its consumers for three glyphs —
+	// especially one that has already been renamed once (`lucide-svelte` was
+	// deprecated in favour of `@lucide/svelte`; both apps are on the latter now).
+	// Inlining keeps the package's dependency surface to tailwind-variants.
 	//
 	// These are lucide's arrow-up / arrow-down / arrow-up-down geometries,
 	// with each subpath re-anchored to an ABSOLUTE `M`. lucide ships them as

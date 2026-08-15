@@ -17,7 +17,7 @@
    */
 
   import type { TileType } from "$lib/api/dashboards";
-  import { BarChart3, Gauge, Table2 } from "lucide-svelte";
+  import { BarChart3, Gauge, Table2 } from "@lucide/svelte";
 
   interface Props {
     /** Invoked with the selected tile type. Parent owns placement +

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { Button } from "$lib/components/ui";
-  import { Folder, FolderPlus, FileText, ChevronRight, Home } from "lucide-svelte";
+  import { Folder, FolderPlus, FileText, ChevronRight, Home } from "@lucide/svelte";
   import {
     flatten,
     saveResource,
@@ -294,7 +294,7 @@
   }
   .repo-browser__crumb:hover { background: hsl(var(--bg-hover)); color: hsl(var(--fg)); }
   .repo-browser__crumb.is-current { color: hsl(var(--fg)); font-weight: var(--weight-medium); }
-  /* Applied via class={} on a lucide-svelte icon — needs :global so the
+  /* Applied via class={} on a lucide icon — needs :global so the
      scoped-style hash doesn't suppress it on the child component's root. */
   :global(.repo-browser__crumb-sep) { color: hsl(var(--fg-subtle)); }
   .repo-browser__list {

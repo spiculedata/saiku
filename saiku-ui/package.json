@@ -64,6 +64,7 @@
   },
   "dependencies": {
     "@concepttocloud/saiku-design-system": "*",
+    "@lucide/svelte": "^1.16.0",
     "@xyflow/svelte": "^1.6.0",
     "apache-arrow": "^21.2.0",
     "bits-ui": "^2.18.1",
@@ -73,7 +74,6 @@
     "elkjs": "^0.12.0",
     "html-to-image": "^1.11.13",
     "jspdf": "^4.2.1",
-    "lucide-svelte": "^1.0.1",
     "monaco-editor": "^0.56.0",
     "tailwind-merge": "^3.6.0",
     "tailwind-variants": "^3.3.1",

@@ -2,7 +2,7 @@
   /* Inspector → Pages. Per-page meta (title / heading / subheading / meta /
    * icon) + add page. The active page is expanded. Writes via appDoc. */
   import { appDoc } from "$lib/stores/appDoc.svelte";
-  import { Plus, Trash2 } from "lucide-svelte";
+  import { Plus, Trash2 } from "@lucide/svelte";
   import { tokenHelp } from "$lib/views/app/textTokens";
   import { pageTileCount, tilesPhrase } from "$lib/views/app/pageTiles";
   import {

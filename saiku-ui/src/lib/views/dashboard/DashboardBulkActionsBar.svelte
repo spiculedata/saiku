@@ -12,7 +12,7 @@
   import { dashboardStore } from "$lib/stores/dashboard.svelte";
   import { tileSelection } from "$lib/stores/tileSelection.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
-  import { Copy, Trash2, X } from "lucide-svelte";
+  import { Copy, Trash2, X } from "@lucide/svelte";
 
   interface Props {
     readOnly?: boolean;

@@ -13,7 +13,7 @@
    * component pure). When auto-refresh is off OR no successful fetch has
    * happened yet, the parent simply doesn't render this.
    */
-  import { RefreshCw } from "lucide-svelte";
+  import { RefreshCw } from "@lucide/svelte";
   import { formatRelativeTime } from "$lib/dashboard/autoRefresh";
   import { i18n } from "$lib/stores/i18n.svelte";
 

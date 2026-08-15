@@ -15,7 +15,7 @@
 <script lang="ts">
 	import type { Node, Edge } from '@xyflow/svelte';
 	import { untrack } from 'svelte';
-	import { ChevronRight, Sparkles } from 'lucide-svelte';
+	import { ChevronRight, Sparkles } from '@lucide/svelte';
 	import AskDimSumWidget from './AskDimSumWidget.svelte';
 	import CanvasToolbar from './CanvasToolbar.svelte';
 	import DimSumChatDock from './DimSumChatDock.svelte';

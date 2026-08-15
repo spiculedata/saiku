@@ -18,7 +18,7 @@
   import { isEnterPresentationKey } from "$lib/dashboard/presentationHotkeys";
   import { isUndoKey, isRedoKey } from "$lib/dashboard/historyHotkeys";
   import { panelDiffersFromDefaults } from "$lib/dashboard/filterDefaults";
-  import { Minimize2 } from "lucide-svelte";
+  import { Minimize2 } from "@lucide/svelte";
   import { buildTile } from "$lib/dashboard/tilePlacement";
   import { decodeFilterParams, encodeActiveFilters } from "$lib/dashboard/urlFilterState";
   import DashboardToolbar from "$lib/views/dashboard/DashboardToolbar.svelte";

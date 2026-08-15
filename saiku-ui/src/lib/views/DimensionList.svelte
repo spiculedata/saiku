@@ -24,7 +24,7 @@
     Filter,
     ListOrdered,
     ArrowUpDown,
-  } from "lucide-svelte";
+  } from "@lucide/svelte";
   import type { CubeMetadata } from "$lib/stores/datasources.svelte";
   import type { SaikuCube, SaikuDimension, SaikuHierarchy, SaikuLevel, SaikuMeasure } from "$lib/api/discover";
   import type { ThinMeasure } from "$lib/api/query";

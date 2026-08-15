@@ -64,7 +64,7 @@
 		Minimize2,
 		ChevronsUpDown,
 		KeyRound
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import Button from './primitives/button.svelte';
 	import ConfirmCubePane from './ConfirmCubePane.svelte';
 	import FactsMeasuresPane from './FactsMeasuresPane.svelte';

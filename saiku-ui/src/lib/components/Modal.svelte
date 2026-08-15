@@ -22,7 +22,7 @@
    */
   import type { Snippet } from "svelte";
   import { tick } from "svelte";
-  import { X } from "lucide-svelte";
+  import { X } from "@lucide/svelte";
   import { Button } from "$lib/components/ui";
 
   interface Props {

@@ -20,7 +20,7 @@
 		ChevronsUpDown,
 		EyeOff,
 		MoreHorizontal
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import { SchemaCanvasStore } from './state.svelte.js';
 	import type { JoinGroupRender } from './join-groups.js';
 	import ActiveSetPanel from './ActiveSetPanel.svelte';

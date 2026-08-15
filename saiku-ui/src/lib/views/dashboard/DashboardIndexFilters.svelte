@@ -11,7 +11,7 @@
    * delegate doesn't need to know about emptiness rules — keeps the
    * applicability rule in one place.
    */
-  import { Folder, FolderPlus } from "lucide-svelte";
+  import { Folder, FolderPlus } from "@lucide/svelte";
   import { Button } from "$lib/components/ui";
   import { i18n } from "$lib/stores/i18n.svelte";
   import type { SortKey } from "$lib/dashboard/catalogueFilter";

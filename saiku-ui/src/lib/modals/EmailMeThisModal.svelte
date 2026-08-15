@@ -2,7 +2,7 @@
   import { untrack } from "svelte";
   import Modal from "$lib/components/Modal.svelte";
   import { Button } from "$lib/components/ui";
-  import { Loader2, Sparkles } from "lucide-svelte";
+  import { Loader2, Sparkles } from "@lucide/svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { renderTinyMarkdown } from "$lib/api/tinyMarkdown";

@@ -30,7 +30,7 @@
 		Search,
 		AlertCircle,
 		KeyRound
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import Popover from './primitives/Popover.svelte';
 	import SortableColumnHeader from './primitives/SortableColumnHeader.svelte';
 	import { dimKeyIdentity, resolveKeyAttribute } from './state.svelte.js';

@@ -11,7 +11,7 @@
   import { adminAgentSpaces, type AgentSpace, type AgentSpaceCubeRef } from "$lib/api/admin";
   import { listAiCubes, type AiCubeSummary } from "$lib/api/dashboards";
   import { toasts } from "$lib/stores/toasts.svelte";
-  import { Plus, Trash2, Save } from "lucide-svelte";
+  import { Plus, Trash2, Save } from "@lucide/svelte";
 
   let spaces = $state<AgentSpace[]>([]);
   let cubes = $state<AiCubeSummary[]>([]);

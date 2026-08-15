@@ -11,7 +11,7 @@
 
   import Modal from "$lib/components/Modal.svelte";
   import { Button } from "$lib/components/ui";
-  import { Sparkles, ArrowRight, Loader2 } from "lucide-svelte";
+  import { Sparkles, ArrowRight, Loader2 } from "@lucide/svelte";
   import { askOssieAi, type OssieAskResponse, type OssieQueryModel } from "$lib/api/ossie";
 
   interface Props {

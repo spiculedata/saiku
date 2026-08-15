@@ -13,7 +13,7 @@
    * sufficient client-side guard; the upload endpoint does its own
    * content-type + path hardening server-side.
    */
-  import { ImageOff, Image as ImageIcon, Settings2 } from "lucide-svelte";
+  import { ImageOff, Image as ImageIcon, Settings2 } from "@lucide/svelte";
   import type { DashboardTile } from "$lib/api/dashboards";
   import { safeImageSrc, coerceImageFit } from "$lib/dashboard/imageSrc";
 

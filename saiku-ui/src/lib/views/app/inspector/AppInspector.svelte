@@ -8,7 +8,7 @@
    * `initialSection` lets a click on a live element (header / rail) open the
    * inspector directly on the relevant tab — the selection model (Phase C).
    */
-  import { X } from "lucide-svelte";
+  import { X } from "@lucide/svelte";
   import ThemeSection from "$lib/views/app/inspector/ThemeSection.svelte";
   import HeaderSection from "$lib/views/app/inspector/HeaderSection.svelte";
   import NavSection from "$lib/views/app/inspector/NavSection.svelte";

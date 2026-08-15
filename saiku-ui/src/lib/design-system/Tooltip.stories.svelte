@@ -8,7 +8,7 @@
 	import { defineMeta } from '@storybook/addon-svelte-csf';
 	import { Tooltip } from '$lib/components/ui';
 	import { Button } from '$lib/components/ui';
-	import { Info, Trash2 } from 'lucide-svelte';
+	import { Info, Trash2 } from '@lucide/svelte';
 
 	const { Story } = defineMeta({
 		title: 'Primitives/Tooltip',

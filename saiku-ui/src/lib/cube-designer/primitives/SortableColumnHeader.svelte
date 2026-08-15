@@ -18,7 +18,7 @@
     </th>
 -->
 <script lang="ts" generics="K extends string">
-	import { ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-svelte';
+	import { ArrowUp, ArrowDown, ArrowUpDown } from '@lucide/svelte';
 
 	type Direction = 'asc' | 'desc';
 

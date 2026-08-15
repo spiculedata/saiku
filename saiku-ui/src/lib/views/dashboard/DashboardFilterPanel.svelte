@@ -17,7 +17,7 @@
    * action append straight through dashboardStore.addPanelFilter().
    */
 
-  import { ChevronDown, ChevronRight, GripVertical, X } from "lucide-svelte";
+  import { ChevronDown, ChevronRight, GripVertical, X } from "@lucide/svelte";
   import { Button } from "$lib/components/ui";
   import { dashboardStore } from "$lib/stores/dashboard.svelte";
   import { activeFilters, targetKey } from "$lib/stores/activeFilters.svelte";

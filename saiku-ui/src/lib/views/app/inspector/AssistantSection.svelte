@@ -3,7 +3,7 @@
    * persona, greeting, icon, suggested + skill prompt chips, and the composer
    * footer. Writes via appDoc.updateAssistant. */
   import { appDoc } from "$lib/stores/appDoc.svelte";
-  import { Plus, Trash2 } from "lucide-svelte";
+  import { Plus, Trash2 } from "@lucide/svelte";
 
   const a = $derived(appDoc.current?.assistantSlot ?? { enabled: false });
   const prompts = $derived(a.suggestedPrompts ?? []);

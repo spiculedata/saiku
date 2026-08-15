@@ -4,7 +4,7 @@
   import { adminStats, type MondrianStats } from "$lib/api/admin";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
-  import { RefreshCw, Pause, Play } from "lucide-svelte";
+  import { RefreshCw, Pause, Play } from "@lucide/svelte";
 
   let stats = $state<MondrianStats | null>(null);
   let loading = $state(false);

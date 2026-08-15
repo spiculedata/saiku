@@ -11,7 +11,7 @@
   import { Button } from "$lib/components/ui";
   import { requestCode, verifyCode } from "$lib/api/demoGate";
   import { isCompleteCode, isValidEmail, normalizeCode, type GateStep } from "$lib/demo/emailGate";
-  import { MailCheck } from "lucide-svelte";
+  import { MailCheck } from "@lucide/svelte";
 
   interface Props {
     onVerified: () => void;

@@ -6,7 +6,7 @@
   `selectedTreeMeasureGroupId` is written here, so it is `$bindable`.
 -->
 <script lang="ts">
-	import { Sigma, Database, Hash, ListTree, Layers, ChevronDown, Plus } from 'lucide-svelte';
+	import { Sigma, Database, Hash, ListTree, Layers, ChevronDown, Plus } from '@lucide/svelte';
 	import { Select as SelectPrimitive } from 'bits-ui';
 	import { SchemaCanvasStore, dimKeyIdentity, resolveKeyAttribute } from './state.svelte.js';
 	import type {

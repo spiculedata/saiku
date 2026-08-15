@@ -3,7 +3,7 @@
   import { session } from "$lib/stores/session.svelte";
   import { hasPendingOps, notifySessionResumed } from "$lib/api/http";
   import { toasts } from "$lib/stores/toasts.svelte";
-  import { AlertTriangle, X } from "lucide-svelte";
+  import { AlertTriangle, X } from "@lucide/svelte";
   import { Button } from "$lib/components/ui";
 
   /**

@@ -6,7 +6,7 @@
    * --saiku-assistant-* vars + the app's scoped custom CSS.
    */
   import { tick, untrack } from "svelte";
-  import { ArrowRight, Sparkles, Crosshair } from "lucide-svelte";
+  import { ArrowRight, Sparkles, Crosshair } from "@lucide/svelte";
   import { askAi, type NlAskMessageDto } from "$lib/api/aiAsk";
   import type { AppAssistantSlot } from "$lib/api/apps";
   import { withGreeting, type AssistantMessage } from "$lib/views/app/appAssistant";

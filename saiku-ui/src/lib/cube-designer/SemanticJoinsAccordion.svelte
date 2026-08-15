@@ -5,7 +5,7 @@
   schema designer creates these from cube authoring, not via the canvas.
 -->
 <script lang="ts">
-	import { ChevronDown } from 'lucide-svelte';
+	import { ChevronDown } from '@lucide/svelte';
 	import type { SchemaCanvasStore } from './state.svelte.js';
 	import type { JoinGroupRender } from './join-groups.js';
 

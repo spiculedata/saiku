@@ -10,7 +10,7 @@
   import { presentation } from "$lib/stores/presentation.svelte";
   import ToastStack from "$lib/components/ToastStack.svelte";
   import UpgradeBanner from "$lib/components/UpgradeBanner.svelte";
-  import { LogOut, Shield, Home, LayoutDashboard, AppWindow, UserRound } from "lucide-svelte";
+  import { LogOut, Shield, Home, LayoutDashboard, AppWindow, UserRound } from "@lucide/svelte";
   import SessionExpiredBanner from "$lib/components/SessionExpiredBanner.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
   import { installAuthInterceptor, onAuthFailure } from "$lib/api/http";

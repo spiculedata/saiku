@@ -28,7 +28,7 @@
   import { renderTinyMarkdown } from "$lib/api/tinyMarkdown";
   import { query } from "$lib/stores/query.svelte";
   import { trackDemo } from "$lib/analytics/demoAnalytics";
-  import { X, Send, Sparkles, ChevronDown, ChevronRight, Copy, Trash2 } from "lucide-svelte";
+  import { X, Send, Sparkles, ChevronDown, ChevronRight, Copy, Trash2 } from "@lucide/svelte";
 
   /**
    * Payload passed to the host's "edit in canvas" handler. Prefer the

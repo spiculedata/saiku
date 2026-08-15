@@ -7,7 +7,7 @@
   import { gateStatus } from "$lib/api/demoGate";
   import ApiAccessAdmin from "$lib/views/admin/ApiAccessAdmin.svelte";
   import EmailGateForm from "$lib/views/EmailGateForm.svelte";
-  import { Info } from "lucide-svelte";
+  import { Info } from "@lucide/svelte";
 
   let username = $state("admin");
   let password = $state("");

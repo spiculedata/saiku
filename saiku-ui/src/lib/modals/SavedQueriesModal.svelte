@@ -34,7 +34,7 @@
     Inbox,
     ChevronRight,
     Home,
-  } from "lucide-svelte";
+  } from "@lucide/svelte";
 
   /*
    * Saved-queries browser with folder navigation.
@@ -445,7 +445,7 @@
   }
   .saved__crumb:hover { background: hsl(var(--bg-hover)); color: hsl(var(--fg)); }
   .saved__crumb.is-current { color: hsl(var(--fg)); font-weight: var(--weight-medium); }
-  /* Applied via class={} on a lucide-svelte icon — needs :global so the
+  /* Applied via class={} on a lucide icon — needs :global so the
      scoped-style hash doesn't suppress it on the child component's root. */
   :global(.saved__crumb-sep) { color: hsl(var(--fg-subtle)); }
   .saved__search {

@@ -13,7 +13,7 @@
    */
   import { emailComposer } from "$lib/stores/emailComposer.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
-  import { Loader2 } from "lucide-svelte";
+  import { Loader2 } from "@lucide/svelte";
 </script>
 
 {#if emailComposer.preparing}

@@ -5,7 +5,7 @@
   import { THEME_PRESETS, resolveTokens, type ResolvedTokens } from "$lib/dashboard/appThemePresets";
   import { FONT_ALLOWLIST, NUMERAL_CHOICES } from "$lib/dashboard/appTheme";
   import { themeFromBrief } from "$lib/dashboard/themeFromBrief";
-  import { Sparkles } from "lucide-svelte";
+  import { Sparkles } from "@lucide/svelte";
 
   const theme = $derived(appDoc.current?.theme ?? { mode: "light" as const });
   const tok = $derived<ResolvedTokens>(resolveTokens(theme));

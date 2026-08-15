@@ -24,7 +24,7 @@
     ChevronRight,
     ChevronDown,
     MoreVertical,
-  } from "lucide-svelte";
+  } from "@lucide/svelte";
   import ContextMenu, { type ContextMenuItem } from "$lib/components/ContextMenu.svelte";
   import type { FolderNode } from "$lib/dashboard/catalogueTree";
   import { favouriteDashboards } from "$lib/stores/favouriteDashboards.svelte";

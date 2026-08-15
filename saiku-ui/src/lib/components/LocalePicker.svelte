@@ -1,6 +1,6 @@
 <script lang="ts">
   import { i18n, LOCALES, type Locale } from "$lib/stores/i18n.svelte";
-  import { Languages } from "lucide-svelte";
+  import { Languages } from "@lucide/svelte";
 </script>
 
 <label class="locale btn" title="Language">
