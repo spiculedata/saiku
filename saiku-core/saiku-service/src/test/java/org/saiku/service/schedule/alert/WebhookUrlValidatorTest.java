@@ -128,4 +128,56 @@ public class WebhookUrlValidatorTest {
         assertRejected("not a url", PUBLIC);
         assertRejected("ftp://example.com/x", PUBLIC);
     }
+
+    // --- saiku#1846: numeric-encoded IPv4 literals are detected + blocked explicitly ---
+
+    @Test
+    public void rejectsDecimalEncodedLoopback() {
+        // 2130706433 == 127.0.0.1 — must be recognised as a literal and rejected via the byte check,
+        // not merely by the incidental "no-dot ⇒ blocked" heuristic.
+        assertRejected("https://2130706433/hook", PUBLIC);
+    }
+
+    @Test
+    public void rejectsHexEncodedLoopback() {
+        // 0x7f000001 == 127.0.0.1
+        assertRejected("https://0x7f000001/hook", PUBLIC);
+    }
+
+    @Test
+    public void rejectsOctalDottedLoopback() {
+        // 0177.0.0.1 == 127.0.0.1 (octal first octet)
+        assertRejected("https://0177.0.0.1/hook", PUBLIC);
+    }
+
+    @Test
+    public void rejectsShortDottedDecimalLoopback() {
+        // 127.1 == 127.0.0.1 (BSD short form)
+        assertRejected("https://127.1/hook", PUBLIC);
+    }
+
+    @Test
+    public void rejectsDecimalEncodedPrivateAddress() {
+        // 3232235521 == 192.168.0.1
+        assertRejected("https://3232235521/hook", PUBLIC);
+    }
+
+    // --- saiku#1846: validateResolved surfaces the approved address set for connect-time pinning ---
+
+    @Test
+    public void validateResolvedReturnsApprovedAddresses() {
+        WebhookUrlValidator.ValidatedTarget vt =
+                WebhookUrlValidator.validateResolved("https://hooks.example.com/hook", resolvesTo("93.184.216.34"));
+        assertEquals("hooks.example.com", vt.uri().getHost());
+        assertEquals(1, vt.addresses().length);
+        assertEquals("93.184.216.34", vt.addresses()[0].getHostAddress());
+    }
+
+    @Test
+    public void validateResolvedLiteralReturnsTheLiteral() {
+        WebhookUrlValidator.ValidatedTarget vt =
+                WebhookUrlValidator.validateResolved("https://93.184.216.34/hook", UNRESOLVABLE);
+        assertEquals(1, vt.addresses().length);
+        assertEquals("93.184.216.34", vt.addresses()[0].getHostAddress());
+    }
 }
