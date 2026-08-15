@@ -10,7 +10,7 @@
 	import { presentation } from '$lib/stores/presentation.svelte';
 	import ToastStack from '$lib/components/ToastStack.svelte';
 	import UpgradeBanner from '$lib/components/UpgradeBanner.svelte';
-	import { LogOut, Shield, Home, LayoutDashboard, AppWindow, UserRound } from '@lucide/svelte';
+	import { LogOut, Shield, Table2, LayoutDashboard, AppWindow, UserRound } from '@lucide/svelte';
 	import SessionExpiredBanner from '$lib/components/SessionExpiredBanner.svelte';
 	import { i18n } from '$lib/stores/i18n.svelte';
 	import { installAuthInterceptor, onAuthFailure } from '$lib/api/http';
@@ -29,6 +29,51 @@
 	import '$lib/styles/app.css';
 
 	let { children } = $props();
+
+	// saiku#1839: ONE global nav, not four route-conditional ones.
+	//
+	// The topbar used to rebuild itself per route: the workspace offered
+	// Dashboards + Apps, while dashboards/apps/admin collapsed to a single
+	// "Query Editor" link — so from the Query Editor you could reach Apps, but
+	// from Apps you could not reach Dashboards without going via the editor.
+	// The bar changed shape depending on where you stood, which is the opposite
+	// of what a global nav is for.
+	//
+	// Now every destination is always present, in a stable order, and the
+	// current one is marked rather than hidden. Admin still only appears for
+	// admins — that's permission, not navigation state.
+	const navItems = $derived([
+		{
+			href: `${base}/`,
+			label: i18n.t('topbar.workspace'),
+			icon: Table2,
+			// Exact match: every other route is a prefix of "/" and would
+			// otherwise light this up everywhere.
+			active: page.url.pathname === `${base}/` || page.url.pathname === base
+		},
+		{
+			href: `${base}/dashboards`,
+			label: i18n.t('topbar.dashboards', 'Dashboards'),
+			icon: LayoutDashboard,
+			active: page.url.pathname.startsWith(`${base}/dashboards`)
+		},
+		{
+			href: `${base}/apps`,
+			label: i18n.t('topbar.apps', 'Apps'),
+			icon: AppWindow,
+			active: page.url.pathname.startsWith(`${base}/apps`)
+		},
+		...(session.isAdmin
+			? [
+					{
+						href: `${base}/admin`,
+						label: i18n.t('topbar.admin'),
+						icon: Shield,
+						active: page.url.pathname.startsWith(`${base}/admin`)
+					}
+				]
+			: [])
+	]);
 
 	// #941 share viewer: the public /share route renders a dashboard for an
 	// account-free guest — no app chrome (topbar / upgrade banner), no session.
@@ -50,7 +95,14 @@
 	// pathname-derived (not latched) so navigating back to a dashboard restores
 	// the topbar; the per-page URL mirror only rewrites the query string, never
 	// the pathname, so it can't drop this.
-	const isAppView = $derived(page.url.pathname.startsWith(`${base}/apps/`));
+	// saiku#1839: an individual app is full-bleed, but the apps INDEX is not.
+	// SvelteKit normalises the index to a trailing slash, so `/apps/` matched
+	// startsWith(`${base}/apps/`) and the index lost the global nav entirely —
+	// you could reach the app list and then have no way back out except the
+	// browser's back button. Require something AFTER the slash.
+	const isAppView = $derived(
+		page.url.pathname.startsWith(`${base}/apps/`) && page.url.pathname !== `${base}/apps/`
+	);
 
 	// Non-modal session-expired banner state (issue #944). The previous
 	// SessionErrorModal was a blocking modal in the middle of the screen,
@@ -135,29 +187,15 @@
 						<UserRound size={14} />
 						{session.current.username}
 					</span>
-					{#if !page.url.pathname.startsWith(`${base}/dashboards`) && !page.url.pathname.startsWith(`${base}/apps`) && !page.url.pathname.startsWith(`${base}/admin`)}
-						<a class={buttonVariants({ variant: 'outline', size: 'sm' })} href="{base}/dashboards"
-							><LayoutDashboard size={14} /><span>Dashboards</span></a
+					{#each navItems as item (item.href)}
+						<a
+							class={buttonVariants({ variant: item.active ? 'secondary' : 'outline', size: 'sm' })}
+							href={item.href}
+							aria-current={item.active ? 'page' : undefined}
 						>
-						<a class={buttonVariants({ variant: 'outline', size: 'sm' })} href="{base}/apps"
-							><AppWindow size={14} /><span>Apps</span></a
-						>
-					{/if}
-					{#if page.url.pathname.startsWith(`${base}/dashboards`) || page.url.pathname.startsWith(`${base}/apps`)}
-						<a class={buttonVariants({ variant: 'outline', size: 'sm' })} href="{base}/"
-							><Home size={14} /><span>{i18n.t('topbar.workspace')}</span></a
-						>
-					{/if}
-					{#if session.isAdmin && !page.url.pathname.startsWith(`${base}/admin`)}
-						<a class={buttonVariants({ variant: 'outline', size: 'sm' })} href="{base}/admin"
-							><Shield size={14} /><span>{i18n.t('topbar.admin')}</span></a
-						>
-					{/if}
-					{#if page.url.pathname.startsWith(`${base}/admin`)}
-						<a class={buttonVariants({ variant: 'outline', size: 'sm' })} href="{base}/"
-							><Home size={14} /><span>{i18n.t('topbar.workspace')}</span></a
-						>
-					{/if}
+							<item.icon size={14} /><span>{item.label}</span>
+						</a>
+					{/each}
 					<Button
 						variant="outline"
 						size="sm"
