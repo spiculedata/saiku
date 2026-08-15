@@ -125,6 +125,16 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
             log.error("Could not start repo", e);
         }
 
+        // saiku#1844: teach Mondrian to read schemas out of THIS repository. Every data source
+        // the admin UI writes carries Catalog=mondrian://<schema> (see DataSourceMapper), a
+        // scheme Mondrian's stock file handler has never been able to resolve — so the cube
+        // never loaded. Installed after irm.start() so the reader is usable the moment
+        // loadDatasources() below triggers the first connection.
+        SaikuVirtualFileHandler.install(this::readRepositoryFileQuietly);
+        // saiku#1845: and confine file: catalogs to the Saiku data directories, so a data source
+        // can't be pointed at an arbitrary host file.
+        SaikuVirtualFileHandler.setFileGuard(SchemaFileAccessGuard.fromEnvironment(datadir));
+
         // Load the datasources
         loadDatasources(ext);
     }
@@ -415,6 +425,24 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
     public String getInternalFileData(String file) throws RepositoryException {
 
         return irm.getInternalFile(file);
+    }
+
+    /**
+     * Repository read that reports "absent" instead of throwing — the shape
+     * {@link SaikuVirtualFileHandler} needs.
+     *
+     * <p>saiku#1844. A miss here is ordinary: {@link MondrianCatalogResolver} probes more than one
+     * candidate path per catalog and expects null for the ones that don't exist. Mondrian is
+     * mid-connection when this runs, and a thrown {@link RepositoryException} would surface as an
+     * opaque schema-load failure rather than the resolver simply trying its next candidate.
+     */
+    private String readRepositoryFileQuietly(String path) {
+        try {
+            return irm.getInternalFile(path);
+        } catch (RepositoryException e) {
+            log.debug("No repository file at {}", path, e);
+            return null;
+        }
     }
 
     public InputStream getBinaryInternalFileData(String file) throws RepositoryException {

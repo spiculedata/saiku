@@ -62,15 +62,45 @@ public final class AiReturnsResolver {
             if (!first) out.append(',');
             first = false;
             if (raw.startsWith("[")) {
-                // Already MDX-qualified — pass through. We deliberately don't
-                // validate further; if it's wrong, Mondrian will say so and
-                // the caller's existing 400-translation logic surfaces it.
-                out.append(raw);
+                // Already MDX-qualified. We deliberately don't validate the IDENTIFIER further —
+                // if it's wrong, Mondrian will say so and the caller's existing 400-translation
+                // logic surfaces it. But the PII gate is policy, not validation, so it must apply
+                // to this spelling too (saiku#1848): the bracketed branch used to skip checkPii
+                // entirely, so a column refused as `Salary` sailed through as
+                // `[Measures].[Salary]`. The refusal message even recommends the qualified form,
+                // so an agent following the self-correction hint walked straight into the bypass.
+                out.append(checkPiiByUniqueName(raw, schema));
             } else {
                 out.append(resolveBare(raw, schema));
             }
         }
         return out.toString();
+    }
+
+    /**
+     * saiku#1848 PII gate for the already-qualified spelling. Matches {@code uniqueName} against
+     * the schema's measures and levels and refuses if the match is PII-flagged.
+     *
+     * <p>An identifier that matches NOTHING is returned unchanged, preserving the long-standing
+     * "let Mondrian judge unknown MDX" behaviour — this method adds a refusal, never a new
+     * rejection. Comparison is case-insensitive because MDX identifiers are.
+     */
+    private static String checkPiiByUniqueName(String uniqueName, AiSchema schema) {
+        for (AiSchema.Measure m : schema.measures.values()) {
+            if (m.uniqueName != null && m.uniqueName.equalsIgnoreCase(uniqueName)) {
+                return checkPii(m, uniqueName, schema);
+            }
+        }
+        for (AiSchema.Dimension dim : schema.dimensions.values()) {
+            for (AiSchema.Hierarchy hier : dim.hierarchies.values()) {
+                for (AiSchema.Level level : hier.levels.values()) {
+                    if (level.uniqueName != null && level.uniqueName.equalsIgnoreCase(uniqueName)) {
+                        return checkPii(level, uniqueName, schema);
+                    }
+                }
+            }
+        }
+        return uniqueName;
     }
 
     private static String resolveBare(String token, AiSchema schema) {

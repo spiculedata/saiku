@@ -174,14 +174,32 @@ public class SemanticAnnotationParserTest {
     }
 
     @Test
+    public void parseMeasure_pii_accepts_unambiguous_affirmatives() {
+        // saiku#1849: these are not typos, they are ways of saying yes. Reading them as false meant
+        // the column was never masked — no redaction in /ai/schema, no drillthrough returns= block.
+        for (String yes : new String[] {"true", "TRUE", " True ", "yes", "YES", "y", "on", "1"}) {
+            Map<String, String> raw = new HashMap<>();
+            raw.put("saiku.semantic.pii", yes);
+            assertEquals(
+                    "pii must be honoured for value: '" + yes + "'",
+                    true,
+                    SemanticAnnotationParser.parseMeasure(raw).pii);
+            assertEquals(true, SemanticAnnotationParser.parseLevel(raw).pii);
+        }
+    }
+
+    @Test
     public void parseMeasure_pii_false_is_the_conservative_default_on_garbage() {
-        // Anything other than literal "true" (case-insensitive after trim)
-        // produces false. Schema authors who mistype "yes" / "1" / "on"
-        // should NOT accidentally opt their column into redaction — the
-        // opposite-direction default (privacy-by-default) would mask
-        // working data on the slightest typo, which is the worse failure
-        // mode for an analytics product.
-        for (String bogus : new String[] {"false", "yes", "1", "on", "TRUE_BUT_NOT_QUITE", "", null}) {
+        // saiku#1849 narrows this list. The original trade-off stands and is deliberate: for an
+        // analytics product, masking working data on a slip is a worse everyday failure than a
+        // schema author having to correct a value, so an unrecognised value still means "not PII".
+        //
+        // But "yes" / "1" / "on" were never slips — they are unambiguous ways of saying yes, and
+        // silently reading them as false left personal data flowing with nothing logged. They are
+        // now honoured (see parseMeasure_pii_accepts_unambiguous_affirmatives). Genuinely
+        // unrecognised values still resolve to false, and now log a WARN naming the value, so the
+        // slip is discoverable instead of invisible.
+        for (String bogus : new String[] {"false", "no", "0", "off", "TRUE_BUT_NOT_QUITE", "", null}) {
             Map<String, String> raw = new HashMap<>();
             raw.put("saiku.semantic.pii", bogus);
             assertEquals(

@@ -22,9 +22,20 @@ import org.saiku.olap.dto.SaikuCube;
 public class SaikuCubeCaptionComparator implements Comparator<SaikuCube> {
 
     public int compare(SaikuCube o1, SaikuCube o2) {
-        if (o1.getCaption() == null || o2.getCaption() == null) {
-            return 0;
+        // saiku#1851: a null caption used to short-circuit to 0, which is NOT transitive — a null
+        // compares "equal" to every caption while those captions are not equal to each other. That
+        // breaks the Comparator contract, and TimSort detects it at runtime and throws
+        // IllegalArgumentException("Comparison method violates its general contract!") for some
+        // inputs at some list sizes. Safe until now only because olap4j always supplies a caption.
+        // Ordering nulls last is total, transitive, and consistent with equals.
+        String c1 = o1 == null ? null : o1.getCaption();
+        String c2 = o2 == null ? null : o2.getCaption();
+        if (c1 == null) {
+            return c2 == null ? 0 : 1;
         }
-        return o1.getCaption().compareTo(o2.getCaption());
+        if (c2 == null) {
+            return -1;
+        }
+        return c1.compareTo(c2);
     }
 }
