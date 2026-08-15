@@ -8,13 +8,13 @@
 
 /** One turn in the assistant panel. */
 export interface AssistantMessage {
-  role: "assistant" | "user";
-  text: string;
-  kind?: "greeting" | "reply" | "error";
+	role: 'assistant' | 'user';
+	text: string;
+	kind?: 'greeting' | 'reply' | 'error';
 }
 
 /** Shown when an app hasn't configured a greeting of its own. */
-export const DEFAULT_GREETING = "Ask me about this dashboard in plain English.";
+export const DEFAULT_GREETING = 'Ask me about this dashboard in plain English.';
 
 /**
  * Apply `greeting` to `messages`, returning the list to render.
@@ -30,17 +30,17 @@ export const DEFAULT_GREETING = "Ask me about this dashboard in plain English.";
  * can assign unconditionally without churning reactive state.
  */
 export function withGreeting(
-  messages: readonly AssistantMessage[],
-  greeting: string | undefined,
+	messages: readonly AssistantMessage[],
+	greeting: string | undefined
 ): AssistantMessage[] {
-  const text = greeting ?? DEFAULT_GREETING;
-  const idx = messages.findIndex((m) => m.kind === "greeting");
-  if (idx === -1) {
-    // No greeting turn yet — it opens the conversation.
-    return [{ role: "assistant", text, kind: "greeting" }, ...messages];
-  }
-  if (messages[idx].text === text) return messages as AssistantMessage[];
-  const next = [...messages];
-  next[idx] = { ...next[idx], text };
-  return next;
+	const text = greeting ?? DEFAULT_GREETING;
+	const idx = messages.findIndex((m) => m.kind === 'greeting');
+	if (idx === -1) {
+		// No greeting turn yet — it opens the conversation.
+		return [{ role: 'assistant', text, kind: 'greeting' }, ...messages];
+	}
+	if (messages[idx].text === text) return messages as AssistantMessage[];
+	const next = [...messages];
+	next[idx] = { ...next[idx], text };
+	return next;
 }

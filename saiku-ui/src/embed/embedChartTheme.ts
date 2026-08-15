@@ -16,13 +16,13 @@
  */
 
 export interface EmbedChartTheme {
-  /** Series colour cycle, in order. Empty → ECharts' built-in palette (the
-   *  pre-#1103 default, so an unstyled embed is unchanged). */
-  palette: string[];
-  /** Text colour for axis labels, legend and titles (`--saiku-embed-fg`). */
-  fg?: string;
-  /** Colour for axis + split lines (`--saiku-embed-muted`). */
-  axisLine?: string;
+	/** Series colour cycle, in order. Empty → ECharts' built-in palette (the
+	 *  pre-#1103 default, so an unstyled embed is unchanged). */
+	palette: string[];
+	/** Text colour for axis labels, legend and titles (`--saiku-embed-fg`). */
+	fg?: string;
+	/** Colour for axis + split lines (`--saiku-embed-muted`). */
+	axisLine?: string;
 }
 
 /**
@@ -31,19 +31,19 @@ export interface EmbedChartTheme {
  * index, so `1,2,3` set → a 3-colour cycle (a gap doesn't silently reorder).
  */
 export function readEmbedChartTheme(getVar: (name: string) => string): EmbedChartTheme {
-  const palette: string[] = [];
-  for (let i = 1; i <= 8; i++) {
-    const v = (getVar(`--saiku-embed-chart-${i}`) || "").trim();
-    if (!v) break;
-    palette.push(v);
-  }
-  const fg = (getVar("--saiku-embed-fg") || "").trim() || undefined;
-  const axisLine = (getVar("--saiku-embed-muted") || "").trim() || undefined;
-  return { palette, fg, axisLine };
+	const palette: string[] = [];
+	for (let i = 1; i <= 8; i++) {
+		const v = (getVar(`--saiku-embed-chart-${i}`) || '').trim();
+		if (!v) break;
+		palette.push(v);
+	}
+	const fg = (getVar('--saiku-embed-fg') || '').trim() || undefined;
+	const axisLine = (getVar('--saiku-embed-muted') || '').trim() || undefined;
+	return { palette, fg, axisLine };
 }
 
 /** Has the host actually set any chart theme var? (Lets the renderer skip
  *  emitting empty style objects when the embed is unstyled.) */
 export function hasEmbedChartTheme(t: EmbedChartTheme): boolean {
-  return t.palette.length > 0 || !!t.fg || !!t.axisLine;
+	return t.palette.length > 0 || !!t.fg || !!t.axisLine;
 }

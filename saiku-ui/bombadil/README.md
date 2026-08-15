@@ -81,7 +81,7 @@ no unhandled promise rejections, no console errors, no failed HTTP requests —
 plus a curated action set. Saiku has no top-level `+error.svelte` crash screen,
 so **5xx server bugs are caught by the built-in `noHttpErrorCodes`** property.
 
-Triage note: `noHttpErrorCodes` fires on *any* ≥ 400 response, so a long run will
+Triage note: `noHttpErrorCodes` fires on _any_ ≥ 400 response, so a long run will
 also flag legitimate 4xx (a 404 from a fuzzed URL, a 403 on a CSRF-guarded POST).
 Those are noise — the **5xx** violations are the real bugs. Add more invariants as
 you learn the UI's contracts, but keep them conservative (a property that fires on

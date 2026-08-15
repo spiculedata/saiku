@@ -13,55 +13,55 @@
  * embed and the App Builder embed render through.
  */
 
-import type { Component } from "svelte";
-import { registerTileRenderer, type ValidateOptionsResult } from "../lib/dashboard/tileRegistry";
-import { validateEchartsOption } from "../lib/dashboard/custom/echartsOption";
-import { validateGraphConfig } from "../lib/dashboard/custom/graphTile";
-import { validatePluginOptions } from "../lib/dashboard/custom/pluginBridge";
-import { validateRankedListConfig } from "../lib/dashboard/custom/rankedList";
-import EmbedEChartsOptionTile from "../lib/views/dashboard/tiles/custom/EmbedEChartsOptionTile.svelte";
-import EmbedGraphTile from "../lib/views/dashboard/tiles/custom/EmbedGraphTile.svelte";
-import EmbedPluginTile from "../lib/views/dashboard/tiles/custom/EmbedPluginTile.svelte";
-import EmbedRankedListTile from "../lib/views/dashboard/tiles/custom/EmbedRankedListTile.svelte";
+import type { Component } from 'svelte';
+import { registerTileRenderer, type ValidateOptionsResult } from '../lib/dashboard/tileRegistry';
+import { validateEchartsOption } from '../lib/dashboard/custom/echartsOption';
+import { validateGraphConfig } from '../lib/dashboard/custom/graphTile';
+import { validatePluginOptions } from '../lib/dashboard/custom/pluginBridge';
+import { validateRankedListConfig } from '../lib/dashboard/custom/rankedList';
+import EmbedEChartsOptionTile from '../lib/views/dashboard/tiles/custom/EmbedEChartsOptionTile.svelte';
+import EmbedGraphTile from '../lib/views/dashboard/tiles/custom/EmbedGraphTile.svelte';
+import EmbedPluginTile from '../lib/views/dashboard/tiles/custom/EmbedPluginTile.svelte';
+import EmbedRankedListTile from '../lib/views/dashboard/tiles/custom/EmbedRankedListTile.svelte';
 
 registerTileRenderer({
-  id: "echarts-option",
-  label: "ECharts option",
-  icon: "📉",
-  // Unused on the embed surface (EmbedGrid dispatches on embedComponent), but
-  // the type requires it — reuse the embed component so no app module is pulled
-  // in. Cast through Component: these tiles declare a required `tile` prop.
-  component: EmbedEChartsOptionTile as unknown as Component,
-  embedComponent: EmbedEChartsOptionTile as unknown as Component,
-  isQueryable: true,
-  validateOptions: validateEchartsOption,
+	id: 'echarts-option',
+	label: 'ECharts option',
+	icon: '📉',
+	// Unused on the embed surface (EmbedGrid dispatches on embedComponent), but
+	// the type requires it — reuse the embed component so no app module is pulled
+	// in. Cast through Component: these tiles declare a required `tile` prop.
+	component: EmbedEChartsOptionTile as unknown as Component,
+	embedComponent: EmbedEChartsOptionTile as unknown as Component,
+	isQueryable: true,
+	validateOptions: validateEchartsOption
 });
 
 registerTileRenderer({
-  id: "graph",
-  label: "Graph",
-  icon: "🕸️",
-  // component unused on the embed surface (see above) — reuse the embed
-  // component so no app module is pulled into the self-contained bundle.
-  component: EmbedGraphTile as unknown as Component,
-  embedComponent: EmbedGraphTile as unknown as Component,
-  isQueryable: true,
-  // GraphConfig is a typed shape (no index signature); widen the validated
-  // value to the registry's Record<string, unknown> at the boundary.
-  validateOptions: validateGraphConfig as (o: unknown) => ValidateOptionsResult,
+	id: 'graph',
+	label: 'Graph',
+	icon: '🕸️',
+	// component unused on the embed surface (see above) — reuse the embed
+	// component so no app module is pulled into the self-contained bundle.
+	component: EmbedGraphTile as unknown as Component,
+	embedComponent: EmbedGraphTile as unknown as Component,
+	isQueryable: true,
+	// GraphConfig is a typed shape (no index signature); widen the validated
+	// value to the registry's Record<string, unknown> at the boundary.
+	validateOptions: validateGraphConfig as (o: unknown) => ValidateOptionsResult
 });
 
 // Ranked-list ("Movers") card. Pure markup — no chart library — so it adds
 // essentially nothing to the self-contained bundle.
 registerTileRenderer({
-  id: "ranked-list",
-  label: "Ranked list",
-  icon: "\u{1F3C5}",
-  // component unused on the embed surface (see above).
-  component: EmbedRankedListTile as unknown as Component,
-  embedComponent: EmbedRankedListTile as unknown as Component,
-  isQueryable: true,
-  validateOptions: validateRankedListConfig,
+	id: 'ranked-list',
+	label: 'Ranked list',
+	icon: '\u{1F3C5}',
+	// component unused on the embed surface (see above).
+	component: EmbedRankedListTile as unknown as Component,
+	embedComponent: EmbedRankedListTile as unknown as Component,
+	isQueryable: true,
+	validateOptions: validateRankedListConfig
 });
 
 // Tier-2 `plugin` renderer (embed surface). EmbedGrid dispatches on
@@ -70,11 +70,11 @@ registerTileRenderer({
 // containment as the in-app tile; data is the token-scoped `rows` EmbedGrid
 // already RLS/PII-filtered.
 registerTileRenderer({
-  id: "plugin",
-  label: "Plugin (sandboxed JS)",
-  icon: "🧩",
-  component: EmbedPluginTile as unknown as Component,
-  embedComponent: EmbedPluginTile as unknown as Component,
-  isQueryable: true,
-  validateOptions: validatePluginOptions,
+	id: 'plugin',
+	label: 'Plugin (sandboxed JS)',
+	icon: '🧩',
+	component: EmbedPluginTile as unknown as Component,
+	embedComponent: EmbedPluginTile as unknown as Component,
+	isQueryable: true,
+	validateOptions: validatePluginOptions
 });

@@ -75,16 +75,16 @@
 	// chatOpen, errorOpen) so the rule doesn't false-positive.
 	let {
 		expanded = $bindable(),
-		 
+
 		visible = $bindable(),
 		messages,
 		drafting,
 		intent = $bindable(),
 		result = $bindable(),
 		error = $bindable(),
-		 
+
 		chatOpen = $bindable(),
-		 
+
 		errorOpen = $bindable(),
 		connectionId,
 		fillContainer = false,

@@ -7,12 +7,12 @@
  * user clicks the button.
  */
 
-import type { PageLoad } from "./$types";
+import type { PageLoad } from './$types';
 
 // Dynamic param in the route, can't be prerendered. The rest of the app is
 // prerendered via the root layout default; we opt out here.
 export const prerender = false;
 
 export const load: PageLoad = ({ params }) => {
-  return { dataSourceId: params.dataSourceId };
+	return { dataSourceId: params.dataSourceId };
 };

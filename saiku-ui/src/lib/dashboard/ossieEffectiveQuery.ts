@@ -18,24 +18,28 @@
  * Pure: no DOM, no fetches.
  */
 
-import type { CubeRef } from "$lib/api/dashboards";
-import { ossieFiltersFor, type OssieFilterExpr, type SemanticFilter } from "$lib/dashboard/semanticFilter";
+import type { CubeRef } from '$lib/api/dashboards';
+import {
+	ossieFiltersFor,
+	type OssieFilterExpr,
+	type SemanticFilter
+} from '$lib/dashboard/semanticFilter';
 
 /** The subset of OssieAiQueryRequest this module reads and writes. Unknown
  *  fields pass through untouched — the body is forwarded verbatim. */
 export interface OssieQueryBody {
-  connection?: string;
-  model?: string;
-  rows?: Array<{ dataset: string; field: string }>;
-  columns?: Array<{ dataset: string; field: string }>;
-  values?: Array<{ metric: string; aggregation?: string }>;
-  filters?: OssieFilterExpr[];
-  limit?: number;
-  [extra: string]: unknown;
+	connection?: string;
+	model?: string;
+	rows?: Array<{ dataset: string; field: string }>;
+	columns?: Array<{ dataset: string; field: string }>;
+	values?: Array<{ metric: string; aggregation?: string }>;
+	filters?: OssieFilterExpr[];
+	limit?: number;
+	[extra: string]: unknown;
 }
 
 function predicateKey(f: { dataset: string; field: string }): string {
-  return `${f.dataset.toLowerCase()}/${f.field.toLowerCase()}`;
+	return `${f.dataset.toLowerCase()}/${f.field.toLowerCase()}`;
 }
 
 /**
@@ -46,15 +50,15 @@ function predicateKey(f: { dataset: string; field: string }): string {
  * so an author's default doesn't fight the reader's selection.
  */
 export function mergeOssieFilters(
-  base: OssieQueryBody,
-  activeFilters: readonly SemanticFilter[],
-  cube: CubeRef | null | undefined,
+	base: OssieQueryBody,
+	activeFilters: readonly SemanticFilter[],
+	cube: CubeRef | null | undefined
 ): OssieQueryBody {
-  const incoming = ossieFiltersFor(activeFilters, cube);
-  if (incoming.length === 0) return { ...base };
-  const overridden = new Set(incoming.map(predicateKey));
-  const kept = (base.filters ?? []).filter((f) => !overridden.has(predicateKey(f)));
-  return { ...base, filters: [...kept, ...incoming] };
+	const incoming = ossieFiltersFor(activeFilters, cube);
+	if (incoming.length === 0) return { ...base };
+	const overridden = new Set(incoming.map(predicateKey));
+	const kept = (base.filters ?? []).filter((f) => !overridden.has(predicateKey(f)));
+	return { ...base, filters: [...kept, ...incoming] };
 }
 
 /**
@@ -65,18 +69,18 @@ export function mergeOssieFilters(
  * (saved `.saiku`) query is an MDX artefact and has no meaning here.
  */
 export function ossieEffectiveQueryFor(
-  tile: { cube?: CubeRef; query?: { kind: string; body?: Record<string, unknown> } },
-  activeFilters: readonly SemanticFilter[],
+	tile: { cube?: CubeRef; query?: { kind: string; body?: Record<string, unknown> } },
+	activeFilters: readonly SemanticFilter[]
 ): OssieQueryBody | null {
-  if (!tile.cube || tile.query?.kind !== "inline" || !tile.query.body) return null;
-  const base = tile.query.body as OssieQueryBody;
-  const merged = mergeOssieFilters(base, activeFilters, tile.cube);
-  return {
-    ...merged,
-    // The tile's source is the authority on which model it reads, not whatever
-    // the saved body happens to say — the two drift the moment an author
-    // re-points the tile.
-    connection: tile.cube.connectionName,
-    model: tile.cube.modelName ?? tile.cube.cubeName,
-  };
+	if (!tile.cube || tile.query?.kind !== 'inline' || !tile.query.body) return null;
+	const base = tile.query.body as OssieQueryBody;
+	const merged = mergeOssieFilters(base, activeFilters, tile.cube);
+	return {
+		...merged,
+		// The tile's source is the authority on which model it reads, not whatever
+		// the saved body happens to say — the two drift the moment an author
+		// re-points the tile.
+		connection: tile.cube.connectionName,
+		model: tile.cube.modelName ?? tile.cube.cubeName
+	};
 }

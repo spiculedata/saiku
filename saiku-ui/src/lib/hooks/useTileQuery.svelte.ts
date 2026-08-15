@@ -22,72 +22,72 @@
  */
 
 import {
-  executeAiQuery,
-  executeOssieQuery,
-  executeSavedQuery,
-  type AiQueryResponse,
-} from "$lib/api/aiQuery";
+	executeAiQuery,
+	executeOssieQuery,
+	executeSavedQuery,
+	type AiQueryResponse
+} from '$lib/api/aiQuery';
 // saiku#1803 — a tile can be bound to an Ossie semantic model instead of a cube.
-import { isOssieSource } from "$lib/dashboard/tileSource";
-import { ossieEffectiveQueryFor } from "$lib/dashboard/ossieEffectiveQuery";
-import type { SemanticFilter } from "$lib/dashboard/semanticFilter";
+import { isOssieSource } from '$lib/dashboard/tileSource';
+import { ossieEffectiveQueryFor } from '$lib/dashboard/ossieEffectiveQuery';
+import type { SemanticFilter } from '$lib/dashboard/semanticFilter';
 import {
-  effectiveQueryFor,
-  applicableSavedFilters,
-  type SchemaLike,
-} from "$lib/dashboard/effectiveQuery";
-import { TileAutoRefresh } from "$lib/dashboard/tileAutoRefresh.svelte";
-import type { ActiveFilter } from "$lib/stores/activeFilters.svelte";
-import type { DashboardTile } from "$lib/api/dashboards";
+	effectiveQueryFor,
+	applicableSavedFilters,
+	type SchemaLike
+} from '$lib/dashboard/effectiveQuery';
+import { TileAutoRefresh } from '$lib/dashboard/tileAutoRefresh.svelte';
+import type { ActiveFilter } from '$lib/stores/activeFilters.svelte';
+import type { DashboardTile } from '$lib/api/dashboards';
 
 /** Reactive state container for one tile's fetch lifecycle. */
 export class TileQueryState {
-  loading = $state(false);
-  error = $state<string | null>(null);
-  response = $state<AiQueryResponse | null>(null);
+	loading = $state(false);
+	error = $state<string | null>(null);
+	response = $state<AiQueryResponse | null>(null);
 
-  /** Bumped by {@link retry} to force a refetch with unchanged inputs. */
-  retryTick = $state(0);
-  /** Bumped by {@link triggerAutoRefresh} on the configured cadence. */
-  refreshTick = $state(0);
+	/** Bumped by {@link retry} to force a refetch with unchanged inputs. */
+	retryTick = $state(0);
+	/** Bumped by {@link triggerAutoRefresh} on the configured cadence. */
+	refreshTick = $state(0);
 
-  /** Per-tile auto-refresh timer ({@link arm}, {@link startHeartbeat}). */
-  auto = new TileAutoRefresh();
+	/** Per-tile auto-refresh timer ({@link arm}, {@link startHeartbeat}). */
+	auto = new TileAutoRefresh();
 
-  /** Internal JSON dedupe key — not reactive (it would re-trigger the
-   *  effect we're running inside). Cleared by retry / refresh to force
-   *  a re-fetch with unchanged inputs. */
-  lastQueryJson = "";
+	/** Internal JSON dedupe key — not reactive (it would re-trigger the
+	 *  effect we're running inside). Cleared by retry / refresh to force
+	 *  a re-fetch with unchanged inputs. */
+	lastQueryJson = '';
 
-  retry(): void {
-    this.lastQueryJson = "";
-    this.retryTick++;
-  }
+	retry(): void {
+		this.lastQueryJson = '';
+		this.retryTick++;
+	}
 
-  triggerAutoRefresh(): void {
-    this.lastQueryJson = "";
-    this.refreshTick++;
-  }
+	triggerAutoRefresh(): void {
+		this.lastQueryJson = '';
+		this.refreshTick++;
+	}
 }
 
 export interface TileQueryDeps {
-  tile: DashboardTile;
-  activeFilters: ActiveFilter[];
-  schema: SchemaLike | null;
-  /** Share-viewer prefetched response — when set, render this verbatim
-   *  and skip the live fetch (no /ai/query access in the guest view). */
-  sharedResponse: AiQueryResponse | null;
-  /** Optional override for the INLINE-tile fetch (issue #907). When set, the
-   *  inline branch calls this with the effective query body instead of
-   *  {@link executeAiQuery} — e.g. ChartTile routes through /ai/anomaly to
-   *  augment the response with per-cell verdicts. Reference tiles are
-   *  unaffected. Omit for the default /ai/query path. */
-  inlineFetch?: (effective: Record<string, unknown>) => Promise<AiQueryResponse>;
-  /** Optional extra token folded into the inline dedupe key (issue #907) so a
-   *  config change that doesn't alter the query body itself — e.g. toggling
-   *  anomaly detection or changing its method/threshold — still forces a
-   *  re-fetch. */
-  dedupeExtra?: string | null;
+	tile: DashboardTile;
+	activeFilters: ActiveFilter[];
+	schema: SchemaLike | null;
+	/** Share-viewer prefetched response — when set, render this verbatim
+	 *  and skip the live fetch (no /ai/query access in the guest view). */
+	sharedResponse: AiQueryResponse | null;
+	/** Optional override for the INLINE-tile fetch (issue #907). When set, the
+	 *  inline branch calls this with the effective query body instead of
+	 *  {@link executeAiQuery} — e.g. ChartTile routes through /ai/anomaly to
+	 *  augment the response with per-cell verdicts. Reference tiles are
+	 *  unaffected. Omit for the default /ai/query path. */
+	inlineFetch?: (effective: Record<string, unknown>) => Promise<AiQueryResponse>;
+	/** Optional extra token folded into the inline dedupe key (issue #907) so a
+	 *  config change that doesn't alter the query body itself — e.g. toggling
+	 *  anomaly detection or changing its method/threshold — still forces a
+	 *  re-fetch. */
+	dedupeExtra?: string | null;
 }
 
 /**
@@ -98,125 +98,121 @@ export interface TileQueryDeps {
  * Mutates `state` in place — assigns loading / error / response /
  * lastQueryJson as the fetch progresses.
  */
-export function runTileQueryEffect(
-  state: TileQueryState,
-  deps: TileQueryDeps,
-): void {
-  const { tile, activeFilters, schema, sharedResponse } = deps;
+export function runTileQueryEffect(state: TileQueryState, deps: TileQueryDeps): void {
+	const { tile, activeFilters, schema, sharedResponse } = deps;
 
-  // Share viewer (#941): render the prefetched guest response; never
-  // fetch live (a share guest has no session / no /ai/query access).
-  if (sharedResponse) {
-    state.response = sharedResponse;
-    state.loading = false;
-    state.error = null;
-    return;
-  }
+	// Share viewer (#941): render the prefetched guest response; never
+	// fetch live (a share guest has no session / no /ai/query access).
+	if (sharedResponse) {
+		state.response = sharedResponse;
+		state.loading = false;
+		state.error = null;
+		return;
+	}
 
-  const tileQuery = tile.query;
-  if (!tileQuery) return;
+	const tileQuery = tile.query;
+	if (!tileQuery) return;
 
-  /* --- saiku#1803: Ossie-backed tile ------------------------------------
-   * Routed before the reference branch because a saved `.saiku` is an MDX
-   * artefact — there is no such thing as a reference query on a semantic
-   * model, so an ossie tile is always inline. The response envelope matches
-   * /ai/query exactly (typed cells, VALIDATION_ERROR + field + available), so
-   * everything below this function is untouched. */
-  if (isOssieSource(tile.cube)) {
-    // ActiveFilter wraps the target; the #1803 semantic fields (label /
-    // bindings / captions) ride on the DashboardFilter itself.
-    const body = ossieEffectiveQueryFor(
-      tile,
-      activeFilters.map((a) => a.filter as SemanticFilter),
-    );
-    if (!body) return;
-    const key = `ossie:${JSON.stringify({ q: body, x: deps.dedupeExtra ?? null })}`;
-    if (key === state.lastQueryJson) return;
-    state.lastQueryJson = key;
-    state.loading = true;
-    state.error = null;
-    void (async () => {
-      try {
-        const r = await executeOssieQuery(body, "records");
-        state.response = r;
-        if (r.status !== "SUCCESS") state.error = r.error ?? `Query failed: ${r.status}`;
-        else state.auto.markUpdated();
-      } catch (e: unknown) {
-        state.error = e instanceof Error ? e.message : String(e);
-        state.response = null;
-      } finally {
-        state.loading = false;
-      }
-    })();
-    return;
-  }
+	/* --- saiku#1803: Ossie-backed tile ------------------------------------
+	 * Routed before the reference branch because a saved `.saiku` is an MDX
+	 * artefact — there is no such thing as a reference query on a semantic
+	 * model, so an ossie tile is always inline. The response envelope matches
+	 * /ai/query exactly (typed cells, VALIDATION_ERROR + field + available), so
+	 * everything below this function is untouched. */
+	if (isOssieSource(tile.cube)) {
+		// ActiveFilter wraps the target; the #1803 semantic fields (label /
+		// bindings / captions) ride on the DashboardFilter itself.
+		const body = ossieEffectiveQueryFor(
+			tile,
+			activeFilters.map((a) => a.filter as SemanticFilter)
+		);
+		if (!body) return;
+		const key = `ossie:${JSON.stringify({ q: body, x: deps.dedupeExtra ?? null })}`;
+		if (key === state.lastQueryJson) return;
+		state.lastQueryJson = key;
+		state.loading = true;
+		state.error = null;
+		void (async () => {
+			try {
+				const r = await executeOssieQuery(body, 'records');
+				state.response = r;
+				if (r.status !== 'SUCCESS') state.error = r.error ?? `Query failed: ${r.status}`;
+				else state.auto.markUpdated();
+			} catch (e: unknown) {
+				state.error = e instanceof Error ? e.message : String(e);
+				state.response = null;
+			} finally {
+				state.loading = false;
+			}
+		})();
+		return;
+	}
 
-  if (tileQuery.kind === "reference") {
-    // Reference tile: server loads the saved ThinQuery, merges any
-    // applicable dashboard filters onto it via ThinQueryFilterMerge,
-    // then runs it. Filter applicability is checked client-side first
-    // against the tile's cube schema so we don't ship filters the
-    // server would have to drop anyway.
-    const refFilters = applicableSavedFilters(schema, activeFilters);
-    const key = `ref:${tileQuery.path}|${JSON.stringify(refFilters)}`;
-    if (key === state.lastQueryJson) return;
-    state.lastQueryJson = key;
-    state.loading = true;
-    state.error = null;
-    void (async () => {
-      try {
-        const r = await executeSavedQuery(
-          tileQuery.path,
-          refFilters.map((f) => ({
-            dimension: f.dimension,
-            hierarchy: f.hierarchy,
-            level: f.level,
-            members: f.members ?? [],
-          })),
-        );
-        state.response = r;
-        if (r.status !== "SUCCESS")
-          state.error = r.error ?? `Query failed: ${r.status}`;
-        else state.auto.markUpdated(); // #931
-      } catch (e: unknown) {
-        state.error = e instanceof Error ? e.message : String(e);
-        state.response = null;
-      } finally {
-        state.loading = false;
-      }
-    })();
-    return;
-  }
+	if (tileQuery.kind === 'reference') {
+		// Reference tile: server loads the saved ThinQuery, merges any
+		// applicable dashboard filters onto it via ThinQueryFilterMerge,
+		// then runs it. Filter applicability is checked client-side first
+		// against the tile's cube schema so we don't ship filters the
+		// server would have to drop anyway.
+		const refFilters = applicableSavedFilters(schema, activeFilters);
+		const key = `ref:${tileQuery.path}|${JSON.stringify(refFilters)}`;
+		if (key === state.lastQueryJson) return;
+		state.lastQueryJson = key;
+		state.loading = true;
+		state.error = null;
+		void (async () => {
+			try {
+				const r = await executeSavedQuery(
+					tileQuery.path,
+					refFilters.map((f) => ({
+						dimension: f.dimension,
+						hierarchy: f.hierarchy,
+						level: f.level,
+						members: f.members ?? []
+					}))
+				);
+				state.response = r;
+				if (r.status !== 'SUCCESS') state.error = r.error ?? `Query failed: ${r.status}`;
+				else state.auto.markUpdated(); // #931
+			} catch (e: unknown) {
+				state.error = e instanceof Error ? e.message : String(e);
+				state.response = null;
+			} finally {
+				state.loading = false;
+			}
+		})();
+		return;
+	}
 
-  // Inline tile: merge active filters into the base body via the
-  // effective-query builder, then POST to /ai/query.
-  const effective = effectiveQueryFor(tile, activeFilters, schema);
-  if (!effective) return;
-  // #907: dedupeExtra folds non-body config (e.g. anomaly settings) into the
-  // key so toggling it re-fetches even though `effective` is unchanged.
-  const json = JSON.stringify({ q: effective, x: deps.dedupeExtra ?? null });
-  if (json === state.lastQueryJson) return; // no-op; avoid duplicate fetches
-  state.lastQueryJson = json;
+	// Inline tile: merge active filters into the base body via the
+	// effective-query builder, then POST to /ai/query.
+	const effective = effectiveQueryFor(tile, activeFilters, schema);
+	if (!effective) return;
+	// #907: dedupeExtra folds non-body config (e.g. anomaly settings) into the
+	// key so toggling it re-fetches even though `effective` is unchanged.
+	const json = JSON.stringify({ q: effective, x: deps.dedupeExtra ?? null });
+	if (json === state.lastQueryJson) return; // no-op; avoid duplicate fetches
+	state.lastQueryJson = json;
 
-  state.loading = true;
-  state.error = null;
-  void (async () => {
-    try {
-      // #907: inlineFetch override (e.g. /ai/anomaly) when supplied, else /ai/query.
-      const r = deps.inlineFetch
-        ? await deps.inlineFetch(effective)
-        : await executeAiQuery(effective, "records");
-      state.response = r;
-      if (r.status !== "SUCCESS") {
-        state.error = r.error ?? `Query failed: ${r.status}`;
-      } else {
-        state.auto.markUpdated(); // #931
-      }
-    } catch (e: unknown) {
-      state.error = e instanceof Error ? e.message : String(e);
-      state.response = null;
-    } finally {
-      state.loading = false;
-    }
-  })();
+	state.loading = true;
+	state.error = null;
+	void (async () => {
+		try {
+			// #907: inlineFetch override (e.g. /ai/anomaly) when supplied, else /ai/query.
+			const r = deps.inlineFetch
+				? await deps.inlineFetch(effective)
+				: await executeAiQuery(effective, 'records');
+			state.response = r;
+			if (r.status !== 'SUCCESS') {
+				state.error = r.error ?? `Query failed: ${r.status}`;
+			} else {
+				state.auto.markUpdated(); // #931
+			}
+		} catch (e: unknown) {
+			state.error = e instanceof Error ? e.message : String(e);
+			state.response = null;
+		} finally {
+			state.loading = false;
+		}
+	})();
 }

@@ -39,14 +39,14 @@
  */
 
 import type {
-  CubeRef,
-  DashboardFilter,
-  FilterBinding,
-  MdxFilterBinding,
-  OssieFilterBinding,
-} from "$lib/api/dashboards";
-import { leafSegment } from "$lib/dashboard/clickFilterMember";
-import { isOssieSource, sameSource } from "$lib/dashboard/tileSource";
+	CubeRef,
+	DashboardFilter,
+	FilterBinding,
+	MdxFilterBinding,
+	OssieFilterBinding
+} from '$lib/api/dashboards';
+import { leafSegment } from '$lib/dashboard/clickFilterMember';
+import { isOssieSource, sameSource } from '$lib/dashboard/tileSource';
 
 /* The binding shapes are part of the PERSISTED document, so they live with the
  * rest of the schema in $lib/api/dashboards and are re-exported here for the
@@ -59,11 +59,11 @@ export type { FilterBinding };
  *  `op` is EQ for a single value and IN for several, which is the whole range a
  *  select-style panel filter can produce. */
 export interface OssieFilterExpr {
-  dataset: string;
-  field: string;
-  op: "EQ" | "IN";
-  value?: string;
-  values?: string[];
+	dataset: string;
+	field: string;
+	op: 'EQ' | 'IN';
+	value?: string;
+	values?: string[];
 }
 
 /** The filter shape this module reads. DashboardFilter already carries the
@@ -79,13 +79,13 @@ export type SemanticFilter = DashboardFilter;
  * stored members — can still drive an Ossie binding without being re-authored.
  */
 export function selectedCaptions(filter: SemanticFilter): string[] {
-  if (filter.captions && filter.captions.length > 0) return [...filter.captions];
-  return (filter.members ?? []).map(leafSegment).filter((s) => s.length > 0);
+	if (filter.captions && filter.captions.length > 0) return [...filter.captions];
+	return (filter.members ?? []).map(leafSegment).filter((s) => s.length > 0);
 }
 
 /** What the chip and the panel call this filter. */
 export function filterLabel(filter: SemanticFilter): string {
-  return filter.label?.trim() || filter.level || filter.dimension || "Filter";
+	return filter.label?.trim() || filter.level || filter.dimension || 'Filter';
 }
 
 /**
@@ -98,24 +98,30 @@ export function filterLabel(filter: SemanticFilter): string {
  * dataset or field. Inventing one from the level name would guess at the
  * author's data model.
  */
-export function bindingFor(filter: SemanticFilter, cube: CubeRef | null | undefined): FilterBinding | null {
-  if (!cube) return null;
-  const explicit = (filter.bindings ?? []).find((b) => sameSource(b.cube, cube));
-  if (explicit) return explicit;
-  if (filter.bindings && filter.bindings.length > 0) return null;
-  if (isOssieSource(cube)) return null;
-  return {
-    kind: "mdx",
-    cube,
-    dimension: filter.dimension,
-    hierarchy: filter.hierarchy,
-    level: filter.level,
-  };
+export function bindingFor(
+	filter: SemanticFilter,
+	cube: CubeRef | null | undefined
+): FilterBinding | null {
+	if (!cube) return null;
+	const explicit = (filter.bindings ?? []).find((b) => sameSource(b.cube, cube));
+	if (explicit) return explicit;
+	if (filter.bindings && filter.bindings.length > 0) return null;
+	if (isOssieSource(cube)) return null;
+	return {
+		kind: 'mdx',
+		cube,
+		dimension: filter.dimension,
+		hierarchy: filter.hierarchy,
+		level: filter.level
+	};
 }
 
 /** Does this filter address `cube` at all? */
-export function filterReachesSource(filter: SemanticFilter, cube: CubeRef | null | undefined): boolean {
-  return bindingFor(filter, cube) !== null;
+export function filterReachesSource(
+	filter: SemanticFilter,
+	cube: CubeRef | null | undefined
+): boolean {
+	return bindingFor(filter, cube) !== null;
 }
 
 /**
@@ -130,20 +136,22 @@ export function filterReachesSource(filter: SemanticFilter, cube: CubeRef | null
  * has the member catalogue.
  */
 export function mdxFilterFor(
-  filter: SemanticFilter,
-  cube: CubeRef | null | undefined,
+	filter: SemanticFilter,
+	cube: CubeRef | null | undefined
 ): (DashboardFilter & { captions?: string[] }) | null {
-  const b = bindingFor(filter, cube);
-  if (!b || b.kind !== "mdx") return null;
-  const isLegacyTarget =
-    b.dimension === filter.dimension && b.hierarchy === filter.hierarchy && b.level === filter.level;
-  return {
-    dimension: b.dimension,
-    hierarchy: b.hierarchy,
-    level: b.level,
-    members: isLegacyTarget ? [...(filter.members ?? [])] : [],
-    captions: selectedCaptions(filter),
-  };
+	const b = bindingFor(filter, cube);
+	if (!b || b.kind !== 'mdx') return null;
+	const isLegacyTarget =
+		b.dimension === filter.dimension &&
+		b.hierarchy === filter.hierarchy &&
+		b.level === filter.level;
+	return {
+		dimension: b.dimension,
+		hierarchy: b.hierarchy,
+		level: b.level,
+		members: isLegacyTarget ? [...(filter.members ?? [])] : [],
+		captions: selectedCaptions(filter)
+	};
 }
 
 /**
@@ -152,38 +160,38 @@ export function mdxFilterFor(
  * filter matching zero rows).
  */
 export function ossieFilterFor(
-  filter: SemanticFilter,
-  cube: CubeRef | null | undefined,
+	filter: SemanticFilter,
+	cube: CubeRef | null | undefined
 ): OssieFilterExpr | null {
-  const b = bindingFor(filter, cube);
-  if (!b || b.kind !== "ossie") return null;
-  const captions = selectedCaptions(filter);
-  if (captions.length === 0) return null;
-  return captions.length === 1
-    ? { dataset: b.dataset, field: b.field, op: "EQ", value: captions[0] }
-    : { dataset: b.dataset, field: b.field, op: "IN", values: captions };
+	const b = bindingFor(filter, cube);
+	if (!b || b.kind !== 'ossie') return null;
+	const captions = selectedCaptions(filter);
+	if (captions.length === 0) return null;
+	return captions.length === 1
+		? { dataset: b.dataset, field: b.field, op: 'EQ', value: captions[0] }
+		: { dataset: b.dataset, field: b.field, op: 'IN', values: captions };
 }
 
 /** Every Ossie predicate the active filter set contributes to one model tile. */
 export function ossieFiltersFor(
-  filters: readonly SemanticFilter[],
-  cube: CubeRef | null | undefined,
+	filters: readonly SemanticFilter[],
+	cube: CubeRef | null | undefined
 ): OssieFilterExpr[] {
-  const out: OssieFilterExpr[] = [];
-  for (const f of filters) {
-    const expr = ossieFilterFor(f, cube);
-    if (expr) out.push(expr);
-  }
-  return out;
+	const out: OssieFilterExpr[] = [];
+	for (const f of filters) {
+		const expr = ossieFilterFor(f, cube);
+		if (expr) out.push(expr);
+	}
+	return out;
 }
 
 /** Replace (or add) the binding for one source, leaving the others alone. */
 export function withBinding(filter: SemanticFilter, binding: FilterBinding): SemanticFilter {
-  const rest = (filter.bindings ?? []).filter((b) => !sameSource(b.cube, binding.cube));
-  return { ...filter, bindings: [...rest, binding] };
+	const rest = (filter.bindings ?? []).filter((b) => !sameSource(b.cube, binding.cube));
+	return { ...filter, bindings: [...rest, binding] };
 }
 
 /** Drop the binding for one source. */
 export function withoutBinding(filter: SemanticFilter, cube: CubeRef): SemanticFilter {
-  return { ...filter, bindings: (filter.bindings ?? []).filter((b) => !sameSource(b.cube, cube)) };
+	return { ...filter, bindings: (filter.bindings ?? []).filter((b) => !sameSource(b.cube, cube)) };
 }

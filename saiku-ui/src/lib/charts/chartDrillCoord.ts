@@ -21,13 +21,13 @@
  * `dashboard/drillthroughCoord.ts`.
  */
 
-import type { ParsedCellset } from "$lib/views/cellsetUtils";
+import type { ParsedCellset } from '$lib/views/cellsetUtils';
 
 export interface ChartDrillTarget {
-  /** Absolute cellset row index (header rows + body-row offset). */
-  row: number;
-  /** Absolute cellset column index (row-header cols + data-col offset). */
-  col: number;
+	/** Absolute cellset row index (header rows + body-row offset). */
+	row: number;
+	/** Absolute cellset column index (row-header cols + data-col offset). */
+	col: number;
 }
 
 /**
@@ -47,40 +47,40 @@ export interface ChartDrillTarget {
  *   treat it as a no-op exactly like the grid does.
  */
 export function chartDrillTarget(
-  parsed: ParsedCellset,
-  categoryIndex: number,
-  seriesIndex: number,
-  leafIndices?: number[],
+	parsed: ParsedCellset,
+	categoryIndex: number,
+	seriesIndex: number,
+	leafIndices?: number[]
 ): ChartDrillTarget | null {
-  if (!isNonNegativeInt(categoryIndex) || !isNonNegativeInt(seriesIndex)) return null;
+	if (!isNonNegativeInt(categoryIndex) || !isNonNegativeInt(seriesIndex)) return null;
 
-  const rowCount = parsed.dataRows.length;
-  if (rowCount === 0) return null;
+	const rowCount = parsed.dataRows.length;
+	if (rowCount === 0) return null;
 
-  // Resolve the chart category back to a raw body-row index.
-  let bodyRowIndex: number;
-  if (leafIndices && leafIndices.length > 0) {
-    if (categoryIndex >= leafIndices.length) return null;
-    bodyRowIndex = leafIndices[categoryIndex];
-  } else {
-    bodyRowIndex = categoryIndex;
-  }
-  if (!isNonNegativeInt(bodyRowIndex) || bodyRowIndex >= rowCount) return null;
+	// Resolve the chart category back to a raw body-row index.
+	let bodyRowIndex: number;
+	if (leafIndices && leafIndices.length > 0) {
+		if (categoryIndex >= leafIndices.length) return null;
+		bodyRowIndex = leafIndices[categoryIndex];
+	} else {
+		bodyRowIndex = categoryIndex;
+	}
+	if (!isNonNegativeInt(bodyRowIndex) || bodyRowIndex >= rowCount) return null;
 
-  // The series index addresses a DATA column. Guard against the rare event
-  // shape that reports a series the cellset doesn't have (e.g. a derived/
-  // synthetic series); clamp to a valid data column rather than emitting an
-  // out-of-range col.
-  const dataColCount = parsed.dataRows[bodyRowIndex]?.length ?? 0;
-  if (dataColCount === 0) return null;
-  if (seriesIndex >= dataColCount) return null;
+	// The series index addresses a DATA column. Guard against the rare event
+	// shape that reports a series the cellset doesn't have (e.g. a derived/
+	// synthetic series); clamp to a valid data column rather than emitting an
+	// out-of-range col.
+	const dataColCount = parsed.dataRows[bodyRowIndex]?.length ?? 0;
+	if (dataColCount === 0) return null;
+	if (seriesIndex >= dataColCount) return null;
 
-  return {
-    row: parsed.headerRowCount + bodyRowIndex,
-    col: parsed.rowHeaderColCount + seriesIndex,
-  };
+	return {
+		row: parsed.headerRowCount + bodyRowIndex,
+		col: parsed.rowHeaderColCount + seriesIndex
+	};
 }
 
 function isNonNegativeInt(n: number): boolean {
-  return Number.isInteger(n) && n >= 0;
+	return Number.isInteger(n) && n >= 0;
 }

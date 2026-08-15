@@ -1,78 +1,78 @@
 {
-  "name": "@concepttocloud/saiku-design-system",
-  "version": "2.0.0",
-  "description": "Saiku's shared design system \u2014 CSS design tokens, a Tailwind v4 theme bridge, and the Svelte 5 primitives and compounds used across Saiku and Saiku Cloud.",
-  "license": "Apache-2.0",
-  "type": "module",
-  "svelte": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "svelte": "./dist/index.js",
-      "default": "./dist/index.js"
-    },
-    "./ui": {
-      "types": "./dist/ui/index.d.ts",
-      "svelte": "./dist/ui/index.js",
-      "default": "./dist/ui/index.js"
-    },
-    "./ui/button-variants": {
-      "types": "./dist/ui/button-variants.d.ts",
-      "default": "./dist/ui/button-variants.js"
-    },
-    "./tokens.css": "./dist/styles/tokens.css",
-    "./tailwind.css": "./dist/styles/tailwind.css",
-    "./motion.css": "./dist/styles/motion.css",
-    "./package.json": "./package.json"
-  },
-  "files": [
-    "dist",
-    "!dist/**/*.test.*",
-    "!dist/**/*.spec.*",
-    "README.md"
-  ],
-  "sideEffects": [
-    "**/*.css"
-  ],
-  "scripts": {
-    "build": "svelte-package --input src/lib --output dist",
-    "//prepare": "Runs on `npm install` both here and in saiku-ui (which takes this as a file: dep), so dist/ exists before the app builds. Also runs ahead of `npm publish`.",
-    "prepare": "npm run build",
-    "check": "svelte-check --tsconfig ./tsconfig.json"
-  },
-  "peerDependencies": {
-    "svelte": "^5.0.0",
-    "tailwindcss": "^4.0.0"
-  },
-  "dependencies": {
-    "bits-ui": "^2.18.1",
-    "clsx": "^2.1.1",
-    "tailwind-merge": "^3.6.0",
-    "tailwind-variants": "^3.3.1"
-  },
-  "devDependencies": {
-    "@sveltejs/package": "^2.5.4",
-    "@sveltejs/vite-plugin-svelte": "^7.0.0",
-    "svelte": "^5.56.8",
-    "svelte-check": "^4.7.5",
-    "typescript": "^5.7.2"
-  },
-  "keywords": [
-    "saiku",
-    "design-system",
-    "design-tokens",
-    "svelte",
-    "tailwind",
-    "shadcn"
-  ],
-  "homepage": "https://github.com/spiculedata/saiku",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/spiculedata/saiku.git",
-    "directory": "saiku-ui/design-system"
-  },
-  "bugs": {
-    "url": "https://github.com/spiculedata/saiku/issues"
-  }
+	"name": "@concepttocloud/saiku-design-system",
+	"version": "2.0.0",
+	"description": "Saiku's shared design system \u2014 CSS design tokens, a Tailwind v4 theme bridge, and the Svelte 5 primitives and compounds used across Saiku and Saiku Cloud.",
+	"license": "Apache-2.0",
+	"type": "module",
+	"svelte": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"svelte": "./dist/index.js",
+			"default": "./dist/index.js"
+		},
+		"./ui": {
+			"types": "./dist/ui/index.d.ts",
+			"svelte": "./dist/ui/index.js",
+			"default": "./dist/ui/index.js"
+		},
+		"./ui/button-variants": {
+			"types": "./dist/ui/button-variants.d.ts",
+			"default": "./dist/ui/button-variants.js"
+		},
+		"./tokens.css": "./dist/styles/tokens.css",
+		"./tailwind.css": "./dist/styles/tailwind.css",
+		"./motion.css": "./dist/styles/motion.css",
+		"./package.json": "./package.json"
+	},
+	"files": [
+		"dist",
+		"!dist/**/*.test.*",
+		"!dist/**/*.spec.*",
+		"README.md"
+	],
+	"sideEffects": [
+		"**/*.css"
+	],
+	"scripts": {
+		"build": "svelte-package --input src/lib --output dist",
+		"//prepare": "Runs on `npm install` both here and in saiku-ui (which takes this as a file: dep), so dist/ exists before the app builds. Also runs ahead of `npm publish`.",
+		"prepare": "npm run build",
+		"check": "svelte-check --tsconfig ./tsconfig.json"
+	},
+	"peerDependencies": {
+		"svelte": "^5.0.0",
+		"tailwindcss": "^4.0.0"
+	},
+	"dependencies": {
+		"bits-ui": "^2.18.1",
+		"clsx": "^2.1.1",
+		"tailwind-merge": "^3.6.0",
+		"tailwind-variants": "^3.3.1"
+	},
+	"devDependencies": {
+		"@sveltejs/package": "^2.5.4",
+		"@sveltejs/vite-plugin-svelte": "^7.0.0",
+		"svelte": "^5.56.8",
+		"svelte-check": "^4.7.5",
+		"typescript": "^5.7.2"
+	},
+	"keywords": [
+		"saiku",
+		"design-system",
+		"design-tokens",
+		"svelte",
+		"tailwind",
+		"shadcn"
+	],
+	"homepage": "https://github.com/spiculedata/saiku",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/spiculedata/saiku.git",
+		"directory": "saiku-ui/design-system"
+	},
+	"bugs": {
+		"url": "https://github.com/spiculedata/saiku/issues"
+	}
 }

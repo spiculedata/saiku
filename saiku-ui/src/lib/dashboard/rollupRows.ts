@@ -20,7 +20,7 @@
  * Pure: no DOM, no fetches.
  */
 
-import type { AiCell } from "$lib/api/aiQuery";
+import type { AiCell } from '$lib/api/aiQuery';
 
 /** A row in a `records`-format response: header captions + measure cells.
  *  Structurally identical to `AiQueryResponse.data[n]` so both tiles can hand
@@ -29,7 +29,7 @@ import type { AiCell } from "$lib/api/aiQuery";
 export type RecordRow = Record<string, AiCell | string>;
 
 function isAiCell(v: unknown): v is AiCell {
-  return typeof v === "object" && v !== null && "formatted" in (v as object);
+	return typeof v === 'object' && v !== null && 'formatted' in (v as object);
 }
 
 /**
@@ -40,9 +40,9 @@ function isAiCell(v: unknown): v is AiCell {
  * with the same key set.
  */
 export function headerKeysOf(rows: readonly RecordRow[]): string[] {
-  const first = rows[0];
-  if (!first) return [];
-  return Object.keys(first).filter((k) => !isAiCell(first[k]));
+	const first = rows[0];
+	if (!first) return [];
+	return Object.keys(first).filter((k) => !isAiCell(first[k]));
 }
 
 /**
@@ -53,8 +53,8 @@ export function headerKeysOf(rows: readonly RecordRow[]): string[] {
  * treating it as a rollup would silently drop real data.
  */
 export function isRollupRow(row: RecordRow, headerKeys: readonly string[]): boolean {
-  if (headerKeys.length < 2) return false;
-  return headerKeys.some((k) => String(row[k] ?? "").length === 0);
+	if (headerKeys.length < 2) return false;
+	return headerKeys.some((k) => String(row[k] ?? '').length === 0);
 }
 
 /**
@@ -66,21 +66,21 @@ export function isRollupRow(row: RecordRow, headerKeys: readonly string[]): bool
  * blank the tile rather than tidy it.
  */
 export function partitionRollups(rows: readonly RecordRow[]): {
-  headerKeys: string[];
-  leaves: RecordRow[];
-  rollups: RecordRow[];
-  allRollups: boolean;
+	headerKeys: string[];
+	leaves: RecordRow[];
+	rollups: RecordRow[];
+	allRollups: boolean;
 } {
-  const headerKeys = headerKeysOf(rows);
-  const leaves: RecordRow[] = [];
-  const rollups: RecordRow[] = [];
-  for (const row of rows) {
-    (isRollupRow(row, headerKeys) ? rollups : leaves).push(row);
-  }
-  return {
-    headerKeys,
-    leaves,
-    rollups,
-    allRollups: rows.length > 0 && leaves.length === 0,
-  };
+	const headerKeys = headerKeysOf(rows);
+	const leaves: RecordRow[] = [];
+	const rollups: RecordRow[] = [];
+	for (const row of rows) {
+		(isRollupRow(row, headerKeys) ? rollups : leaves).push(row);
+	}
+	return {
+		headerKeys,
+		leaves,
+		rollups,
+		allRollups: rows.length > 0 && leaves.length === 0
+	};
 }

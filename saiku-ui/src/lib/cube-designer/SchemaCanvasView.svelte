@@ -421,7 +421,7 @@
 			if (store.selectedJoinId !== null) store.selectedJoinId = null;
 			return;
 		}
-		 
+
 		const edgeJoins = (selectedEdge.data as any)?.joins as Array<{ id: string }> | undefined;
 		if (edgeJoins && edgeJoins.length === 1) {
 			const joinId = edgeJoins[0].id;

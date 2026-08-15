@@ -1,4 +1,4 @@
-import { vitePreprocess } from "@sveltejs/vite-plugin-svelte";
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 
 /**
  * Standalone package config — no SvelteKit here. `svelte-package` only needs
@@ -8,5 +8,5 @@ import { vitePreprocess } from "@sveltejs/vite-plugin-svelte";
  * @type {import('@sveltejs/vite-plugin-svelte').SvelteConfig}
  */
 export default {
-  preprocess: vitePreprocess(),
+	preprocess: vitePreprocess()
 };

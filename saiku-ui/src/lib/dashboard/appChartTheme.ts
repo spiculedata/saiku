@@ -25,43 +25,43 @@
  */
 
 import {
-  CHART_FALLBACK_COLORS,
-  applyColorBlindSafe,
-  resolveThemeTokens,
-  type ThemeTokens,
-} from "$lib/views/chartTheme";
-import { theme } from "$lib/stores/theme.svelte";
+	CHART_FALLBACK_COLORS,
+	applyColorBlindSafe,
+	resolveThemeTokens,
+	type ThemeTokens
+} from '$lib/views/chartTheme';
+import { theme } from '$lib/stores/theme.svelte';
 
 /** The subset of `--saiku-app-*` that drives chart appearance. */
 export interface AppBrandTokens {
-  fg: string;
-  muted: string;
-  surface: string;
-  ground: string;
-  cardBorder: string;
-  accent: string;
-  accent2: string;
-  accentStrong: string;
-  positive: string;
-  danger: string;
-  fontBody: string;
-  fontDisplay: string;
+	fg: string;
+	muted: string;
+	surface: string;
+	ground: string;
+	cardBorder: string;
+	accent: string;
+	accent2: string;
+	accentStrong: string;
+	positive: string;
+	danger: string;
+	fontBody: string;
+	fontDisplay: string;
 }
 
 /** Brand token -> CSS custom property. Also the read list for the DOM resolver. */
 export const APP_CHART_VARS: Record<keyof AppBrandTokens, string> = {
-  fg: "--saiku-app-fg",
-  muted: "--saiku-app-muted",
-  surface: "--saiku-app-surface",
-  ground: "--saiku-app-ground",
-  cardBorder: "--saiku-app-card-border",
-  accent: "--saiku-app-accent",
-  accent2: "--saiku-app-accent-2",
-  accentStrong: "--saiku-app-accent-strong",
-  positive: "--saiku-app-positive",
-  danger: "--saiku-app-danger",
-  fontBody: "--saiku-app-font-body",
-  fontDisplay: "--saiku-app-font-display",
+	fg: '--saiku-app-fg',
+	muted: '--saiku-app-muted',
+	surface: '--saiku-app-surface',
+	ground: '--saiku-app-ground',
+	cardBorder: '--saiku-app-card-border',
+	accent: '--saiku-app-accent',
+	accent2: '--saiku-app-accent-2',
+	accentStrong: '--saiku-app-accent-strong',
+	positive: '--saiku-app-positive',
+	danger: '--saiku-app-danger',
+	fontBody: '--saiku-app-font-body',
+	fontDisplay: '--saiku-app-font-display'
 };
 
 const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
@@ -69,31 +69,30 @@ const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
 /** Parse #rgb / #rrggbb to [r,g,b]; null for anything else (incl. rgb()/oklch,
  *  which we deliberately don't try to interpolate). */
 export function parseHex(v: string): [number, number, number] | null {
-  const s = v.trim();
-  if (!HEX.test(s)) return null;
-  const h =
-    s.length === 4
-      ? `#${s[1]}${s[1]}${s[2]}${s[2]}${s[3]}${s[3]}`
-      : s;
-  return [
-    parseInt(h.slice(1, 3), 16),
-    parseInt(h.slice(3, 5), 16),
-    parseInt(h.slice(5, 7), 16),
-  ];
+	const s = v.trim();
+	if (!HEX.test(s)) return null;
+	const h = s.length === 4 ? `#${s[1]}${s[1]}${s[2]}${s[2]}${s[3]}${s[3]}` : s;
+	return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 }
 
 function toHex(c: [number, number, number]): string {
-  return `#${c.map((n) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, "0")).join("")}`;
+	return `#${c
+		.map((n) =>
+			Math.max(0, Math.min(255, Math.round(n)))
+				.toString(16)
+				.padStart(2, '0')
+		)
+		.join('')}`;
 }
 
 /** Linear blend of two hex colours. `t` is the weight of `b` (0 = a, 1 = b).
  *  Returns `a` unchanged when either side isn't parseable. */
 export function mixHex(a: string, b: string, t: number): string {
-  const ca = parseHex(a);
-  const cb = parseHex(b);
-  if (!ca || !cb) return a;
-  const k = Math.max(0, Math.min(1, t));
-  return toHex([0, 1, 2].map((i) => ca[i] + (cb[i] - ca[i]) * k) as [number, number, number]);
+	const ca = parseHex(a);
+	const cb = parseHex(b);
+	if (!ca || !cb) return a;
+	const k = Math.max(0, Math.min(1, t));
+	return toHex([0, 1, 2].map((i) => ca[i] + (cb[i] - ca[i]) * k) as [number, number, number]);
 }
 
 /** Number of categorical series colours a palette must supply — matches the
@@ -112,23 +111,23 @@ export const PALETTE_SIZE = 8;
  * Falls back wholesale to CHART_FALLBACK_COLORS when no brand colour parses.
  */
 export function appChartPalette(b: AppBrandTokens): string[] {
-  const seeds: string[] = [];
-  for (const c of [b.accent, b.accent2, b.positive, b.danger, b.accentStrong]) {
-    if (parseHex(c) && !seeds.includes(c)) seeds.push(c);
-  }
-  if (seeds.length === 0) return [...CHART_FALLBACK_COLORS];
+	const seeds: string[] = [];
+	for (const c of [b.accent, b.accent2, b.positive, b.danger, b.accentStrong]) {
+		if (parseHex(c) && !seeds.includes(c)) seeds.push(c);
+	}
+	if (seeds.length === 0) return [...CHART_FALLBACK_COLORS];
 
-  const out = [...seeds];
-  const surface = parseHex(b.surface) ? b.surface : "#ffffff";
-  // Successive passes lighten a little more, so slot 6 and slot 11 of the same
-  // hue stay distinguishable.
-  for (let pass = 1; out.length < PALETTE_SIZE; pass++) {
-    for (const seed of seeds) {
-      if (out.length >= PALETTE_SIZE) break;
-      out.push(mixHex(seed, surface, Math.min(0.72, 0.3 * pass)));
-    }
-  }
-  return out.slice(0, PALETTE_SIZE);
+	const out = [...seeds];
+	const surface = parseHex(b.surface) ? b.surface : '#ffffff';
+	// Successive passes lighten a little more, so slot 6 and slot 11 of the same
+	// hue stay distinguishable.
+	for (let pass = 1; out.length < PALETTE_SIZE; pass++) {
+		for (const seed of seeds) {
+			if (out.length >= PALETTE_SIZE) break;
+			out.push(mixHex(seed, surface, Math.min(0.72, 0.3 * pass)));
+		}
+	}
+	return out.slice(0, PALETTE_SIZE);
 }
 
 /** Number of stops in the sequential ramp handed to a heatmap / choropleth
@@ -146,41 +145,41 @@ const RAMP_STOPS = 3;
  * caller then falls back to a named ramp rather than inventing a gradient.
  */
 export function appSequentialRamp(b: AppBrandTokens): string[] | null {
-  if (!parseHex(b.accent)) return null;
-  const surface = parseHex(b.surface) ? b.surface : "#ffffff";
-  const stops: string[] = [];
-  for (let i = 0; i < RAMP_STOPS; i++) {
-    // i = 0 is almost all surface (the "no value here" end), the last stop is
-    // the accent at full strength.
-    const towardSurface = 1 - i / (RAMP_STOPS - 1);
-    stops.push(mixHex(b.accent, surface, towardSurface * 0.88));
-  }
-  return stops;
+	if (!parseHex(b.accent)) return null;
+	const surface = parseHex(b.surface) ? b.surface : '#ffffff';
+	const stops: string[] = [];
+	for (let i = 0; i < RAMP_STOPS; i++) {
+		// i = 0 is almost all surface (the "no value here" end), the last stop is
+		// the accent at full strength.
+		const towardSurface = 1 - i / (RAMP_STOPS - 1);
+		stops.push(mixHex(b.accent, surface, towardSurface * 0.88));
+	}
+	return stops;
 }
 
 /** Map the app's brand tokens onto the ECharts theme tokens the chart builders
  *  consume. Pure — callers overlay the colour-blind-safe preference. */
 export function appChartTokens(b: AppBrandTokens): ThemeTokens {
-  const ramp = appSequentialRamp(b);
-  return {
-    fg: b.fg,
-    fgMuted: b.muted,
-    // A tile's chart sits on the card, not the page ground — the card is what
-    // the tooltip and any solid backdrop must match.
-    bg: b.surface,
-    bgMuted: b.ground,
-    border: b.cardBorder,
-    accent: b.accent,
-    chartColors: appChartPalette(b),
-    highContrast: false,
-    // saiku#1799: the sign-encoding and magnitude-encoding charts (waterfall,
-    // heatmap, choropleth) had no theme colour to reach for and shipped
-    // literals. Only set when the brand names something parseable, so the
-    // builder's own fallbacks stay in charge otherwise.
-    ...(parseHex(b.positive) ? { positive: b.positive } : {}),
-    ...(parseHex(b.danger) ? { danger: b.danger } : {}),
-    ...(ramp ? { sequentialRamp: ramp } : {}),
-  };
+	const ramp = appSequentialRamp(b);
+	return {
+		fg: b.fg,
+		fgMuted: b.muted,
+		// A tile's chart sits on the card, not the page ground — the card is what
+		// the tooltip and any solid backdrop must match.
+		bg: b.surface,
+		bgMuted: b.ground,
+		border: b.cardBorder,
+		accent: b.accent,
+		chartColors: appChartPalette(b),
+		highContrast: false,
+		// saiku#1799: the sign-encoding and magnitude-encoding charts (waterfall,
+		// heatmap, choropleth) had no theme colour to reach for and shipped
+		// literals. Only set when the brand names something parseable, so the
+		// builder's own fallbacks stay in charge otherwise.
+		...(parseHex(b.positive) ? { positive: b.positive } : {}),
+		...(parseHex(b.danger) ? { danger: b.danger } : {}),
+		...(ramp ? { sequentialRamp: ramp } : {})
+	};
 }
 
 /* ------------------------------------------------------------------ *
@@ -191,25 +190,25 @@ export function appChartTokens(b: AppBrandTokens): ThemeTokens {
  *  Returns null when `el` is outside an App Builder app (a plain dashboard, the
  *  workspace) or there's no DOM — callers then use the global theme. */
 export function readAppBrandTokens(el: Element | null | undefined): AppBrandTokens | null {
-  if (!el || typeof window === "undefined" || typeof getComputedStyle !== "function") return null;
-  const root = el.closest("[data-saiku-app]");
-  if (!root) return null;
-  const cs = getComputedStyle(root);
-  const out = {} as AppBrandTokens;
-  for (const [key, cssVar] of Object.entries(APP_CHART_VARS) as [keyof AppBrandTokens, string][]) {
-    out[key] = cs.getPropertyValue(cssVar).trim();
-  }
-  // A root with no resolvable accent isn't themed — don't fabricate a palette.
-  return out.accent ? out : null;
+	if (!el || typeof window === 'undefined' || typeof getComputedStyle !== 'function') return null;
+	const root = el.closest('[data-saiku-app]');
+	if (!root) return null;
+	const cs = getComputedStyle(root);
+	const out = {} as AppBrandTokens;
+	for (const [key, cssVar] of Object.entries(APP_CHART_VARS) as [keyof AppBrandTokens, string][]) {
+		out[key] = cs.getPropertyValue(cssVar).trim();
+	}
+	// A root with no resolvable accent isn't themed — don't fabricate a palette.
+	return out.accent ? out : null;
 }
 
 /** The chart tokens for a tile: the app's when the tile is inside an app, the
  *  global Saiku theme otherwise. The colour-blind-safe preference overlays
  *  either — accessibility outranks branding. */
 export function resolveChartTokensFor(el: Element | null | undefined): ThemeTokens {
-  const brand = readAppBrandTokens(el);
-  if (!brand) return resolveThemeTokens();
-  return applyColorBlindSafe(appChartTokens(brand), theme.colorBlindSafe);
+	const brand = readAppBrandTokens(el);
+	if (!brand) return resolveThemeTokens();
+	return applyColorBlindSafe(appChartTokens(brand), theme.colorBlindSafe);
 }
 
 /* ------------------------------------------------------------------ *
@@ -218,11 +217,11 @@ export function resolveChartTokensFor(el: Element | null | undefined): ThemeToke
 
 /** Axis-level defaults applied to every x/y axis the author declares. */
 function axisDefaults(t: ThemeTokens): Record<string, unknown> {
-  return {
-    axisLabel: { color: t.fgMuted },
-    axisLine: { lineStyle: { color: t.border } },
-    splitLine: { lineStyle: { color: t.border } },
-  };
+	return {
+		axisLabel: { color: t.fgMuted },
+		axisLine: { lineStyle: { color: t.border } },
+		splitLine: { lineStyle: { color: t.border } }
+	};
 }
 
 /**
@@ -233,7 +232,7 @@ function axisDefaults(t: ThemeTokens): Record<string, unknown> {
  * pair of axes through the middle of it. So these can never be introduced —
  * only decorated when already present.
  */
-const CONDITIONAL_COMPONENTS = ["legend", "tooltip", "xAxis", "yAxis"] as const;
+const CONDITIONAL_COMPONENTS = ['legend', 'tooltip', 'xAxis', 'yAxis'] as const;
 
 /**
  * The themed baseline a hand-authored ECharts option is layered on top of.
@@ -242,54 +241,54 @@ const CONDITIONAL_COMPONENTS = ["legend", "tooltip", "xAxis", "yAxis"] as const;
  * the author didn't ask for them.
  */
 export function appEchartsBase(
-  t: ThemeTokens,
-  fonts: { body: string; display: string },
+	t: ThemeTokens,
+	fonts: { body: string; display: string }
 ): Record<string, unknown> {
-  return {
-    color: t.chartColors,
-    backgroundColor: "transparent",
-    textStyle: { color: t.fg, fontFamily: fonts.body },
-    title: {
-      textStyle: { color: t.fg, fontFamily: fonts.display },
-      subtextStyle: { color: t.fgMuted, fontFamily: fonts.body },
-    },
-    legend: { textStyle: { color: t.fgMuted } },
-    tooltip: {
-      backgroundColor: t.bg,
-      borderColor: t.border,
-      textStyle: { color: t.fg },
-    },
-    xAxis: axisDefaults(t),
-    yAxis: axisDefaults(t),
-  };
+	return {
+		color: t.chartColors,
+		backgroundColor: 'transparent',
+		textStyle: { color: t.fg, fontFamily: fonts.body },
+		title: {
+			textStyle: { color: t.fg, fontFamily: fonts.display },
+			subtextStyle: { color: t.fgMuted, fontFamily: fonts.body }
+		},
+		legend: { textStyle: { color: t.fgMuted } },
+		tooltip: {
+			backgroundColor: t.bg,
+			borderColor: t.border,
+			textStyle: { color: t.fg }
+		},
+		xAxis: axisDefaults(t),
+		yAxis: axisDefaults(t)
+	};
 }
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
+	return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
 /** Recursive "fill the gaps" merge. `override` always wins at a leaf; only
  *  plain objects recurse. Never mutates either input. */
 function fillFrom(
-  base: Record<string, unknown>,
-  override: Record<string, unknown>,
+	base: Record<string, unknown>,
+	override: Record<string, unknown>
 ): Record<string, unknown> {
-  const out: Record<string, unknown> = { ...base };
-  for (const [k, v] of Object.entries(override)) {
-    const b = out[k];
-    out[k] = isPlainObject(b) && isPlainObject(v) ? fillFrom(b, v) : v;
-  }
-  return out;
+	const out: Record<string, unknown> = { ...base };
+	for (const [k, v] of Object.entries(override)) {
+		const b = out[k];
+		out[k] = isPlainObject(b) && isPlainObject(v) ? fillFrom(b, v) : v;
+	}
+	return out;
 }
 
 /** A declared component may be a single object or an array of them (ECharts
  *  allows both for axes); the defaults have to reach every entry either way. */
 function fillDeclared(baseValue: unknown, authorValue: unknown): unknown {
-  if (!isPlainObject(baseValue)) return authorValue;
-  if (Array.isArray(authorValue)) {
-    return authorValue.map((a) => (isPlainObject(a) ? fillFrom(baseValue, a) : a));
-  }
-  return isPlainObject(authorValue) ? fillFrom(baseValue, authorValue) : authorValue;
+	if (!isPlainObject(baseValue)) return authorValue;
+	if (Array.isArray(authorValue)) {
+		return authorValue.map((a) => (isPlainObject(a) ? fillFrom(baseValue, a) : a));
+	}
+	return isPlainObject(authorValue) ? fillFrom(baseValue, authorValue) : authorValue;
 }
 
 /**
@@ -306,19 +305,19 @@ function fillDeclared(baseValue: unknown, authorValue: unknown): unknown {
  * *is*, not how it looks.
  */
 export function withAppEchartsDefaults(
-  option: Record<string, unknown>,
-  base: Record<string, unknown>,
+	option: Record<string, unknown>,
+	base: Record<string, unknown>
 ): Record<string, unknown> {
-  const unconditional: Record<string, unknown> = { ...base };
-  for (const k of CONDITIONAL_COMPONENTS) delete unconditional[k];
+	const unconditional: Record<string, unknown> = { ...base };
+	for (const k of CONDITIONAL_COMPONENTS) delete unconditional[k];
 
-  const merged = fillFrom(unconditional, option);
-  for (const k of CONDITIONAL_COMPONENTS) {
-    if (option[k] === undefined) {
-      delete merged[k];
-      continue;
-    }
-    merged[k] = fillDeclared(base[k], option[k]);
-  }
-  return merged;
+	const merged = fillFrom(unconditional, option);
+	for (const k of CONDITIONAL_COMPONENTS) {
+		if (option[k] === undefined) {
+			delete merged[k];
+			continue;
+		}
+		merged[k] = fillDeclared(base[k], option[k]);
+	}
+	return merged;
 }

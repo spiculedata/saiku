@@ -14,18 +14,18 @@
  * accessor rather than a required context.
  */
 
-import { getContext, setContext } from "svelte";
+import { getContext, setContext } from 'svelte';
 
-const KEY = Symbol.for("saiku.app.themeSignature");
+const KEY = Symbol.for('saiku.app.themeSignature');
 
 /** Called by AppShell during init. `get` must READ the reactive theme state so
  *  consumers calling it inside an $effect pick up the dependency. */
 export function provideAppThemeSignature(get: () => string): void {
-  setContext(KEY, get);
+	setContext(KEY, get);
 }
 
 /** The app-theme signature getter, or null when not inside an app.
  *  Must be called during component init (getContext rules). */
 export function getAppThemeSignature(): (() => string) | null {
-  return getContext<(() => string) | undefined>(KEY) ?? null;
+	return getContext<(() => string) | undefined>(KEY) ?? null;
 }

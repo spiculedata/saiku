@@ -30,5 +30,5 @@ export {
 	TONE_CLASSES,
 	SIZES,
 	type Tone,
-	type Size,
+	type Size
 } from '@concepttocloud/saiku-design-system';

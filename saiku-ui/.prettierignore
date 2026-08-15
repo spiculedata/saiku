@@ -1,0 +1,15 @@
+# Package Managers
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# Build output
+dist/
+.svelte-kit/
+storybook-static/
+design-system/dist/
+
+# Vendored / generated
+static/
+embed-npm/
+embed-react-npm/

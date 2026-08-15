@@ -26,11 +26,11 @@
  *  and compared against the same shape after. Type + category count are the
  *  identity we gate re-application on. */
 export interface ChartIdentity {
-  /** The chart kind (bar/line/area/scatter/…); a switch must reset zoom. */
-  type: string;
-  /** Number of categories on the zoomable (x) axis; a different count means a
-   *  different dataset, so the old [start,end] window no longer maps cleanly. */
-  categoryCount: number;
+	/** The chart kind (bar/line/area/scatter/…); a switch must reset zoom. */
+	type: string;
+	/** Number of categories on the zoomable (x) axis; a different count means a
+	 *  different dataset, so the old [start,end] window no longer maps cleanly. */
+	categoryCount: number;
 }
 
 /** The slice of `getOption()` we preserve across a re-render. Both keys are
@@ -38,28 +38,31 @@ export interface ChartIdentity {
  *  left as `unknown[]` because they are echarts-defined option arrays we only
  *  pass straight back into setOption — we never introspect their internals. */
 export interface PreservedState {
-  dataZoom?: unknown[];
-  brush?: unknown;
-  // Index signature so the object satisfies echarts' ECBasicOption (which is an
-  // open record) when fed straight into setOption — we still only ever set the
-  // two keys above.
-  [key: string]: unknown;
+	dataZoom?: unknown[];
+	brush?: unknown;
+	// Index signature so the object satisfies echarts' ECBasicOption (which is an
+	// open record) when fed straight into setOption — we still only ever set the
+	// two keys above.
+	[key: string]: unknown;
 }
 
 /* ECharts' getOption() always normalises a component to an array (even a single
  * dataZoom becomes `dataZoom: [ {...} ]`). We narrow defensively because the
  * object is `unknown` at the call boundary. */
-type OptionLike = {
-  dataZoom?: unknown;
-  brush?: unknown;
-  series?: unknown;
-} | null | undefined;
+type OptionLike =
+	| {
+			dataZoom?: unknown;
+			brush?: unknown;
+			series?: unknown;
+	  }
+	| null
+	| undefined;
 
 function asArray(v: unknown): unknown[] | undefined {
-  if (Array.isArray(v)) return v;
-  if (v == null) return undefined;
-  // A bare object (rare) is wrapped so callers always get an array to re-apply.
-  return [v];
+	if (Array.isArray(v)) return v;
+	if (v == null) return undefined;
+	// A bare object (rare) is wrapped so callers always get an array to re-apply.
+	return [v];
 }
 
 /**
@@ -73,14 +76,14 @@ function asArray(v: unknown): unknown[] | undefined {
  * check in one place is clearer.
  */
 export function captureZoomState(option: OptionLike): PreservedState | null {
-  if (!option) return null;
-  const dataZoom = asArray(option.dataZoom);
-  const brush = option.brush;
-  if ((!dataZoom || dataZoom.length === 0) && brush == null) return null;
-  const out: PreservedState = {};
-  if (dataZoom && dataZoom.length > 0) out.dataZoom = dataZoom;
-  if (brush != null) out.brush = brush;
-  return out;
+	if (!option) return null;
+	const dataZoom = asArray(option.dataZoom);
+	const brush = option.brush;
+	if ((!dataZoom || dataZoom.length === 0) && brush == null) return null;
+	const out: PreservedState = {};
+	if (dataZoom && dataZoom.length > 0) out.dataZoom = dataZoom;
+	if (brush != null) out.brush = brush;
+	return out;
 }
 
 /**
@@ -92,18 +95,18 @@ export function captureZoomState(option: OptionLike): PreservedState | null {
  * safe (don't-reapply-onto-nothing) default.
  */
 function categoryCountOf(option: OptionLike): number {
-  if (!option) return 0;
-  const xAxis = asArray((option as { xAxis?: unknown }).xAxis);
-  if (xAxis && xAxis.length > 0) {
-    const first = xAxis[0] as { data?: unknown };
-    if (Array.isArray(first?.data)) return first.data.length;
-  }
-  const series = asArray(option.series);
-  if (series && series.length > 0) {
-    const first = series[0] as { data?: unknown };
-    if (Array.isArray(first?.data)) return first.data.length;
-  }
-  return 0;
+	if (!option) return 0;
+	const xAxis = asArray((option as { xAxis?: unknown }).xAxis);
+	if (xAxis && xAxis.length > 0) {
+		const first = xAxis[0] as { data?: unknown };
+		if (Array.isArray(first?.data)) return first.data.length;
+	}
+	const series = asArray(option.series);
+	if (series && series.length > 0) {
+		const first = series[0] as { data?: unknown };
+		if (Array.isArray(first?.data)) return first.data.length;
+	}
+	return 0;
 }
 
 /**
@@ -113,7 +116,7 @@ function categoryCountOf(option: OptionLike): number {
  * from the option only as a convenience for tests / symmetry.
  */
 export function identityOf(option: OptionLike, type: string): ChartIdentity {
-  return { type, categoryCount: categoryCountOf(option) };
+	return { type, categoryCount: categoryCountOf(option) };
 }
 
 /**
@@ -129,7 +132,7 @@ export function identityOf(option: OptionLike, type: string): ChartIdentity {
  * different *count* is the cheap, robust signal that the dataset changed.
  */
 export function shouldReapply(prev: ChartIdentity, next: ChartIdentity): boolean {
-  return prev.type === next.type && prev.categoryCount === next.categoryCount;
+	return prev.type === next.type && prev.categoryCount === next.categoryCount;
 }
 
 /**
@@ -141,13 +144,13 @@ export function shouldReapply(prev: ChartIdentity, next: ChartIdentity): boolean
  * Pure: callers do the getOption()/setOption() I/O; this only decides.
  */
 export function reconcileZoomState(
-  prevOption: OptionLike,
-  nextOption: OptionLike,
-  type: string,
+	prevOption: OptionLike,
+	nextOption: OptionLike,
+	type: string
 ): PreservedState | null {
-  const preserved = captureZoomState(prevOption);
-  if (!preserved) return null;
-  const prev = identityOf(prevOption, type);
-  const next = identityOf(nextOption, type);
-  return shouldReapply(prev, next) ? preserved : null;
+	const preserved = captureZoomState(prevOption);
+	if (!preserved) return null;
+	const prev = identityOf(prevOption, type);
+	const next = identityOf(nextOption, type);
+	return shouldReapply(prev, next) ? preserved : null;
 }

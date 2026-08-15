@@ -12,29 +12,29 @@ npm install @concepttocloud/saiku-design-system
 
 ## What's in it
 
-| Entry | Contents |
-| --- | --- |
-| `@concepttocloud/saiku-design-system` | Compounds: `PageHeader`, `FeedbackBanner`, `Badge`, `EmptyState`, `SectionCard`, `Toast`, `FormField`, `SortableColumnHeader`, plus the `TONES` / `TONE_CLASSES` / `SIZES` vocabulary. |
-| `@concepttocloud/saiku-design-system/ui` | Primitives. Action: `Button` (+ `buttonVariants`). Surface: `Card` group, `Divider`. Form: `Input`, `Textarea`, `Checkbox`, `Radio`, `Select`, `Switch`. Overlay: `Tooltip`, `Popover`, `Dialog`, `DropdownMenu`, `MenuItem`. Misc: `Kbd`. |
-| `@concepttocloud/saiku-design-system/ui/button-variants` | Just the button class contract (`buttonVariants` + its types). Import from here, not the `/ui` barrel, when you only want the classes — the barrel pulls in every primitive, `Tooltip`'s `bits-ui` dependency included. |
-| `@concepttocloud/saiku-design-system/tokens.css` | The token layer — every colour, space, radius, type, weight, shadow and duration token, with light + dark values. |
-| `@concepttocloud/saiku-design-system/tailwind.css` | Tailwind v4 entry: `@theme inline` bridge mapping the tokens onto Tailwind's namespace, plus the `dark:` custom variant. |
+| Entry                                                    | Contents                                                                                                                                                                                                                                   |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `@concepttocloud/saiku-design-system`                    | Compounds: `PageHeader`, `FeedbackBanner`, `Badge`, `EmptyState`, `SectionCard`, `Toast`, `FormField`, `SortableColumnHeader`, plus the `TONES` / `TONE_CLASSES` / `SIZES` vocabulary.                                                     |
+| `@concepttocloud/saiku-design-system/ui`                 | Primitives. Action: `Button` (+ `buttonVariants`). Surface: `Card` group, `Divider`. Form: `Input`, `Textarea`, `Checkbox`, `Radio`, `Select`, `Switch`. Overlay: `Tooltip`, `Popover`, `Dialog`, `DropdownMenu`, `MenuItem`. Misc: `Kbd`. |
+| `@concepttocloud/saiku-design-system/ui/button-variants` | Just the button class contract (`buttonVariants` + its types). Import from here, not the `/ui` barrel, when you only want the classes — the barrel pulls in every primitive, `Tooltip`'s `bits-ui` dependency included.                    |
+| `@concepttocloud/saiku-design-system/tokens.css`         | The token layer — every colour, space, radius, type, weight, shadow and duration token, with light + dark values.                                                                                                                          |
+| `@concepttocloud/saiku-design-system/tailwind.css`       | Tailwind v4 entry: `@theme inline` bridge mapping the tokens onto Tailwind's namespace, plus the `dark:` custom variant.                                                                                                                   |
 
 ## Usage
 
 Import the CSS once, at your app's root, **tokens first**:
 
 ```css
-@import "@concepttocloud/saiku-design-system/tokens.css";
-@import "@concepttocloud/saiku-design-system/tailwind.css";
+@import '@concepttocloud/saiku-design-system/tokens.css';
+@import '@concepttocloud/saiku-design-system/tailwind.css';
 ```
 
 Then use the components and the token utilities:
 
 ```svelte
 <script>
-  import { PageHeader, FeedbackBanner } from '@concepttocloud/saiku-design-system';
-  import { Button } from '@concepttocloud/saiku-design-system/ui';
+	import { PageHeader, FeedbackBanner } from '@concepttocloud/saiku-design-system';
+	import { Button } from '@concepttocloud/saiku-design-system/ui';
 </script>
 
 <PageHeader title="Connections" subtitle="Where Saiku reads your data from" />
@@ -61,8 +61,10 @@ Use the semantic tones, never raw Tailwind colours — raw shades only resolve t
 and break in the other theme:
 
 ```svelte
-<p class="text-success">Uploaded.</p>     <!-- yes -->
-<p class="text-emerald-300">Uploaded.</p> <!-- no -->
+<p class="text-success">Uploaded.</p>
+<!-- yes -->
+<p class="text-emerald-300">Uploaded.</p>
+<!-- no -->
 ```
 
 The tone aliases (`--success`, `--warning`, `--info`, `--destructive`) point at the **-text
@@ -71,7 +73,7 @@ light surface where 500 does not, and white-on-600 clears AA for the `bg-*` fill
 white-on-500 sits at roughly 2.8:1.
 
 > **Dark-mode caveat on `bg-*` tone fills.** In dark mode the ramp inverts and `-text`
-> resolves to the *300* step, which is light. `text-success` gets better contrast on a dark
+> resolves to the _300_ step, which is light. `text-success` gets better contrast on a dark
 > surface, but `bg-success` becomes a light fill — so pair it with `text-success-foreground`
 > (which resolves through `--on-success-action`) rather than assuming white reads on it.
 > Tone fills that need a dark-mode-safe background should use the `-soft` variants
@@ -129,7 +131,7 @@ The package carries **its own version**, starting at 1.0.0 and independent of bo
 saiku reactor (4.x) and saiku-ui (3.x) — it moves on its own cadence, because coupling it
 to product releases would mean saiku-cloud waits for a full Saiku release every time a
 token changes. (The sibling `@concepttocloud/saiku-embed*` packages deliberately mirror
-saiku-ui's version because they *are* saiku-ui's embed bundle; this one isn't, so its
+saiku-ui's version because they _are_ saiku-ui's embed bundle; this one isn't, so its
 version number is its own and actually means something about design-system compatibility.)
 
 To cut a release: bump `version` here and merge to `development`. The

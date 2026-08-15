@@ -28,15 +28,15 @@ process.chdir(here);
 const FORBIDDEN_TONES = ['emerald', 'red', 'amber', 'rose', 'orange'];
 
 const SEARCH_DIRS = ['src/routes', 'src/lib', 'src/embed'];
-const EXEMPT = [
-	'src/lib/design-system/'
-];
+const EXEMPT = ['src/lib/design-system/'];
 
 function isExempt(path) {
 	return EXEMPT.some((e) => path === e || path.startsWith(e));
 }
 
-const pattern = new RegExp(`\\b(text|bg|border|hover:bg|hover:text)-(${FORBIDDEN_TONES.join('|')})-[0-9]+`);
+const pattern = new RegExp(
+	`\\b(text|bg|border|hover:bg|hover:text)-(${FORBIDDEN_TONES.join('|')})-[0-9]+`
+);
 const EXTENSIONS = ['.svelte', '.ts'];
 
 // Node-native recursive scan — no shell-out to `grep`, so the check runs the

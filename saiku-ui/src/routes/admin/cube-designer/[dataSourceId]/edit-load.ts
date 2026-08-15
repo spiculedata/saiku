@@ -11,14 +11,14 @@
  * which has its own library-based edit flow, is unaffected. Extracted from the
  * route's `onMount` so the parse → hydrate transform is unit-testable.
  */
-import type { SchemaCanvasStore } from "$lib/cube-designer/state.svelte";
-import { importFromMondrianXml } from "$lib/cube-designer/mondrian-import";
-import { mapWorkbenchDocCubes } from "./workbench-seed";
+import type { SchemaCanvasStore } from '$lib/cube-designer/state.svelte';
+import { importFromMondrianXml } from '$lib/cube-designer/mondrian-import';
+import { mapWorkbenchDocCubes } from './workbench-seed';
 
 export interface HydrateResult {
-  tableCount: number;
-  joinCount: number;
-  warnings: string[];
+	tableCount: number;
+	joinCount: number;
+	warnings: string[];
 }
 
 /**
@@ -30,27 +30,27 @@ export interface HydrateResult {
  * `AmbiguousSchemaError`) so the caller can surface a message.
  */
 export function hydrateFromMondrianXml(
-  store: SchemaCanvasStore,
-  xml: string,
-  connectionId: string,
-  now: () => number = Date.now,
+	store: SchemaCanvasStore,
+	xml: string,
+	connectionId: string,
+	now: () => number = Date.now
 ): HydrateResult {
-  const { state, warnings, workbenchCubes } = importFromMondrianXml(xml, {
-    connectionId,
-    sourceTables: store.sourceTables,
-  });
-  store.loadDoc(state);
-  if (workbenchCubes.length > 0) {
-    store.setCubes(mapWorkbenchDocCubes(workbenchCubes));
-  }
-  if (state.tables.length > 0) {
-    // Recenter so the loaded nodes aren't rendered off-screen with only a
-    // minimap dot (saiku-cloud#1035 keeps fit_view on every import path).
-    store.requestedCanvasAction = { kind: "fit_view", ts: now() };
-  }
-  return {
-    tableCount: state.tables.length,
-    joinCount: state.joins.length,
-    warnings,
-  };
+	const { state, warnings, workbenchCubes } = importFromMondrianXml(xml, {
+		connectionId,
+		sourceTables: store.sourceTables
+	});
+	store.loadDoc(state);
+	if (workbenchCubes.length > 0) {
+		store.setCubes(mapWorkbenchDocCubes(workbenchCubes));
+	}
+	if (state.tables.length > 0) {
+		// Recenter so the loaded nodes aren't rendered off-screen with only a
+		// minimap dot (saiku-cloud#1035 keeps fit_view on every import path).
+		store.requestedCanvasAction = { kind: 'fit_view', ts: now() };
+	}
+	return {
+		tableCount: state.tables.length,
+		joinCount: state.joins.length,
+		warnings
+	};
 }

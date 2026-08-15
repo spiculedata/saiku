@@ -1,43 +1,39 @@
 <script lang="ts">
-  /*
-   * Chart-tile editor — extracted from TileEditorModal.svelte (saiku#1229).
-   * Chart type picker + entry to the chart-options modal. State held as
-   * $bindable() props so the parent stays the persistence boundary; the
-   * chart-options modal itself is owned by the parent because it's a
-   * separate top-level overlay.
-   */
-  import { CHART_TYPES } from "$lib/views/chartTypes";
-  import { Button } from "$lib/components/ui";
+	/*
+	 * Chart-tile editor — extracted from TileEditorModal.svelte (saiku#1229).
+	 * Chart type picker + entry to the chart-options modal. State held as
+	 * $bindable() props so the parent stays the persistence boundary; the
+	 * chart-options modal itself is owned by the parent because it's a
+	 * separate top-level overlay.
+	 */
+	import { CHART_TYPES } from '$lib/views/chartTypes';
+	import { Button } from '$lib/components/ui';
 
-  interface Props {
-    chartType: string;
-    chartOptionsCustomised: boolean;
-    onOpenChartOptions: () => void;
-  }
-  let {
-    chartType = $bindable(),
-    chartOptionsCustomised,
-    onOpenChartOptions,
-  }: Props = $props();
+	interface Props {
+		chartType: string;
+		chartOptionsCustomised: boolean;
+		onOpenChartOptions: () => void;
+	}
+	let { chartType = $bindable(), chartOptionsCustomised, onOpenChartOptions }: Props = $props();
 </script>
 
 <label class="field">
-  <span class="field__label">Chart type</span>
-  <select class="field__input" bind:value={chartType}>
-    {#each CHART_TYPES as ct (ct.id)}
-      <option value={ct.id}>{ct.label} ({ct.group})</option>
-    {/each}
-  </select>
+	<span class="field__label">Chart type</span>
+	<select class="field__input" bind:value={chartType}>
+		{#each CHART_TYPES as ct (ct.id)}
+			<option value={ct.id}>{ct.label} ({ct.group})</option>
+		{/each}
+	</select>
 </label>
 <!-- #1077: per-tile chart options via the reused workspace editor. -->
 <div class="field">
-  <span class="field__label">Chart options</span>
-  <Button variant="outline" class="chart-opts-btn" onclick={onOpenChartOptions}>
-    Title, axes, legend, dual-axis &amp; trend…
-  </Button>
-  <span class="hint">
-    {chartOptionsCustomised ? "Customised for this tile." : "Using dashboard defaults."}
-  </span>
+	<span class="field__label">Chart options</span>
+	<Button variant="outline" class="chart-opts-btn" onclick={onOpenChartOptions}>
+		Title, axes, legend, dual-axis &amp; trend…
+	</Button>
+	<span class="hint">
+		{chartOptionsCustomised ? 'Customised for this tile.' : 'Using dashboard defaults.'}
+	</span>
 </div>
 
 <style>

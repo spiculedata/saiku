@@ -13,57 +13,60 @@
  */
 
 export interface NumberFormat {
-  /** Prepended verbatim (e.g. "£", "$"). */
-  prefix?: string;
-  /** Appended verbatim (e.g. "%", " ms"). */
-  suffix?: string;
-  /** Fixed number of decimal places (toFixed). null/undefined = auto (as-is). */
-  decimals?: number | null;
-  /** Group integer digits with locale thousands separators. */
-  thousands?: boolean;
-  /** Collapse large magnitudes to k / M / B / T with a compact suffix. */
-  abbreviate?: boolean;
+	/** Prepended verbatim (e.g. "£", "$"). */
+	prefix?: string;
+	/** Appended verbatim (e.g. "%", " ms"). */
+	suffix?: string;
+	/** Fixed number of decimal places (toFixed). null/undefined = auto (as-is). */
+	decimals?: number | null;
+	/** Group integer digits with locale thousands separators. */
+	thousands?: boolean;
+	/** Collapse large magnitudes to k / M / B / T with a compact suffix. */
+	abbreviate?: boolean;
 }
 
 /** Magnitude thresholds for abbreviation, largest first. */
 const ABBREVIATIONS: { value: number; symbol: string }[] = [
-  { value: 1e12, symbol: "T" },
-  { value: 1e9, symbol: "B" },
-  { value: 1e6, symbol: "M" },
-  { value: 1e3, symbol: "k" },
+	{ value: 1e12, symbol: 'T' },
+	{ value: 1e9, symbol: 'B' },
+	{ value: 1e6, symbol: 'M' },
+	{ value: 1e3, symbol: 'k' }
 ];
 
 /** True when the format has nothing to apply — render as plain String(value). */
 function isInert(fmt?: NumberFormat): boolean {
-  if (!fmt) return true;
-  return (
-    !fmt.prefix &&
-    !fmt.suffix &&
-    (fmt.decimals === null || fmt.decimals === undefined) &&
-    !fmt.thousands &&
-    !fmt.abbreviate
-  );
+	if (!fmt) return true;
+	return (
+		!fmt.prefix &&
+		!fmt.suffix &&
+		(fmt.decimals === null || fmt.decimals === undefined) &&
+		!fmt.thousands &&
+		!fmt.abbreviate
+	);
 }
 
 /** Apply fixed decimals when set, else leave the natural precision. */
-function applyDecimals(n: number, decimals: number | null | undefined): { text: string; fixed: boolean } {
-  if (decimals === null || decimals === undefined || !Number.isFinite(decimals)) {
-    return { text: String(n), fixed: false };
-  }
-  const d = Math.max(0, Math.min(20, Math.floor(decimals)));
-  return { text: n.toFixed(d), fixed: true };
+function applyDecimals(
+	n: number,
+	decimals: number | null | undefined
+): { text: string; fixed: boolean } {
+	if (decimals === null || decimals === undefined || !Number.isFinite(decimals)) {
+		return { text: String(n), fixed: false };
+	}
+	const d = Math.max(0, Math.min(20, Math.floor(decimals)));
+	return { text: n.toFixed(d), fixed: true };
 }
 
 /** Group the integer part with the host locale's thousands separators,
  *  preserving any decimal places already decided by {@link applyDecimals}. */
 function groupThousands(n: number, decimals: number | null | undefined): string {
-  if (decimals !== null && decimals !== undefined && Number.isFinite(decimals)) {
-    const d = Math.max(0, Math.min(20, Math.floor(decimals)));
-    return n.toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
-  }
-  // No fixed decimals: group but keep the natural fractional digits (up to the
-  // toLocaleString cap, which is generous enough for chart values).
-  return n.toLocaleString(undefined, { maximumFractionDigits: 20 });
+	if (decimals !== null && decimals !== undefined && Number.isFinite(decimals)) {
+		const d = Math.max(0, Math.min(20, Math.floor(decimals)));
+		return n.toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
+	}
+	// No fixed decimals: group but keep the natural fractional digits (up to the
+	// toLocaleString cap, which is generous enough for chart values).
+	return n.toLocaleString(undefined, { maximumFractionDigits: 20 });
 }
 
 /**
@@ -74,34 +77,34 @@ function groupThousands(n: number, decimals: number | null | undefined): string 
  * show "null" or "NaN".
  */
 export function formatNumber(value: number | null | undefined, fmt?: NumberFormat): string {
-  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
-  if (isInert(fmt)) return String(value);
+	if (value === null || value === undefined || !Number.isFinite(value)) return '—';
+	if (isInert(fmt)) return String(value);
 
-  const f = fmt as NumberFormat;
-  let core: string;
+	const f = fmt as NumberFormat;
+	let core: string;
 
-  if (f.abbreviate) {
-    const abs = Math.abs(value);
-    const hit = ABBREVIATIONS.find((a) => abs >= a.value);
-    if (hit) {
-      const scaled = value / hit.value;
-      // Abbreviated numbers default to 1 decimal when the caller hasn't pinned
-      // one (so 1_500 → "1.5k", not "2k"); an explicit decimals value wins.
-      const dec = f.decimals === null || f.decimals === undefined ? 1 : f.decimals;
-      const { text } = applyDecimals(scaled, dec);
-      core = text + hit.symbol;
-    } else {
-      core = formatPlain(value, f);
-    }
-  } else {
-    core = formatPlain(value, f);
-  }
+	if (f.abbreviate) {
+		const abs = Math.abs(value);
+		const hit = ABBREVIATIONS.find((a) => abs >= a.value);
+		if (hit) {
+			const scaled = value / hit.value;
+			// Abbreviated numbers default to 1 decimal when the caller hasn't pinned
+			// one (so 1_500 → "1.5k", not "2k"); an explicit decimals value wins.
+			const dec = f.decimals === null || f.decimals === undefined ? 1 : f.decimals;
+			const { text } = applyDecimals(scaled, dec);
+			core = text + hit.symbol;
+		} else {
+			core = formatPlain(value, f);
+		}
+	} else {
+		core = formatPlain(value, f);
+	}
 
-  return `${f.prefix ?? ""}${core}${f.suffix ?? ""}`;
+	return `${f.prefix ?? ''}${core}${f.suffix ?? ''}`;
 }
 
 /** Decimals + thousands for a non-abbreviated value. */
 function formatPlain(value: number, f: NumberFormat): string {
-  if (f.thousands) return groupThousands(value, f.decimals);
-  return applyDecimals(value, f.decimals).text;
+	if (f.thousands) return groupThousands(value, f.decimals);
+	return applyDecimals(value, f.decimals).text;
 }

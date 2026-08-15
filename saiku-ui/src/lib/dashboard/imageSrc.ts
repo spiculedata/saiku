@@ -9,7 +9,7 @@
  * is a sufficient client guard (the upload endpoint hardens the server side).
  */
 
-export const IMAGE_FITS = ["contain", "cover", "fill", "scale-down"] as const;
+export const IMAGE_FITS = ['contain', 'cover', 'fill', 'scale-down'] as const;
 export type ImageFitValue = (typeof IMAGE_FITS)[number];
 
 /**
@@ -22,20 +22,18 @@ export type ImageFitValue = (typeof IMAGE_FITS)[number];
  * against the real document origin at render time.
  */
 export function safeImageSrc(raw: string | null | undefined): string | null {
-  const s = (raw ?? "").trim();
-  if (!s) return null;
-  try {
-    const u = new URL(s, "http://localhost/");
-    return u.protocol === "http:" || u.protocol === "https:" ? s : null;
-  } catch {
-    return null;
-  }
+	const s = (raw ?? '').trim();
+	if (!s) return null;
+	try {
+		const u = new URL(s, 'http://localhost/');
+		return u.protocol === 'http:' || u.protocol === 'https:' ? s : null;
+	} catch {
+		return null;
+	}
 }
 
 /** Clamp an arbitrary string to a valid CSS object-fit, defaulting to
  *  "contain". */
 export function coerceImageFit(fit: string | null | undefined): ImageFitValue {
-  return (IMAGE_FITS as readonly string[]).includes(fit ?? "")
-    ? (fit as ImageFitValue)
-    : "contain";
+	return (IMAGE_FITS as readonly string[]).includes(fit ?? '') ? (fit as ImageFitValue) : 'contain';
 }

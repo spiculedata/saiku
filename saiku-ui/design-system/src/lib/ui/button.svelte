@@ -54,9 +54,7 @@
 		...restProps
 	}: Props = $props();
 
-	const classes = $derived(
-		cn(buttonVariants({ variant, size }), fullWidth && 'w-full', className)
-	);
+	const classes = $derived(cn(buttonVariants({ variant, size }), fullWidth && 'w-full', className));
 	// `loading` implies non-interactive: a caller shouldn't have to pass both.
 	const isDisabled = $derived(disabled || loading);
 </script>

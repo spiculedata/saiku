@@ -34,52 +34,52 @@
  * Pure: no DOM, no fetches.
  */
 
-import type { AiQueryResponse } from "$lib/api/aiQuery";
+import type { AiQueryResponse } from '$lib/api/aiQuery';
 
 /** One column descriptor in an Ossie response. */
 interface OssieColumn {
-  key?: string;
-  label?: string;
-  type?: string;
-  aggregationKind?: string;
+	key?: string;
+	label?: string;
+	type?: string;
+	aggregationKind?: string;
 }
 
 /** The raw Ossie envelope, as far as this module reads it. */
 interface RawOssieResponse {
-  queryId?: string;
-  columns?: OssieColumn[];
-  records?: Array<Record<string, unknown>>;
-  meta?: { rowCount?: number; truncated?: boolean };
-  runtime?: number;
-  /* Error variants — see toAiQueryResponse. */
-  status?: string;
-  error?: string;
-  message?: string;
-  field?: string;
-  available?: string[];
+	queryId?: string;
+	columns?: OssieColumn[];
+	records?: Array<Record<string, unknown>>;
+	meta?: { rowCount?: number; truncated?: boolean };
+	runtime?: number;
+	/* Error variants — see toAiQueryResponse. */
+	status?: string;
+	error?: string;
+	message?: string;
+	field?: string;
+	available?: string[];
 }
 
 /** True when the payload is one of the endpoint's error shapes rather than a result. */
 function isErrorPayload(raw: RawOssieResponse): boolean {
-  // Two shapes reach the client:
-  //   1. the validator's own  { error: "VALIDATION_ERROR", field, message, available }
-  //   2. the generic mapper's { status: "VALIDATION_ERROR", error: "...", field, available }
-  // Neither carries `records`, which is the reliable discriminator.
-  return !Array.isArray(raw.records) && (raw.error != null || raw.status != null);
+	// Two shapes reach the client:
+	//   1. the validator's own  { error: "VALIDATION_ERROR", field, message, available }
+	//   2. the generic mapper's { status: "VALIDATION_ERROR", error: "...", field, available }
+	// Neither carries `records`, which is the reliable discriminator.
+	return !Array.isArray(raw.records) && (raw.error != null || raw.status != null);
 }
 
 /** Map column key → display label, keeping keys when labels would collide. */
 function labelByKey(columns: OssieColumn[]): Record<string, string> {
-  const labels = columns.map((c) => c.label ?? c.key ?? "");
-  const out: Record<string, string> = {};
-  for (const c of columns) {
-    const key = c.key;
-    if (!key) continue;
-    const label = c.label ?? key;
-    const ambiguous = labels.filter((l) => l === label).length > 1;
-    out[key] = ambiguous || label.length === 0 ? key : label;
-  }
-  return out;
+	const labels = columns.map((c) => c.label ?? c.key ?? '');
+	const out: Record<string, string> = {};
+	for (const c of columns) {
+		const key = c.key;
+		if (!key) continue;
+		const label = c.label ?? key;
+		const ambiguous = labels.filter((l) => l === label).length > 1;
+		out[key] = ambiguous || label.length === 0 ? key : label;
+	}
+	return out;
 }
 
 /**
@@ -91,52 +91,55 @@ function labelByKey(columns: OssieColumn[]): Record<string, string> {
  * model renders a structured validation message instead of a bare failure.
  */
 export function toAiQueryResponse(raw: unknown): AiQueryResponse {
-  const r = (raw ?? {}) as RawOssieResponse;
+	const r = (raw ?? {}) as RawOssieResponse;
 
-  if (isErrorPayload(r)) {
-    return {
-      queryId: r.queryId ?? null,
-      // The validator's shape puts the CODE in `error` and the prose in
-      // `message`; the mapper's puts the code in `status`. Prefer a real code
-      // over "ERROR" so the tile can distinguish a fixable validation problem.
-      status: (r.status ?? r.error ?? "ERROR") as AiQueryResponse["status"],
-      metadata: undefined,
-      format: "records",
-      data: [],
-      matrix: [],
-      totalRows: 0,
-      error: r.message ?? r.error ?? "Query failed",
-      field: r.field,
-      available: r.available,
-    } as AiQueryResponse;
-  }
+	if (isErrorPayload(r)) {
+		return {
+			queryId: r.queryId ?? null,
+			// The validator's shape puts the CODE in `error` and the prose in
+			// `message`; the mapper's puts the code in `status`. Prefer a real code
+			// over "ERROR" so the tile can distinguish a fixable validation problem.
+			status: (r.status ?? r.error ?? 'ERROR') as AiQueryResponse['status'],
+			metadata: undefined,
+			format: 'records',
+			data: [],
+			matrix: [],
+			totalRows: 0,
+			error: r.message ?? r.error ?? 'Query failed',
+			field: r.field,
+			available: r.available
+		} as AiQueryResponse;
+	}
 
-  const columns = r.columns ?? [];
-  const rename = labelByKey(columns);
-  const records = r.records ?? [];
-  const data = records.map((row) => {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(row)) out[rename[k] ?? k] = v;
-    return out;
-  });
+	const columns = r.columns ?? [];
+	const rename = labelByKey(columns);
+	const records = r.records ?? [];
+	const data = records.map((row) => {
+		const out: Record<string, unknown> = {};
+		for (const [k, v] of Object.entries(row)) out[rename[k] ?? k] = v;
+		return out;
+	});
 
-  return {
-    queryId: r.queryId ?? null,
-    status: "SUCCESS",
-    metadata: {
-      // Only the measure columns belong in `columns` — that is what the MDX
-      // metadata means by it, and what the chart legend and the table's column
-      // formatting read.
-      columns: columns
-        .filter((c) => c.type !== "dimension")
-        .map((c) => ({ name: rename[c.key ?? ""] ?? c.key ?? "", caption: c.label ?? c.key ?? "" })),
-      rows: [],
-      measures: columns.filter((c) => c.type !== "dimension").map((c) => c.label ?? c.key ?? ""),
-    },
-    format: "records",
-    data,
-    matrix: [],
-    totalRows: r.meta?.rowCount ?? data.length,
-    runtimeMs: r.runtime,
-  } as AiQueryResponse;
+	return {
+		queryId: r.queryId ?? null,
+		status: 'SUCCESS',
+		metadata: {
+			// Only the measure columns belong in `columns` — that is what the MDX
+			// metadata means by it, and what the chart legend and the table's column
+			// formatting read.
+			columns: columns
+				.filter((c) => c.type !== 'dimension')
+				.map((c) => ({
+					name: rename[c.key ?? ''] ?? c.key ?? '',
+					caption: c.label ?? c.key ?? ''
+				})),
+			rows: [],
+			measures: columns.filter((c) => c.type !== 'dimension').map((c) => c.label ?? c.key ?? '')
+		},
+		format: 'records',
+		data,
+		matrix: [],
+		totalRows: r.meta?.rowCount ?? data.length,
+		runtimeMs: r.runtime
+	} as AiQueryResponse;
 }

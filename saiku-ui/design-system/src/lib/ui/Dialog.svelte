@@ -76,7 +76,16 @@
 					aria-label="Close dialog"
 				>
 					Close
-					<svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+					<svg
+						class="size-3.5"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg
+					>
 				</DialogPrimitive.Close>
 			</header>
 			{#if body}

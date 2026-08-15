@@ -41,9 +41,27 @@
 			class="peer size-4 shrink-0 cursor-pointer appearance-none rounded border border-input bg-background transition-colors checked:border-primary checked:bg-primary focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
 		/>
 		{#if indeterminate}
-			<svg class="pointer-events-none absolute size-3 text-primary-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14" /></svg>
+			<svg
+				class="pointer-events-none absolute size-3 text-primary-foreground"
+				viewBox="0 0 24 24"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="3"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				aria-hidden="true"><path d="M5 12h14" /></svg
+			>
 		{:else if checked}
-			<svg class="pointer-events-none absolute size-3 text-primary-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
+			<svg
+				class="pointer-events-none absolute size-3 text-primary-foreground"
+				viewBox="0 0 24 24"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="3"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg
+			>
 		{/if}
 	</span>
 	{#if label || description}

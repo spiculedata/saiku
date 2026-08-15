@@ -13,14 +13,14 @@
  *  `https://host/ui/share#<token>`. `origin` + `base` are passed in so this
  *  stays pure; omit them for a root-relative `/share#<token>`. */
 export function buildShareUrl(token: string, opts?: { origin?: string; base?: string }): string {
-  const origin = opts?.origin ?? "";
-  const base = opts?.base ?? "";
-  return `${origin}${base}/share#${encodeURIComponent(token)}`;
+	const origin = opts?.origin ?? '';
+	const base = opts?.base ?? '';
+	return `${origin}${base}/share#${encodeURIComponent(token)}`;
 }
 
 /** Extract the token from a URL fragment (`window.location.hash`), accepting
  *  it with or without the leading `#`. Returns null when absent. */
 export function parseShareToken(hash: string): string | null {
-  const h = (hash ?? "").replace(/^#/, "");
-  return h.length > 0 ? decodeURIComponent(h) : null;
+	const h = (hash ?? '').replace(/^#/, '');
+	return h.length > 0 ? decodeURIComponent(h) : null;
 }

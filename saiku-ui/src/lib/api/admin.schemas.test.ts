@@ -10,70 +10,70 @@
  * payload plus a `name` field, with no hand-set Content-Type header (the browser
  * must generate the multipart boundary itself).
  */
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { adminSchemas } from "./admin";
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { adminSchemas } from './admin';
 
 const XML = '<?xml version="1.0"?><Schema name="TestSchema"><Cube name="C"/></Schema>';
 
-describe("adminSchemas.upload", () => {
-  let originalFetch: typeof globalThis.fetch;
+describe('adminSchemas.upload', () => {
+	let originalFetch: typeof globalThis.fetch;
 
-  beforeEach(() => {
-    originalFetch = globalThis.fetch;
-  });
-  afterEach(() => {
-    globalThis.fetch = originalFetch;
-  });
+	beforeEach(() => {
+		originalFetch = globalThis.fetch;
+	});
+	afterEach(() => {
+		globalThis.fetch = originalFetch;
+	});
 
-  test("POSTs multipart FormData with a `file` part carrying the XML and a `name` field", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response("[]", { status: 200 }));
-    globalThis.fetch = fetchMock;
+	test('POSTs multipart FormData with a `file` part carrying the XML and a `name` field', async () => {
+		const fetchMock = vi.fn().mockResolvedValue(new Response('[]', { status: 200 }));
+		globalThis.fetch = fetchMock;
 
-    await adminSchemas.upload("TestSchema", XML);
+		await adminSchemas.upload('TestSchema', XML);
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("/rest/saiku/admin/schema/TestSchema");
-    expect(init.method).toBe("POST");
-    expect(init.credentials).toBe("include");
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+		expect(url).toBe('/rest/saiku/admin/schema/TestSchema');
+		expect(init.method).toBe('POST');
+		expect(init.credentials).toBe('include');
 
-    const body = init.body;
-    expect(body).toBeInstanceOf(FormData);
-    const form = body as FormData;
+		const body = init.body;
+		expect(body).toBeInstanceOf(FormData);
+		const form = body as FormData;
 
-    // The `file` part must be a Blob/File whose bytes are the schema XML.
-    const file = form.get("file");
-    expect(file).toBeInstanceOf(Blob);
-    expect(await (file as Blob).text()).toBe(XML);
-    expect((file as File).name).toBe("TestSchema.xml");
+		// The `file` part must be a Blob/File whose bytes are the schema XML.
+		const file = form.get('file');
+		expect(file).toBeInstanceOf(Blob);
+		expect(await (file as Blob).text()).toBe(XML);
+		expect((file as File).name).toBe('TestSchema.xml');
 
-    // AdminResource builds `/datasources/{name}.xml` from the `name` field.
-    expect(form.get("name")).toBe("TestSchema");
-  });
+		// AdminResource builds `/datasources/{name}.xml` from the `name` field.
+		expect(form.get('name')).toBe('TestSchema');
+	});
 
-  test("does not hand-set a Content-Type header (browser must own the multipart boundary)", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response("[]", { status: 200 }));
-    globalThis.fetch = fetchMock;
+	test('does not hand-set a Content-Type header (browser must own the multipart boundary)', async () => {
+		const fetchMock = vi.fn().mockResolvedValue(new Response('[]', { status: 200 }));
+		globalThis.fetch = fetchMock;
 
-    await adminSchemas.upload("TestSchema", XML);
+		await adminSchemas.upload('TestSchema', XML);
 
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    const headers = new Headers(init.headers ?? {});
-    expect(headers.get("Content-Type")).toBeNull();
-  });
+		const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+		const headers = new Headers(init.headers ?? {});
+		expect(headers.get('Content-Type')).toBeNull();
+	});
 
-  test("URL-encodes the schema name in the path", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response("[]", { status: 200 }));
-    globalThis.fetch = fetchMock;
+	test('URL-encodes the schema name in the path', async () => {
+		const fetchMock = vi.fn().mockResolvedValue(new Response('[]', { status: 200 }));
+		globalThis.fetch = fetchMock;
 
-    await adminSchemas.upload("My Schema", XML);
+		await adminSchemas.upload('My Schema', XML);
 
-    const [url] = fetchMock.mock.calls[0] as [string];
-    expect(url).toBe("/rest/saiku/admin/schema/My%20Schema");
-  });
+		const [url] = fetchMock.mock.calls[0] as [string];
+		expect(url).toBe('/rest/saiku/admin/schema/My%20Schema');
+	});
 
-  test("throws with the status when the server rejects the upload", async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue(new Response("nope", { status: 415 }));
-    await expect(adminSchemas.upload("TestSchema", XML)).rejects.toThrow("schema upload -> 415");
-  });
+	test('throws with the status when the server rejects the upload', async () => {
+		globalThis.fetch = vi.fn().mockResolvedValue(new Response('nope', { status: 415 }));
+		await expect(adminSchemas.upload('TestSchema', XML)).rejects.toThrow('schema upload -> 415');
+	});
 });

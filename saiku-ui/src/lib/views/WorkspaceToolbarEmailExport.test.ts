@@ -10,58 +10,60 @@
  *  - it fires the same Email-me-this composer action, and
  *  - the old standalone Email toolbar button is gone.
  */
-import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 const SOURCE = readFileSync(
-  fileURLToPath(new URL("./WorkspaceToolbar.svelte", import.meta.url)),
-  "utf8",
+	fileURLToPath(new URL('./WorkspaceToolbar.svelte', import.meta.url)),
+	'utf8'
 );
 
 /** The Export dropdown block: from `{#if exportMenuOpen}` to its `{/if}`. */
 function exportDropdownBlock(src: string): string {
-  const start = src.indexOf("{#if exportMenuOpen}");
-  expect(start, "Export dropdown block must exist").toBeGreaterThanOrEqual(0);
-  const end = src.indexOf("{/if}", start);
-  expect(end).toBeGreaterThan(start);
-  return src.slice(start, end);
+	const start = src.indexOf('{#if exportMenuOpen}');
+	expect(start, 'Export dropdown block must exist').toBeGreaterThanOrEqual(0);
+	const end = src.indexOf('{/if}', start);
+	expect(end).toBeGreaterThan(start);
+	return src.slice(start, end);
 }
 
-describe("Email action lives in the Export dropdown", () => {
-  it("renders an Email item INSIDE the Export dropdown", () => {
-    const block = exportDropdownBlock(SOURCE);
-    // The Export menu carries the export formats AND the Email item.
-    expect(block).toContain('exportCurrent("pdf")');
-    expect(block).toContain("toolbar.emailMeThis");
-    // The Email item fires the shared handler that closes the menu + opens the composer.
-    expect(block).toMatch(/onclick=\{emailFromExport\}/);
-  });
+describe('Email action lives in the Export dropdown', () => {
+	it('renders an Email item INSIDE the Export dropdown', () => {
+		const block = exportDropdownBlock(SOURCE);
+		// The Export menu carries the export formats AND the Email item.
+		expect(block).toMatch(/exportCurrent\(['"']pdf['"']\)/);
+		expect(block).toContain('toolbar.emailMeThis');
+		// The Email item fires the shared handler that closes the menu + opens the composer.
+		expect(block).toMatch(/onclick=\{emailFromExport\}/);
+	});
 
-  it("gates the Email item on mailHealth.configured (unchanged behavior)", () => {
-    const block = exportDropdownBlock(SOURCE);
-    // Disabled when mail isn't configured — same gate the old button used.
-    expect(block).toMatch(/disabled=\{!mailHealth\.configured\}/);
-    // Keeps the configured/disabled tooltip copy.
-    expect(block).toContain("toolbar.emailMeThis.disabled");
-  });
+	it('gates the Email item on mailHealth.configured (unchanged behavior)', () => {
+		const block = exportDropdownBlock(SOURCE);
+		// Disabled when mail isn't configured — same gate the old button used.
+		expect(block).toMatch(/disabled=\{!mailHealth\.configured\}/);
+		// Keeps the configured/disabled tooltip copy.
+		expect(block).toContain('toolbar.emailMeThis.disabled');
+	});
 
-  it("routes emailFromExport through the same composer action (open the modal)", () => {
-    // The handler closes the Export menu and opens the existing Email-me-this
-    // modal — the POST /saiku/api/email/self composer flow is unchanged.
-    expect(SOURCE).toMatch(
-      /function emailFromExport\(\)\s*\{[\s\S]*?exportMenuOpen = false;[\s\S]*?emailModalOpen = true;[\s\S]*?\}/,
-    );
-    // The modal itself is untouched.
-    expect(SOURCE).toContain(
-      "<EmailMeThisModal open={emailModalOpen} onClose={() => (emailModalOpen = false)} />",
-    );
-  });
+	it('routes emailFromExport through the same composer action (open the modal)', () => {
+		// The handler closes the Export menu and opens the existing Email-me-this
+		// modal — the POST /saiku/api/email/self composer flow is unchanged.
+		expect(SOURCE).toMatch(
+			/function emailFromExport\(\)\s*\{[\s\S]*?exportMenuOpen = false;[\s\S]*?emailModalOpen = true;[\s\S]*?\}/
+		);
+		// The modal itself is untouched.
+		expect(SOURCE).toContain(
+			'<EmailMeThisModal open={emailModalOpen} onClose={() => (emailModalOpen = false)} />'
+		);
+	});
 
-  it("removes the standalone Email toolbar button", () => {
-    // The old standalone button lived in its own `role="group" aria-label="Email"`.
-    expect(SOURCE).not.toContain('aria-label="Email"');
-    // And it was a `tb-btn` firing the modal directly; that inline handler is gone.
-    expect(SOURCE).not.toMatch(/class="tb-btn"[\s\S]*?onclick=\{\(\) => \(emailModalOpen = true\)\}/);
-  });
+	it('removes the standalone Email toolbar button', () => {
+		// The old standalone button lived in its own `role="group" aria-label="Email"`.
+		expect(SOURCE).not.toContain('aria-label="Email"');
+		// And it was a `tb-btn` firing the modal directly; that inline handler is gone.
+		expect(SOURCE).not.toMatch(
+			/class="tb-btn"[\s\S]*?onclick=\{\(\) => \(emailModalOpen = true\)\}/
+		);
+	});
 });

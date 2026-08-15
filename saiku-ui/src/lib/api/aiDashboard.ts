@@ -22,43 +22,43 @@
  * Backend: AiQueryResource.askDashboard → AiAskService.buildDashboard.
  */
 
-import { AiAskTransportError, type AiCubeRef, type NlAskMessageDto } from "./aiAsk";
+import { AiAskTransportError, type AiCubeRef, type NlAskMessageDto } from './aiAsk';
 
-const DASHBOARD_URL = "/rest/saiku/api/ai/ask/dashboard";
+const DASHBOARD_URL = '/rest/saiku/api/ai/ask/dashboard';
 
 /** Request envelope — the same AskRequest the ask endpoints accept, narrowed
  *  to the fields a dashboard build uses (no cellset digest: the build reasons
  *  over schema only, never executed cell data). */
 export interface BuildDashboardRequest {
-  question: string;
-  cube: AiCubeRef;
-  history?: NlAskMessageDto[];
+	question: string;
+	cube: AiCubeRef;
+	history?: NlAskMessageDto[];
 }
 
 /** One assembled tile in the spec. `query` is an opaque full AiQueryRequest —
  *  the dashboard layer treats it as a body to hand to /ai/query, exactly like
  *  {@link import("./dashboards").InlineQuery}.body. */
 export interface DashboardTileSpec {
-  /** Tile heading — sanitised plain text. Rendered as TEXT only, never @html. */
-  title: string;
-  type: "chart" | "table" | "kpi";
-  /** Present only for chart tiles (absent on table/kpi). */
-  chartType?: "bar" | "line" | "pie" | "area" | "scatter";
-  /** Full AiQueryRequest (cube pinned to the session ref). */
-  query: Record<string, unknown>;
+	/** Tile heading — sanitised plain text. Rendered as TEXT only, never @html. */
+	title: string;
+	type: 'chart' | 'table' | 'kpi';
+	/** Present only for chart tiles (absent on table/kpi). */
+	chartType?: 'bar' | 'line' | 'pie' | 'area' | 'scatter';
+	/** Full AiQueryRequest (cube pinned to the session ref). */
+	query: Record<string, unknown>;
 }
 
 export interface DashboardSpec {
-  /** Dashboard name — sanitised plain text. Absent (NON_NULL) when degraded. */
-  title?: string;
-  /** Assembled tiles; empty when degraded. */
-  tiles: DashboardTileSpec[];
-  /** Always present. true ⇒ build failed/empty; render `reason`, do not assemble. */
-  degraded: boolean;
-  /** Generic, user-safe message; present ("" on success) — populated when degraded. */
-  reason?: string;
-  /** Provider model id; may be absent. */
-  model?: string;
+	/** Dashboard name — sanitised plain text. Absent (NON_NULL) when degraded. */
+	title?: string;
+	/** Assembled tiles; empty when degraded. */
+	tiles: DashboardTileSpec[];
+	/** Always present. true ⇒ build failed/empty; render `reason`, do not assemble. */
+	degraded: boolean;
+	/** Generic, user-safe message; present ("" on success) — populated when degraded. */
+	reason?: string;
+	/** Provider model id; may be absent. */
+	model?: string;
 }
 
 /** Type guard: does a parsed body look like a DashboardSpec? The `degraded`
@@ -66,11 +66,11 @@ export interface DashboardSpec {
  *  degrade), so its presence tells a spec envelope apart from an error body
  *  a non-2xx status might carry (e.g. a bare {error:"…"} from a 500). */
 function isDashboardSpec(body: unknown): body is DashboardSpec {
-  return (
-    !!body &&
-    typeof body === "object" &&
-    typeof (body as { degraded?: unknown }).degraded === "boolean"
-  );
+	return (
+		!!body &&
+		typeof body === 'object' &&
+		typeof (body as { degraded?: unknown }).degraded === 'boolean'
+	);
 }
 
 /**
@@ -84,54 +84,54 @@ function isDashboardSpec(body: unknown): body is DashboardSpec {
  * degrade.
  */
 export async function buildAiDashboard(
-  req: BuildDashboardRequest,
-  signal?: AbortSignal,
+	req: BuildDashboardRequest,
+	signal?: AbortSignal
 ): Promise<DashboardSpec> {
-  let res: Response;
-  try {
-    res = await fetch(DASHBOARD_URL, {
-      method: "POST",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify(req),
-      signal,
-    });
-  } catch (e) {
-    // A user-initiated cancel aborts the fetch — surface the AbortError raw so
-    // the caller can dismiss quietly (NOT as a transport/error toast).
-    if ((e as Error)?.name === "AbortError") throw e;
-    throw new AiAskTransportError(`buildAiDashboard: transport error (${(e as Error).message})`, 0);
-  }
+	let res: Response;
+	try {
+		res = await fetch(DASHBOARD_URL, {
+			method: 'POST',
+			credentials: 'include',
+			headers: {
+				'Content-Type': 'application/json',
+				Accept: 'application/json'
+			},
+			body: JSON.stringify(req),
+			signal
+		});
+	} catch (e) {
+		// A user-initiated cancel aborts the fetch — surface the AbortError raw so
+		// the caller can dismiss quietly (NOT as a transport/error toast).
+		if ((e as Error)?.name === 'AbortError') throw e;
+		throw new AiAskTransportError(`buildAiDashboard: transport error (${(e as Error).message})`, 0);
+	}
 
-  const text = await res.text();
-  if (!text) {
-    throw new AiAskTransportError(`buildAiDashboard -> ${res.status}: empty body`, res.status);
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch (e) {
-    throw new AiAskTransportError(
-      `buildAiDashboard -> ${res.status}: non-JSON response (${(e as Error).message})`,
-      res.status,
-    );
-  }
-  // A well-formed spec envelope (degraded discriminator present) is returned
-  // as-is regardless of status — the degrade path carries the reason. Anything
-  // else on a non-2xx is a real failure to surface.
-  if (isDashboardSpec(parsed)) {
-    return parsed;
-  }
-  if (!res.ok) {
-    throw new AiAskTransportError(`buildAiDashboard -> ${res.status}`, res.status);
-  }
-  // 2xx but not a recognisable spec — defensive; treat as a transport-level
-  // contract breach rather than silently returning a malformed object.
-  throw new AiAskTransportError(
-    `buildAiDashboard -> ${res.status}: response is not a DashboardSpec`,
-    res.status,
-  );
+	const text = await res.text();
+	if (!text) {
+		throw new AiAskTransportError(`buildAiDashboard -> ${res.status}: empty body`, res.status);
+	}
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(text);
+	} catch (e) {
+		throw new AiAskTransportError(
+			`buildAiDashboard -> ${res.status}: non-JSON response (${(e as Error).message})`,
+			res.status
+		);
+	}
+	// A well-formed spec envelope (degraded discriminator present) is returned
+	// as-is regardless of status — the degrade path carries the reason. Anything
+	// else on a non-2xx is a real failure to surface.
+	if (isDashboardSpec(parsed)) {
+		return parsed;
+	}
+	if (!res.ok) {
+		throw new AiAskTransportError(`buildAiDashboard -> ${res.status}`, res.status);
+	}
+	// 2xx but not a recognisable spec — defensive; treat as a transport-level
+	// contract breach rather than silently returning a malformed object.
+	throw new AiAskTransportError(
+		`buildAiDashboard -> ${res.status}: response is not a DashboardSpec`,
+		res.status
+	);
 }

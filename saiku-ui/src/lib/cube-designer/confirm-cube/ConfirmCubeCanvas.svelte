@@ -57,7 +57,7 @@
 	let { store, cubeId, measureGroups, resetSignal = 0, refreshSignal = 0 }: Props = $props();
 
 	const nodeTypes = { fact: FactCard, dim: DimCard };
-	 
+
 	const edgeTypes = { 'fk-label': FKLabelEdge } as any;
 
 	function resolveTable(id: string | null | undefined) {

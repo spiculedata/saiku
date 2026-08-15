@@ -12,25 +12,20 @@
  * ever diverges from the transport shape.
  */
 
-import type { SuggestionOp, SuggestionView } from "$lib/api/schemaGen";
+import type { SuggestionOp, SuggestionView } from '$lib/api/schemaGen';
 
 /** Discriminator values for the five op variants. Stable group ordering follows this list. */
-export type OpType =
-  | "rename"
-  | "hierarchy"
-  | "aggregator"
-  | "degenerateDim"
-  | "ignore";
+export type OpType = 'rename' | 'hierarchy' | 'aggregator' | 'degenerateDim' | 'ignore';
 
 export type FeedSuggestionOp = SuggestionOp;
 export type FeedSuggestionView = SuggestionView;
 
-export type ConfidenceTier = "high" | "medium" | "low";
+export type ConfidenceTier = 'high' | 'medium' | 'low';
 
 export interface OpGroup {
-  type: OpType;
-  title: string;
-  ops: FeedSuggestionOp[];
+	type: OpType;
+	title: string;
+	ops: FeedSuggestionOp[];
 }
 
 /**
@@ -38,19 +33,19 @@ export interface OpGroup {
  * hierarchy, aggregator, degenerate-dim, and finally ignore (destructive, last).
  */
 const GROUP_ORDER: readonly OpType[] = [
-  "rename",
-  "hierarchy",
-  "aggregator",
-  "degenerateDim",
-  "ignore",
+	'rename',
+	'hierarchy',
+	'aggregator',
+	'degenerateDim',
+	'ignore'
 ];
 
 const GROUP_TITLES: Record<OpType, string> = {
-  rename: "Renames",
-  hierarchy: "Hierarchies",
-  aggregator: "Aggregators",
-  degenerateDim: "Degenerate dimensions",
-  ignore: "Ignore",
+	rename: 'Renames',
+	hierarchy: 'Hierarchies',
+	aggregator: 'Aggregators',
+	degenerateDim: 'Degenerate dimensions',
+	ignore: 'Ignore'
 };
 
 /**
@@ -58,20 +53,20 @@ const GROUP_TITLES: Record<OpType, string> = {
  * groups appear in {@link GROUP_ORDER} order regardless of input sequence.
  */
 export function groupOps(ops: FeedSuggestionOp[]): OpGroup[] {
-  const buckets = new Map<OpType, FeedSuggestionOp[]>();
-  for (const op of ops) {
-    const list = buckets.get(op.op) ?? [];
-    list.push(op);
-    buckets.set(op.op, list);
-  }
-  const out: OpGroup[] = [];
-  for (const type of GROUP_ORDER) {
-    const list = buckets.get(type);
-    if (list && list.length > 0) {
-      out.push({ type, title: GROUP_TITLES[type], ops: list });
-    }
-  }
-  return out;
+	const buckets = new Map<OpType, FeedSuggestionOp[]>();
+	for (const op of ops) {
+		const list = buckets.get(op.op) ?? [];
+		list.push(op);
+		buckets.set(op.op, list);
+	}
+	const out: OpGroup[] = [];
+	for (const type of GROUP_ORDER) {
+		const list = buckets.get(type);
+		if (list && list.length > 0) {
+			out.push({ type, title: GROUP_TITLES[type], ops: list });
+		}
+	}
+	return out;
 }
 
 /**
@@ -79,17 +74,15 @@ export function groupOps(ops: FeedSuggestionOp[]): OpGroup[] {
  * or {@code low}. Boundary values land in the higher bucket.
  */
 export function confidenceTier(op: FeedSuggestionOp): ConfidenceTier {
-  const c = op.confidence;
-  if (c >= 0.8) return "high";
-  if (c >= 0.5) return "medium";
-  return "low";
+	const c = op.confidence;
+	if (c >= 0.8) return 'high';
+	if (c >= 0.5) return 'medium';
+	return 'low';
 }
 
 /** Convenience wrapper for bulk-accept: returns only the high-confidence ops. */
-export function filterHighConfidence(
-  ops: FeedSuggestionOp[],
-): FeedSuggestionOp[] {
-  return ops.filter((o) => confidenceTier(o) === "high");
+export function filterHighConfidence(ops: FeedSuggestionOp[]): FeedSuggestionOp[] {
+	return ops.filter((o) => confidenceTier(o) === 'high');
 }
 
 /**
@@ -98,40 +91,40 @@ export function filterHighConfidence(
  * {@code after} fields.
  */
 export function describeOp(op: FeedSuggestionOp): {
-  before: string;
-  after: string;
-  rationale: string;
+	before: string;
+	after: string;
+	rationale: string;
 } {
-  switch (op.op) {
-    case "rename":
-      return {
-        before: op.oldCaption,
-        after: op.newCaption,
-        rationale: op.rationale,
-      };
-    case "aggregator":
-      return {
-        before: op.oldAggregator,
-        after: op.newAggregator,
-        rationale: op.rationale,
-      };
-    case "hierarchy":
-      return {
-        before: "(no hierarchy)",
-        after: `${op.hierarchyName}: ${op.levelColumns.join(" › ")}`,
-        rationale: op.rationale,
-      };
-    case "degenerateDim":
-      return {
-        before: op.factColumn,
-        after: `${op.dimName} (degenerate dim)`,
-        rationale: op.rationale,
-      };
-    case "ignore":
-      return {
-        before: op.targetPath,
-        after: "drop from schema",
-        rationale: op.rationale,
-      };
-  }
+	switch (op.op) {
+		case 'rename':
+			return {
+				before: op.oldCaption,
+				after: op.newCaption,
+				rationale: op.rationale
+			};
+		case 'aggregator':
+			return {
+				before: op.oldAggregator,
+				after: op.newAggregator,
+				rationale: op.rationale
+			};
+		case 'hierarchy':
+			return {
+				before: '(no hierarchy)',
+				after: `${op.hierarchyName}: ${op.levelColumns.join(' › ')}`,
+				rationale: op.rationale
+			};
+		case 'degenerateDim':
+			return {
+				before: op.factColumn,
+				after: `${op.dimName} (degenerate dim)`,
+				rationale: op.rationale
+			};
+		case 'ignore':
+			return {
+				before: op.targetPath,
+				after: 'drop from schema',
+				rationale: op.rationale
+			};
+	}
 }

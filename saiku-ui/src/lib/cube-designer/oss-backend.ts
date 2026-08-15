@@ -19,40 +19,40 @@
  *  - `tryQuery`: OSS has no run-against-an-unsaved-proposal endpoint yet, so the
  *    Try-a-query tab is unavailable in this build (graceful 501).
  */
-import type { CubeDesignerBackend, CubeDesignerAI } from "./backend";
+import type { CubeDesignerBackend, CubeDesignerAI } from './backend';
 
-const REST_BASE = "/rest/saiku";
+const REST_BASE = '/rest/saiku';
 const BASE = `${REST_BASE}/admin/cube-designer`;
-const CREDS: RequestInit = { credentials: "include" };
-const JSON_HEADERS = { "Content-Type": "application/json" } as const;
+const CREDS: RequestInit = { credentials: 'include' };
+const JSON_HEADERS = { 'Content-Type': 'application/json' } as const;
 
 function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
+	return new Response(JSON.stringify(body), {
+		status,
+		headers: { 'Content-Type': 'application/json' }
+	});
 }
 
 /** Friendly text for the convert endpoint's typed failure tokens. */
 function convertMessage(token: string): string {
-  switch (token.trim()) {
-    case "tables_missing":
-      return "The schema references a table that does not exist in the warehouse.";
-    case "connection_failed":
-      return "Could not connect to the warehouse to upgrade the schema.";
-    case "not_upgradable":
-      return "The schema could not be upgraded to Mondrian 4.";
-    default:
-      return "The schema could not be converted.";
-  }
+	switch (token.trim()) {
+		case 'tables_missing':
+			return 'The schema references a table that does not exist in the warehouse.';
+		case 'connection_failed':
+			return 'Could not connect to the warehouse to upgrade the schema.';
+		case 'not_upgradable':
+			return 'The schema could not be upgraded to Mondrian 4.';
+		default:
+			return 'The schema could not be converted.';
+	}
 }
 
 type IntrospectResponse = {
-  tables: Array<{
-    schema: string | null;
-    name: string;
-    columns: Array<{ name: string; type: string | null }>;
-  }>;
+	tables: Array<{
+		schema: string | null;
+		name: string;
+		columns: Array<{ name: string; type: string | null }>;
+	}>;
 };
 
 /**
@@ -64,75 +64,69 @@ type IntrospectResponse = {
  * library-based edit flow (`ImportController`), so this stays OSS host glue.
  */
 export function fetchDatasourceSchema(dataSourceId: string): Promise<Response> {
-  return fetch(`${BASE}/schema/${encodeURIComponent(dataSourceId)}`, CREDS);
+	return fetch(`${BASE}/schema/${encodeURIComponent(dataSourceId)}`, CREDS);
 }
 
 export const ossCubeDesignerBackend: CubeDesignerBackend = {
-  async profileConnection(connectionId) {
-    const r = await fetch(
-      `${BASE}/introspect/${encodeURIComponent(connectionId)}`,
-      CREDS,
-    );
-    if (!r.ok) return r; // let the caller surface the HTTP error
-    const data = (await r.json()) as IntrospectResponse;
-    // Reshape to the `{ tables: [{ schema, name, columns: [{ name, sqlType }] }] }`
-    // envelope parseProfileTables consumes (column `type` → `sqlType`).
-    const tables = (data.tables ?? []).map((t) => ({
-      schema: t.schema,
-      name: t.name,
-      columns: (t.columns ?? []).map((c) => ({
-        name: c.name,
-        sqlType: c.type ?? "unknown",
-      })),
-    }));
-    return jsonResponse({ tables });
-  },
+	async profileConnection(connectionId) {
+		const r = await fetch(`${BASE}/introspect/${encodeURIComponent(connectionId)}`, CREDS);
+		if (!r.ok) return r; // let the caller surface the HTTP error
+		const data = (await r.json()) as IntrospectResponse;
+		// Reshape to the `{ tables: [{ schema, name, columns: [{ name, sqlType }] }] }`
+		// envelope parseProfileTables consumes (column `type` → `sqlType`).
+		const tables = (data.tables ?? []).map((t) => ({
+			schema: t.schema,
+			name: t.name,
+			columns: (t.columns ?? []).map((c) => ({
+				name: c.name,
+				sqlType: c.type ?? 'unknown'
+			}))
+		}));
+		return jsonResponse({ tables });
+	},
 
-  sample(connectionId, table, limit) {
-    const url =
-      `${BASE}/sample/${encodeURIComponent(connectionId)}` +
-      `?table=${encodeURIComponent(table)}&limit=${limit}`;
-    return fetch(url, CREDS);
-  },
+	sample(connectionId, table, limit) {
+		const url =
+			`${BASE}/sample/${encodeURIComponent(connectionId)}` +
+			`?table=${encodeURIComponent(table)}&limit=${limit}`;
+		return fetch(url, CREDS);
+	},
 
-  tryQuery() {
-    // No OSS endpoint runs a query against an unsaved proposal (Cloud does this
-    // gateway-side). Save the schema, then query it in Studio.
-    return Promise.resolve(
-      jsonResponse(
-        { message: "Query preview is not available in this build." },
-        501,
-      ),
-    );
-  },
+	tryQuery() {
+		// No OSS endpoint runs a query against an unsaved proposal (Cloud does this
+		// gateway-side). Save the schema, then query it in Studio.
+		return Promise.resolve(
+			jsonResponse({ message: 'Query preview is not available in this build.' }, 501)
+		);
+	},
 
-  async loadSchema(entryId) {
-    const r = await fetch(
-      `${REST_BASE}/api/repository/resource?file=${encodeURIComponent(entryId)}`,
-      CREDS,
-    );
-    if (!r.ok) return r;
-    const xml = await r.text();
-    return jsonResponse({ mondrianXml: xml });
-  },
+	async loadSchema(entryId) {
+		const r = await fetch(
+			`${REST_BASE}/api/repository/resource?file=${encodeURIComponent(entryId)}`,
+			CREDS
+		);
+		if (!r.ok) return r;
+		const xml = await r.text();
+		return jsonResponse({ mondrianXml: xml });
+	},
 
-  async convertSchema(body) {
-    const b = (body ?? {}) as { mondrianXml?: string; connectionId?: string };
-    const r = await fetch(`${BASE}/convert`, {
-      method: "POST",
-      ...CREDS,
-      headers: JSON_HEADERS,
-      body: JSON.stringify({
-        mondrianXml: b.mondrianXml,
-        dataSourceId: b.connectionId,
-      }),
-    });
-    if (r.ok) return r; // { mondrianXml }
-    // OSS returns a plain-text failure token (e.g. "tables_missing"); wrap as
-    // JSON so the importer's `{ message }` error path shows something useful.
-    const token = await r.text().catch(() => "");
-    return jsonResponse({ message: convertMessage(token) }, r.status);
-  },
+	async convertSchema(body) {
+		const b = (body ?? {}) as { mondrianXml?: string; connectionId?: string };
+		const r = await fetch(`${BASE}/convert`, {
+			method: 'POST',
+			...CREDS,
+			headers: JSON_HEADERS,
+			body: JSON.stringify({
+				mondrianXml: b.mondrianXml,
+				dataSourceId: b.connectionId
+			})
+		});
+		if (r.ok) return r; // { mondrianXml }
+		// OSS returns a plain-text failure token (e.g. "tables_missing"); wrap as
+		// JSON so the importer's `{ message }` error path shows something useful.
+		const token = await r.text().catch(() => '');
+		return jsonResponse({ message: convertMessage(token) }, r.status);
+	}
 };
 
 /**
@@ -143,6 +137,5 @@ export const ossCubeDesignerBackend: CubeDesignerBackend = {
  * server 503s when no API key is configured, and the designer surfaces that.
  */
 export const ossCubeDesignerAI: CubeDesignerAI = {
-  fetchImpl: (_input, init) =>
-    fetch(`${BASE}/turn`, { ...(init ?? {}), ...CREDS }),
+	fetchImpl: (_input, init) => fetch(`${BASE}/turn`, { ...(init ?? {}), ...CREDS })
 };
