@@ -13,6 +13,7 @@ import {
 	canGenerateSchema,
 	generateSchemaHref,
 	generateSchemaLabel,
+	supportsCubeDesigner,
 	type GenerateSchemaTarget
 } from './dataSourceActions';
 
@@ -70,5 +71,29 @@ describe('generateSchemaHref', () => {
 		expect(
 			generateSchemaHref({ id: '4432dd20-fcae-11e3-a3ac-0800200c9a66', name: 'foodmart' })
 		).toBe('/admin/cube-designer/foodmart');
+	});
+});
+
+describe('supportsCubeDesigner (saiku#1841)', () => {
+	it('is false for an Ossie source on the wire discriminator', () => {
+		// The designer is a Mondrian XML tool; an Ossie source has no Mondrian
+		// schema to load, so it opened empty and a Save would have written the
+		// wrong kind of schema entirely.
+		expect(supportsCubeDesigner({ id: 'ds-1', connectiontype: 'OSSIE' })).toBe(false);
+	});
+
+	it('is false for an Ossie source saved with only the legacy type field', () => {
+		expect(supportsCubeDesigner({ id: 'ds-1', type: 'OSSIE' })).toBe(false);
+	});
+
+	it('is true for Mondrian and XMLA sources', () => {
+		expect(supportsCubeDesigner({ id: 'ds-1', connectiontype: 'MONDRIAN' })).toBe(true);
+		expect(supportsCubeDesigner({ id: 'ds-2', connectiontype: 'XMLA' })).toBe(true);
+	});
+
+	it('treats an absent discriminator as Mondrian-style, not Ossie', () => {
+		// Older saved sources predate connectiontype; hiding the designer for
+		// them would remove a working action.
+		expect(supportsCubeDesigner({ id: 'ds-1' })).toBe(true);
 	});
 });
