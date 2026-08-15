@@ -216,11 +216,15 @@
 	// The user then binds a cube via the tile's ⚙ (TileEditorModal). No app-
 	// specific add path — reuse keeps app + dashboard tile authoring identical.
 	// ------------------------------------------------------------------
-	function handleAddTile(type: TileType): void {
+	// saiku#1837: the add menu now picks the chart TYPE up front (Bar, Line,
+	// Graph, …) rather than dropping a bar chart and making the author find the
+	// type select in the ⚙ editor. `chartType` is undefined for non-chart tiles.
+	function handleAddTile(type: TileType, chartType?: string): void {
 		const layout = dashboardStore.current?.layout;
 		if (!layout) return;
-		trackDemo('app', 'tile-add', type);
-		dashboardStore.addTile(buildTile(layout, type, newTileId()));
+		trackDemo('app', 'tile-add', chartType ? `${type}:${chartType}` : type);
+		const base = buildTile(layout, type, newTileId());
+		dashboardStore.addTile(chartType ? { ...base, chartType } : base);
 	}
 
 	// Custom-renderer tile: same placement path, but seeded with the chosen
