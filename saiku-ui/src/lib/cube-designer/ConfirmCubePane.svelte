@@ -399,7 +399,16 @@
 								</div>
 								{#if (mg.measureColumns ?? []).length > 0}
 									<ul class="flex flex-col gap-0 pl-5 font-mono text-[10px] text-muted-foreground">
-										{#each mg.measureColumns ?? [] as m (m)}
+										<!-- saiku#1842: keyed by index, NOT by the column name. A measure
+										     group may legitimately expose several measures over the SAME
+										     column — a count and a distinct-count on the same key, a sum and
+										     an average on the same amount. Keying on the bare name made those
+										     duplicates collide, and Svelte's each_key_duplicate is thrown
+										     during render: the whole ConfirmCubePane tore down, taking the
+										     page with it (the error propagates to root.svelte), so the app
+										     was dead until reload. This list is read-only display, so index
+										     keys are safe — there is no reorder-preserving state to keep. -->
+										{#each mg.measureColumns ?? [] as m, mi (`${m}#${mi}`)}
 											<li class="truncate" title={m}>{m}</li>
 										{/each}
 									</ul>
