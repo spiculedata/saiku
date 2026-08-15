@@ -1,6 +1,6 @@
 <script module lang="ts">
   import { defineMeta } from "@storybook/addon-svelte-csf";
-  import Skeleton from "$lib/components/Skeleton.svelte";
+  import { Skeleton } from "$lib/design-system";
 
   const { Story } = defineMeta({
     title: "Compounds/Skeleton",

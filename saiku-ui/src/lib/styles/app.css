@@ -348,32 +348,12 @@ body {
   color: hsl(var(--fg));
 }
 
-/* Motion baseline. Modals, context menus, and toasts appear instantly
-   by default — feels like UI is teleporting rather than responding.
-   These two short keyframes give every overlay-style surface a 120ms
-   fade-in (200ms for the panel content, which also lifts a hair).
-   Components opt in by adding the matching animation:* rule. The
-   prefers-reduced-motion guard suppresses everything for users who
-   need it. */
-@keyframes saiku-overlay-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes saiku-panel-in {
-  from { opacity: 0; transform: translateY(4px) scale(0.98); }
-  to { opacity: 1; transform: none; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.001ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
-  }
-}
+/* Motion baseline (@keyframes saiku-overlay-in / saiku-panel-in) and the
+   prefers-reduced-motion guard moved to the design-system package —
+   @concepttocloud/saiku-design-system/motion.css, imported in +layout.svelte.
+   Design-system components (ContextMenu, Modal, the toast surfaces) animate
+   against those keyframes by name, so a component that shipped in the package
+   while its keyframes stayed here would silently stop animating. */
 
 /* -------------------------------------------------------------------------
  * Embed mode (?embed=1): chromeless layout for iframes. The topbar/sidebar/

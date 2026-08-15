@@ -47,9 +47,9 @@
   import AddFolderModal from "$lib/modals/AddFolderModal.svelte";
   import MoveRepositoryObject from "$lib/modals/MoveRepositoryObject.svelte";
   import RenameFolderModal from "$lib/modals/RenameFolderModal.svelte";
-  import Skeleton from "$lib/components/Skeleton.svelte";
+  import { Skeleton } from "$lib/design-system";
   import EmptyState from "$lib/components/EmptyState.svelte";
-  import ContextMenu, { type ContextMenuItem } from "$lib/components/ContextMenu.svelte";
+  import { ContextMenu, type ContextMenuItem } from "$lib/design-system";
   import DashboardIndexFilters from "$lib/views/dashboard/DashboardIndexFilters.svelte";
   import DashboardCatalogueTree from "$lib/views/dashboard/DashboardCatalogueTree.svelte";
   import DashboardCataloguePinned, {

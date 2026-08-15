@@ -18,7 +18,7 @@
   import PrefsMenu from "$lib/components/PrefsMenu.svelte";
   // #1610: fold the secondary toolbar actions into an overflow "⋯ More" menu,
   // reusing the same ContextMenu primitive the tiles / dashboards list use.
-  import ContextMenu from "$lib/components/ContextMenu.svelte";
+  import { ContextMenu } from "$lib/design-system";
   import type { TileType } from "$lib/api/dashboards";
   import { Monitor, RotateCcw, X, Share2, History, Undo2, Redo2, Menu, MoreHorizontal, Download } from "@lucide/svelte";
   import { i18n } from "$lib/stores/i18n.svelte";

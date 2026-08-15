@@ -24,7 +24,7 @@
   import { toasts } from "$lib/stores/toasts.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
   import { importArgsFromDashboard } from "$lib/views/app/appImport";
-  import Skeleton from "$lib/components/Skeleton.svelte";
+  import { Skeleton } from "$lib/design-system";
   import EmptyState from "$lib/components/EmptyState.svelte";
   import Modal from "$lib/components/Modal.svelte";
   import RepositoryBrowser from "$lib/components/RepositoryBrowser.svelte";

@@ -3,7 +3,7 @@
   import { Button } from "$lib/components/ui";
   import type { SaikuSession } from "$lib/api/session";
   import Modal from "$lib/components/Modal.svelte";
-  import ContextMenu from "$lib/components/ContextMenu.svelte";
+  import { ContextMenu } from "$lib/design-system";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
   import CubePicker from "$lib/views/CubePicker.svelte";

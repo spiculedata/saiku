@@ -34,7 +34,7 @@
   import LimitModal from "$lib/modals/LimitModal.svelte";
   import DateFilterModal from "$lib/modals/DateFilterModal.svelte";
   import { isTimeHierarchy } from "$lib/modals/dateFilterMdx";
-  import ContextMenu from "$lib/components/ContextMenu.svelte";
+  import { ContextMenu } from "$lib/design-system";
   type ContextMenuItem = { id: string; label: string; disabled?: boolean; danger?: boolean; sep?: boolean };
   import { MoreHorizontal, Loader2, XCircle, ChevronDown, Settings, Sparkles } from "@lucide/svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
