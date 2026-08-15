@@ -20,6 +20,9 @@ import org.saiku.olap.dto.resultset.AbstractBaseCell;
 import org.saiku.olap.dto.resultset.CellDataSet;
 import org.saiku.olap.dto.resultset.DataCell;
 import org.saiku.olap.query2.ThinQuery;
+import org.saiku.service.cache.SaikuQueryCache;
+import org.saiku.service.olap.OlapDiscoverService;
+import org.saiku.service.olap.QueryCoalescer;
 import org.saiku.service.olap.ThinQueryService;
 import org.saiku.service.olap.ai.AiCubeMetadataService;
 import org.saiku.service.olap.ai.AiCubeRef;
@@ -28,6 +31,8 @@ import org.saiku.service.olap.ai.AiMeasureSelection;
 import org.saiku.service.olap.ai.AiQueryRequest;
 import org.saiku.service.olap.ai.AiSchema;
 import org.saiku.service.olap.ai.AiSchemaConverter;
+import org.saiku.service.ossie.OssieQueryService;
+import org.saiku.service.user.UserService;
 
 /**
  * Production {@link MeasureValueReader} (saiku#1098): resolve one measure's current value by reusing
@@ -45,21 +50,83 @@ import org.saiku.service.olap.ai.AiSchemaConverter;
  *   <li>The single body cell's raw number is returned.</li>
  * </ol>
  *
- * <p>All of these collaborators live in {@code saiku-service}, so the alert handler needs no
- * {@code saiku-web} dependency to run a query.
+ * <p><b>Runs off-request (saiku#1098 fix).</b> The handler runs on a scheduler WORKER thread, where
+ * there is NO bound HTTP request. The AI Query endpoint's {@code thinQueryBean} is
+ * {@code scope="session"} + {@code <aop:scoped-proxy/>}, so touching it off-request throws
+ * {@code IllegalStateException: No thread-bound request found} — which would FAIL every alert run and
+ * auto-disable the job after the backoff threshold. So this reader does NOT hold a session/request
+ * scoped bean. It takes {@link ThinQueryService}'s real collaborators — all SINGLETONS
+ * ({@link OlapDiscoverService}, {@link SaikuQueryCache}, {@link UserService}, {@link QueryCoalescer},
+ * {@link OssieQueryService}) — and builds a fresh {@link ThinQueryService} per {@code readMeasure}
+ * call via {@link ThinQueryServiceFactory}, wired exactly as Spring wires {@code thinQueryBean}.
+ * {@code ThinQueryService} holds only per-execution state, so a throwaway instance is correct here.
+ *
+ * <p>Owner RLS is preserved by {@code SecurityContextHolder} (set by the scheduler's owner-identity
+ * runner) + {@link UserService#getCurrentUserRoles()} — NOT by the bean scope — so the value still
+ * reflects exactly the owner's role scope.
  */
 public final class AiMeasureValueReader implements MeasureValueReader {
 
+    /**
+     * Builds a ready-to-execute {@link ThinQueryService} from singleton collaborators. Default
+     * production impl wires it identically to the {@code thinQueryBean} Spring definition; tests inject
+     * a fake to assert the off-request query path without real Mondrian collaborators.
+     */
+    @FunctionalInterface
+    interface ThinQueryServiceFactory {
+        ThinQueryService create();
+    }
+
     private final AiCubeMetadataService cubeMetadataService;
-    private final ThinQueryService thinQueryService;
+    private final ThinQueryServiceFactory thinQueryServiceFactory;
     private final AiSchemaConverter converter = new AiSchemaConverter();
 
-    public AiMeasureValueReader(AiCubeMetadataService cubeMetadataService, ThinQueryService thinQueryService) {
-        if (cubeMetadataService == null || thinQueryService == null) {
-            throw new IllegalArgumentException("cubeMetadataService and thinQueryService are required");
+    /**
+     * Production constructor — takes the SAME singleton collaborators the {@code thinQueryBean}
+     * definition wires, and constructs a fresh {@link ThinQueryService} per run (no scoped proxy).
+     * {@code queryCache}, {@code queryCoalescer} and {@code ossieQueryService} are optional (nullable),
+     * matching how {@code ThinQueryService} treats them.
+     */
+    public AiMeasureValueReader(
+            AiCubeMetadataService cubeMetadataService,
+            OlapDiscoverService olapDiscoverService,
+            SaikuQueryCache queryCache,
+            UserService userService,
+            QueryCoalescer queryCoalescer,
+            OssieQueryService ossieQueryService) {
+        this(
+                cubeMetadataService,
+                defaultFactory(olapDiscoverService, queryCache, userService, queryCoalescer, ossieQueryService));
+    }
+
+    /** Visible for tests — inject the schema service + a factory that mints a (possibly fake) executor. */
+    AiMeasureValueReader(AiCubeMetadataService cubeMetadataService, ThinQueryServiceFactory thinQueryServiceFactory) {
+        if (cubeMetadataService == null || thinQueryServiceFactory == null) {
+            throw new IllegalArgumentException("cubeMetadataService and thinQueryServiceFactory are required");
         }
         this.cubeMetadataService = cubeMetadataService;
-        this.thinQueryService = thinQueryService;
+        this.thinQueryServiceFactory = thinQueryServiceFactory;
+    }
+
+    /** Wire a ThinQueryService exactly as saiku-beans.xml wires {@code thinQueryBean}. */
+    private static ThinQueryServiceFactory defaultFactory(
+            OlapDiscoverService olapDiscoverService,
+            SaikuQueryCache queryCache,
+            UserService userService,
+            QueryCoalescer queryCoalescer,
+            OssieQueryService ossieQueryService) {
+        if (olapDiscoverService == null) {
+            throw new IllegalArgumentException("olapDiscoverService is required");
+        }
+        return () -> {
+            ThinQueryService tqs = new ThinQueryService();
+            tqs.setOlapDiscoverService(olapDiscoverService);
+            tqs.setQueryCache(queryCache);
+            tqs.setUserService(userService);
+            tqs.setQueryCoalescer(queryCoalescer);
+            tqs.setOssieQueryService(ossieQueryService);
+            return tqs;
+        };
     }
 
     @Override
@@ -77,6 +144,9 @@ public final class AiMeasureValueReader implements MeasureValueReader {
         AiSchema schema = cubeMetadataService.getSchema(cube);
         ThinQuery tq = converter.convert(req, schema);
 
+        // Build a fresh executor per run from singleton collaborators — NEVER a session-scoped proxy,
+        // so this is safe on the scheduler worker thread (no bound request).
+        ThinQueryService thinQueryService = thinQueryServiceFactory.create();
         CellDataSet cds = thinQueryService.execute(tq);
         return extractScalar(cds, measure);
     }

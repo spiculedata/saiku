@@ -1155,12 +1155,24 @@
 
     <!-- Reads one measure's current value by reusing the typed AI Query stack
          (AiCubeMetadataService -> AiSchemaConverter -> ThinQueryService) — no
-         hand-written MDX. thinQueryBean is the same session-scoped executor
-         aiQueryResource uses; the scoped proxy resolves under the owner's
-         established context at run time. -->
+         hand-written MDX.
+
+         #1098 fix: the handler runs on a scheduler WORKER thread with NO bound
+         HTTP request, so it must NOT depend on the session-scoped thinQueryBean
+         (its scoped proxy throws "No thread-bound request found" off-request).
+         Instead we inject ThinQueryService's SINGLETON collaborators — the SAME
+         beans the thinQueryBean definition wires (olapDiscoverServiceBean,
+         saikuQueryCacheBean, userServiceBean, queryCoalescerBean,
+         ossieQueryServiceBean) — and the reader builds a fresh ThinQueryService
+         per run. Owner RLS is preserved via SecurityContextHolder (set by the
+         owner-identity runner) + userService, not the bean scope. -->
     <bean id="aiMeasureValueReader" class="org.saiku.service.schedule.alert.AiMeasureValueReader">
         <constructor-arg ref="aiCubeMetadataServiceBean"/>
-        <constructor-arg ref="thinQueryBean"/>
+        <constructor-arg ref="olapDiscoverServiceBean"/>
+        <constructor-arg ref="saikuQueryCacheBean"/>
+        <constructor-arg ref="userServiceBean"/>
+        <constructor-arg ref="queryCoalescerBean"/>
+        <constructor-arg ref="ossieQueryServiceBean"/>
     </bean>
 
     <!-- Webhook channel: POSTs a small JSON body via the JDK HttpClient to the

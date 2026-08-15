@@ -82,6 +82,28 @@ public class SelfEmailAlertChannelTest {
     }
 
     @Test
+    public void htmlEscapesMeasureAndCubeNames() throws Exception {
+        CapturingSender sender = new CapturingSender();
+        SelfEmailAlertChannel channel = new SelfEmailAlertChannel(sender, config("alerts@saiku", "admin@saiku"));
+        AlertEvent xss = new AlertEvent(
+                "JOB123",
+                "conn/cat/schema/<script>alert(1)</script>",
+                "<script>alert('x')</script>",
+                AlertComparison.GT,
+                150.0,
+                null,
+                100.0,
+                1700000000000L);
+
+        channel.deliver(xss, emailChannel());
+
+        String body = sender.sent.htmlBody();
+        // The raw script tag must NOT survive into the HTML body; it must be escaped.
+        assertFalse("raw <script> must not survive", body.contains("<script>"));
+        assertTrue("angle brackets must be escaped", body.contains("&lt;script&gt;"));
+    }
+
+    @Test
     public void failsClosedWhenUnconfigured() {
         CapturingSender sender = new CapturingSender();
         sender.configured = false;
