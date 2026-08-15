@@ -65,6 +65,41 @@ public class MailLinkBuilderTest {
     }
 
     @Test
+    public void dashboardUrl_buildsDeepLinkPreservingPathSeparators() {
+        MailLinkBuilder b = new MailLinkBuilder(BASE);
+        assertEquals(BASE + "/ui/dashboards/shared/exec.saikudash", b.dashboardUrl("shared/exec.saikudash"));
+    }
+
+    @Test
+    public void dashboardUrl_encodesSegmentsButKeepsSlashes() {
+        MailLinkBuilder b = new MailLinkBuilder(BASE);
+        // A space in a segment is encoded; the slash separators survive as path separators.
+        assertEquals(
+                BASE + "/ui/dashboards/homes/a+b/Q4+report.saikudash", b.dashboardUrl("homes/a b/Q4 report.saikudash"));
+    }
+
+    @Test
+    public void dashboardUrl_normalisesLeadingSlashes() {
+        MailLinkBuilder b = new MailLinkBuilder(BASE);
+        assertEquals(BASE + "/ui/dashboards/homes/x.saikudash", b.dashboardUrl("//homes/x.saikudash"));
+    }
+
+    @Test
+    public void dashboardUrl_cannotInjectAnAlternateHost() {
+        MailLinkBuilder b = new MailLinkBuilder(BASE);
+        // A crafted path with an authority is encoded into a single segment — the host stays the ops base.
+        String url = b.dashboardUrl("evil.example.com/steal");
+        assertTrue("host must remain the ops base URL", url.startsWith(BASE + "/ui/dashboards/"));
+    }
+
+    @Test
+    public void dashboardUrl_nullWhenUnconfiguredOrBlank() {
+        assertNull(new MailLinkBuilder((String) null).dashboardUrl("shared/exec.saikudash"));
+        assertNull(new MailLinkBuilder(BASE).dashboardUrl("  "));
+        assertNull(new MailLinkBuilder(BASE).dashboardUrl(null));
+    }
+
+    @Test
     public void resolvesFromEnvOverProp() {
         MailLinkBuilder b = new MailLinkBuilder(
                 k -> MailLinkBuilder.ENV_KEY.equals(k) ? "https://env.example.com" : null,
