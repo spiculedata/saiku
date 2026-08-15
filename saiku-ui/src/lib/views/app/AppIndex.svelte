@@ -204,7 +204,21 @@
 							>{relPath}</span
 						>
 					</a>
-					<Button variant="destructive" onclick={() => handleDelete(relPath)} title="Delete">
+					<!-- saiku#1839: a QUIET destructive, not a solid red slab. Saiku's brand
+					     primary is itself red (cardinal 353°) and destructive is rose (0°),
+					     so a solid "+ New app" and a solid "Delete" read as the same button —
+					     create and destroy sharing one danger-red. Six solid red Deletes also
+					     made the most dangerous action the loudest thing on the page. Outlined
+					     destructive keeps the semantic (still unmistakably red, still the only
+					     red in the row) while letting solid red mean "primary action". The
+					     confirm dialog keeps the solid destructive, which is where the weight
+					     belongs. -->
+					<Button
+						variant="outline"
+						class="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+						onclick={() => handleDelete(relPath)}
+						title="Delete"
+					>
 						Delete
 					</Button>
 				</li>
