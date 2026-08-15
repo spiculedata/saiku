@@ -26,7 +26,7 @@
 		ListTree,
 		Rows3,
 		EyeOff
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import ConfirmCubeCanvas from './confirm-cube/ConfirmCubeCanvas.svelte';
 	import CubeDag from './confirm-cube/CubeDag.svelte';
 	import type { SchemaCanvasStore } from './state.svelte.js';

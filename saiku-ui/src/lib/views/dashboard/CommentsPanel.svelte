@@ -7,7 +7,7 @@
   import { tick } from "svelte";
   import { Button } from "$lib/components/ui";
   import Modal from "$lib/components/Modal.svelte";
-  import { Trash2, Send } from "lucide-svelte";
+  import { Trash2, Send } from "@lucide/svelte";
   import { session } from "$lib/stores/session.svelte";
   import {
     getComments,

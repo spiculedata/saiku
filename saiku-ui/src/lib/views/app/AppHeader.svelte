@@ -11,7 +11,7 @@
    */
   import type { Snippet } from "svelte";
   import type { AppContextPillOption, SaikuApp } from "$lib/api/apps";
-  import { ChevronDown } from "lucide-svelte";
+  import { ChevronDown } from "@lucide/svelte";
   import { effectiveLabel, isSelectable, optionsFor } from "$lib/views/app/contextPill";
   import { badgeFor } from "$lib/views/app/liveBadge";
   import { appConnection } from "$lib/stores/appConnection.svelte";

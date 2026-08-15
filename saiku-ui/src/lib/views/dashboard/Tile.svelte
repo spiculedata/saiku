@@ -29,7 +29,7 @@
   // renderers looked up by tile.custom.renderer. Built-ins keep their branches.
   import { getTileRenderer } from "$lib/dashboard/tileRegistry";
   import TileEditorModal from "$lib/views/dashboard/TileEditorModal.svelte";
-  import { Copy, MoreVertical, Settings2, X, MessageCircle, Minus, Plus } from "lucide-svelte";
+  import { Copy, MoreVertical, Settings2, X, MessageCircle, Minus, Plus } from "@lucide/svelte";
   // #942 PR2 — per-tile comments.
   import CommentsPanel from "$lib/views/dashboard/CommentsPanel.svelte";
   import { getComments } from "$lib/api/dashboards";

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Settings, Moon, Sun, Monitor, Contrast } from "lucide-svelte";
+  import { Settings, Moon, Sun, Monitor, Contrast } from "@lucide/svelte";
   import { Button } from "$lib/components/ui";
   import { theme } from "$lib/stores/theme.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";

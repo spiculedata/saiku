@@ -45,7 +45,7 @@ import {
   Flag,
   Target,
   Package,
-} from "lucide-svelte";
+} from "@lucide/svelte";
 
 export type PageIcon = typeof LayoutDashboard;
 

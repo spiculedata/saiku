@@ -4,7 +4,7 @@
   import { i18n } from "$lib/stores/i18n.svelte";
   import Skeleton from "$lib/components/Skeleton.svelte";
   import { Tooltip } from "$lib/components/ui";
-  import { Calendar, Info, Lock, Sigma, Table2 } from "lucide-svelte";
+  import { Calendar, Info, Lock, Sigma, Table2 } from "@lucide/svelte";
 
   interface Props {
     username: string;

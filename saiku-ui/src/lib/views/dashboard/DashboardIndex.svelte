@@ -60,7 +60,7 @@
     Star,
     FolderInput,
     MoreVertical,
-  } from "lucide-svelte";
+  } from "@lucide/svelte";
   import {
     applyCatalogueFilters,
     collectOwners,

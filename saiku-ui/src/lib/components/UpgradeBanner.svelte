@@ -3,7 +3,7 @@
   import { platform } from "$lib/stores/platform.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
   import { FeedbackBanner } from "$lib/design-system";
-  import { X } from "lucide-svelte";
+  import { X } from "@lucide/svelte";
 
   const STORAGE_KEY = "saiku.upgrade.dismissed";
 

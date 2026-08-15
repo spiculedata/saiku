@@ -6,7 +6,7 @@
 <script module lang="ts">
 	import { defineMeta } from '@storybook/addon-svelte-csf';
 	import { Button } from '$lib/components/ui';
-	import { Plus } from 'lucide-svelte';
+	import { Plus } from '@lucide/svelte';
 
 	const { Story } = defineMeta({
 		title: 'Primitives/Button',

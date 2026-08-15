@@ -8,7 +8,7 @@
   import { base } from "$app/paths";
   import { Button } from "$lib/components/ui";
   import Modal from "$lib/components/Modal.svelte";
-  import { RotateCcw, ExternalLink } from "lucide-svelte";
+  import { RotateCcw, ExternalLink } from "@lucide/svelte";
   import { getHistory, restoreHistory, type DashboardHistoryEntry } from "$lib/api/dashboards";
   import { buildHistoryPreviewUrl } from "$lib/dashboard/historyPreview";
 

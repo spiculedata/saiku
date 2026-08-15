@@ -18,7 +18,7 @@
   import { Button } from "$lib/components/ui";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
-  import { Save, Pencil, Eye, Palette } from "lucide-svelte";
+  import { Save, Pencil, Eye, Palette } from "@lucide/svelte";
   import AppShell from "$lib/views/app/AppShell.svelte";
   import AppInspector, { type InspectorSection } from "$lib/views/app/inspector/AppInspector.svelte";
 

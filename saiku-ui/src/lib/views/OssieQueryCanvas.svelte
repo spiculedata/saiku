@@ -27,7 +27,7 @@
     Undo2,
     Wrench,
     X,
-  } from "lucide-svelte";
+  } from "@lucide/svelte";
   import ChartView from "$lib/views/ChartView.svelte";
   import { CHART_TYPES, type ChartType } from "$lib/views/chartTypes";
   import Modal from "$lib/components/Modal.svelte";

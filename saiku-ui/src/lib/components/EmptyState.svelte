@@ -7,7 +7,7 @@
    * (title + description) + optional next action. Far easier to act on
    * than a one-line "No saved queries." grey paragraph.
    *
-   * Pass a lucide-svelte icon component as `icon`; the wrapper sizes
+   * Pass a lucide icon component as `icon`; the wrapper sizes
    * it consistently.
    */
 
@@ -17,7 +17,7 @@
   }
 
   interface Props {
-    /** A lucide-svelte (or compatible) icon component class. Typed
+    /** A lucide (or compatible) icon component class. Typed
      *  permissively because lucide's own component type carries extra
      *  generic params that a tighter signature won't accept. */
      

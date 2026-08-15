@@ -22,7 +22,7 @@
     Undo2,
     Redo2,
     Mail,
-  } from "lucide-svelte";
+  } from "@lucide/svelte";
   import { Tooltip } from "$lib/components/ui";
   import SaveQueryModal from "$lib/modals/SaveQueryModal.svelte";
   import SavedQueriesModal from "$lib/modals/SavedQueriesModal.svelte";

@@ -31,7 +31,7 @@
    */
   import { base } from "$app/paths";
   import { Button } from "$lib/components/ui";
-  import { Star } from "lucide-svelte";
+  import { Star } from "@lucide/svelte";
   import { toRepoRelative, displayPath } from "$lib/api/dashboards";
 
   interface Props {

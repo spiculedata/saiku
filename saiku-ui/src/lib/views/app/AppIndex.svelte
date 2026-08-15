@@ -16,7 +16,7 @@
   import { Button } from "$lib/components/ui";
   import { goto } from "$app/navigation";
   import { base } from "$app/paths";
-  import { AppWindow, LayoutDashboard } from "lucide-svelte";
+  import { AppWindow, LayoutDashboard } from "@lucide/svelte";
   import { listApps, deleteApp, type AppSummary } from "$lib/api/apps";
   import { loadDashboard, toRepoRelative } from "$lib/api/dashboards";
   import { appDoc } from "$lib/stores/appDoc.svelte";

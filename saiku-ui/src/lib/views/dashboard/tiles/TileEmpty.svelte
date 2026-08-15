@@ -8,7 +8,7 @@
    * matching the toolbar's reset). With no active filters it's a plain
    * "no data" — nothing to reset.
    */
-  import { Inbox, FilterX } from "lucide-svelte";
+  import { Inbox, FilterX } from "@lucide/svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
 
   interface Props {

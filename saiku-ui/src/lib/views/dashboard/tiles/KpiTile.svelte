@@ -22,7 +22,7 @@
 
   import { onDestroy } from "svelte";
   import * as echarts from "echarts";
-  import { ArrowDownRight, ArrowUpRight, Minus, Settings2 } from "lucide-svelte";
+  import { ArrowDownRight, ArrowUpRight, Minus, Settings2 } from "@lucide/svelte";
   import type { CubeRef, DashboardTile, KpiConfig } from "$lib/api/dashboards";
   import {
     executeAiQuery,

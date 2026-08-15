@@ -13,7 +13,7 @@
   import { Button } from "$lib/components/ui";
   import { adminEvals, type EvalRun, type EvalSuiteCard, type EvalTrendPoint } from "$lib/api/admin";
   import { toasts } from "$lib/stores/toasts.svelte";
-  import { RefreshCw } from "lucide-svelte";
+  import { RefreshCw } from "@lucide/svelte";
 
   let suites = $state<EvalSuiteCard[]>([]);
   let selected = $state<string | null>(null);

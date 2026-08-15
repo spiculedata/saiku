@@ -15,13 +15,13 @@
 <script lang="ts">
 	import type { Node, Edge } from '@xyflow/svelte';
 	import { untrack } from 'svelte';
-	import { ChevronRight, Sparkles } from 'lucide-svelte';
+	import { ChevronRight, Sparkles } from '@lucide/svelte';
 	import AskDimSumWidget from './AskDimSumWidget.svelte';
 	import CanvasToolbar from './CanvasToolbar.svelte';
 	import DimSumChatDock from './DimSumChatDock.svelte';
 	import JoinsPanel from './JoinsPanel.svelte';
 	import CanvasPane from './CanvasPane.svelte';
-	import Toast from './primitives/Toast.svelte';
+	import { Toast } from '$lib/design-system';
 	import { computeJoinGroups, isSemanticGroup } from './join-groups.js';
 	import type {
 		AnthropicToolUseBlock,

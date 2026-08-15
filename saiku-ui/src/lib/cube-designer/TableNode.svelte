@@ -13,7 +13,7 @@
 -->
 <script lang="ts">
 	import { Handle, Position, type NodeProps } from '@xyflow/svelte';
-	import { X, ChevronsDownUp, ChevronsUpDown } from 'lucide-svelte';
+	import { X, ChevronsDownUp, ChevronsUpDown } from '@lucide/svelte';
 	import type { SchemaCanvasTable } from './types.js';
 
 	interface TableNodeData {

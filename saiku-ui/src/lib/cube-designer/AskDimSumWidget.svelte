@@ -24,7 +24,7 @@
 		AlertTriangle,
 		Loader2,
 		X
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import type { AnthropicBlock, ChatMessage, DimSumMutationResult } from './ai-chat-types';
 
 	interface Props {

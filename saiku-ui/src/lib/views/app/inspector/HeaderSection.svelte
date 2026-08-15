@@ -3,7 +3,7 @@
    * context pill (label/value), and live badge. Writes via appDoc. */
   import { appDoc } from "$lib/stores/appDoc.svelte";
 
-  import { Trash2 } from "lucide-svelte";
+  import { Trash2 } from "@lucide/svelte";
   import { ALL_MEMBER, MAX_LEVEL_OPTIONS, isLevelSourced } from "$lib/views/app/contextPill";
   import { fetchLevelMembers } from "$lib/views/app/levelMembers";
   import { firstAppCube } from "$lib/views/app/appShell";

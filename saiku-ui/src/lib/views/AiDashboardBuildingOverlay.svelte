@@ -11,7 +11,7 @@
   import { aiDashboardBuild } from "$lib/stores/aiDashboardBuild.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
   import { Button } from "$lib/components/ui";
-  import { Loader2 } from "lucide-svelte";
+  import { Loader2 } from "@lucide/svelte";
 
   // Local 1 Hz tick so the elapsed timer re-renders. The interval is owned by
   // this component and cleared on unmount / when the build ends (the $effect

@@ -21,7 +21,7 @@
   import { toasts } from "$lib/stores/toasts.svelte";
   import { FeedbackBanner, type Tone } from "$lib/design-system";
   import { Button } from "$lib/components/ui";
-  import { X } from "lucide-svelte";
+  import { X } from "@lucide/svelte";
 
   function toneFor(variant: string): Tone {
     if (variant === "danger") return "error";

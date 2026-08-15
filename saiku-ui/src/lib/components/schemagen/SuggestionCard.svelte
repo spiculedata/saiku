@@ -6,7 +6,7 @@
    * Purely presentational; all derivation (tier bucketing, the before / after
    * strings) lives in suggestionsFeed.model.ts so it can be unit-tested.
    */
-  import { CheckCircle, XCircle } from "lucide-svelte";
+  import { CheckCircle, XCircle } from "@lucide/svelte";
 
   import {
     confidenceTier,

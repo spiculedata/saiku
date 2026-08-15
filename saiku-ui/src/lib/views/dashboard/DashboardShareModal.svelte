@@ -7,7 +7,7 @@
   import { base } from "$app/paths";
   import { Button } from "$lib/components/ui";
   import Modal from "$lib/components/Modal.svelte";
-  import { Copy, Check, Trash2 } from "lucide-svelte";
+  import { Copy, Check, Trash2 } from "@lucide/svelte";
   import {
     mintShare,
     listShareTokens,

@@ -5,7 +5,7 @@
   import type { SaikuCube } from "$lib/api/discover";
   import { cubeKey } from "$lib/stores/datasources.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
-  import { RotateCw } from "lucide-svelte";
+  import { RotateCw } from "@lucide/svelte";
 
   interface Props {
     username: string;
