@@ -87,4 +87,14 @@ public final class AlertChannelConfig {
         }
         return new AlertChannelConfig(Type.EMAIL_SELF, null);
     }
+
+    /**
+     * Build a WEBHOOK config for a URL <b>without</b> running the live-DNS SSRF gate. Visible for tests
+     * that inject their own resolver into {@link WebhookAlertChannel} (which re-validates before send) so
+     * a hostname-based rebinding scenario stays hermetic. Production always goes through
+     * {@link #fromPayload(Object)}, which validates.
+     */
+    static AlertChannelConfig forWebhookUrlUnvalidated(String url) {
+        return new AlertChannelConfig(Type.WEBHOOK, url);
+    }
 }

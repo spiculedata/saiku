@@ -52,6 +52,14 @@ public final class WebhookUrlValidator {
     private static final HostResolver DNS = InetAddress::getAllByName;
 
     /**
+     * Outcome of a successful validation: the parsed target plus the exact set of addresses the host
+     * resolved to at check time. The addresses are the ones every one of which passed the SSRF
+     * range-check — callers that want to shrink the DNS-rebinding TOCTOU window re-validate against a
+     * fresh resolution immediately before connecting (see {@link WebhookAlertChannel}).
+     */
+    public record ValidatedTarget(URI uri, InetAddress[] addresses) {}
+
+    /**
      * Validate {@code url} for use as an alert webhook target, resolving the host against live DNS.
      * Returns the parsed {@link URI} on success; throws {@link IllegalArgumentException} with a short
      * reason on any failure.
@@ -60,8 +68,21 @@ public final class WebhookUrlValidator {
         return validate(url, DNS);
     }
 
+    /**
+     * As {@link #validate(String)} but also returns the validated addresses so the caller can pin /
+     * re-check the connection against them. Uses live DNS.
+     */
+    public static ValidatedTarget validateResolved(String url) {
+        return validateResolved(url, DNS);
+    }
+
     /** As {@link #validate(String)} but with a pluggable resolver (visible for tests). */
     static URI validate(String url, HostResolver resolver) {
+        return validateResolved(url, resolver).uri();
+    }
+
+    /** As {@link #validateResolved(String)} but with a pluggable resolver (visible for tests). */
+    static ValidatedTarget validateResolved(String url, HostResolver resolver) {
         if (url == null || url.isBlank()) {
             throw new IllegalArgumentException("webhook url is required");
         }
@@ -83,6 +104,15 @@ public final class WebhookUrlValidator {
             throw new IllegalArgumentException("webhook url must have a host");
         }
         String lowerHost = host.toLowerCase(Locale.ROOT);
+        // Obfuscated numeric-IPv4 forms (a bare decimal/octal/hex integer, or fewer-than-four or
+        // 0x-/0-prefixed dotted parts) are rejected outright BEFORE any other check: they have no
+        // legitimate use in an admin webhook URL, and JDK resolvers parse them inconsistently, so we
+        // cannot safely trust a byte-level range check on them (saiku#1846). We detect them explicitly
+        // rather than leaning on the incidental "no-dot ⇒ blocked" rule. Only the canonical dotted-quad
+        // passes below.
+        if (isObfuscatedNumericIpv4(lowerHost)) {
+            throw new IllegalArgumentException("webhook url host is a non-canonical numeric address encoding");
+        }
         // Reject obvious internal names / literals outright without needing DNS (fast fail + covers
         // unresolvable ones, and closes an IP literal even when the resolver is a no-op in tests).
         if (isBlockedHostName(lowerHost)) {
@@ -99,7 +129,7 @@ public final class WebhookUrlValidator {
             if (isBlockedAddress(literal)) {
                 throw new IllegalArgumentException("webhook url resolves to a non-routable / internal address");
             }
-            return uri;
+            return new ValidatedTarget(uri, new InetAddress[] {literal});
         }
         // Resolve and reject any address in a loopback / link-local / site-local / private / wildcard range.
         InetAddress[] addresses;
@@ -116,7 +146,7 @@ public final class WebhookUrlValidator {
                 throw new IllegalArgumentException("webhook url resolves to a non-routable / internal address");
             }
         }
-        return uri;
+        return new ValidatedTarget(uri, addresses.clone());
     }
 
     /** True when {@code url} passes {@link #validate(String)} without throwing. */
@@ -146,12 +176,78 @@ public final class WebhookUrlValidator {
         return !host.contains(".") && !isIpLiteral(host);
     }
 
+    private static final java.util.regex.Pattern DOTTED_QUAD =
+            java.util.regex.Pattern.compile("\\d{1,3}(\\.\\d{1,3}){3}");
+
     private static boolean isIpLiteral(String host) {
-        // Cheap heuristic: v4 dotted-quad or a bracketed/colon'd v6 form.
-        return host.matches("\\d{1,3}(\\.\\d{1,3}){3}") || host.contains(":");
+        // Canonical dotted-quad, or any v6 (URI.getHost strips brackets, so a colon means v6).
+        return DOTTED_QUAD.matcher(host).matches() || host.contains(":");
     }
 
-    private static boolean isBlockedAddress(InetAddress addr) {
+    /**
+     * Detects the alternate / obfuscated IPv4 encodings that let an internal address masquerade as a
+     * hostname — a bare decimal integer ({@code 2130706433} == 127.0.0.1), a hex value
+     * ({@code 0x7f000001}), an octal-prefixed octet ({@code 0177.0.0.1}), or a fewer-than-four dotted
+     * form ({@code 127.1}). The canonical four-part decimal dotted-quad is deliberately <b>excluded</b>
+     * (that is a legitimate literal handled by {@link #isIpLiteral}); everything else numeric here is
+     * rejected outright by the caller rather than trusted to a resolver that parses these inconsistently.
+     */
+    private static boolean isObfuscatedNumericIpv4(String host) {
+        if (host.isEmpty() || host.endsWith(".") || host.contains(":")) {
+            return false;
+        }
+        String[] parts = host.split("\\.", -1);
+        if (parts.length > 4) {
+            return false;
+        }
+        boolean anyNonDecimalOrShort = parts.length != 4;
+        for (String part : parts) {
+            NumericPart kind = classifyNumericPart(part);
+            if (kind == NumericPart.NOT_NUMERIC) {
+                return false; // a real hostname label — not a numeric literal at all
+            }
+            if (kind != NumericPart.PLAIN_DECIMAL) {
+                anyNonDecimalOrShort = true; // hex or octal encoding present
+            }
+        }
+        // All parts numeric. If it's a canonical 4-part plain-decimal quad, isIpLiteral handles it and
+        // this returns false; any other numeric shape (short, hex, octal, single-integer) is obfuscated.
+        return anyNonDecimalOrShort;
+    }
+
+    private enum NumericPart {
+        NOT_NUMERIC,
+        PLAIN_DECIMAL,
+        OCTAL,
+        HEX
+    }
+
+    private static NumericPart classifyNumericPart(String part) {
+        if (part.isEmpty()) {
+            return NumericPart.NOT_NUMERIC;
+        }
+        String p = part.toLowerCase(Locale.ROOT);
+        try {
+            if (p.startsWith("0x")) {
+                if (p.length() == 2) {
+                    return NumericPart.NOT_NUMERIC;
+                }
+                Long.parseLong(p.substring(2), 16);
+                return NumericPart.HEX;
+            }
+            if (p.length() > 1 && p.charAt(0) == '0') {
+                Long.parseLong(p.substring(1), 8);
+                return NumericPart.OCTAL;
+            }
+            Long.parseLong(p, 10);
+            return NumericPart.PLAIN_DECIMAL;
+        } catch (NumberFormatException e) {
+            return NumericPart.NOT_NUMERIC;
+        }
+    }
+
+    /** Package-visible so the alert channel can re-check a freshly-resolved address before sending. */
+    static boolean isBlockedAddress(InetAddress addr) {
         if (addr.isLoopbackAddress()
                 || addr.isLinkLocalAddress()
                 || addr.isSiteLocalAddress()

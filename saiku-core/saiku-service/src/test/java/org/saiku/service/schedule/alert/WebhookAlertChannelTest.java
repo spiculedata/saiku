@@ -262,4 +262,74 @@ public class WebhookAlertChannelTest {
         WebhookAlertChannel channel = new WebhookAlertChannel(http, Duration.ofSeconds(5));
         channel.deliver(event(), AlertChannelConfig.fromPayload(java.util.Map.of("type", "EMAIL_SELF")));
     }
+
+    // --- saiku#1846: DNS-rebinding hardening ---
+
+    /**
+     * A resolver that returns a different address on each successive call — the DNS-rebinding
+     * signature. Used to prove the channel re-resolves before send and refuses when the host flips.
+     */
+    private static final class RebindingResolver implements WebhookUrlValidator.HostResolver {
+        private final String[] ipsInOrder;
+        private int call = 0;
+
+        RebindingResolver(String... ipsInOrder) {
+            this.ipsInOrder = ipsInOrder;
+        }
+
+        @Override
+        public java.net.InetAddress[] resolve(String host) throws java.net.UnknownHostException {
+            String ip = ipsInOrder[Math.min(call, ipsInOrder.length - 1)];
+            call++;
+            return new java.net.InetAddress[] {java.net.InetAddress.getByName(ip)};
+        }
+    }
+
+    @Test
+    public void refusesWhenHostRebindsToInternalBeforeSend() throws Exception {
+        StubHttpClient http = new StubHttpClient();
+        // First resolution (validation) sees a safe public IP; second (pre-send re-check) flips internal.
+        RebindingResolver rebind = new RebindingResolver("93.184.216.34", "169.254.169.254");
+        WebhookAlertChannel channel = new WebhookAlertChannel(http, Duration.ofSeconds(5), rebind);
+        AlertChannelConfig config = AlertChannelConfig.forWebhookUrlUnvalidated("https://hooks.example.com/alert");
+        try {
+            channel.deliver(event(), config);
+            fail("expected a rebinding flip to abort the send");
+        } catch (AlertDeliveryException expected) {
+            assertTrue(expected.getMessage().toLowerCase().contains("rebinding"));
+        }
+        // The socket must never have been used — the request was never dispatched.
+        assertNull("no request should have been sent after detecting a rebind", http.captured);
+    }
+
+    @Test
+    public void refusesWhenHostRebindsToANewPublicAddressBeforeSend() throws Exception {
+        StubHttpClient http = new StubHttpClient();
+        // Even a flip to a *different public* address (not in the approved set) is refused: we send only
+        // to an address the validator actually approved.
+        RebindingResolver rebind = new RebindingResolver("93.184.216.34", "203.0.113.9");
+        WebhookAlertChannel channel = new WebhookAlertChannel(http, Duration.ofSeconds(5), rebind);
+        AlertChannelConfig config = AlertChannelConfig.forWebhookUrlUnvalidated("https://hooks.example.com/alert");
+        try {
+            channel.deliver(event(), config);
+            fail("expected a rebinding flip to abort the send");
+        } catch (AlertDeliveryException expected) {
+            assertTrue(expected.getMessage().toLowerCase().contains("rebinding"));
+        }
+        assertNull(http.captured);
+    }
+
+    @Test
+    public void sendsWhenHostResolutionIsStable() throws Exception {
+        StubHttpClient http = new StubHttpClient();
+        // Stable resolution across both calls: validation + pre-send re-check agree — the send proceeds.
+        RebindingResolver stable = new RebindingResolver("93.184.216.34", "93.184.216.34");
+        WebhookAlertChannel channel = new WebhookAlertChannel(http, Duration.ofSeconds(5), stable);
+        AlertChannelConfig config = AlertChannelConfig.forWebhookUrlUnvalidated("https://hooks.example.com/alert");
+
+        channel.deliver(event(), config);
+
+        assertNotNull("a stable host should send normally", http.captured);
+        assertEquals("https://hooks.example.com/alert", http.captured.uri().toString());
+    }
 }
