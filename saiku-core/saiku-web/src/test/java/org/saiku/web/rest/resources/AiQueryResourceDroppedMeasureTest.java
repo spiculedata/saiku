@@ -49,8 +49,17 @@ public class AiQueryResourceDroppedMeasureTest {
     @Before
     public void setUp() {
         schema = new AiSchema("foodmart/FoodMart/FoodMart/Sales", "Sales", "[FoodMart].[Sales]");
-        schema.measures.put(
-                AiSchema.key("Store Sales"), new AiSchema.Measure("Store Sales", "[Measures].[Store Sales]"));
+        // Store Sales carries a Phase-3 display rename + a #818 synonym, so the
+        // label an agent sends can differ from the result column caption. This
+        // is the exact shape the SEC/QA block was about.
+        AiSchema.Measure storeSales = new AiSchema.Measure("Store Sales", "[Measures].[Store Sales]");
+        storeSales.displayName = "Total Sales";
+        storeSales.synonyms.add("revenue");
+        schema.measures.put(AiSchema.key("Store Sales"), storeSales);
+        // measureAliases: display name + synonym -> canonical map key (mirrors
+        // how OlapAiCubeMetadataService registers Phase-3 aliases / synonyms).
+        schema.measureAliases.put(AiSchema.key("Total Sales"), AiSchema.key("Store Sales"));
+        schema.measureAliases.put(AiSchema.key("revenue"), AiSchema.key("Store Sales"));
         // A measure that (in this fixture) has no join path to the slicer —
         // the stub CellDataSet deliberately omits its column.
         schema.measures.put(
@@ -167,6 +176,68 @@ public class AiQueryResourceDroppedMeasureTest {
         assertEquals("only the row-header + the one measure", 2, row0.size());
     }
 
+    /** SEC/QA regression (end-to-end): request a PRESENT measure by its DISPLAY
+     *  name while the result column returns the CANONICAL caption. The measure
+     *  is present under its canonical label, so it must NOT be phantom-flagged
+     *  unavailable under "Total Sales". */
+    @Test
+    public void presentMeasureRequestedByDisplayNameNotFlagged() {
+        resource.setThinQueryService(new ThinQueryService() {
+            @Override
+            public CellDataSet execute(ThinQuery tq) {
+                return storeSalesOnlyByYear(); // column caption = "Store Sales"
+            }
+        });
+
+        AiQueryRequest req = new AiQueryRequest();
+        req.setCube(new AiCubeRef("foodmart", "FoodMart", "FoodMart", "Sales"));
+        req.setMeasures(Collections.singletonList(new AiMeasureSelection("Total Sales"))); // display name
+        req.setRows(Collections.singletonList(new AiAxisSelection("Time", "Time By", "Year")));
+
+        Response resp = resource.executeAi(req, "records");
+        assertEquals(200, resp.getStatus());
+        AiQueryResponse body = (AiQueryResponse) resp.getEntity();
+
+        for (Map<String, Object> row : body.getData()) {
+            assertFalse("must not phantom-flag the display name", row.containsKey("Total Sales"));
+            AiCell ss = (AiCell) row.get("Store Sales");
+            assertNotNull("present measure still rendered under its column caption", ss);
+            assertNull("no unavailable reason on a present measure", ss.getUnavailable());
+        }
+    }
+
+    /** SEC/QA regression (end-to-end): request a PRESENT measure by a SYNONYM
+     *  (#818) resolving to a present canonical measure -> nothing flagged. */
+    @Test
+    public void presentMeasureRequestedBySynonymNotFlagged() {
+        resource.setThinQueryService(new ThinQueryService() {
+            @Override
+            public CellDataSet execute(ThinQuery tq) {
+                return storeSalesOnlyByYear(); // column caption = "Store Sales"
+            }
+        });
+
+        AiQueryRequest req = new AiQueryRequest();
+        req.setCube(new AiCubeRef("foodmart", "FoodMart", "FoodMart", "Sales"));
+        req.setMeasures(Collections.singletonList(new AiMeasureSelection("revenue"))); // synonym
+        req.setRows(Collections.singletonList(new AiAxisSelection("Time", "Time By", "Year")));
+
+        Response resp = resource.executeAi(req, "records");
+        assertEquals(200, resp.getStatus());
+        AiQueryResponse body = (AiQueryResponse) resp.getEntity();
+
+        for (Map<String, Object> row : body.getData()) {
+            assertFalse("must not phantom-flag the synonym", row.containsKey("revenue"));
+            AiCell ss = (AiCell) row.get("Store Sales");
+            assertNotNull(ss);
+            assertNull(ss.getUnavailable());
+        }
+        // Nothing dropped -> only the canonical measure appears in metadata.
+        assertFalse(
+                "no phantom dropped measure in metadata",
+                body.getMetadata().getMeasures().contains("revenue"));
+    }
+
     /** Matrix format: the dropped measure lands as a trailing indexed column
      *  with the unavailable reason. */
     @Test
@@ -203,8 +274,10 @@ public class AiQueryResourceDroppedMeasureTest {
 
     @Test
     public void detectDroppedMeasuresFlagsAbsentAndPhrasesReason() {
+        // Two measures, each its own label group. Store Sales present, Warehouse
+        // Cost absent -> exactly one dropped, keyed by its surfacing label.
         Map<String, AiCell> dropped = AiQueryResource.detectDroppedMeasures(
-                Arrays.asList("Store Sales", "Warehouse Cost"),
+                Arrays.asList(Collections.singletonList("Store Sales"), Collections.singletonList("Warehouse Cost")),
                 Collections.singletonList("Store Sales"),
                 Collections.singletonList("Warehouse"));
         assertEquals("exactly one measure dropped", 1, dropped.size());
@@ -217,7 +290,9 @@ public class AiQueryResourceDroppedMeasureTest {
     public void detectDroppedMeasuresIsCaseAndWhitespaceInsensitive() {
         // Requested "unit sales" (lower) matches the present "Unit Sales" column.
         Map<String, AiCell> dropped = AiQueryResource.detectDroppedMeasures(
-                Arrays.asList("  unit sales  "), Collections.singletonList("Unit Sales"), Collections.emptyList());
+                Collections.singletonList(Collections.singletonList("  unit sales  ")),
+                Collections.singletonList("Unit Sales"),
+                Collections.emptyList());
         assertTrue("normalised match — nothing dropped", dropped.isEmpty());
     }
 
@@ -231,10 +306,59 @@ public class AiQueryResourceDroppedMeasureTest {
     @Test
     public void detectDroppedMeasuresGenericReasonWithoutFilters() {
         Map<String, AiCell> dropped = AiQueryResource.detectDroppedMeasures(
-                Collections.singletonList("Warehouse Cost"), Collections.emptyList(), Collections.emptyList());
+                Collections.singletonList(Collections.singletonList("Warehouse Cost")),
+                Collections.emptyList(),
+                Collections.emptyList());
         assertEquals(
                 "no join path to a filtered dimension",
                 dropped.get("Warehouse Cost").getUnavailable());
+    }
+
+    /** Regression for the SEC/QA block: a PRESENT measure whose label group
+     *  carries a DISPLAY-NAME rename (or synonym) that differs from the result
+     *  column caption must NOT be flagged. The measure is present under its
+     *  canonical label; the other labels are just aliases for the SAME measure,
+     *  so grouping means ANY match = present. A flat label set would phantom-
+     *  flag "Total Sales" / "revenue" here. */
+    @Test
+    public void detectDroppedMeasuresDoesNotFlagPresentMeasureWithDisplayRename() {
+        // One measure, three labels: canonical "Store Sales" (the column),
+        // display rename "Total Sales", synonym "revenue". Column returns the
+        // canonical caption only.
+        Map<String, AiCell> dropped = AiQueryResource.detectDroppedMeasures(
+                Collections.singletonList(Arrays.asList("Store Sales", "Total Sales", "revenue")),
+                Collections.singletonList("Store Sales"),
+                Collections.singletonList("Warehouse"));
+        assertTrue("aliased present measure must not be phantom-flagged", dropped.isEmpty());
+    }
+
+    /** Mirror of the above: the column returns the DISPLAY caption and the
+     *  caller sent the canonical (or a synonym). Still one measure, still
+     *  present — nothing dropped. */
+    @Test
+    public void detectDroppedMeasuresDoesNotFlagWhenColumnUsesDisplayCaption() {
+        Map<String, AiCell> dropped = AiQueryResource.detectDroppedMeasures(
+                Collections.singletonList(Arrays.asList("Store Sales", "Total Sales")),
+                Collections.singletonList("Total Sales"),
+                Collections.emptyList());
+        assertTrue("present under the display caption — not dropped", dropped.isEmpty());
+    }
+
+    /** A present measure and a genuinely-dropped measure requested together:
+     *  the present one (with aliases) yields ZERO cells, the dropped one yields
+     *  exactly ONE. */
+    @Test
+    public void detectDroppedMeasuresMixedPresentAliasedAndDropped() {
+        Map<String, AiCell> dropped = AiQueryResource.detectDroppedMeasures(
+                Arrays.asList(
+                        Arrays.asList("Store Sales", "Total Sales", "revenue"),
+                        Collections.singletonList("Warehouse Cost")),
+                Collections.singletonList("Store Sales"),
+                Collections.singletonList("Customer"));
+        assertEquals("only the genuine no-join-path measure is dropped", 1, dropped.size());
+        assertTrue(dropped.containsKey("Warehouse Cost"));
+        assertFalse("aliased present measure produced no cell", dropped.containsKey("Total Sales"));
+        assertFalse("aliased present measure produced no cell", dropped.containsKey("revenue"));
     }
 
     /* ------------------------- ragged-row guard --------------------------- */

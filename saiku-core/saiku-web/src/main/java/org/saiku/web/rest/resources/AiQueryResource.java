@@ -498,40 +498,62 @@ public class AiQueryResource {
         // saiku#1780: pass the requested measure labels + slicer dimensions so
         // buildResponse can surface any measure Mondrian dropped for lack of a
         // join path to a filtered dimension (instead of silently omitting it).
-        AiQueryResponse resp =
-                buildResponse(tq, cds, start, format, requestedMeasureLabels(req, schema), filterDimensionLabels(req));
+        AiQueryResponse resp = buildResponse(
+                tq, cds, start, format, requestedMeasureLabelGroups(req, schema), filterDimensionLabels(req));
         return Response.ok(resp).type(MediaType.APPLICATION_JSON).build();
     }
 
     /**
-     * saiku#1780 — collect the labels an agent might recognise for every
-     * requested measure: the raw name it sent, plus (resolved via the schema)
-     * the canonical name and the display name. Carrying all three lets
-     * {@link #detectDroppedMeasures} match a request against result columns
-     * regardless of whether the caller used the canonical or the display label.
+     * saiku#1780 — for EACH requested measure, collect every label an agent
+     * might recognise it by: the raw name the caller sent, plus (resolved via
+     * the schema) the canonical name and the display-name rename. The labels
+     * are GROUPED per measure — one inner list per requested measure — so
+     * {@link #detectDroppedMeasures} can treat a measure as present if ANY of
+     * its labels matches a result column. A flat label list would falsely flag
+     * a PRESENT measure requested via a synonym (#818) or carrying a display
+     * rename (Phase-3 <datasource>.generated.json) as "unavailable" under its
+     * non-caption label.
+     *
+     * <p>The first entry of each group is the label we surface the "unavailable"
+     * cell under when the measure really was dropped: the canonical name when we
+     * could resolve one, else the raw requested name.
      */
-    private static List<String> requestedMeasureLabels(AiQueryRequest req, AiSchema schema) {
-        List<String> labels = new ArrayList<>();
-        if (req == null || req.getMeasures() == null) return labels;
+    private static List<List<String>> requestedMeasureLabelGroups(AiQueryRequest req, AiSchema schema) {
+        List<List<String>> groups = new ArrayList<>();
+        if (req == null || req.getMeasures() == null) return groups;
         for (org.saiku.service.olap.ai.AiMeasureSelection m : req.getMeasures()) {
             if (m == null || m.getName() == null || m.getName().trim().isEmpty()) continue;
             String requested = m.getName().trim();
-            if (!labels.contains(requested)) labels.add(requested);
+
+            AiSchema.Measure resolved = null;
             if (schema != null) {
-                AiSchema.Measure resolved = schema.measures.get(AiSchema.key(requested));
+                resolved = schema.measures.get(AiSchema.key(requested));
                 if (resolved == null) {
                     String canonKey = schema.measureAliases.get(AiSchema.key(requested));
                     if (canonKey != null) resolved = schema.measures.get(canonKey);
                 }
-                if (resolved != null) {
-                    if (resolved.name != null && !labels.contains(resolved.name)) labels.add(resolved.name);
-                    if (resolved.displayName != null && !labels.contains(resolved.displayName)) {
-                        labels.add(resolved.displayName);
-                    }
+            }
+
+            // Primary/surfacing label first: canonical name when resolvable,
+            // else the raw requested name.
+            java.util.LinkedHashSet<String> labels = new java.util.LinkedHashSet<>();
+            if (resolved != null
+                    && resolved.name != null
+                    && !resolved.name.trim().isEmpty()) {
+                labels.add(resolved.name.trim());
+            } else {
+                labels.add(requested);
+            }
+            labels.add(requested);
+            if (resolved != null) {
+                if (resolved.name != null && !resolved.name.trim().isEmpty()) labels.add(resolved.name.trim());
+                if (resolved.displayName != null && !resolved.displayName.trim().isEmpty()) {
+                    labels.add(resolved.displayName.trim());
                 }
             }
+            groups.add(new ArrayList<>(labels));
         }
-        return labels;
+        return groups;
     }
 
     /** saiku#1780 — the dimension names on the slicer, for the drop reason. */
@@ -2423,11 +2445,15 @@ public class AiQueryResource {
     }
 
     /**
-     * @param requestedMeasureLabels every measure the caller asked for, as
-     *     the labels an agent would recognise (canonical name + display name).
-     *     Used to detect requested-but-absent measures (saiku#1780) — a measure
-     *     with no join path to a filtered dimension is dropped from the result
-     *     by Mondrian, and would otherwise vanish silently.
+     * @param requestedMeasureLabelGroups one label-group per measure the caller
+     *     asked for; each group holds every label that measure is known by
+     *     (canonical name, display-name rename, raw requested name/synonym),
+     *     with the surfacing label first. GROUPED (not flat) so a present
+     *     measure requested via a synonym or display rename isn't falsely
+     *     flagged unavailable. Used to detect requested-but-absent measures
+     *     (saiku#1780) — a measure with no join path to a filtered dimension is
+     *     dropped from the result by Mondrian, and would otherwise vanish
+     *     silently.
      * @param filterDimensions dimensions on the slicer, used to phrase the
      *     "no join path" reason. May be empty.
      */
@@ -2436,7 +2462,7 @@ public class AiQueryResource {
             CellDataSet cds,
             long startedAt,
             String format,
-            List<String> requestedMeasureLabels,
+            List<List<String>> requestedMeasureLabelGroups,
             List<String> filterDimensions) {
         boolean useMatrix = "matrix".equalsIgnoreCase(format);
         AiQueryResponse resp = new AiQueryResponse();
@@ -2624,7 +2650,7 @@ public class AiQueryResource {
                 presentColumns.addAll(seen);
             }
             Map<String, AiCell> dropped =
-                    detectDroppedMeasures(requestedMeasureLabels, presentColumns, filterDimensions);
+                    detectDroppedMeasures(requestedMeasureLabelGroups, presentColumns, filterDimensions);
             if (!dropped.isEmpty()) {
                 // Record the dropped names in metadata.measures too, so the
                 // measures list reflects everything requested, not just what
@@ -2678,10 +2704,18 @@ public class AiQueryResource {
      *
      * <p>A measure with no join path to a filtered/sliced dimension is dropped
      * from the result by Mondrian, so it never appears as a result column.
-     * Matching is normalised (trim + case-insensitive) so a request that used a
-     * measure's display name still matches its canonical caption column, and
-     * vice-versa — {@code requestedMeasureLabels} is expected to carry BOTH the
-     * canonical name and the display name for each requested measure.
+     *
+     * <p>Labels are GROUPED per measure: each inner list holds every label a
+     * single requested measure is known by (canonical name, display-name
+     * rename, raw requested name/synonym), surfacing label first. A measure is
+     * "dropped" ONLY IF NONE of its labels appears in the present-column set —
+     * matched normalised (trim + case-insensitive). This is the load-bearing
+     * correctness rule: a PRESENT measure requested via a synonym (#818) or
+     * carrying a display rename (Phase-3 <datasource>.generated.json) must NOT
+     * be flagged just because one of its non-caption labels isn't a column.
+     * Each dropped measure yields exactly ONE unavailable cell, keyed by its
+     * surfacing label; a present measure yields ZERO, no matter how many labels
+     * it carries.
      *
      * <p>Package-private + static for unit-testability.
      *
@@ -2689,9 +2723,11 @@ public class AiQueryResource {
      *     cell. Empty (never null) when nothing was dropped — the common case.
      */
     static Map<String, AiCell> detectDroppedMeasures(
-            List<String> requestedMeasureLabels, List<String> presentColumns, List<String> filterDimensions) {
+            List<List<String>> requestedMeasureLabelGroups,
+            List<String> presentColumns,
+            List<String> filterDimensions) {
         Map<String, AiCell> dropped = new LinkedHashMap<>();
-        if (requestedMeasureLabels == null || requestedMeasureLabels.isEmpty()) return dropped;
+        if (requestedMeasureLabelGroups == null || requestedMeasureLabelGroups.isEmpty()) return dropped;
 
         java.util.Set<String> present = new java.util.HashSet<>();
         if (presentColumns != null) {
@@ -2702,20 +2738,25 @@ public class AiQueryResource {
 
         String reason = droppedMeasureReason(filterDimensions);
 
-        // requestedMeasureLabels alternates/carries canonical+display labels for
-        // each measure. Dedup on the label we surface, and treat a measure as
-        // present if ANY of its labels matched a present column.
-        java.util.Set<String> requestedSeen = new java.util.LinkedHashSet<>();
-        for (String label : requestedMeasureLabels) {
-            if (label == null || label.trim().isEmpty()) continue;
-            requestedSeen.add(label.trim());
-        }
-        for (String label : requestedSeen) {
-            if (present.contains(label.toLowerCase(java.util.Locale.ROOT))) continue;
-            // Not present under this label. Only emit once per surfaced label.
-            if (!dropped.containsKey(label)) {
-                dropped.put(label, AiCell.unavailable(reason));
+        for (List<String> group : requestedMeasureLabelGroups) {
+            if (group == null || group.isEmpty()) continue;
+
+            // A measure is present if ANY of its labels matches a column.
+            boolean anyPresent = false;
+            String surfacingLabel = null;
+            for (String label : group) {
+                if (label == null || label.trim().isEmpty()) continue;
+                String trimmed = label.trim();
+                if (surfacingLabel == null) surfacingLabel = trimmed; // first non-blank = surfacing label
+                if (present.contains(trimmed.toLowerCase(java.util.Locale.ROOT))) {
+                    anyPresent = true;
+                    break;
+                }
             }
+            if (anyPresent || surfacingLabel == null) continue;
+
+            // Dropped: emit exactly one cell, keyed by the surfacing label.
+            dropped.putIfAbsent(surfacingLabel, AiCell.unavailable(reason));
         }
         return dropped;
     }
