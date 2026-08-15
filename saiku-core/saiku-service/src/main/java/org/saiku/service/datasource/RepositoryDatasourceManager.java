@@ -214,6 +214,14 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
     public SaikuDatasource addDatasource(SaikuDatasource datasource) throws Exception {
         DataSource ds = new DataSource(datasource);
 
+        // saiku#1864: the load path decorates every name as `<workspace>_<storedName>`
+        // (FilesystemRepositoryManager.getAllDataSources). Nothing undid that here, so a client
+        // that read a datasource, changed a field and wrote it back saved `unknown_foo.sds`
+        // ALONGSIDE the original `foo.sds` — a duplicate sharing the same id, with the original
+        // name still serving the old catalog. Strip the decoration so read-modify-write lands on
+        // the datasource it came from.
+        ds.setName(DatasourceNameDecoration.undecorate(ds.getName(), currentWorkspaceKey()));
+
         if (ds.getCsv() != null && ds.getCsv().equals("true")) {
             String split[] = ds.getLocation().split("=");
             String loc = split[2];
@@ -281,14 +289,15 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
 
             irm.saveDataSource(ds, separator + "datasources" + separator + ds.getName() + ".sds", "fixme");
 
-            String name = ds.getName();
+            // Cache under the decorated name — the key a reload would produce (saiku#1864).
+            String name = decoratedName(ds.getName());
 
             // Adding the connection before refreshing it
             // Preserve the incoming type (OLAP/OSSIE) rather than hard-coding OLAP — Ossie
             // datasources need their type carried through so the connection factory picks the
             // right ISaikuConnection subclass.
             SaikuDatasource sds = new SaikuDatasource(name, datasource.getType(), datasource.getProperties());
-            datasourcesForCurrentWorkspace().put(ds.getName(), sds);
+            datasourcesForCurrentWorkspace().put(name, sds);
 
             // In a workspace environment it is necessary to prefix the datasource name with the workspace name
             connectionManager.refreshConnection(name);
@@ -296,7 +305,10 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
             irm.saveDataSource(ds, separator + "datasources" + separator + ds.getName() + ".sds", "fixme");
         }
 
-        String name = ds.getName();
+        // The FILE is stored undecorated (see the strip at the top of this method), but the cache
+        // has to be keyed the way a reload would key it — decorated — or every lookup between now
+        // and the next restart misses (saiku#1864).
+        String name = decoratedName(ds.getName());
         SaikuDatasource sds = new SaikuDatasource(name, SaikuDatasource.Type.OLAP, datasource.getProperties());
 
         // Cache per-workspace — see datasourcesForCurrentWorkspace() for the
@@ -304,6 +316,18 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
         datasourcesForCurrentWorkspace().put(name, sds);
 
         return datasource;
+    }
+
+    /**
+     * The name a stored datasource is surfaced under, i.e. what {@code getAllDataSources} will call
+     * it after the next load. Keep this the inverse of {@link DatasourceNameDecoration#undecorate}.
+     */
+    private String decoratedName(String storedName) {
+        String workspace = currentWorkspaceKey();
+        if (storedName == null || workspace == null || workspace.isEmpty()) {
+            return storedName;
+        }
+        return storedName.startsWith(workspace + "_") ? storedName : workspace + "_" + storedName;
     }
 
     public SaikuDatasource setDatasource(SaikuDatasource datasource) throws Exception {

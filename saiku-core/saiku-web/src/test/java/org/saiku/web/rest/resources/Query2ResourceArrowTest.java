@@ -149,7 +149,16 @@ public class Query2ResourceArrowTest {
         @Override
         public CellDataSet execute(ThinQuery tq) {
             installContext(tq);
-            return new CellDataSet();
+            // saiku#1865: this used to return a bare `new CellDataSet()`, whose null headers and
+            // body make RestUtil.convert return null — so execute() NPE'd and answered its error
+            // path. Both tests still passed, because that error path ALSO returned 200 with a
+            // JSON QueryResult, which is exactly what they asserted. Now that failures carry a
+            // real status the vacuity is visible, so hand back a genuinely convertible (empty)
+            // result and let the tests assert success on purpose.
+            CellDataSet cds = new CellDataSet(0, 0);
+            cds.setCellSetHeaders(new org.saiku.olap.dto.resultset.AbstractBaseCell[0][0]);
+            cds.setCellSetBody(new org.saiku.olap.dto.resultset.AbstractBaseCell[0][0]);
+            return cds;
         }
 
         @Override

@@ -37,10 +37,14 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import mondrian.olap.MondrianException;
+import mondrian.olap.ResourceLimitExceededException;
+import mondrian.olap.ResultLimitExceededException;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.olap4j.CellSet;
+import org.olap4j.OlapException;
 import org.saiku.olap.dto.SimpleCubeElement;
 import org.saiku.olap.dto.resultset.AbstractBaseCell;
 import org.saiku.olap.dto.resultset.CellDataSet;
@@ -49,6 +53,7 @@ import org.saiku.olap.query2.ThinQuery;
 import org.saiku.olap.result.ArrowCellsetWriter;
 import org.saiku.olap.result.ArrowDrillthroughWriter;
 import org.saiku.olap.util.SaikuProperties;
+import org.saiku.olap.util.exception.SaikuOlapException;
 import org.saiku.service.async.AsyncQueryHandle;
 import org.saiku.service.async.AsyncQueryService;
 import org.saiku.service.olap.ThinQueryService;
@@ -338,11 +343,73 @@ public class Query2Resource {
             return Response.ok(qr).type(MediaType.APPLICATION_JSON).build();
         } catch (Exception e) {
             log.error("Cannot execute query (" + tq + ")", e);
-            String error = ExceptionUtils.getRootCauseMessage(e);
-            return Response.ok(new QueryResult(error))
-                    .type(MediaType.APPLICATION_JSON)
-                    .build();
+            return queryFailure(e);
         }
+    }
+
+    /**
+     * Turn a query failure into a response carrying the right HTTP status.
+     *
+     * <p>saiku#1865: every failure used to come back as {@code 200 OK} with the message tucked in
+     * the envelope's {@code error} field. That is invisible to anything that reasons about
+     * transport — proxies, retry middleware, monitoring, and any API client that (reasonably)
+     * treats 2xx as success. The body shape is deliberately UNCHANGED: it is still a
+     * {@link QueryResult} with {@code error} populated, because that is what the UI renders inline
+     * where the grid would be, and what existing clients parse.
+     *
+     * <p>Classification is by exception type, not by sniffing messages. A {@link SaikuOlapException}
+     * anywhere in the cause chain means the request named something that could not be resolved — an
+     * unknown connection, cube, or member — which the caller can fix, so 400. Anything else is ours
+     * and reports 500.
+     */
+    private Response queryFailure(Exception e) {
+        String error = ExceptionUtils.getRootCauseMessage(e);
+        Status status = isClientError(e) ? Status.BAD_REQUEST : Status.INTERNAL_SERVER_ERROR;
+        return Response.status(status)
+                .entity(new QueryResult(error))
+                .type(MediaType.APPLICATION_JSON)
+                .build();
+    }
+
+    /**
+     * True when the cause chain describes something the CALLER got wrong, rather than something
+     * that went wrong on our side.
+     *
+     * <p>Three signals, all by exception type — deliberately not by message text, which is
+     * localised, version-dependent and the first thing to drift:
+     *
+     * <ul>
+     *   <li>{@link SaikuOlapException} — Saiku could not resolve a connection or a cube.
+     *   <li>A {@link MondrianException} with no {@link SQLException} beneath it — the query failed
+     *       to parse or resolve, so it never reached the database. A typo'd measure lands here, and
+     *       it is by far the most common query failure there is.
+     *   <li>…except the resource-limit and cancellation subclasses, which mean the query was
+     *       perfectly valid and we could not finish it. Those are ours.
+     * </ul>
+     *
+     * <p>{@link OlapException} extends {@link SQLException}, so it is excluded from the
+     * reached-the-database test — otherwise every olap4j wrapper would look like a backend fault.
+     */
+    private static boolean isClientError(Throwable t) {
+        boolean sawMondrianFailure = false;
+        for (Throwable c = t; c != null; c = c.getCause() == c ? null : c.getCause()) {
+            if (c instanceof SaikuOlapException) {
+                return true;
+            }
+            // ResultLimitExceededException is the abstract base of the whole family —
+            // MemoryLimitExceededException, QueryTimeoutException and QueryCanceledException all
+            // extend it — so one check covers them.
+            if (c instanceof ResultLimitExceededException || c instanceof ResourceLimitExceededException) {
+                return false;
+            }
+            if (c instanceof SQLException && !(c instanceof OlapException)) {
+                return false; // the query reached the warehouse and the warehouse failed
+            }
+            if (c instanceof MondrianException) {
+                sawMondrianFailure = true;
+            }
+        }
+        return sawMondrianFailure;
     }
 
     private boolean clientPrefersArrow(HttpHeaders headers) {
@@ -835,10 +902,8 @@ public class Query2Resource {
 
         } catch (Exception e) {
             log.error("Cannot execute query (" + queryName + ")", e);
-            String error = ExceptionUtils.getRootCauseMessage(e);
-            return Response.ok(new QueryResult(error))
-                    .type(MediaType.APPLICATION_JSON)
-                    .build();
+            // saiku#1865 — same status classification as /execute; see queryFailure.
+            return queryFailure(e);
 
         } finally {
             // Arrow path materialises rows eagerly into the ByteArrayOutputStream
