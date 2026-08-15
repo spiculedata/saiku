@@ -259,12 +259,38 @@ export async function executeQuery(q: ThinQuery): Promise<QueryResult> {
 		body: JSON.stringify(q)
 	});
 	if (!res.ok) {
-		const text = await res.text().catch(() => '');
-		throw new Error(`execute ${res.status}: ${text.slice(0, 200)}`);
+		// saiku#1865: the server now classifies query failures as 400 (the request named
+		// something that cannot be resolved) or 500, instead of dressing every failure as
+		// 200. The BODY is unchanged — still a QueryResult with `error` populated — so a
+		// failure with a readable envelope is returned, not thrown: CellsetTable and friends
+		// render `result.error` inline where the grid would be, which is where a user is
+		// looking. Only a genuinely unreadable response falls through to a throw.
+		const envelope = await readErrorEnvelope(res);
+		if (envelope) return envelope;
+		throw new Error(`execute ${res.status}`);
 	}
 	// Lazy-load the Arrow adapter so apache-arrow stays out of the initial
 	// bundle. The dynamic import means bundlers emit a separate chunk.
 	return parseResultResponse(res);
+}
+
+/**
+ * Parse a non-2xx query response back into a {@link QueryResult} carrying `error`.
+ *
+ * Returns null when the body is not a query envelope at all (an HTML error page from a proxy,
+ * an auth redirect, an empty 502) — those have no message worth surfacing inline and belong on
+ * the throw path.
+ */
+async function readErrorEnvelope(res: Response): Promise<QueryResult | null> {
+	const text = await res.text().catch(() => '');
+	if (!text) return null;
+	try {
+		const body = JSON.parse(text) as Partial<QueryResult>;
+		if (typeof body?.error !== 'string' || body.error.length === 0) return null;
+		return body as QueryResult;
+	} catch {
+		return null;
+	}
 }
 
 export async function executeQueryAsync(

@@ -49,6 +49,7 @@ import org.saiku.olap.query2.ThinQuery;
 import org.saiku.olap.result.ArrowCellsetWriter;
 import org.saiku.olap.result.ArrowDrillthroughWriter;
 import org.saiku.olap.util.SaikuProperties;
+import org.saiku.olap.util.exception.SaikuOlapException;
 import org.saiku.service.async.AsyncQueryHandle;
 import org.saiku.service.async.AsyncQueryService;
 import org.saiku.service.olap.ThinQueryService;
@@ -338,11 +339,42 @@ public class Query2Resource {
             return Response.ok(qr).type(MediaType.APPLICATION_JSON).build();
         } catch (Exception e) {
             log.error("Cannot execute query (" + tq + ")", e);
-            String error = ExceptionUtils.getRootCauseMessage(e);
-            return Response.ok(new QueryResult(error))
-                    .type(MediaType.APPLICATION_JSON)
-                    .build();
+            return queryFailure(e);
         }
+    }
+
+    /**
+     * Turn a query failure into a response carrying the right HTTP status.
+     *
+     * <p>saiku#1865: every failure used to come back as {@code 200 OK} with the message tucked in
+     * the envelope's {@code error} field. That is invisible to anything that reasons about
+     * transport — proxies, retry middleware, monitoring, and any API client that (reasonably)
+     * treats 2xx as success. The body shape is deliberately UNCHANGED: it is still a
+     * {@link QueryResult} with {@code error} populated, because that is what the UI renders inline
+     * where the grid would be, and what existing clients parse.
+     *
+     * <p>Classification is by exception type, not by sniffing messages. A {@link SaikuOlapException}
+     * anywhere in the cause chain means the request named something that could not be resolved — an
+     * unknown connection, cube, or member — which the caller can fix, so 400. Anything else is ours
+     * and reports 500.
+     */
+    private Response queryFailure(Exception e) {
+        String error = ExceptionUtils.getRootCauseMessage(e);
+        Status status = isClientError(e) ? Status.BAD_REQUEST : Status.INTERNAL_SERVER_ERROR;
+        return Response.status(status)
+                .entity(new QueryResult(error))
+                .type(MediaType.APPLICATION_JSON)
+                .build();
+    }
+
+    /** True when the cause chain carries a resolution failure the caller can correct. */
+    private static boolean isClientError(Throwable t) {
+        for (Throwable c = t; c != null; c = c.getCause() == c ? null : c.getCause()) {
+            if (c instanceof SaikuOlapException) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean clientPrefersArrow(HttpHeaders headers) {
@@ -835,10 +867,8 @@ public class Query2Resource {
 
         } catch (Exception e) {
             log.error("Cannot execute query (" + queryName + ")", e);
-            String error = ExceptionUtils.getRootCauseMessage(e);
-            return Response.ok(new QueryResult(error))
-                    .type(MediaType.APPLICATION_JSON)
-                    .build();
+            // saiku#1865 — same status classification as /execute; see queryFailure.
+            return queryFailure(e);
 
         } finally {
             // Arrow path materialises rows eagerly into the ByteArrayOutputStream
