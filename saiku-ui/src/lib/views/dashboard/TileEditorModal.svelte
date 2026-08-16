@@ -1187,7 +1187,13 @@
 							<optgroup label="Cubes (MDX)">
 								{#each cubes as c (cubeKey(c))}
 									<option value={cubeKey(c)} selected={cube ? cubeKey(c) === cubeKey(cube) : false}>
-										{c.cubeCaption ?? c.cubeName} ({c.connectionName})
+										<!-- saiku-cloud: show the friendly catalog (schema) name, e.g.
+										     "Orders (ecommerce)", not the internal datasource
+										     connectionName (in Cloud that is an opaque
+										     `cloud__<tenant>__<lineage>__v1__<schema>` string that
+										     means nothing to a user). The list is already scoped to
+										     queryable cubes by /ai/cubes. -->
+										{c.cubeCaption ?? c.cubeName} ({c.catalog})
 									</option>
 								{/each}
 							</optgroup>
