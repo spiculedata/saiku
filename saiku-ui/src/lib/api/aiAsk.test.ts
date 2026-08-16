@@ -56,6 +56,31 @@ describe('aiAsk', () => {
 		expect(out.response?.status).toBe('SUCCESS');
 	});
 
+	test('returns a genuine 2xx zero-row result envelope (a real empty result is NOT an error)', async () => {
+		// A legitimately empty cellset is different from a 403 — this must still come
+		// back as a SUCCESS envelope so the drawer can honestly say "0 rows returned."
+		const body: AskResponse = {
+			degraded: false,
+			model: 'claude-x',
+			request: { cube: { cubeName: 'Sales' }, measures: [{ name: 'Store Sales' }] },
+			response: {
+				queryId: 'q0',
+				status: 'SUCCESS',
+				totalRows: 0,
+				data: [],
+				metadata: { rows: [], columns: [], measures: [], generatedMdx: 'SELECT ...' }
+			},
+			generatedMdx: 'SELECT ...'
+		};
+		mockJson(200, body);
+
+		const out = await askAi(baseReq);
+
+		expect(out.degraded).toBe(false);
+		expect(out.response?.status).toBe('SUCCESS');
+		expect(out.response?.totalRows).toBe(0);
+	});
+
 	test('returns degraded AskResponse on 503 not-configured', async () => {
 		const body: AskResponse = {
 			degraded: true,
@@ -90,6 +115,45 @@ describe('aiAsk', () => {
 		expect(out.degraded).toBe(false);
 		expect(out.response?.status).toBe('VALIDATION_ERROR');
 		expect(out.response?.available).toEqual(['Store Sales', 'Unit Sales']);
+	});
+
+	// Regression (saiku#1811): a 403 from the ask endpoint used to be returned as a
+	// zero-row AskResponse envelope, and the drawer rendered it as "0 rows returned."
+	// A 403 with an error body that ISN'T a degraded envelope MUST throw, carrying
+	// the status, so the drawer can surface an auth/session error instead.
+	test('throws AiAskTransportError with status 403 on forbidden (not a zero-row success)', async () => {
+		mockJson(403, { reason: 'Session expired — log in to continue' });
+		try {
+			await askAi(baseReq);
+			expect.fail('should have thrown');
+		} catch (e) {
+			expect(e).toBeInstanceOf(AiAskTransportError);
+			expect((e as AiAskTransportError).status).toBe(403);
+			expect((e as AiAskTransportError).message).toContain('Session expired');
+		}
+	});
+
+	test('throws AiAskTransportError with status 401 on unauthorized', async () => {
+		mockJson(401, { message: 'Not authorized' });
+		try {
+			await askAi(baseReq);
+			expect.fail('should have thrown');
+		} catch (e) {
+			expect(e).toBeInstanceOf(AiAskTransportError);
+			expect((e as AiAskTransportError).status).toBe(401);
+		}
+	});
+
+	test('throws AiAskTransportError with status 500 even when body parses as JSON', async () => {
+		// A 5xx JSON body that isn't a degraded envelope is a server error, not data.
+		mockJson(500, { some: 'error object', totalRows: 0 });
+		try {
+			await askAi(baseReq);
+			expect.fail('should have thrown');
+		} catch (e) {
+			expect(e).toBeInstanceOf(AiAskTransportError);
+			expect((e as AiAskTransportError).status).toBe(500);
+		}
 	});
 
 	test('throws AiAskTransportError on empty body', async () => {

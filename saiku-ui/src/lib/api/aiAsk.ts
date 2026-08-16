@@ -149,8 +149,12 @@ export class AiAskTransportError extends Error {
 	}
 }
 
-/** POST /rest/saiku/api/ai/ask. Never throws on 4xx / 5xx whose body parses
- *  as JSON — that JSON is the AskResponse envelope carrying a degraded reason. */
+/** POST /rest/saiku/api/ai/ask. Returns the AskResponse envelope only on a 2xx
+ *  result OR a 503 degraded envelope (`degraded:true`, the "not configured" /
+ *  provider-down path the drawer shows as an amber banner). Every other non-2xx
+ *  (401/403 auth, 5xx, or a body that isn't a real envelope) THROWS
+ *  AiAskTransportError carrying the status — so the caller surfaces the real
+ *  error instead of rendering a 403 as "0 rows returned." */
 export async function askAi(req: AskRequest): Promise<AskResponse> {
 	let res: Response;
 	try {
@@ -168,15 +172,41 @@ export async function askAi(req: AskRequest): Promise<AskResponse> {
 	}
 
 	const text = await res.text();
-	if (!text) {
-		throw new AiAskTransportError(`askAi -> ${res.status}: empty body`, res.status);
+	let parsed: AskResponse | undefined;
+	if (text) {
+		try {
+			parsed = JSON.parse(text) as AskResponse;
+		} catch {
+			parsed = undefined;
+		}
 	}
-	let parsed: AskResponse;
-	try {
-		parsed = JSON.parse(text) as AskResponse;
-	} catch (e) {
+
+	// A non-2xx status is an ERROR, not a zero-row success — UNLESS the body is a
+	// legitimate degraded envelope. The server returns 503 with {degraded:true}
+	// for the "AI not configured" / provider-down path; that IS a real AskResponse
+	// the drawer surfaces as an amber banner, so let it through. Every other
+	// non-2xx (401/403 auth, 5xx server error, or an error body that isn't a
+	// proper AskResponse) MUST throw so the caller renders the real error rather
+	// than falling through to "0 rows returned." off a missing cellset.
+	if (!res.ok) {
+		if (parsed && parsed.degraded === true) {
+			return parsed;
+		}
+		// Prefer a server-supplied reason/message/error; fall back to a status-based
+		// default so 401/403 read as auth problems, not empty data.
+		const p = parsed as Record<string, unknown> | undefined;
+		const serverMsg = p && (p.reason ?? p.message ?? p.error);
+		const message =
+			typeof serverMsg === 'string' && serverMsg.trim().length > 0
+				? serverMsg
+				: `askAi -> ${res.status}`;
+		throw new AiAskTransportError(message, res.status);
+	}
+
+	// 2xx but no parseable body — cannot be a genuine cellset result; treat as transport error.
+	if (!parsed) {
 		throw new AiAskTransportError(
-			`askAi -> ${res.status}: non-JSON response (${(e as Error).message})`,
+			text ? `askAi -> ${res.status}: non-JSON response` : `askAi -> ${res.status}: empty body`,
 			res.status
 		);
 	}
