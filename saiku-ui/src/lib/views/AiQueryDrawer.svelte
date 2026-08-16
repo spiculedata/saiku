@@ -265,6 +265,23 @@
 		return `t${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 	}
 
+	/**
+	 * Map a failed ask into a user-facing error string. An AiAskTransportError now
+	 * carries the HTTP status (see aiAsk.ts), so a 401/403 is surfaced as an
+	 * auth/permission problem — NOT swallowed into a "0 rows returned." success.
+	 * 5xx and unknown statuses fall back to the generic "AI ask failed: {message}"
+	 * so the server's reason (if any) still reaches the user.
+	 */
+	function askErrorText(e: unknown): string {
+		if (e instanceof AiAskTransportError) {
+			if (e.status === 401 || e.status === 403) {
+				return i18n.t('workspace.aiQuery.authError');
+			}
+			return i18n.t('workspace.aiQuery.transportError').replace('{message}', e.message);
+		}
+		return i18n.t('workspace.aiQuery.transportError').replace('{message}', (e as Error).message);
+	}
+
 	async function submit(): Promise<void> {
 		const question = prompt.trim();
 		if (!question || inflight) return;
@@ -325,13 +342,12 @@
 				currentQuery
 			});
 		} catch (e) {
-			const message = e instanceof AiAskTransportError ? e.message : (e as Error).message;
 			turns = [
 				...turns,
 				{
 					id: nextId(),
 					role: 'error',
-					text: i18n.t('workspace.aiQuery.transportError').replace('{message}', message)
+					text: askErrorText(e)
 				}
 			];
 			emailComposer.stopPreparing();
@@ -696,13 +712,12 @@
 				onError: () => {}
 			});
 		} catch (e) {
-			const message = e instanceof AiAskTransportError ? e.message : (e as Error).message;
 			turns = [
 				...turns,
 				{
 					id: nextId(),
 					role: 'error',
-					text: i18n.t('workspace.aiQuery.transportError').replace('{message}', message),
+					text: askErrorText(e),
 					model
 				}
 			];
