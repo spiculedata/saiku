@@ -594,12 +594,20 @@
 	td.row-header {
 		text-align: left;
 	}
-	/* saiku#1802: subtotal rows. Weight and a faint ground, not a colour — the
-     row still carries whatever conditional formatting its cells earned, and a
-     second hue there would fight it. */
+	/* saiku#1802: subtotal rows. Weight and a faint tint, not a colour — the row
+	   still carries whatever conditional formatting its cells earned, and a
+	   second hue there would fight it.
+
+	   The tint is mixed from the row's own INK rather than taken from a surface
+	   token. --saiku-app-ground was the obvious choice and the wrong one: on a
+	   light preset the page ground is the same colour as the card, so the
+	   marking resolved to white-on-white and the fix was invisible on screen
+	   while still passing its test. Deriving from the foreground guarantees
+	   contrast against whatever the card is, in any theme. */
 	tr.rollup > td {
 		font-weight: var(--weight-semibold);
-		background: var(--saiku-app-ground, hsl(var(--bg-muted)));
+		background: color-mix(in srgb, var(--saiku-app-fg, hsl(var(--fg))) 8%, transparent);
+		border-top: 1px solid var(--saiku-app-card-border, hsl(var(--border)));
 	}
 	td.clickable {
 		cursor: pointer;
