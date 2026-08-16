@@ -6,7 +6,7 @@
   + the link-similar count.
 -->
 <script lang="ts">
-	import { ArrowLeftRight, X } from 'lucide-svelte';
+	import { ArrowLeftRight, X } from '@lucide/svelte';
 	import type { SchemaCanvasStore } from './state.svelte.js';
 
 	interface Props {

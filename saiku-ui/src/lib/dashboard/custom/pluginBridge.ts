@@ -32,32 +32,32 @@ export const PLUGIN_MAX_H = 4000;
 /** A validated, server-resolvable filter selection (captions/levels the host
  *  will re-resolve against the live cube — NOT trusted MDX). */
 export interface FilterSel {
-  dimension: string;
-  hierarchy: string;
-  level: string;
-  members: string[];
+	dimension: string;
+	hierarchy: string;
+	level: string;
+	members: string[];
 }
 
 /** Host → plugin envelope. `nonce` lets the plugin ignore stray messages too. */
 export interface HostToPlugin {
-  type: "init" | "data" | "theme" | "resize";
-  nonce: string;
-  payload: unknown;
+	type: 'init' | 'data' | 'theme' | 'resize';
+	nonce: string;
+	payload: unknown;
 }
 
 /** Every message shape a plugin is permitted to send the host. */
 export type PluginToHost =
-  | { type: "ready"; nonce: string }
-  | { type: "resize"; nonce: string; height: number }
-  | {
-      type: "filter";
-      nonce: string;
-      dimension: string;
-      hierarchy: string;
-      level: string;
-      members: string[];
-    }
-  | { type: "error"; nonce: string; message: string };
+	| { type: 'ready'; nonce: string }
+	| { type: 'resize'; nonce: string; height: number }
+	| {
+			type: 'filter';
+			nonce: string;
+			dimension: string;
+			hierarchy: string;
+			level: string;
+			members: string[];
+	  }
+	| { type: 'error'; nonce: string; message: string };
 
 /** Max members a single filter message may carry (anti-DoS). */
 const MAX_FILTER_MEMBERS = 500;
@@ -72,55 +72,55 @@ const MAX_ERROR_LEN = 500;
  * NEVER throws — a plugin must not be able to crash the host by sending junk.
  */
 export function handlePluginMessage(
-  raw: unknown,
-  expectNonce: string,
+	raw: unknown,
+	expectNonce: string
 ):
-  | { kind: "ready" }
-  | { kind: "resize"; height: number }
-  | { kind: "filter"; sel: FilterSel }
-  | { kind: "error"; message: string }
-  | null {
-  if (!raw || typeof raw !== "object") return null;
-  const m = raw as Record<string, unknown>;
-  // Authenticate: the sandboxed frame origin is "null", so the nonce — injected
-  // per-mount into this frame's srcdoc — is the only trustworthy authenticator.
-  if (m.nonce !== expectNonce) return null;
-  switch (m.type) {
-    case "ready":
-      return { kind: "ready" };
-    case "resize": {
-      // Only coerce number / numeric-string heights. Coercing an arbitrary
-      // object can THROW (e.g. Number({toString: []}) → TypeError), which would
-      // violate the never-throws contract — so reject non-primitive heights.
-      if (typeof m.height !== "number" && typeof m.height !== "string") return null;
-      const h = Number(m.height);
-      if (!Number.isFinite(h)) return null;
-      return {
-        kind: "resize",
-        height: Math.min(PLUGIN_MAX_H, Math.max(PLUGIN_MIN_H, Math.round(h))),
-      };
-    }
-    case "filter": {
-      if (
-        typeof m.dimension !== "string" ||
-        typeof m.hierarchy !== "string" ||
-        typeof m.level !== "string"
-      ) {
-        return null;
-      }
-      const members = Array.isArray(m.members)
-        ? m.members.filter((x): x is string => typeof x === "string").slice(0, MAX_FILTER_MEMBERS)
-        : [];
-      return {
-        kind: "filter",
-        sel: { dimension: m.dimension, hierarchy: m.hierarchy, level: m.level, members },
-      };
-    }
-    case "error":
-      return { kind: "error", message: String(m.message ?? "").slice(0, MAX_ERROR_LEN) };
-    default:
-      return null;
-  }
+	| { kind: 'ready' }
+	| { kind: 'resize'; height: number }
+	| { kind: 'filter'; sel: FilterSel }
+	| { kind: 'error'; message: string }
+	| null {
+	if (!raw || typeof raw !== 'object') return null;
+	const m = raw as Record<string, unknown>;
+	// Authenticate: the sandboxed frame origin is "null", so the nonce — injected
+	// per-mount into this frame's srcdoc — is the only trustworthy authenticator.
+	if (m.nonce !== expectNonce) return null;
+	switch (m.type) {
+		case 'ready':
+			return { kind: 'ready' };
+		case 'resize': {
+			// Only coerce number / numeric-string heights. Coercing an arbitrary
+			// object can THROW (e.g. Number({toString: []}) → TypeError), which would
+			// violate the never-throws contract — so reject non-primitive heights.
+			if (typeof m.height !== 'number' && typeof m.height !== 'string') return null;
+			const h = Number(m.height);
+			if (!Number.isFinite(h)) return null;
+			return {
+				kind: 'resize',
+				height: Math.min(PLUGIN_MAX_H, Math.max(PLUGIN_MIN_H, Math.round(h)))
+			};
+		}
+		case 'filter': {
+			if (
+				typeof m.dimension !== 'string' ||
+				typeof m.hierarchy !== 'string' ||
+				typeof m.level !== 'string'
+			) {
+				return null;
+			}
+			const members = Array.isArray(m.members)
+				? m.members.filter((x): x is string => typeof x === 'string').slice(0, MAX_FILTER_MEMBERS)
+				: [];
+			return {
+				kind: 'filter',
+				sel: { dimension: m.dimension, hierarchy: m.hierarchy, level: m.level, members }
+			};
+		}
+		case 'error':
+			return { kind: 'error', message: String(m.message ?? '').slice(0, MAX_ERROR_LEN) };
+		default:
+			return null;
+	}
 }
 
 /**
@@ -150,7 +150,7 @@ export function handlePluginMessage(
  * layer via `saiku.security.csp`. See docs/APP-BUILDER-PLUGINS.md.
  */
 export const PLUGIN_CSP =
-  "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'";
+	"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'";
 
 /** The slug rule a plugin id must satisfy — MUST mirror the backend's
  *  {@code TilePluginParser.SAFE_ID} ([a-z0-9] start, then [a-z0-9-], 1–64 chars).
@@ -169,36 +169,40 @@ export const PLUGIN_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
  * config into a srcdoc.
  */
 export function validatePluginOptions(
-  options: unknown,
+	options: unknown
 ): { ok: true; value: Record<string, unknown> } | { ok: false; error: string } {
-  if (options === null || options === undefined) {
-    return { ok: true, value: {} };
-  }
-  if (typeof options !== "object") {
-    return { ok: false, error: "Plugin options must be an object." };
-  }
-  const o = options as Record<string, unknown>;
-  // Refuse the old arbitrary-HTML channel outright (see saiku#1441): plugin HTML
-  // must come from the admin registry, never from tile config.
-  if (o.html !== undefined) {
-    return {
-      ok: false,
-      error: "Inline plugin `html` is no longer supported — reference an installed plugin by `pluginId`.",
-    };
-  }
-  if (o.pluginId !== undefined) {
-    if (typeof o.pluginId !== "string" || !PLUGIN_ID_RE.test(o.pluginId)) {
-      return { ok: false, error: "Plugin `pluginId` must be a slug matching [a-z0-9-] (1–64 chars)." };
-    }
-  }
-  return { ok: true, value: { ...o } };
+	if (options === null || options === undefined) {
+		return { ok: true, value: {} };
+	}
+	if (typeof options !== 'object') {
+		return { ok: false, error: 'Plugin options must be an object.' };
+	}
+	const o = options as Record<string, unknown>;
+	// Refuse the old arbitrary-HTML channel outright (see saiku#1441): plugin HTML
+	// must come from the admin registry, never from tile config.
+	if (o.html !== undefined) {
+		return {
+			ok: false,
+			error:
+				'Inline plugin `html` is no longer supported — reference an installed plugin by `pluginId`.'
+		};
+	}
+	if (o.pluginId !== undefined) {
+		if (typeof o.pluginId !== 'string' || !PLUGIN_ID_RE.test(o.pluginId)) {
+			return {
+				ok: false,
+				error: 'Plugin `pluginId` must be a slug matching [a-z0-9-] (1–64 chars).'
+			};
+		}
+	}
+	return { ok: true, value: { ...o } };
 }
 
 /** Keep only characters that are safe inside a JS string / HTML — our own
  *  generated nonce is already in this set; this is belt-and-braces so a
  *  hostile nonce could never break out of the injected <script> context. */
 function safeNonce(nonce: string): string {
-  return String(nonce).replace(/[^A-Za-z0-9_-]/g, "");
+	return String(nonce).replace(/[^A-Za-z0-9_-]/g, '');
 }
 
 /**
@@ -212,18 +216,18 @@ function safeNonce(nonce: string): string {
  * into an HTML-attribute-escaped `srcdoc` by the component.
  */
 export function buildSrcdoc(pluginHtml: string, nonce: string): string {
-  const n = safeNonce(nonce);
-  // CSP meta MUST be first so it governs everything that follows. The nonce
-  // const is emitted via JSON.stringify over the sanitised value (defence in
-  // depth) so it can never terminate the script early.
-  return (
-    "<!DOCTYPE html><html><head>" +
-    `<meta http-equiv="Content-Security-Policy" content="${PLUGIN_CSP}">` +
-    '<meta charset="utf-8">' +
-    '<meta name="viewport" content="width=device-width, initial-scale=1">' +
-    `<script>window.SAIKU_PLUGIN_NONCE=${JSON.stringify(n)};</script>` +
-    "</head><body>" +
-    (typeof pluginHtml === "string" ? pluginHtml : "") +
-    "</body></html>"
-  );
+	const n = safeNonce(nonce);
+	// CSP meta MUST be first so it governs everything that follows. The nonce
+	// const is emitted via JSON.stringify over the sanitised value (defence in
+	// depth) so it can never terminate the script early.
+	return (
+		'<!DOCTYPE html><html><head>' +
+		`<meta http-equiv="Content-Security-Policy" content="${PLUGIN_CSP}">` +
+		'<meta charset="utf-8">' +
+		'<meta name="viewport" content="width=device-width, initial-scale=1">' +
+		`<script>window.SAIKU_PLUGIN_NONCE=${JSON.stringify(n)};</script>` +
+		'</head><body>' +
+		(typeof pluginHtml === 'string' ? pluginHtml : '') +
+		'</body></html>'
+	);
 }

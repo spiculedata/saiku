@@ -1,177 +1,188 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import { Button } from "$lib/components/ui";
-  import { users, type AdminUser } from "$lib/api/admin";
-  import { toasts } from "$lib/stores/toasts.svelte";
-  import { i18n } from "$lib/stores/i18n.svelte";
-  import ConfirmModal from "$lib/modals/ConfirmModal.svelte";
-  import Modal from "$lib/components/Modal.svelte";
-  import Skeleton from "$lib/components/Skeleton.svelte";
+	import { onMount } from 'svelte';
+	import { Button, Input } from '$lib/components/ui';
+	import { users, type AdminUser } from '$lib/api/admin';
+	import { toasts } from '$lib/stores/toasts.svelte';
+	import { i18n } from '$lib/stores/i18n.svelte';
+	import ConfirmModal from '$lib/modals/ConfirmModal.svelte';
+	import Modal from '$lib/components/Modal.svelte';
+	import { FormField, Skeleton } from '$lib/design-system';
 
-  let list = $state<AdminUser[]>([]);
-  let loading = $state(true);
-  let error = $state<string | null>(null);
+	let list = $state<AdminUser[]>([]);
+	let loading = $state(true);
+	let error = $state<string | null>(null);
 
-  let editing = $state<AdminUser | null>(null);
-  let deleting = $state<AdminUser | null>(null);
+	let editing = $state<AdminUser | null>(null);
+	let deleting = $state<AdminUser | null>(null);
 
-  async function refresh() {
-    loading = true;
-    error = null;
-    try {
-      list = await users.list();
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    } finally {
-      loading = false;
-    }
-  }
+	async function refresh() {
+		loading = true;
+		error = null;
+		try {
+			list = await users.list();
+		} catch (e) {
+			error = e instanceof Error ? e.message : String(e);
+		} finally {
+			loading = false;
+		}
+	}
 
-  onMount(refresh);
+	onMount(refresh);
 
-  function startNew() {
-    editing = { id: 0, username: "", email: "", password: "", roles: ["ROLE_USER"] };
-  }
+	function startNew() {
+		editing = { id: 0, username: '', email: '', password: '', roles: ['ROLE_USER'] };
+	}
 
-  async function save() {
-    if (!editing) return;
-    try {
-      if (editing.id === 0) await users.create(editing);
-      else await users.update(editing);
-      toasts.success("Saved", editing.username);
-      editing = null;
-      await refresh();
-    } catch (e) {
-      toasts.danger("Save failed", e instanceof Error ? e.message : String(e));
-    }
-  }
+	async function save() {
+		if (!editing) return;
+		try {
+			if (editing.id === 0) await users.create(editing);
+			else await users.update(editing);
+			toasts.success('Saved', editing.username);
+			editing = null;
+			await refresh();
+		} catch (e) {
+			toasts.danger('Save failed', e instanceof Error ? e.message : String(e));
+		}
+	}
 
-  async function doDelete() {
-    if (!deleting) return;
-    try {
-      await users.remove(deleting.username);
-      toasts.success("Deleted", deleting.username);
-      deleting = null;
-      await refresh();
-    } catch (e) {
-      toasts.danger("Delete failed", e instanceof Error ? e.message : String(e));
-    }
-  }
+	async function doDelete() {
+		if (!deleting) return;
+		try {
+			await users.remove(deleting.username);
+			toasts.success('Deleted', deleting.username);
+			deleting = null;
+			await refresh();
+		} catch (e) {
+			toasts.danger('Delete failed', e instanceof Error ? e.message : String(e));
+		}
+	}
 
-  function toggleRole(role: string) {
-    if (!editing) return;
-    editing.roles = editing.roles.includes(role)
-      ? editing.roles.filter((r) => r !== role)
-      : [...editing.roles, role];
-  }
+	function toggleRole(role: string) {
+		if (!editing) return;
+		editing.roles = editing.roles.includes(role)
+			? editing.roles.filter((r) => r !== role)
+			: [...editing.roles, role];
+	}
 </script>
 
 <div class="pane">
-  <header class="flex justify-between items-center mb-3">
-    <h2>{i18n.t("admin.tabs.users")}</h2>
-    <Button onclick={startNew}>{i18n.t("admin.addUser")}</Button>
-  </header>
-  {#if error}<p class="callout callout--danger">{error}</p>{/if}
-  {#if loading}
-    <Skeleton rows={4} variant="table" />
-  {:else}
-    <table class="data-grid">
-      <thead><tr>
-        <th>{i18n.t("admin.users.username")}</th>
-        <th>{i18n.t("admin.users.email")}</th>
-        <th>{i18n.t("admin.users.roles")}</th>
-        <th></th>
-      </tr></thead>
-      <tbody>
-        {#each list as u}
-          <tr>
-            <td>{u.username}</td>
-            <td>{u.email ?? ""}</td>
-            <td>{u.roles.join(", ")}</td>
-            <td class="data-grid__actions">
-              <Button variant="outline" onclick={() => (editing = { ...u, password: "" })}>{i18n.t("admin.edit")}</Button>
-              <Button variant="destructive" onclick={() => (deleting = u)}>{i18n.t("admin.delete")}</Button>
-            </td>
-          </tr>
-        {/each}
-        {#if list.length === 0}
-          <tr><td colspan="4" class="data-grid__empty">{i18n.t("admin.empty")}</td></tr>
-        {/if}
-      </tbody>
-    </table>
-  {/if}
+	<header class="mb-3 flex items-center justify-between">
+		<h2>{i18n.t('admin.tabs.users')}</h2>
+		<Button onclick={startNew}>{i18n.t('admin.addUser')}</Button>
+	</header>
+	{#if error}<p class="callout callout--danger">{error}</p>{/if}
+	{#if loading}
+		<Skeleton rows={4} variant="table" />
+	{:else}
+		<table class="data-grid">
+			<thead
+				><tr>
+					<th>{i18n.t('admin.users.username')}</th>
+					<th>{i18n.t('admin.users.email')}</th>
+					<th>{i18n.t('admin.users.roles')}</th>
+					<th></th>
+				</tr></thead
+			>
+			<tbody>
+				{#each list as u}
+					<tr>
+						<td>{u.username}</td>
+						<td>{u.email ?? ''}</td>
+						<td>{u.roles.join(', ')}</td>
+						<td class="data-grid__actions">
+							<Button variant="outline" onclick={() => (editing = { ...u, password: '' })}
+								>{i18n.t('admin.edit')}</Button
+							>
+							<Button variant="destructive" onclick={() => (deleting = u)}
+								>{i18n.t('admin.delete')}</Button
+							>
+						</td>
+					</tr>
+				{/each}
+				{#if list.length === 0}
+					<tr><td colspan="4" class="data-grid__empty">{i18n.t('admin.empty')}</td></tr>
+				{/if}
+			</tbody>
+		</table>
+	{/if}
 </div>
 
-<Modal title={editing?.id ? "Edit user" : "New user"} open={editing !== null} size="md" onClose={() => (editing = null)}>
-  {#if editing}
-    <label class="field">
-      <span class="field__label">Username</span>
-      <input class="field__input" bind:value={editing.username} disabled={editing.id !== 0} />
-    </label>
-    <label class="field">
-      <span class="field__label">Email</span>
-      <input class="field__input" bind:value={editing.email} />
-    </label>
-    <label class="field">
-      <span class="field__label">Password</span>
-      <!-- saiku#1514: the bundled auth reads users.properties; this panel writes a store it
+<Modal
+	title={editing?.id ? 'Edit user' : 'New user'}
+	open={editing !== null}
+	size="md"
+	onClose={() => (editing = null)}
+>
+	{#if editing}
+		<FormField label="Username">
+			<Input bind:value={editing.username} disabled={editing.id !== 0} />
+		</FormField>
+		<FormField label="Email">
+			<Input bind:value={editing.email} />
+		</FormField>
+		<FormField label="Password">
+			<!-- saiku#1514: the bundled auth reads users.properties; this panel writes a store it
            never consults. Rotation is therefore impossible here in every deployment mode, so
            the control is disabled rather than left to fail on submit. The server refuses a
            password change with 501 regardless — this only stops us inviting the attempt. -->
-      <input
-        class="field__input"
-        type="password"
-        bind:value={editing.password}
-        disabled={editing.id !== 0}
-      />
-      {#if editing.id === 0}
-        <p class="field__hint">
-          Adds the account to the @-mention directory. It cannot sign in until it is added to
-          <code>users.properties</code> — the bundled authentication reads that file, not this panel.
-        </p>
-      {:else}
-        <p class="field__hint">
-          Passwords cannot be changed here. Set <code>SAIKU_ADMIN_PASSWORD</code> and restart, or add a
-          bcrypt row to <code>users.properties</code> (<code>htpasswd -nbBC 12 &lt;user&gt; &lt;newpassword&gt;</code>).
-        </p>
-      {/if}
-    </label>
-    <fieldset class="field">
-      <legend class="field__label">Roles</legend>
-      {#each ["ROLE_USER", "ROLE_ADMIN"] as r}
-        <label class="flex items-center gap-2 py-1 px-0">
-          <input type="checkbox" checked={editing.roles.includes(r)} onchange={() => toggleRole(r)} />
-          {r}
-        </label>
-      {/each}
-    </fieldset>
-  {/if}
-  {#snippet footer()}
-    <Button variant="outline" onclick={() => (editing = null)}>{i18n.t("modal.cancel")}</Button>
-    <Button onclick={save}>{i18n.t("modal.save")}</Button>
-  {/snippet}
+			<Input type="password" bind:value={editing.password} disabled={editing.id !== 0} />
+			{#if editing.id === 0}
+				<p class="field__hint">
+					Adds the account to the @-mention directory. It cannot sign in until it is added to
+					<code>users.properties</code> — the bundled authentication reads that file, not this panel.
+				</p>
+			{:else}
+				<p class="field__hint">
+					Passwords cannot be changed here. Set <code>SAIKU_ADMIN_PASSWORD</code> and restart, or
+					add a bcrypt row to <code>users.properties</code> (<code
+						>htpasswd -nbBC 12 &lt;user&gt; &lt;newpassword&gt;</code
+					>).
+				</p>
+			{/if}
+		</FormField>
+		<fieldset class="field">
+			<legend class="field__label">Roles</legend>
+			{#each ['ROLE_USER', 'ROLE_ADMIN'] as r}
+				<label class="flex items-center gap-2 px-0 py-1">
+					<input
+						type="checkbox"
+						checked={editing.roles.includes(r)}
+						onchange={() => toggleRole(r)}
+					/>
+					{r}
+				</label>
+			{/each}
+		</fieldset>
+	{/if}
+	{#snippet footer()}
+		<Button variant="outline" onclick={() => (editing = null)}>{i18n.t('modal.cancel')}</Button>
+		<Button onclick={save}>{i18n.t('modal.save')}</Button>
+	{/snippet}
 </Modal>
 
 <ConfirmModal
-  title="Delete user"
-  message={`Delete user "${deleting?.username ?? ""}"?`}
-  confirmLabel="Delete"
-  variant="danger"
-  open={deleting !== null}
-  onConfirm={doDelete}
-  onCancel={() => (deleting = null)}
+	title="Delete user"
+	message={`Delete user "${deleting?.username ?? ''}"?`}
+	confirmLabel="Delete"
+	variant="danger"
+	open={deleting !== null}
+	onConfirm={doDelete}
+	onCancel={() => (deleting = null)}
 />
 
 <style>
-h2 { margin: 0; }
-  /* .data-grid / .data-grid__actions / .data-grid__empty come from app.css */
-  /* .field__hint is a local convention rather than a global — mirrors TopBottomCountModal.svelte. */
-  .field__hint {
-    margin: var(--space-1) 0 0;
-    color: hsl(var(--fg-subtle));
-    font-size: var(--fs-xs);
-  }
-  .field__hint code {
-    font-size: var(--fs-xs);
-  }
+	h2 {
+		margin: 0;
+	}
+	/* .data-grid / .data-grid__actions / .data-grid__empty come from app.css */
+	/* .field__hint is a local convention rather than a global — mirrors TopBottomCountModal.svelte. */
+	.field__hint {
+		margin: var(--space-1) 0 0;
+		color: hsl(var(--fg-subtle));
+		font-size: var(--fs-xs);
+	}
+	.field__hint code {
+		font-size: var(--fs-xs);
+	}
 </style>

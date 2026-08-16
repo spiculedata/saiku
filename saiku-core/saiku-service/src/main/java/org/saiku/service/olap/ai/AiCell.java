@@ -44,6 +44,18 @@ public class AiCell {
     @JsonInclude(JsonInclude.Include.NON_DEFAULT)
     private boolean suppressed;
 
+    /** saiku#1780 — populated when a requested measure produced NO column in
+     *  the result because it has no join path to a filtered/sliced dimension.
+     *  Rather than silently omitting the measure (the agent then gets fewer
+     *  columns than it asked for, with no explanation), we surface an explicit
+     *  cell whose {@link #value}/{@link #formatted} are null and whose
+     *  {@code unavailable} carries a machine-readable reason, e.g.
+     *  {@code "no join path to filtered dimension(s): Warehouse"}. Mirrors the
+     *  VALIDATION_ERROR self-description style so an agent can act on it.
+     *  {@code NON_NULL} so ordinary cells stay lean on the wire. */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private String unavailable;
+
     public AiCell() {}
 
     public AiCell(Double value, String formatted, String unit) {
@@ -124,6 +136,26 @@ public class AiCell {
 
     public void setSuppressed(boolean v) {
         this.suppressed = v;
+    }
+
+    public String getUnavailable() {
+        return unavailable;
+    }
+
+    public void setUnavailable(String v) {
+        this.unavailable = v;
+    }
+
+    /**
+     * saiku#1780 — build a self-describing "unavailable measure" cell: null
+     * value/formatted, with a machine-readable reason. Used when a requested
+     * measure has no join path to a filtered/sliced dimension and Mondrian
+     * therefore drops it from the result entirely.
+     */
+    public static AiCell unavailable(String reason) {
+        AiCell c = new AiCell(null, null, null);
+        c.unavailable = reason;
+        return c;
     }
 
     /** Best-effort: parse a Mondrian-formatted string back into a Double,

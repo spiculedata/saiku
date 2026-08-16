@@ -1,0 +1,59 @@
+/*
+ * Motion baseline.
+ *
+ * Modals, context menus and toasts appearing instantly reads as UI teleporting
+ * rather than responding. These two short keyframes give every overlay-style
+ * surface a 120ms fade-in, with the panel content taking 200ms and lifting a
+ * hair. Components opt in with the matching `animation:` rule rather than the
+ * motion being imposed globally.
+ *
+ * These live in the design system, not an app stylesheet, because
+ * design-system components depend on them — ContextMenu, Modal and the toast
+ * surfaces all reference `saiku-panel-in` by name. A component that animates
+ * against a keyframe defined in the consuming app is a component that breaks
+ * silently when it moves.
+ *
+ * Kept as vanilla CSS rather than Tailwind arbitrary-value utilities
+ * (`animate-[saiku-overlay-in_120ms_ease]`) — the named form is far clearer in
+ * DevTools when you're working out why something is or isn't animating.
+ *
+ * Import AFTER tokens.css (the durations are tokens) and alongside
+ * tailwind.css:
+ *
+ *   @import "@concepttocloud/saiku-design-system/motion.css";
+ */
+
+@keyframes saiku-overlay-in {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
+}
+
+@keyframes saiku-panel-in {
+	from {
+		opacity: 0;
+		transform: translateY(4px) scale(0.98);
+	}
+	to {
+		opacity: 1;
+		transform: none;
+	}
+}
+
+/*
+ * Suppress all motion for users who ask for it. Deliberately applied at the
+ * `*` level rather than per-component: it has to beat component-local
+ * declarations, and a component author shouldn't have to remember the guard.
+ */
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.001ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.001ms !important;
+	}
+}

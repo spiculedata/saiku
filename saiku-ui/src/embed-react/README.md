@@ -13,19 +13,19 @@ The package peer-depends on **React 18+**. The base `@concepttocloud/saiku-embed
 ## Use
 
 ```tsx
-import { SaikuEmbed } from "@concepttocloud/saiku-embed-react";
+import { SaikuEmbed } from '@concepttocloud/saiku-embed-react';
 
 function Dashboard({ token }: { token: string }) {
-  return (
-    <SaikuEmbed
-      server="https://demo.saiku.bi"
-      token={token}
-      path="homes/admin/Sales.saiku"
-      render="chart"
-      mode="bar"
-      height="480px"
-    />
-  );
+	return (
+		<SaikuEmbed
+			server="https://demo.saiku.bi"
+			token={token}
+			path="homes/admin/Sales.saiku"
+			render="chart"
+			mode="bar"
+			height="480px"
+		/>
+	);
 }
 ```
 
@@ -33,18 +33,18 @@ Importing the package has the side effect of registering the underlying custom e
 
 ## Props
 
-| Prop        | Type                                | Default    | Notes                                                                                       |
-|-------------|-------------------------------------|------------|---------------------------------------------------------------------------------------------|
-| `server`    | `string`                            | _optional_ | Origin of the Saiku launcher. Omit for same-origin embeds.                                  |
-| `path`      | `string`                            | _required_ | Query path / dashboard path / cube ref depending on `kind`.                                 |
-| `kind`      | `"query" \| "dashboard" \| "ai"`    | `"query"`  | Selects the embed flavour.                                                                  |
-| `token`     | `string`                            | _optional_ | Embed token minted server-side. Omit for public grants.                                     |
-| `render`    | `"table" \| "matrix" \| "chart"`    | `"table"`  | Only meaningful for `kind="query"`.                                                         |
-| `mode`      | `"bar" \| "line" \| "pie"`          | `"bar"`    | Only meaningful for `render="chart"`.                                                       |
-| `height`    | `string`                            | `"400px"`  | CSS height of the rendered surface.                                                         |
-| `style`     | `React.CSSProperties`               | _optional_ | Standard React style prop — applied to the custom element itself.                           |
-| `className` | `string`                            | _optional_ | Standard React className prop.                                                              |
-| `id`        | `string`                            | _optional_ | Passed through for e2e selectors.                                                           |
+| Prop        | Type                             | Default    | Notes                                                             |
+| ----------- | -------------------------------- | ---------- | ----------------------------------------------------------------- |
+| `server`    | `string`                         | _optional_ | Origin of the Saiku launcher. Omit for same-origin embeds.        |
+| `path`      | `string`                         | _required_ | Query path / dashboard path / cube ref depending on `kind`.       |
+| `kind`      | `"query" \| "dashboard" \| "ai"` | `"query"`  | Selects the embed flavour.                                        |
+| `token`     | `string`                         | _optional_ | Embed token minted server-side. Omit for public grants.           |
+| `render`    | `"table" \| "matrix" \| "chart"` | `"table"`  | Only meaningful for `kind="query"`.                               |
+| `mode`      | `"bar" \| "line" \| "pie"`       | `"bar"`    | Only meaningful for `render="chart"`.                             |
+| `height`    | `string`                         | `"400px"`  | CSS height of the rendered surface.                               |
+| `style`     | `React.CSSProperties`            | _optional_ | Standard React style prop — applied to the custom element itself. |
+| `className` | `string`                         | _optional_ | Standard React className prop.                                    |
+| `id`        | `string`                         | _optional_ | Passed through for e2e selectors.                                 |
 
 Full type declarations ship in `index.d.ts`.
 
@@ -56,11 +56,11 @@ row-key map like `render="table"` does. Useful for pivot-style reports.
 
 ```tsx
 <SaikuEmbed
-  server="https://saiku.example.com"
-  token={token}
-  path="homes/admin/Sales.saiku"
-  render="matrix"
-  height="500px"
+	server="https://saiku.example.com"
+	token={token}
+	path="homes/admin/Sales.saiku"
+	render="matrix"
+	height="500px"
 />
 ```
 
@@ -74,11 +74,11 @@ scope. Requires an AI-kind token (see "Minting a token" below).
 
 ```tsx
 <SaikuEmbed
-  server="https://saiku.example.com"
-  token={token}
-  kind="ai"
-  path="foodmart/FoodMart/FoodMart/Sales"
-  height="240px"
+	server="https://saiku.example.com"
+	token={token}
+	kind="ai"
+	path="foodmart/FoodMart/FoodMart/Sales"
+	height="240px"
 />
 ```
 
@@ -86,11 +86,11 @@ scope. Requires an AI-kind token (see "Minting a token" below).
 
 ```tsx
 <SaikuEmbed
-  server="https://saiku.example.com"
-  token={token}
-  kind="dashboard"
-  path="homes/admin/exec.saikudash"
-  height="700px"
+	server="https://saiku.example.com"
+	token={token}
+	kind="dashboard"
+	path="homes/admin/exec.saikudash"
+	height="700px"
 />
 ```
 
@@ -100,11 +100,7 @@ If the resource is marked publicly embeddable on the server (see
 "Public grants" in the base package README), omit the token entirely:
 
 ```tsx
-<SaikuEmbed
-  server="https://saiku.example.com"
-  path="shared/public-chart.saiku"
-  render="chart"
-/>
+<SaikuEmbed server="https://saiku.example.com" path="shared/public-chart.saiku" render="chart" />
 ```
 
 ## Minting a token from your server
@@ -116,23 +112,23 @@ admin credentials it needs must never ship client-side.
 
 ```ts
 // app/api/mint-embed-token/route.ts (Next.js App Router example)
-import { mintEmbedToken } from "@concepttocloud/saiku-embed-react";
+import { mintEmbedToken } from '@concepttocloud/saiku-embed-react';
 
 export async function POST(request: Request) {
-  const auth = "Basic " + Buffer.from(
-    `${process.env.SAIKU_USER}:${process.env.SAIKU_PASS}`,
-  ).toString("base64");
+	const auth =
+		'Basic ' +
+		Buffer.from(`${process.env.SAIKU_USER}:${process.env.SAIKU_PASS}`).toString('base64');
 
-  const { token, expiresAt } = await mintEmbedToken({
-    server: process.env.SAIKU_URL!,
-    authorization: auth,
-    resourceKind: "query",
-    resourcePath: "homes/admin/Sales.saiku",
-    ttlHours: 24,
-    label: "Public marketing page",
-  });
+	const { token, expiresAt } = await mintEmbedToken({
+		server: process.env.SAIKU_URL!,
+		authorization: auth,
+		resourceKind: 'query',
+		resourcePath: 'homes/admin/Sales.saiku',
+		ttlHours: 24,
+		label: 'Public marketing page'
+	});
 
-  return Response.json({ token, expiresAt });
+	return Response.json({ token, expiresAt });
 }
 ```
 
@@ -162,18 +158,20 @@ properties on the wrapper:
 
 ```tsx
 <SaikuEmbed
-  server="…"
-  token={token}
-  path="…"
-  style={{
-    "--saiku-embed-fg": "#0f172a",
-    "--saiku-embed-bg": "transparent",
-    "--saiku-embed-border": "#cbd5e1",
-    "--saiku-embed-header-bg": "#f1f5f9",
-    "--saiku-embed-tile-bg": "#ffffff",
-    "--saiku-embed-row-hover": "#e2e8f0",
-    "--saiku-embed-negative": "#b91c1c",
-  } as React.CSSProperties}
+	server="…"
+	token={token}
+	path="…"
+	style={
+		{
+			'--saiku-embed-fg': '#0f172a',
+			'--saiku-embed-bg': 'transparent',
+			'--saiku-embed-border': '#cbd5e1',
+			'--saiku-embed-header-bg': '#f1f5f9',
+			'--saiku-embed-tile-bg': '#ffffff',
+			'--saiku-embed-row-hover': '#e2e8f0',
+			'--saiku-embed-negative': '#b91c1c'
+		} as React.CSSProperties
+	}
 />
 ```
 

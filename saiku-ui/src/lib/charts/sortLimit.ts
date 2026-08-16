@@ -26,42 +26,42 @@
  * Pure: no DOM, no ECharts, no fetches. Tests live alongside.
  */
 
-import type { ChartProjection } from "$lib/charts/build";
+import type { ChartProjection } from '$lib/charts/build';
 
 /** Sort direction for the category axis. "none" = keep the queried order. */
-export type ChartSortDirection = "none" | "asc" | "desc";
+export type ChartSortDirection = 'none' | 'asc' | 'desc';
 
 /** Component-local (transient) sort + limit state for one chart. */
 export interface ChartSortLimit {
-  /** Sort the categories by the chosen measure column, or leave as queried. */
-  direction: ChartSortDirection;
-  /** Which measure column to sort by (index into columnCategories). Clamped
-   *  into range; out-of-range / missing falls back to the first column. */
-  measureIndex?: number;
-  /** Keep only the first N categories AFTER sorting. null / undefined / <=0 =
-   *  no limit. Clamped to the available row count. */
-  topN?: number | null;
+	/** Sort the categories by the chosen measure column, or leave as queried. */
+	direction: ChartSortDirection;
+	/** Which measure column to sort by (index into columnCategories). Clamped
+	 *  into range; out-of-range / missing falls back to the first column. */
+	measureIndex?: number;
+	/** Keep only the first N categories AFTER sorting. null / undefined / <=0 =
+	 *  no limit. Clamped to the available row count. */
+	topN?: number | null;
 }
 
 /** The off / identity state — no sort, no limit. */
-export const NO_SORT_LIMIT: ChartSortLimit = { direction: "none", measureIndex: 0, topN: null };
+export const NO_SORT_LIMIT: ChartSortLimit = { direction: 'none', measureIndex: 0, topN: null };
 
 /** True when the state would change nothing (so callers can skip the work). */
 export function isNoOp(s: ChartSortLimit, rowCount: number): boolean {
-  const limits = s.topN != null && s.topN > 0 && s.topN < rowCount;
-  return s.direction === "none" && !limits;
+	const limits = s.topN != null && s.topN > 0 && s.topN < rowCount;
+	return s.direction === 'none' && !limits;
 }
 
 /* A row that compares "missing" (null / NaN) always sorts after a real value.
  * Two missing rows compare equal (0) so the stable sort keeps their order. */
-function compareMeasure(a: number | null, b: number | null, direction: "asc" | "desc"): number {
-  const aMissing = a == null || Number.isNaN(a);
-  const bMissing = b == null || Number.isNaN(b);
-  if (aMissing && bMissing) return 0;
-  if (aMissing) return 1; // a after b
-  if (bMissing) return -1; // b after a
-  const diff = (a as number) - (b as number);
-  return direction === "asc" ? diff : -diff;
+function compareMeasure(a: number | null, b: number | null, direction: 'asc' | 'desc'): number {
+	const aMissing = a == null || Number.isNaN(a);
+	const bMissing = b == null || Number.isNaN(b);
+	if (aMissing && bMissing) return 0;
+	if (aMissing) return 1; // a after b
+	if (bMissing) return -1; // b after a
+	const diff = (a as number) - (b as number);
+	return direction === 'asc' ? diff : -diff;
 }
 
 /**
@@ -84,51 +84,51 @@ function compareMeasure(a: number | null, b: number | null, direction: "asc" | "
  * drill the wrong cell.
  */
 export function sortLimitOrder(
-  projection: ChartProjection,
-  state: ChartSortLimit = NO_SORT_LIMIT,
+	projection: ChartProjection,
+	state: ChartSortLimit = NO_SORT_LIMIT
 ): number[] {
-  const { rowCategories, columnCategories, matrix } = projection;
-  const rowCount = rowCategories.length;
+	const { rowCategories, columnCategories, matrix } = projection;
+	const rowCount = rowCategories.length;
 
-  // Index permutation so we move labels and matrix rows together in lockstep.
-  let order = rowCategories.map((_, i) => i);
+	// Index permutation so we move labels and matrix rows together in lockstep.
+	let order = rowCategories.map((_, i) => i);
 
-  if (state.direction === "asc" || state.direction === "desc") {
-    // Clamp the measure column into range; default to the first measure. Array's
-    // sort is stable (ES2019+), and we tie-break on original index defensively so
-    // equal rows keep their queried order even on older engines.
-    const colCount = columnCategories.length;
-    const col =
-      colCount > 0
-        ? Math.min(Math.max(state.measureIndex ?? 0, 0), colCount - 1)
-        : 0;
-    order = order
-      .map((idx) => ({ idx, value: matrix[idx]?.[col] ?? null }))
-      .sort((a, b) => compareMeasure(a.value, b.value, state.direction as "asc" | "desc") || a.idx - b.idx)
-      .map((e) => e.idx);
-  }
+	if (state.direction === 'asc' || state.direction === 'desc') {
+		// Clamp the measure column into range; default to the first measure. Array's
+		// sort is stable (ES2019+), and we tie-break on original index defensively so
+		// equal rows keep their queried order even on older engines.
+		const colCount = columnCategories.length;
+		const col = colCount > 0 ? Math.min(Math.max(state.measureIndex ?? 0, 0), colCount - 1) : 0;
+		order = order
+			.map((idx) => ({ idx, value: matrix[idx]?.[col] ?? null }))
+			.sort(
+				(a, b) =>
+					compareMeasure(a.value, b.value, state.direction as 'asc' | 'desc') || a.idx - b.idx
+			)
+			.map((e) => e.idx);
+	}
 
-  // top-N: keep the first N after sorting. Clamp to [1, rowCount]; null / <=0 =
-  // no limit. (>= rowCount is also effectively no limit.)
-  if (state.topN != null && state.topN > 0 && state.topN < rowCount) {
-    order = order.slice(0, state.topN);
-  }
+	// top-N: keep the first N after sorting. Clamp to [1, rowCount]; null / <=0 =
+	// no limit. (>= rowCount is also effectively no limit.)
+	if (state.topN != null && state.topN > 0 && state.topN < rowCount) {
+		order = order.slice(0, state.topN);
+	}
 
-  return order;
+	return order;
 }
 
 export function applySortLimit(
-  projection: ChartProjection,
-  state: ChartSortLimit = NO_SORT_LIMIT,
+	projection: ChartProjection,
+	state: ChartSortLimit = NO_SORT_LIMIT
 ): ChartProjection {
-  const { rowCategories, columnCategories, matrix } = projection;
-  const order = sortLimitOrder(projection, state);
-  return {
-    // Spread first so non-reordered fields (e.g. #1596 categoryAxisName) survive
-    // the sort/limit; the reordered rows/matrix override below.
-    ...projection,
-    rowCategories: order.map((i) => rowCategories[i]),
-    columnCategories,
-    matrix: order.map((i) => matrix[i]),
-  };
+	const { rowCategories, columnCategories, matrix } = projection;
+	const order = sortLimitOrder(projection, state);
+	return {
+		// Spread first so non-reordered fields (e.g. #1596 categoryAxisName) survive
+		// the sort/limit; the reordered rows/matrix override below.
+		...projection,
+		rowCategories: order.map((i) => rowCategories[i]),
+		columnCategories,
+		matrix: order.map((i) => matrix[i])
+	};
 }

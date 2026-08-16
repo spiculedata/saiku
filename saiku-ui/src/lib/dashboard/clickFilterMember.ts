@@ -20,24 +20,24 @@
 
 /** Minimal shape of a member-search hit this matcher needs. */
 export interface MemberHitLike {
-  uniqueName: string;
-  caption: string;
+	uniqueName: string;
+	caption: string;
 }
 
 /** Normalise a caption for comparison: trimmed, case-folded, inner
  *  whitespace collapsed (member captions occasionally arrive padded). */
 function norm(s: string): string {
-  return s.trim().replace(/\s+/g, " ").toLowerCase();
+	return s.trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
 /** The trailing bracketed segment of an MDX unique name, unwrapped:
  *  "[Product].[Drink].[Beer]" -> "Beer". Returns "" when there's no
  *  bracketed tail (so it never accidentally matches a blank caption). */
 export function leafSegment(uniqueName: string): string {
-  const matches = uniqueName.match(/\[([^\]]*)\]/g);
-  if (!matches || matches.length === 0) return "";
-  const last = matches[matches.length - 1];
-  return last.slice(1, -1);
+	const matches = uniqueName.match(/\[([^\]]*)\]/g);
+	if (!matches || matches.length === 0) return '';
+	const last = matches[matches.length - 1];
+	return last.slice(1, -1);
 }
 
 /**
@@ -52,25 +52,25 @@ export function leafSegment(uniqueName: string): string {
  * Beer" resolves a "Beer" click to "Beer".
  */
 export function pickMemberUniqueName(hits: MemberHitLike[], caption: string): string | null {
-  const target = norm(caption);
-  if (!target) return null;
-  let leafFallback: string | null = null;
-  for (const h of hits) {
-    if (!h || typeof h.uniqueName !== "string" || !h.uniqueName) continue;
-    if (typeof h.caption === "string" && norm(h.caption) === target) {
-      return h.uniqueName;
-    }
-    if (leafFallback === null && norm(leafSegment(h.uniqueName)) === target) {
-      leafFallback = h.uniqueName;
-    }
-  }
-  return leafFallback;
+	const target = norm(caption);
+	if (!target) return null;
+	let leafFallback: string | null = null;
+	for (const h of hits) {
+		if (!h || typeof h.uniqueName !== 'string' || !h.uniqueName) continue;
+		if (typeof h.caption === 'string' && norm(h.caption) === target) {
+			return h.uniqueName;
+		}
+		if (leafFallback === null && norm(leafSegment(h.uniqueName)) === target) {
+			leafFallback = h.uniqueName;
+		}
+	}
+	return leafFallback;
 }
 
 /** The (normalised) bracketed segments of a unique name:
  *  "[Time].[Time].[Year].[Q2]" -> ["time","time","year","q2"]. */
 function segments(uniqueName: string): string[] {
-  return (uniqueName.match(/\[([^\]]*)\]/g) ?? []).map((s) => norm(s.slice(1, -1)));
+	return (uniqueName.match(/\[([^\]]*)\]/g) ?? []).map((s) => norm(s.slice(1, -1)));
 }
 
 /**
@@ -87,25 +87,25 @@ function segments(uniqueName: string): string[] {
  * Returns null when nothing matches.
  */
 export function pickMemberUniqueNameForPath(
-  hits: MemberHitLike[],
-  captionPath: string[],
+	hits: MemberHitLike[],
+	captionPath: string[]
 ): string | null {
-  const leaf = captionPath.length ? captionPath[captionPath.length - 1] : "";
-  const target = norm(leaf);
-  if (!target) return null;
-  const valid = hits.filter((h) => h && typeof h.uniqueName === "string" && h.uniqueName);
-  let pool = valid.filter((h) => typeof h.caption === "string" && norm(h.caption) === target);
-  if (pool.length === 0) pool = valid.filter((h) => norm(leafSegment(h.uniqueName)) === target);
-  if (pool.length === 0) return null;
-  if (pool.length === 1) return pool[0].uniqueName;
+	const leaf = captionPath.length ? captionPath[captionPath.length - 1] : '';
+	const target = norm(leaf);
+	if (!target) return null;
+	const valid = hits.filter((h) => h && typeof h.uniqueName === 'string' && h.uniqueName);
+	let pool = valid.filter((h) => typeof h.caption === 'string' && norm(h.caption) === target);
+	if (pool.length === 0) pool = valid.filter((h) => norm(leafSegment(h.uniqueName)) === target);
+	if (pool.length === 0) return null;
+	if (pool.length === 1) return pool[0].uniqueName;
 
-  const parents = captionPath.slice(0, -1).map(norm).filter(Boolean);
-  if (parents.length) {
-    const disambiguated = pool.find((h) => {
-      const segs = segments(h.uniqueName);
-      return parents.every((p) => segs.includes(p));
-    });
-    if (disambiguated) return disambiguated.uniqueName;
-  }
-  return pool[0].uniqueName;
+	const parents = captionPath.slice(0, -1).map(norm).filter(Boolean);
+	if (parents.length) {
+		const disambiguated = pool.find((h) => {
+			const segs = segments(h.uniqueName);
+			return parents.every((p) => segs.includes(p));
+		});
+		if (disambiguated) return disambiguated.uniqueName;
+	}
+	return pool[0].uniqueName;
 }

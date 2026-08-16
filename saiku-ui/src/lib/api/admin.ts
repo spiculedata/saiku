@@ -1,85 +1,89 @@
-const BASE = "/rest/saiku/admin";
+const BASE = '/rest/saiku/admin';
 
 export interface AdminUser {
-  id: number;
-  username: string;
-  email?: string | null;
-  password?: string;
-  roles: string[];
+	id: number;
+	username: string;
+	email?: string | null;
+	password?: string;
+	roles: string[];
 }
 
 export interface AdminDatasource {
-  id: string;
-  name: string;
-  connectionName?: string;
-  driver?: string;
-  location?: string;
-  /**
-   * Legacy client-side type dropdown ("OLAP" | "RELATIONAL"). Not read by the backend
-   * DataSourceMapper — the wire discriminator is {@link connectiontype}. Kept for
-   * backward compatibility with existing saved forms; new code should key off
-   * {@link connectiontype}.
-   */
-  type?: string;
-  /**
-   * Wire discriminator on the server-side DataSourceMapper: `"MONDRIAN" | "XMLA" | "OSSIE"`.
-   * Selects which branch of `toSaikuDataSource()` runs — Mondrian URL wrapping, XMLA URL
-   * wrapping, or Ossie semantic-model wrapping.
-   */
-  connectiontype?: string;
-  username?: string;
-  password?: string;
-  properties?: Record<string, string>;
-  schemaName?: string | null;
-  /**
-   * Path to the Ossie YAML file. Only meaningful when {@link connectiontype} is `"OSSIE"`;
-   * ignored otherwise. Server persists it in the `.sds` XML as an `<ossieYaml>` element.
-   */
-  ossieYaml?: string | null;
+	id: string;
+	name: string;
+	connectionName?: string;
+	driver?: string;
+	location?: string;
+	/**
+	 * Legacy client-side type dropdown ("OLAP" | "RELATIONAL"). Not read by the backend
+	 * DataSourceMapper — the wire discriminator is {@link connectiontype}. Kept for
+	 * backward compatibility with existing saved forms; new code should key off
+	 * {@link connectiontype}.
+	 */
+	type?: string;
+	/**
+	 * Wire discriminator on the server-side DataSourceMapper: `"MONDRIAN" | "XMLA" | "OSSIE"`.
+	 * Selects which branch of `toSaikuDataSource()` runs — Mondrian URL wrapping, XMLA URL
+	 * wrapping, or Ossie semantic-model wrapping.
+	 */
+	connectiontype?: string;
+	username?: string;
+	password?: string;
+	properties?: Record<string, string>;
+	schemaName?: string | null;
+	/**
+	 * Path to the Ossie YAML file. Only meaningful when {@link connectiontype} is `"OSSIE"`;
+	 * ignored otherwise. Server persists it in the `.sds` XML as an `<ossieYaml>` element.
+	 */
+	ossieYaml?: string | null;
 }
 
 export interface AdminSchema {
-  id?: string;
-  name: string;
-  path?: string;
-  type?: string;
-  xml?: string;
+	id?: string;
+	name: string;
+	path?: string;
+	type?: string;
+	xml?: string;
 }
 
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    credentials: "include",
-    headers: { Accept: "application/json" },
-  });
-  if (!res.ok) throw new Error(`${path} -> ${res.status}`);
-  return (await res.json()) as T;
+	const res = await fetch(`${BASE}${path}`, {
+		credentials: 'include',
+		headers: { Accept: 'application/json' }
+	});
+	if (!res.ok) throw new Error(`${path} -> ${res.status}`);
+	return (await res.json()) as T;
 }
 
-async function json<T>(method: "POST" | "PUT" | "DELETE", path: string, body?: unknown): Promise<T | null> {
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    credentials: "include",
-    headers: body ? { "Content-Type": "application/json", Accept: "application/json" } : {},
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const text = await res.text();
-  if (!res.ok) {
-    // saiku#1514: surface the server's explanation, not just the status. AdminResource sends
-    // operator-facing prose on the paths that matter — the 501 refusing a password change, and
-    // the pre-existing 400 carrying the password-policy rule that was broken — and both were
-    // being discarded here, leaving the user with a bare "/users/admin -> 501".
-    const detail = text.trim();
-    throw new Error(detail ? `${path} -> ${res.status}\n${detail}` : `${path} -> ${res.status}`);
-  }
-  return text ? (JSON.parse(text) as T) : null;
+async function json<T>(
+	method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+	path: string,
+	body?: unknown
+): Promise<T | null> {
+	const res = await fetch(`${BASE}${path}`, {
+		method,
+		credentials: 'include',
+		headers: body ? { 'Content-Type': 'application/json', Accept: 'application/json' } : {},
+		body: body ? JSON.stringify(body) : undefined
+	});
+	const text = await res.text();
+	if (!res.ok) {
+		// saiku#1514: surface the server's explanation, not just the status. AdminResource sends
+		// operator-facing prose on the paths that matter — the 501 refusing a password change, and
+		// the pre-existing 400 carrying the password-policy rule that was broken — and both were
+		// being discarded here, leaving the user with a bare "/users/admin -> 501".
+		const detail = text.trim();
+		throw new Error(detail ? `${path} -> ${res.status}\n${detail}` : `${path} -> ${res.status}`);
+	}
+	return text ? (JSON.parse(text) as T) : null;
 }
 
 export const users = {
-  list: () => get<AdminUser[]>("/users"),
-  get: (id: number) => get<AdminUser>(`/users/${id}`),
-  create: (u: AdminUser) => json<AdminUser>("POST", "/users", u),
-  update: (u: AdminUser) => json<AdminUser>("PUT", `/users/${encodeURIComponent(u.username)}`, u),
-  remove: (username: string) => json<null>("DELETE", `/users/${encodeURIComponent(username)}`),
+	list: () => get<AdminUser[]>('/users'),
+	get: (id: number) => get<AdminUser>(`/users/${id}`),
+	create: (u: AdminUser) => json<AdminUser>('POST', '/users', u),
+	update: (u: AdminUser) => json<AdminUser>('PUT', `/users/${encodeURIComponent(u.username)}`, u),
+	remove: (username: string) => json<null>('DELETE', `/users/${encodeURIComponent(username)}`)
 };
 
 /**
@@ -90,12 +94,12 @@ export const users = {
  * show it as an option).
  */
 export async function listAllRoles(): Promise<string[]> {
-  const all = await users.list();
-  const set = new Set<string>(["ROLE_ADMIN", "ROLE_USER"]);
-  for (const u of all) {
-    for (const r of u.roles) set.add(r);
-  }
-  return Array.from(set).sort();
+	const all = await users.list();
+	const set = new Set<string>(['ROLE_ADMIN', 'ROLE_USER']);
+	for (const u of all) {
+		for (const r of u.roles) set.add(r);
+	}
+	return Array.from(set).sort();
 }
 
 /**
@@ -112,116 +116,135 @@ export async function listAllRoles(): Promise<string[]> {
  * because the reads were reading keys the server never sent.
  */
 interface DatasourceWire {
-  id?: string;
-  connectionname?: string;
-  connectiontype?: string;
-  jdbcurl?: string;
-  schema?: string;
-  driver?: string;
-  username?: string;
-  password?: string;
-  ossieYaml?: string | null;
+	id?: string;
+	connectionname?: string;
+	connectiontype?: string;
+	jdbcurl?: string;
+	schema?: string;
+	driver?: string;
+	username?: string;
+	password?: string;
+	ossieYaml?: string | null;
 }
 
 /** Derive the UI's legacy `type` dropdown value from the wire discriminator. */
 function typeFromConnectiontype(ct?: string): string {
-  if (ct === "OSSIE") return "OSSIE";
-  if (ct === "XMLA") return "RELATIONAL";
-  return "OLAP";
+	if (ct === 'OSSIE') return 'OSSIE';
+	if (ct === 'XMLA') return 'RELATIONAL';
+	return 'OLAP';
 }
 
 /** Map the UI datasource shape onto the server `DataSourceMapper` wire contract. */
 export function toDatasourceWire(ds: AdminDatasource): DatasourceWire {
-  return {
-    id: ds.id || undefined,
-    connectionname: ds.name,
-    connectiontype: ds.connectiontype,
-    jdbcurl: ds.location,
-    schema: ds.schemaName ?? undefined,
-    driver: ds.driver,
-    username: ds.username,
-    // Only send a password when the operator actually typed one, so editing a datasource
-    // without touching the password field doesn't blank the stored credential.
-    password: ds.password ? ds.password : undefined,
-    ossieYaml: ds.ossieYaml ?? undefined,
-  };
+	return {
+		id: ds.id || undefined,
+		connectionname: ds.name,
+		connectiontype: ds.connectiontype,
+		jdbcurl: ds.location,
+		schema: ds.schemaName ?? undefined,
+		driver: ds.driver,
+		username: ds.username,
+		// Only send a password when the operator actually typed one, so editing a datasource
+		// without touching the password field doesn't blank the stored credential.
+		password: ds.password ? ds.password : undefined,
+		ossieYaml: ds.ossieYaml ?? undefined
+	};
 }
 
 /** Map a server `DataSourceMapper` JSON row back onto the UI datasource shape. */
 export function fromDatasourceWire(w: DatasourceWire): AdminDatasource {
-  return {
-    id: w.id ?? "",
-    name: w.connectionname ?? "",
-    connectionName: w.connectionname,
-    connectiontype: w.connectiontype,
-    type: typeFromConnectiontype(w.connectiontype),
-    driver: w.driver,
-    location: w.jdbcurl,
-    schemaName: w.schema ?? null,
-    username: w.username,
-    // Server never returns the password (DataSourceMapper marks it WRITE_ONLY).
-    ossieYaml: w.ossieYaml ?? null,
-  };
+	return {
+		id: w.id ?? '',
+		name: w.connectionname ?? '',
+		connectionName: w.connectionname,
+		connectiontype: w.connectiontype,
+		type: typeFromConnectiontype(w.connectiontype),
+		// saiku#1856: every field the edit modal binds with `bind:value` MUST be a string, never
+		// undefined. Svelte 5 throws props_invalid_value on a bindable prop receiving undefined —
+		// undefined means "use the default", and a two-way binding has none — which took the whole
+		// modal down silently, with only a console exception. Opening ANY existing datasource for
+		// edit was affected; "+ Add datasource" worked because startNew() already defaults these
+		// to ''. Do not "simplify" these back to bare `w.x`.
+		driver: w.driver ?? '',
+		location: w.jdbcurl ?? '',
+		schemaName: w.schema ?? null,
+		username: w.username ?? '',
+		// The server never returns the password (DataSourceMapper marks it WRITE_ONLY), so it is
+		// always absent on the wire — but the form still binds it, so it has to be '' not undefined.
+		password: '',
+		ossieYaml: w.ossieYaml ?? null
+	};
 }
 
 export const adminDatasources = {
-  list: async () => (await get<DatasourceWire[]>("/datasources")).map(fromDatasourceWire),
-  refresh: async (id: string) => {
-    const w = await json<DatasourceWire>("PUT", `/datasources/${encodeURIComponent(id)}/refresh`);
-    return w ? fromDatasourceWire(w) : null;
-  },
-  create: async (ds: AdminDatasource) => {
-    const w = await json<DatasourceWire>("POST", "/datasources", toDatasourceWire(ds));
-    return w ? fromDatasourceWire(w) : null;
-  },
-  update: async (ds: AdminDatasource) => {
-    const w = await json<DatasourceWire>(
-      "PUT",
-      `/datasources/${encodeURIComponent(ds.id)}`,
-      toDatasourceWire(ds),
-    );
-    return w ? fromDatasourceWire(w) : null;
-  },
-  remove: (id: string) => json<null>("DELETE", `/datasources/${encodeURIComponent(id)}`),
+	list: async () => (await get<DatasourceWire[]>('/datasources')).map(fromDatasourceWire),
+	/**
+	 * Re-open a datasource's OLAP connection so schema edits take effect without a restart.
+	 *
+	 * saiku#1862: two things were wrong here and they cancelled out into a silent no-op.
+	 * `AdminResource.refreshDatasource` is `@GET`, not `@PUT`, so every call 405'd — the
+	 * Admin › Datasources "Refresh" button has never actually refreshed anything. And the
+	 * `{id}` path param is a misnomer: it is passed straight to
+	 * `OlapDiscoverService.refreshConnection`, which keys the connection map on the
+	 * datasource NAME. Passing the UUID id 500s.
+	 *
+	 * @param connectionName the datasource's `name` (`connectionname` on the wire), NOT its id.
+	 */
+	refresh: async (connectionName: string) => {
+		await json<unknown>('GET', `/datasources/${encodeURIComponent(connectionName)}/refresh`);
+	},
+	create: async (ds: AdminDatasource) => {
+		const w = await json<DatasourceWire>('POST', '/datasources', toDatasourceWire(ds));
+		return w ? fromDatasourceWire(w) : null;
+	},
+	update: async (ds: AdminDatasource) => {
+		const w = await json<DatasourceWire>(
+			'PUT',
+			`/datasources/${encodeURIComponent(ds.id)}`,
+			toDatasourceWire(ds)
+		);
+		return w ? fromDatasourceWire(w) : null;
+	},
+	remove: (id: string) => json<null>('DELETE', `/datasources/${encodeURIComponent(id)}`)
 };
 
 export const adminSchemas = {
-  list: () => get<AdminSchema[]>("/schema"),
-  get: (id: string) => get<AdminSchema>(`/schema/${encodeURIComponent(id)}`),
-  /**
-   * saiku#1655: `AdminResource.uploadSchema` (`POST /admin/schema/{id}`) is
-   * `@Consumes("multipart/form-data")` and reads `@FormDataParam("file")` (an InputStream —
-   * the schema XML bytes) plus `@FormDataParam("name")`. The previous urlencoded
-   * `name`+`xml` body never got past Jersey's media-type gate, so every Cube Designer
-   * save and Admin > Schemas upload failed with HTTP 415. The server ignores the file
-   * part's filename and accepts no `path` field — it derives the repository path as
-   * `/datasources/{name}.xml` from the `name` field alone.
-   */
-  upload: async (name: string, xml: string) => {
-    const body = new FormData();
-    body.append("file", new Blob([xml], { type: "application/xml" }), `${name}.xml`);
-    body.append("name", name);
-    const res = await fetch(`${BASE}/schema/${encodeURIComponent(name)}`, {
-      method: "POST",
-      credentials: "include",
-      // Deliberately no Content-Type header: the browser must generate the
-      // multipart boundary itself. Setting it manually breaks the upload.
-      body,
-    });
-    if (!res.ok) throw new Error(`schema upload -> ${res.status}`);
-  },
-  remove: (id: string) => json<null>("DELETE", `/schema/${encodeURIComponent(id)}`),
+	list: () => get<AdminSchema[]>('/schema'),
+	get: (id: string) => get<AdminSchema>(`/schema/${encodeURIComponent(id)}`),
+	/**
+	 * saiku#1655: `AdminResource.uploadSchema` (`POST /admin/schema/{id}`) is
+	 * `@Consumes("multipart/form-data")` and reads `@FormDataParam("file")` (an InputStream —
+	 * the schema XML bytes) plus `@FormDataParam("name")`. The previous urlencoded
+	 * `name`+`xml` body never got past Jersey's media-type gate, so every Cube Designer
+	 * save and Admin > Schemas upload failed with HTTP 415. The server ignores the file
+	 * part's filename and accepts no `path` field — it derives the repository path as
+	 * `/datasources/{name}.xml` from the `name` field alone.
+	 */
+	upload: async (name: string, xml: string) => {
+		const body = new FormData();
+		body.append('file', new Blob([xml], { type: 'application/xml' }), `${name}.xml`);
+		body.append('name', name);
+		const res = await fetch(`${BASE}/schema/${encodeURIComponent(name)}`, {
+			method: 'POST',
+			credentials: 'include',
+			// Deliberately no Content-Type header: the browser must generate the
+			// multipart boundary itself. Setting it manually breaks the upload.
+			body
+		});
+		if (!res.ok) throw new Error(`schema upload -> ${res.status}`);
+	},
+	remove: (id: string) => json<null>('DELETE', `/schema/${encodeURIComponent(id)}`)
 };
 
 export const adminLogs = {
-  fetch: async (name: string): Promise<string> => {
-    const res = await fetch(`${BASE}/log/${encodeURIComponent(name)}`, {
-      credentials: "include",
-      headers: { Accept: "text/plain" },
-    });
-    if (!res.ok) throw new Error(`log -> ${res.status}`);
-    return res.text();
-  },
+	fetch: async (name: string): Promise<string> => {
+		const res = await fetch(`${BASE}/log/${encodeURIComponent(name)}`, {
+			credentials: 'include',
+			headers: { Accept: 'text/plain' }
+		});
+		if (!res.ok) throw new Error(`log -> ${res.status}`);
+		return res.text();
+	}
 };
 
 /**
@@ -230,36 +253,36 @@ export const adminLogs = {
  * so the admin panel can plot pass-rate over time per suite.
  */
 export interface EvalRun {
-  runId: number;
-  suiteName: string;
-  cubeRef: string;
-  startedAt: number; // epoch millis
-  elapsedMs: number;
-  total: number;
-  passed: number;
-  failed: number;
-  degraded: number;
-  skipped: number;
-  passRate: number; // 0..1
+	runId: number;
+	suiteName: string;
+	cubeRef: string;
+	startedAt: number; // epoch millis
+	elapsedMs: number;
+	total: number;
+	passed: number;
+	failed: number;
+	degraded: number;
+	skipped: number;
+	passRate: number; // 0..1
 }
 
 export interface EvalSuiteCard {
-  name: string;
-  latest: EvalRun | null;
+	name: string;
+	latest: EvalRun | null;
 }
 
 export interface EvalTrendPoint {
-  startedAt: number; // epoch millis
-  passRate: number; // 0..1
-  total: number;
+	startedAt: number; // epoch millis
+	passRate: number; // 0..1
+	total: number;
 }
 
 export const adminEvals = {
-  suites: () => get<EvalSuiteCard[]>("/ai-evals"),
-  runs: (suite: string, limit = 30) =>
-    get<EvalRun[]>(`/ai-evals/${encodeURIComponent(suite)}/runs?limit=${limit}`),
-  trend: (suite: string, limit = 60) =>
-    get<EvalTrendPoint[]>(`/ai-evals/${encodeURIComponent(suite)}/trend?limit=${limit}`),
+	suites: () => get<EvalSuiteCard[]>('/ai-evals'),
+	runs: (suite: string, limit = 30) =>
+		get<EvalRun[]>(`/ai-evals/${encodeURIComponent(suite)}/runs?limit=${limit}`),
+	trend: (suite: string, limit = 60) =>
+		get<EvalTrendPoint[]>(`/ai-evals/${encodeURIComponent(suite)}/trend?limit=${limit}`)
 };
 
 /**
@@ -268,57 +291,59 @@ export const adminEvals = {
  * without hand-editing JSON.
  */
 export interface AgentSpaceCubeRef {
-  connectionName: string;
-  catalog: string;
-  schema: string;
-  cubeName: string;
+	connectionName: string;
+	catalog: string;
+	schema: string;
+	cubeName: string;
 }
 
 export interface AgentSpace {
-  id: string;
-  name: string;
-  description?: string;
-  systemPrompt?: string;
-  cubeAllowlist: AgentSpaceCubeRef[];
-  skillAllowlist: string[];
-  suggestedPrompts: string[];
+	id: string;
+	name: string;
+	description?: string;
+	systemPrompt?: string;
+	cubeAllowlist: AgentSpaceCubeRef[];
+	skillAllowlist: string[];
+	suggestedPrompts: string[];
 }
 
 export const adminAgentSpaces = {
-  list: () => get<AgentSpace[]>("/agent-spaces"),
-  errors: () => get<Array<{ source: string; code: string; message: string }>>("/agent-spaces/errors"),
-  save: (space: AgentSpace) => json<AgentSpace>("PUT", `/agent-spaces/${encodeURIComponent(space.id)}`, space),
-  remove: (id: string) => json<null>("DELETE", `/agent-spaces/${encodeURIComponent(id)}`),
+	list: () => get<AgentSpace[]>('/agent-spaces'),
+	errors: () =>
+		get<Array<{ source: string; code: string; message: string }>>('/agent-spaces/errors'),
+	save: (space: AgentSpace) =>
+		json<AgentSpace>('PUT', `/agent-spaces/${encodeURIComponent(space.id)}`, space),
+	remove: (id: string) => json<null>('DELETE', `/agent-spaces/${encodeURIComponent(id)}`)
 };
 
 export async function getVersion(): Promise<string> {
-  const res = await fetch(`${BASE}/version`, { credentials: "include" });
-  if (!res.ok) throw new Error(`version -> ${res.status}`);
-  return res.text();
+	const res = await fetch(`${BASE}/version`, { credentials: 'include' });
+	if (!res.ok) throw new Error(`version -> ${res.status}`);
+	return res.text();
 }
 
 /* ---------------- Mondrian statistics ---------------- */
 
 export interface MondrianVersion {
-  productName?: string;
-  versionString?: string;
-  majorVersion?: number;
-  minorVersion?: number;
+	productName?: string;
+	versionString?: string;
+	majorVersion?: number;
+	minorVersion?: number;
 }
 
 export interface MondrianServerInfo {
-  cellCount?: number;
-  cellCoordinateCount?: number;
-  cellSize?: number;
-  segmentCount?: number;
-  segmentCreateCount?: number;
-  cellCacheRequestCount?: number;
-  cellCacheHitCount?: number;
-  cellCacheMissCount?: number;
-  sqlStatementExecuteCount?: number;
-  sqlStatementCellRequestCount?: number;
-  startTimeMillis?: number;
-  [k: string]: unknown;
+	cellCount?: number;
+	cellCoordinateCount?: number;
+	cellSize?: number;
+	segmentCount?: number;
+	segmentCreateCount?: number;
+	cellCacheRequestCount?: number;
+	cellCacheHitCount?: number;
+	cellCacheMissCount?: number;
+	sqlStatementExecuteCount?: number;
+	sqlStatementCellRequestCount?: number;
+	startTimeMillis?: number;
+	[k: string]: unknown;
 }
 
 /**
@@ -330,16 +355,16 @@ export interface MondrianServerInfo {
  * optional unless you've confirmed mondrian-saiku now emits them.
  */
 export interface MondrianConnectionInfo {
-  stack?: string | null;
-  cellCacheHitCount?: number;
-  cellCacheRequestCount?: number;
-  cellCacheMissCount?: number;
-  cellCachePendingCount?: number;
-  statementStartCount?: number;
-  statementEndCount?: number;
-  executeStartCount?: number;
-  executeEndCount?: number;
-  [k: string]: unknown;
+	stack?: string | null;
+	cellCacheHitCount?: number;
+	cellCacheRequestCount?: number;
+	cellCacheMissCount?: number;
+	cellCachePendingCount?: number;
+	statementStartCount?: number;
+	statementEndCount?: number;
+	executeStartCount?: number;
+	executeEndCount?: number;
+	[k: string]: unknown;
 }
 
 /**
@@ -348,47 +373,47 @@ export interface MondrianConnectionInfo {
  * carries counters, not a snapshot of the SQL text or wall-clock.
  */
 export interface MondrianStatementInfo {
-  statementId?: number;
-  stack?: string | null;
-  executing?: boolean;
-  executeStartCount?: number;
-  executeEndCount?: number;
-  phaseCount?: number;
-  cellRequestCount?: number;
-  cellCacheHitCount?: number;
-  cellCacheMissCount?: number;
-  cellCacheRequestCount?: number;
-  cellCachePendingCount?: number;
-  sqlStatementStartCount?: number;
-  sqlStatementExecuteCount?: number;
-  sqlStatementEndCount?: number;
-  sqlStatementRowFetchCount?: number;
-  sqlStatementExecuteNanos?: number;
-  [k: string]: unknown;
+	statementId?: number;
+	stack?: string | null;
+	executing?: boolean;
+	executeStartCount?: number;
+	executeEndCount?: number;
+	phaseCount?: number;
+	cellRequestCount?: number;
+	cellCacheHitCount?: number;
+	cellCacheMissCount?: number;
+	cellCacheRequestCount?: number;
+	cellCachePendingCount?: number;
+	sqlStatementStartCount?: number;
+	sqlStatementExecuteCount?: number;
+	sqlStatementEndCount?: number;
+	sqlStatementRowFetchCount?: number;
+	sqlStatementExecuteNanos?: number;
+	[k: string]: unknown;
 }
 
 export interface MondrianStats {
-  server: MondrianServerInfo;
-  version: MondrianVersion;
-  openConnectionCount: number;
-  openMdxStatementCount: number;
-  openSqlStatementCount: number;
-  executingMdxStatementCount: number;
-  avgCellDimensionality: number;
-  connections: MondrianConnectionInfo[];
-  statements: MondrianStatementInfo[];
+	server: MondrianServerInfo;
+	version: MondrianVersion;
+	openConnectionCount: number;
+	openMdxStatementCount: number;
+	openSqlStatementCount: number;
+	executingMdxStatementCount: number;
+	avgCellDimensionality: number;
+	connections: MondrianConnectionInfo[];
+	statements: MondrianStatementInfo[];
 }
 
-const STATS_BASE = "/rest/saiku/statistics";
+const STATS_BASE = '/rest/saiku/statistics';
 
 export const adminStats = {
-  mondrian: async (): Promise<MondrianStats | null> => {
-    const res = await fetch(`${STATS_BASE}/mondrian`, {
-      credentials: "include",
-      headers: { Accept: "application/json" },
-    });
-    if (!res.ok) throw new Error(`stats/mondrian -> ${res.status}`);
-    const text = await res.text();
-    return text ? (JSON.parse(text) as MondrianStats) : null;
-  },
+	mondrian: async (): Promise<MondrianStats | null> => {
+		const res = await fetch(`${STATS_BASE}/mondrian`, {
+			credentials: 'include',
+			headers: { Accept: 'application/json' }
+		});
+		if (!res.ok) throw new Error(`stats/mondrian -> ${res.status}`);
+		const text = await res.text();
+		return text ? (JSON.parse(text) as MondrianStats) : null;
+	}
 };

@@ -24,7 +24,7 @@
 		AlertTriangle,
 		Loader2,
 		X
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import type { AnthropicBlock, ChatMessage, DimSumMutationResult } from './ai-chat-types';
 
 	interface Props {
@@ -75,16 +75,16 @@
 	// chatOpen, errorOpen) so the rule doesn't false-positive.
 	let {
 		expanded = $bindable(),
-		 
+
 		visible = $bindable(),
 		messages,
 		drafting,
 		intent = $bindable(),
 		result = $bindable(),
 		error = $bindable(),
-		 
+
 		chatOpen = $bindable(),
-		 
+
 		errorOpen = $bindable(),
 		connectionId,
 		fillContainer = false,

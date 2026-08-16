@@ -17,10 +17,10 @@
 		Workflow as WorkflowIcon,
 		ChevronDown,
 		Star
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import type { SchemaCanvasStore } from './state.svelte.js';
 	import type { LayoutMode } from './layout.js';
-	import Tooltip from './primitives/tooltip.svelte';
+	import { Tooltip } from '$lib/components/ui';
 
 	interface Props {
 		store: SchemaCanvasStore;

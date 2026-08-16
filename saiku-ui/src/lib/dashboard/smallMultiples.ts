@@ -13,11 +13,16 @@
 
 /** Chart kinds that encode a single measure and therefore fan out into
  *  small multiples (one chart per measure). */
-export const SINGLE_MEASURE_KINDS: ReadonlySet<string> = new Set(["pie", "donut", "treemap", "sunburst"]);
+export const SINGLE_MEASURE_KINDS: ReadonlySet<string> = new Set([
+	'pie',
+	'donut',
+	'treemap',
+	'sunburst'
+]);
 
 /** Whether a chart kind is single-measure (and so uses small multiples). */
 export function isSingleMeasureKind(kind: string): boolean {
-  return SINGLE_MEASURE_KINDS.has(kind);
+	return SINGLE_MEASURE_KINDS.has(kind);
 }
 
 /** One cell of the small-multiples grid, expressed as percentages of the
@@ -25,14 +30,14 @@ export function isSingleMeasureKind(kind: string): boolean {
  *  gutter and top headroom for a title); `centerX/centerY` give the cell's
  *  drawing center (used for radial charts like pie/sunburst). */
 export interface GridCell {
-  row: number;
-  col: number;
-  leftPct: number;
-  topPct: number;
-  widthPct: number;
-  heightPct: number;
-  centerXPct: number;
-  centerYPct: number;
+	row: number;
+	col: number;
+	leftPct: number;
+	topPct: number;
+	widthPct: number;
+	heightPct: number;
+	centerXPct: number;
+	centerYPct: number;
 }
 
 /** Charts per row in the small-multiples grid. One knob: change this to lay out
@@ -42,8 +47,8 @@ export const SMALL_MULTIPLE_COLS = 3;
 /** Number of grid rows for `n` charts at {@link SMALL_MULTIPLE_COLS} per row.
  *  The host container uses this to grow + scroll so each chart stays full-size. */
 export function smallMultipleRowCount(n: number): number {
-  if (n <= 1) return 1;
-  return Math.ceil(n / SMALL_MULTIPLE_COLS);
+	if (n <= 1) return 1;
+	return Math.ceil(n / SMALL_MULTIPLE_COLS);
 }
 
 /** Max slice count for which pie/donut/sunburst draw on-slice category labels.
@@ -71,32 +76,32 @@ const TITLE_HEADROOM_FRAC = 0.18;
  * n <= 0 → []. n <= 1 → a single full-box cell.
  */
 export function gridCells(n: number): GridCell[] {
-  if (n <= 0) return [];
-  const cols = Math.min(SMALL_MULTIPLE_COLS, Math.max(1, n));
-  const rows = Math.ceil(n / cols);
+	if (n <= 0) return [];
+	const cols = Math.min(SMALL_MULTIPLE_COLS, Math.max(1, n));
+	const rows = Math.ceil(n / cols);
 
-  const cellW = 100 / cols;
-  const cellH = 100 / rows;
+	const cellW = 100 / cols;
+	const cellH = 100 / rows;
 
-  const out: GridCell[] = [];
-  for (let i = 0; i < n; i++) {
-    const row = Math.floor(i / cols);
-    const col = i % cols;
+	const out: GridCell[] = [];
+	for (let i = 0; i < n; i++) {
+		const row = Math.floor(i / cols);
+		const col = i % cols;
 
-    const leftPct = col * cellW + GUTTER_PCT;
-    const topPct = row * cellH + GUTTER_PCT;
-    const widthPct = cellW - GUTTER_PCT * 2;
-    const heightPct = cellH - GUTTER_PCT * 2;
+		const leftPct = col * cellW + GUTTER_PCT;
+		const topPct = row * cellH + GUTTER_PCT;
+		const widthPct = cellW - GUTTER_PCT * 2;
+		const heightPct = cellH - GUTTER_PCT * 2;
 
-    // Title sits in the top headroom; the plot occupies the rest of the cell,
-    // so the drawing center is biased downward by half the headroom.
-    const headroom = heightPct * TITLE_HEADROOM_FRAC;
-    const centerXPct = leftPct + widthPct / 2;
-    const centerYPct = topPct + headroom + (heightPct - headroom) / 2;
+		// Title sits in the top headroom; the plot occupies the rest of the cell,
+		// so the drawing center is biased downward by half the headroom.
+		const headroom = heightPct * TITLE_HEADROOM_FRAC;
+		const centerXPct = leftPct + widthPct / 2;
+		const centerYPct = topPct + headroom + (heightPct - headroom) / 2;
 
-    out.push({ row, col, leftPct, topPct, widthPct, heightPct, centerXPct, centerYPct });
-  }
-  return out;
+		out.push({ row, col, leftPct, topPct, widthPct, heightPct, centerXPct, centerYPct });
+	}
+	return out;
 }
 
 /**
@@ -110,11 +115,14 @@ export function gridCells(n: number): GridCell[] {
  * many there are. Returns a plain number (percent); the caller appends "%".
  */
 export function cellRadiusPct(cell: GridCell, aspect: number, frac = 0.42): number {
-  const a = Number.isFinite(aspect) && aspect > 0 ? aspect : 1;
-  // Plot area excludes the title headroom at the top of the cell.
-  const plotHeightPct = cell.heightPct * (1 - 0.18);
-  // pixel radius target = frac * min(cellWidthPx, plotHeightPx); express that as
-  // a % of min(canvasW, canvasH). When W>=H, min is H; when W<H, min is W.
-  const limit = a >= 1 ? Math.min(cell.widthPct * a, plotHeightPct) : Math.min(cell.widthPct, plotHeightPct / a);
-  return Math.max(1, limit * frac);
+	const a = Number.isFinite(aspect) && aspect > 0 ? aspect : 1;
+	// Plot area excludes the title headroom at the top of the cell.
+	const plotHeightPct = cell.heightPct * (1 - 0.18);
+	// pixel radius target = frac * min(cellWidthPx, plotHeightPx); express that as
+	// a % of min(canvasW, canvasH). When W>=H, min is H; when W<H, min is W.
+	const limit =
+		a >= 1
+			? Math.min(cell.widthPct * a, plotHeightPct)
+			: Math.min(cell.widthPct, plotHeightPct / a);
+	return Math.max(1, limit * frac);
 }

@@ -50,6 +50,20 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
     private static final String ORBIS_WORKSPACE_DIR = "workspace";
     private static final Logger log = LoggerFactory.getLogger(FilesystemRepositoryManager.class);
 
+    /**
+     * Opt back in to the legacy {@code <workspace>_<name>} decoration on loaded datasource names
+     * (saiku#1871). Off by default: in single-tenant OSS the workspace directory is always the
+     * default {@code unknown}, so the prefix only ever added noise.
+     *
+     * <p>Read per call rather than cached so a test — or an operator debugging a migration — can
+     * flip it without a restart. This runs once per datasource per load, not per request.
+     */
+    public static final String WORKSPACE_PREFIX_PROPERTY = "saiku.datasources.workspacePrefix";
+
+    static boolean isWorkspacePrefixEnabled() {
+        return Boolean.parseBoolean(System.getProperty(WORKSPACE_PREFIX_PROPERTY, "false"));
+    }
+
     private static FilesystemRepositoryManager ref;
     private final String defaultRole;
     private final boolean workspaces;
@@ -711,7 +725,21 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
                     log.debug("p split: " + p);
                     String[] t = append.split("/");
 
-                    if (!workspaces && !s[s.length - 2].equals(t[t.length - 1])) {
+                    // saiku#1871: this used to rename every datasource it loaded to
+                    // "<parentDir>_<storedName>". With workspaces off — the only mode OSS runs in —
+                    // that directory is always the default "unknown", so the prefix carried no
+                    // information at all: `foodmart.sds` was surfaced to every user, every URL and
+                    // every MDX unique name as `unknown_foodmart`.
+                    //
+                    // It is off by default now. saiku#1869 first taught datasource lookup to accept
+                    // BOTH spellings, so existing saved queries, dashboards and apps — which bake
+                    // the prefixed name into their connection field and into
+                    // [unknown_foodmart].[FoodMart]... unique names — keep resolving untouched. No
+                    // migration, and anything still asking for the old name simply finds it.
+                    //
+                    // The property restores the old behaviour for anyone whose own tooling matches
+                    // on the prefixed spelling beyond what that alias covers.
+                    if (isWorkspacePrefixEnabled() && !workspaces && !s[s.length - 2].equals(t[t.length - 1])) {
                         d.setName(s[s.length - 2] + "_" + (d != null ? d.getName() : ""));
                     }
                 }

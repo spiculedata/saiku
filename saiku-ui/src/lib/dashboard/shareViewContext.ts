@@ -9,21 +9,21 @@
  * Outside the share viewer the context is absent, so getShareViewResponse()
  * returns undefined and tiles fetch as usual — zero impact on normal mode.
  */
-import { getContext, setContext } from "svelte";
-import type { AiQueryResponse } from "$lib/api/aiQuery";
+import { getContext, setContext } from 'svelte';
+import type { AiQueryResponse } from '$lib/api/aiQuery';
 
-const SHARE_VIEW_KEY = Symbol("saiku.shareViewResponses");
+const SHARE_VIEW_KEY = Symbol('saiku.shareViewResponses');
 
 /** Provide the prefetched per-tile responses to descendant tiles. Call once in
  *  the share viewer page before rendering the dashboard. */
 export function setShareViewResponses(responses: Map<string, AiQueryResponse>): void {
-  setContext(SHARE_VIEW_KEY, responses);
+	setContext(SHARE_VIEW_KEY, responses);
 }
 
 /** The prefetched response for `tileId`, or undefined when not in a share view
  *  (normal dashboard mode — the tile then fetches live). Must be called during
  *  component init (getContext requirement). */
 export function getShareViewResponse(tileId: string): AiQueryResponse | undefined {
-  const responses = getContext<Map<string, AiQueryResponse> | undefined>(SHARE_VIEW_KEY);
-  return responses?.get(tileId);
+	const responses = getContext<Map<string, AiQueryResponse> | undefined>(SHARE_VIEW_KEY);
+	return responses?.get(tileId);
 }

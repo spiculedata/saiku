@@ -1,30 +1,34 @@
 /**
- * Design-system barrel — the single import surface for everything in
- * the dashboard's design system layer.
+ * Design-system barrel — re-export of the shared package.
  *
- * Consumers should reach for this barrel rather than deep paths:
+ * The components themselves live in `@concepttocloud/saiku-design-system`
+ * (source at `saiku-ui/design-system/`, published from this repo under
+ * Apache-2.0) so saiku-ui and saiku-cloud consume one implementation
+ * instead of two copies that drift. This barrel exists so the ~70
+ * in-app `$lib/design-system` imports didn't have to change.
  *
- *   import { PageHeader, FeedbackBanner, TONES, type Tone } from '$lib/design-system';
+ * Import from here, not from the package directly, inside saiku-ui —
+ * it keeps a single place to shim if the package ever needs adapting.
  *
- * Adding a new design-system component:
- * 1. Drop the file under `src/lib/components/<bucket>/<Name>.svelte`.
- * 2. Re-export it here.
- * 3. Document it in `docs/design-system.md` with its props.
- *
- * Why a barrel instead of moving files: keeps file paths stable across
- * the codebase (no broken Playwright tests, no import churn) while
- * giving the design system a real identity at the module level. If we
- * ever publish this as a separate package, this barrel is the entry.
+ * Storybook stories for these components stay in this directory: the
+ * catalogue belongs to the app, the implementation belongs to the package.
  */
 
-export { default as PageHeader } from './PageHeader.svelte';
-export { default as FeedbackBanner } from './FeedbackBanner.svelte';
-export { default as Badge } from './Badge.svelte';
-export { default as EmptyState } from './EmptyState.svelte';
-export { default as SectionCard } from './SectionCard.svelte';
-export { default as Toast } from './Toast.svelte';
-export { default as FormField } from './FormField.svelte';
-export { default as SortableColumnHeader } from './SortableColumnHeader.svelte';
-
-// Tokens — typed contract for tone / size vocabulary.
-export { TONES, TONE_CLASSES, SIZES, type Tone, type Size } from './tokens';
+export {
+	PageHeader,
+	FeedbackBanner,
+	Badge,
+	EmptyState,
+	SectionCard,
+	Toast,
+	FormField,
+	SortableColumnHeader,
+	ContextMenu,
+	type ContextMenuItem,
+	Skeleton,
+	TONES,
+	TONE_CLASSES,
+	SIZES,
+	type Tone,
+	type Size
+} from '@concepttocloud/saiku-design-system';

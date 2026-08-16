@@ -9,7 +9,7 @@
   chat-log scroll ref + its auto-scroll-to-bottom effect.
 -->
 <script lang="ts">
-	import { Sparkles, AlertTriangle, X, Loader2 } from 'lucide-svelte';
+	import { Sparkles, AlertTriangle, X, Loader2 } from '@lucide/svelte';
 	import type { SchemaCanvasStore } from './state.svelte.js';
 	import type { AnthropicBlock, ChatMessage } from './ai-chat-types';
 

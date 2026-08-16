@@ -30,9 +30,9 @@
 		Search,
 		AlertCircle,
 		KeyRound
-	} from 'lucide-svelte';
-	import Popover from './primitives/Popover.svelte';
-	import SortableColumnHeader from './primitives/SortableColumnHeader.svelte';
+	} from '@lucide/svelte';
+	import { Popover } from '$lib/components/ui';
+	import { SortableColumnHeader } from '$lib/design-system';
 	import { dimKeyIdentity, resolveKeyAttribute } from './state.svelte.js';
 	import type { SchemaCanvasStore } from './state.svelte.js';
 	import {
@@ -148,18 +148,18 @@
 		editingDimNameId = $bindable(),
 		editingHierNameId = $bindable(),
 		focusDimId = $bindable(),
-		 
+
 		hierarchyExplicitlyClicked = $bindable(),
 		manualAddDimName = $bindable(),
 		manualAddDimOpen = $bindable(),
 		manualAddDimSourceKey = $bindable(),
-		 
+
 		selectedAttributeKey = $bindable(),
 		selectedLevelId = $bindable(),
 		selectedDimensionId = $bindable(),
-		 
+
 		selectedHierarchyId = $bindable(),
-		 
+
 		selectedMeasureId = $bindable(),
 		focus,
 		isFocused,

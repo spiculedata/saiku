@@ -55,6 +55,28 @@ public class SaikuMondrianHelper {
         return rcon != null ? rcon.getServer() : null;
     }
 
+    /**
+     * Drop {@code con}'s schema from Mondrian's schema pool.
+     *
+     * <p>saiku#1872: the Cube Designer's query preview mounts each unsaved schema under a fresh
+     * catalog path, so without this an editing session leaves one cached RolapSchema behind per
+     * preview run. Lives here because reaching the Mondrian connection needs package access.
+     *
+     * <p>Best-effort by design — failing to tidy a cache entry must never fail the query the user
+     * actually asked for.
+     *
+     * @return true if the schema was flushed
+     */
+    public static boolean flushSchema(OlapConnection con) {
+        try {
+            RolapConnection rcon = getMondrianConnection(con);
+            rcon.getCacheControl(null).flushSchema(rcon.getSchema());
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     public static boolean isMondrianConnection(OlapConnection con) {
         try {
             return con.isWrapperFor(RolapConnection.class);

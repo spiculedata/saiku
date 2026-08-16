@@ -423,6 +423,44 @@ apart (the `format=matrix` bypass was closed in saiku#1324).
   the observed cell **values** are masked. Forecast projections are derived
   aggregates, not raw cells, and are unaffected.
 
+### Unavailable measures: no join path to a filtered dimension (saiku#1780)
+
+A measure can only be evaluated at a grain its measure group actually joins to.
+If you request a measure that has **no join path to a dimension you put on the
+slicer** (a `filters[]` entry) — for example a warehouse-only cost measure
+sliced by a customer geography that its fact table never joins to — Mondrian
+drops that measure from the result entirely. It never becomes a column.
+
+Previously that measure just **vanished**: you asked for N measures and got a
+row with fewer than N keys, silently. Now the server compares what you
+requested against the columns that actually came back and surfaces every
+dropped measure **explicitly**, as a self-describing cell:
+
+```jsonc
+{
+  "data": [
+    {
+      "Product Family": "Drink",
+      "Store Sales":   { "value": 48836.21, "formatted": "48,836.21", "unit": null },
+      "Warehouse Cost": { "value": null, "formatted": null,
+                          "unavailable": "no join path to filtered dimension(s): Customer" }
+    }
+  ]
+}
+```
+
+The cell keeps the normal `{value, formatted, unit}` shape (both `null`) and
+adds an `unavailable` string carrying a machine-readable reason. In `matrix`
+format the dropped measure lands as a trailing indexed column with the same
+`unavailable` cell. `metadata.measures` lists the dropped measure too, so it
+reflects everything you asked for, not just what produced data.
+
+This is **additive and back-compatible**: `unavailable` is only present on the
+dropped cells, so a normal query (nothing dropped) is byte-for-byte unchanged.
+An agent seeing `unavailable` should treat that measure as not answerable at
+the current filter grain — drop the offending filter, or re-issue the measure
+in its own query without that slicer.
+
 ---
 
 ## Step 4 — validation: how the API teaches the agent

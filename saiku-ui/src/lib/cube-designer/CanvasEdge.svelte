@@ -24,7 +24,7 @@
 		getSmoothStepPath,
 		type EdgeProps
 	} from '@xyflow/svelte';
-	import { X, Layers } from 'lucide-svelte';
+	import { X, Layers } from '@lucide/svelte';
 	import type { SchemaCanvasJoin } from './types.js';
 
 	interface CanvasEdgeData {

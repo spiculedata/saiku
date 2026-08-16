@@ -29,7 +29,7 @@
 		Pencil,
 		Check,
 		AlertCircle
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import { Select as SelectPrimitive } from 'bits-ui';
 	import type { SvelteSet } from 'svelte/reactivity';
 	import { calcMode } from './workbench-cubes';

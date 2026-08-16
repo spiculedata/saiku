@@ -20,40 +20,43 @@
  * unchanged.
  */
 
-import { createUserKeyedListStore, type UserKeyedListStore } from "$lib/stores/userKeyedListStore.svelte";
+import {
+	createUserKeyedListStore,
+	type UserKeyedListStore
+} from '$lib/stores/userKeyedListStore.svelte';
 
-const STORAGE_PREFIX = "saiku:favourites:";
+const STORAGE_PREFIX = 'saiku:favourites:';
 
 class FavouriteDashboardsStore {
-  // SET semantics: no cap, membership toggle, de-dupe on load (the original
-  // Set-backed store collapsed duplicates from a corrupt/tampered blob).
-  private readonly store: UserKeyedListStore = createUserKeyedListStore({
-    prefix: STORAGE_PREFIX,
-    dedupeOnLoad: true,
-  });
+	// SET semantics: no cap, membership toggle, de-dupe on load (the original
+	// Set-backed store collapsed duplicates from a corrupt/tampered blob).
+	private readonly store: UserKeyedListStore = createUserKeyedListStore({
+		prefix: STORAGE_PREFIX,
+		dedupeOnLoad: true
+	});
 
-  /** True if {@code path} is currently favourited for the active user. */
-  isFavourite(path: string): boolean {
-    return this.store.has(path);
-  }
+	/** True if {@code path} is currently favourited for the active user. */
+	isFavourite(path: string): boolean {
+		return this.store.has(path);
+	}
 
-  /** All favourite paths for the current user. Order is insertion-
-   *  order of the underlying list, which is *not* alphabetical — the
-   *  catalogue render sorts when displaying. Empty when no user. */
-  all(): string[] {
-    return this.store.all();
-  }
+	/** All favourite paths for the current user. Order is insertion-
+	 *  order of the underlying list, which is *not* alphabetical — the
+	 *  catalogue render sorts when displaying. Empty when no user. */
+	all(): string[] {
+		return this.store.all();
+	}
 
-  /** Flip the favourite state for {@code path}. No-op when no user. */
-  toggle(path: string): void {
-    this.store.toggle(path);
-  }
+	/** Flip the favourite state for {@code path}. No-op when no user. */
+	toggle(path: string): void {
+		this.store.toggle(path);
+	}
 
-  /** Force-remove a path — used when the catalogue deletes a
-   *  dashboard, so a stale favourite chip doesn't survive. */
-  remove(path: string): void {
-    this.store.remove(path);
-  }
+	/** Force-remove a path — used when the catalogue deletes a
+	 *  dashboard, so a stale favourite chip doesn't survive. */
+	remove(path: string): void {
+		this.store.remove(path);
+	}
 }
 
 export const favouriteDashboards = new FavouriteDashboardsStore();

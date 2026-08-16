@@ -15,13 +15,13 @@
 
 /** Count the tiles on a page's opaque grid. Unknown shapes report 0. */
 export function pageTileCount(grid: unknown): number {
-  if (!grid || typeof grid !== "object" || Array.isArray(grid)) return 0;
-  const tiles = (grid as { tiles?: unknown }).tiles;
-  return Array.isArray(tiles) ? tiles.length : 0;
+	if (!grid || typeof grid !== 'object' || Array.isArray(grid)) return 0;
+	const tiles = (grid as { tiles?: unknown }).tiles;
+	return Array.isArray(tiles) ? tiles.length : 0;
 }
 
 /** Human phrasing for the removal confirm — "4 tiles" / "1 tile" / "" when empty. */
 export function tilesPhrase(count: number): string {
-  if (count <= 0) return "";
-  return count === 1 ? "1 tile" : `${count} tiles`;
+	if (count <= 0) return '';
+	return count === 1 ? '1 tile' : `${count} tiles`;
 }

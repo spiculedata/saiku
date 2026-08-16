@@ -17,7 +17,7 @@
  */
 
 /** Single-character ellipsis (U+2026) appended to truncated labels. */
-export const ELLIPSIS = "…";
+export const ELLIPSIS = '…';
 
 /** Default per-label width cap (px) when no width can be derived. */
 export const DEFAULT_AXIS_LABEL_WIDTH = 120;
@@ -33,10 +33,10 @@ export const MAX_AXIS_LABEL_WIDTH = 160;
  * `max` is non-positive (treated as "no truncation").
  */
 export function truncateAxisLabel(label: string, max: number): string {
-  if (max <= 0) return label;
-  if (label.length <= max) return label;
-  if (max <= ELLIPSIS.length) return ELLIPSIS;
-  return label.slice(0, max - ELLIPSIS.length) + ELLIPSIS;
+	if (max <= 0) return label;
+	if (label.length <= max) return label;
+	if (max <= ELLIPSIS.length) return ELLIPSIS;
+	return label.slice(0, max - ELLIPSIS.length) + ELLIPSIS;
 }
 
 /**
@@ -46,17 +46,17 @@ export function truncateAxisLabel(label: string, max: number): string {
  * known (chartWidth <= 0 or categoryCount <= 0).
  */
 export function deriveAxisLabelWidth(chartWidth: number, categoryCount: number): number {
-  if (chartWidth <= 0 || categoryCount <= 0) return DEFAULT_AXIS_LABEL_WIDTH;
-  const per = Math.floor(chartWidth / categoryCount);
-  return Math.max(MIN_AXIS_LABEL_WIDTH, Math.min(MAX_AXIS_LABEL_WIDTH, per));
+	if (chartWidth <= 0 || categoryCount <= 0) return DEFAULT_AXIS_LABEL_WIDTH;
+	const per = Math.floor(chartWidth / categoryCount);
+	return Math.max(MIN_AXIS_LABEL_WIDTH, Math.min(MAX_AXIS_LABEL_WIDTH, per));
 }
 
 /** ECharts axisLabel fragment that truncates long labels with an ellipsis. */
 export interface AxisLabelTruncation {
-  overflow: "truncate";
-  width: number;
-  hideOverlap: true;
-  ellipsis: string;
+	overflow: 'truncate';
+	width: number;
+	hideOverlap: true;
+	ellipsis: string;
 }
 
 /**
@@ -65,11 +65,11 @@ export interface AxisLabelTruncation {
  * `width` defaults to DEFAULT_AXIS_LABEL_WIDTH and is clamped to a sane range.
  */
 export function axisLabelConfig(width: number = DEFAULT_AXIS_LABEL_WIDTH): AxisLabelTruncation {
-  const w = Number.isFinite(width) && width > 0 ? Math.round(width) : DEFAULT_AXIS_LABEL_WIDTH;
-  return {
-    overflow: "truncate",
-    width: Math.max(MIN_AXIS_LABEL_WIDTH, Math.min(MAX_AXIS_LABEL_WIDTH, w)),
-    hideOverlap: true,
-    ellipsis: ELLIPSIS,
-  };
+	const w = Number.isFinite(width) && width > 0 ? Math.round(width) : DEFAULT_AXIS_LABEL_WIDTH;
+	return {
+		overflow: 'truncate',
+		width: Math.max(MIN_AXIS_LABEL_WIDTH, Math.min(MAX_AXIS_LABEL_WIDTH, w)),
+		hideOverlap: true,
+		ellipsis: ELLIPSIS
+	};
 }

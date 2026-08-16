@@ -38,11 +38,11 @@ export type CascadeSelections = CascadeSelection[];
  *  remain in the hierarchy below the start level — see
  *  {@link effectiveDepth}. */
 export function clampDepth(depth: number | undefined, maxDepth = 6): number {
-  if (depth == null || Number.isNaN(depth)) return 1;
-  const floored = Math.floor(depth);
-  if (floored < 1) return 1;
-  if (floored > maxDepth) return maxDepth;
-  return floored;
+	if (depth == null || Number.isNaN(depth)) return 1;
+	const floored = Math.floor(depth);
+	if (floored < 1) return 1;
+	if (floored > maxDepth) return maxDepth;
+	return floored;
 }
 
 /** The number of cascade dropdowns this widget can show, given the
@@ -50,10 +50,13 @@ export function clampDepth(depth: number | undefined, maxDepth = 6): number {
  *  below the start level. Never exceeds {@code availableLevels} (you
  *  can't walk past the leaf) and never drops below 1 when at least one
  *  level exists. Returns 0 when there are no available levels. */
-export function effectiveDepth(configuredDepth: number | undefined, availableLevels: number): number {
-  if (availableLevels <= 0) return 0;
-  const want = clampDepth(configuredDepth);
-  return Math.min(want, availableLevels);
+export function effectiveDepth(
+	configuredDepth: number | undefined,
+	availableLevels: number
+): number {
+	if (availableLevels <= 0) return 0;
+	const want = clampDepth(configuredDepth);
+	return Math.min(want, availableLevels);
 }
 
 /** How many dropdowns are currently *visible*, given the selections so
@@ -66,14 +69,14 @@ export function effectiveDepth(configuredDepth: number | undefined, availableLev
  *  — dropdown 0 (USA chosen) and dropdown 1 (its children, currently
  *  "All"); dropdowns 2+ stay hidden because dropdown 1 is still "All". */
 export function visibleDropdownCount(selections: CascadeSelections, depth: number): number {
-  if (depth <= 0) return 0;
-  let visible = 1;
-  for (let i = 0; i < depth - 1; i++) {
-    const sel = selections[i] ?? null;
-    if (sel == null) break; // parent is "All" — deeper dropdowns hidden
-    visible = i + 2;
-  }
-  return Math.min(visible, depth);
+	if (depth <= 0) return 0;
+	let visible = 1;
+	for (let i = 0; i < depth - 1; i++) {
+		const sel = selections[i] ?? null;
+		if (sel == null) break; // parent is "All" — deeper dropdowns hidden
+		visible = i + 2;
+	}
+	return Math.min(visible, depth);
 }
 
 /** Apply a selection at level {@code level}, returning a NEW selections
@@ -88,33 +91,33 @@ export function visibleDropdownCount(selections: CascadeSelections, depth: numbe
  *  is deep-equal to the input — see {@link selectionsEqual} for the
  *  idempotence check callers can use to short-circuit. */
 export function applySelection(
-  selections: CascadeSelections,
-  level: number,
-  value: CascadeSelection,
+	selections: CascadeSelections,
+	level: number,
+	value: CascadeSelection
 ): CascadeSelections {
-  if (level < 0) return [...selections];
-  // Keep everything strictly above the changed level untouched; the
-  // changed level takes the new value; everything below is dropped.
-  const head = selections.slice(0, level);
-  // Pad any gap (sparse upstream "All"s) with explicit nulls so indexing
-  // stays dense and predictable for the component's #each.
-  while (head.length < level) head.push(null);
-  if (value == null) {
-    // "All" at this level: truncate here, no slot retained.
-    return head;
-  }
-  return [...head, value];
+	if (level < 0) return [...selections];
+	// Keep everything strictly above the changed level untouched; the
+	// changed level takes the new value; everything below is dropped.
+	const head = selections.slice(0, level);
+	// Pad any gap (sparse upstream "All"s) with explicit nulls so indexing
+	// stays dense and predictable for the component's #each.
+	while (head.length < level) head.push(null);
+	if (value == null) {
+		// "All" at this level: truncate here, no slot retained.
+		return head;
+	}
+	return [...head, value];
 }
 
 /** The deepest concrete (non-"All") selection — the member the widget
  *  emits as its filter. Returns null when every level is "All" (the
  *  widget contributes no slicing). Trailing "All"s are ignored. */
 export function emittedLeafMember(selections: CascadeSelections): string | null {
-  for (let i = selections.length - 1; i >= 0; i--) {
-    const sel = selections[i];
-    if (sel != null) return sel;
-  }
-  return null;
+	for (let i = selections.length - 1; i >= 0; i--) {
+		const sel = selections[i];
+		if (sel != null) return sel;
+	}
+	return null;
 }
 
 /** Emit the leaf as the members[] array the rest of the dashboard filter
@@ -122,8 +125,8 @@ export function emittedLeafMember(selections: CascadeSelections): string | null 
  *  level"). Mirrors how the other widget variants push an ActiveFilter
  *  member list. */
 export function emittedMembers(selections: CascadeSelections): string[] {
-  const leaf = emittedLeafMember(selections);
-  return leaf == null ? [] : [leaf];
+	const leaf = emittedLeafMember(selections);
+	return leaf == null ? [] : [leaf];
 }
 
 /** The concrete member selected at level {@code level} whose children
@@ -131,25 +134,25 @@ export function emittedMembers(selections: CascadeSelections): string[] {
  *  level is "All" (or out of range) — i.e. there is no parent to fetch
  *  children for, so the next dropdown stays hidden. */
 export function parentForLevel(selections: CascadeSelections, level: number): string | null {
-  if (level < 0 || level >= selections.length) return null;
-  return selections[level] ?? null;
+	if (level < 0 || level >= selections.length) return null;
+	return selections[level] ?? null;
 }
 
 /** Structural equality of two selections arrays, treating a trailing
  *  run of nulls as equivalent to absence. Lets callers detect a no-op
  *  re-selection and skip a store write / re-render. */
 export function selectionsEqual(a: CascadeSelections, b: CascadeSelections): boolean {
-  const an = trimTrailingNulls(a);
-  const bn = trimTrailingNulls(b);
-  if (an.length !== bn.length) return false;
-  for (let i = 0; i < an.length; i++) {
-    if (an[i] !== bn[i]) return false;
-  }
-  return true;
+	const an = trimTrailingNulls(a);
+	const bn = trimTrailingNulls(b);
+	if (an.length !== bn.length) return false;
+	for (let i = 0; i < an.length; i++) {
+		if (an[i] !== bn[i]) return false;
+	}
+	return true;
 }
 
 function trimTrailingNulls(s: CascadeSelections): CascadeSelections {
-  let end = s.length;
-  while (end > 0 && (s[end - 1] ?? null) == null) end--;
-  return s.slice(0, end);
+	let end = s.length;
+	while (end > 0 && (s[end - 1] ?? null) == null) end--;
+	return s.slice(0, end);
 }

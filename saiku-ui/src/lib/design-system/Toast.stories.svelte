@@ -1,6 +1,6 @@
 <script module lang="ts">
 	import { defineMeta } from '@storybook/addon-svelte-csf';
-	import Toast from './Toast.svelte';
+	import { Toast } from '$lib/design-system';
 
 	const { Story } = defineMeta({
 		title: 'Compounds/Toast',

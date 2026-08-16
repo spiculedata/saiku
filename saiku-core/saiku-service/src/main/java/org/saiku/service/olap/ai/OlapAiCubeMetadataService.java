@@ -677,7 +677,12 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
 
     private static boolean matchesRef(SaikuCube cube, AiCubeRef ref) {
         if (!equalsCi(cube.getName(), ref.getCubeName())) return false;
-        if (ref.getConnectionName() != null && !equalsCi(cube.getConnection(), ref.getConnectionName())) {
+        // saiku#1871: tolerate the workspace decoration on either side. Saved apps, embeds and
+        // agent-space allowlists baked in the old `unknown_<name>` spelling; the prefix is no
+        // longer emitted, so an exact match here would 400 every one of them.
+        if (ref.getConnectionName() != null
+                && !org.saiku.service.datasource.DatasourceNameDecoration.sameConnection(
+                        cube.getConnection(), ref.getConnectionName())) {
             return false;
         }
         if (ref.getCatalog() != null && !equalsCi(cube.getCatalog(), ref.getCatalog())) return false;

@@ -1,9 +1,40 @@
-export { default as Button, buttonVariants } from './button.svelte';
-export type { ButtonVariant, ButtonSize } from './button.svelte';
-export { default as Card } from './card.svelte';
-export { default as CardHeader } from './card-header.svelte';
-export { default as CardTitle } from './card-title.svelte';
-export { default as CardDescription } from './card-description.svelte';
-export { default as CardContent } from './card-content.svelte';
-export { default as Input } from './input.svelte';
-export { default as Tooltip } from './tooltip.svelte';
+/**
+ * UI primitives — re-export of the shared package's `/ui` entry.
+ *
+ * Implementations live in `@concepttocloud/saiku-design-system/ui` (source at
+ * `saiku-ui/design-system/src/lib/ui/`). This barrel keeps the in-app
+ * `$lib/components/ui` imports working unchanged.
+ *
+ * Anything that only wants button CLASSES should import
+ * `@concepttocloud/saiku-design-system/ui/button-variants` directly rather than
+ * going through here — this barrel pulls in every primitive, bits-ui included.
+ */
+
+export {
+	Button,
+	buttonVariants,
+	// Layout / surface
+	Card,
+	CardHeader,
+	CardTitle,
+	CardDescription,
+	CardContent,
+	Divider,
+	// Form controls
+	Input,
+	Textarea,
+	Checkbox,
+	Radio,
+	Select,
+	Switch,
+	// Overlays / menus
+	Tooltip,
+	Popover,
+	Dialog,
+	DropdownMenu,
+	MenuItem,
+	// Misc
+	Kbd,
+	type ButtonVariant,
+	type ButtonSize
+} from '@concepttocloud/saiku-design-system/ui';

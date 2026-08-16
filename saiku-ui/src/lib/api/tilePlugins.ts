@@ -11,25 +11,25 @@
  * same posture as $lib/api/apps.ts and the other in-app clients.
  */
 
-const REST_BASE = "/rest/saiku/api/tile-plugins";
+const REST_BASE = '/rest/saiku/api/tile-plugins';
 
 /** One installed plugin, as TilePluginManifest#asSummary serialises it. */
 export interface TilePluginSummary {
-  id: string;
-  label: string;
-  /** Optional JSON Schema for the plugin's author-facing options (unused by the
-   *  picker today; carried through for a future options editor). */
-  optionSchema?: unknown;
+	id: string;
+	label: string;
+	/** Optional JSON Schema for the plugin's author-facing options (unused by the
+	 *  picker today; carried through for a future options editor). */
+	optionSchema?: unknown;
 }
 
 /** List installed tile plugins. Throws on any non-2xx. */
 export async function listTilePlugins(): Promise<TilePluginSummary[]> {
-  const res = await fetch(REST_BASE, {
-    credentials: "include",
-    headers: { Accept: "application/json" },
-  });
-  if (!res.ok) throw new Error(`listTilePlugins -> ${res.status}`);
-  return (await res.json()) as TilePluginSummary[];
+	const res = await fetch(REST_BASE, {
+		credentials: 'include',
+		headers: { Accept: 'application/json' }
+	});
+	if (!res.ok) throw new Error(`listTilePlugins -> ${res.status}`);
+	return (await res.json()) as TilePluginSummary[];
 }
 
 /**
@@ -39,10 +39,10 @@ export async function listTilePlugins(): Promise<TilePluginSummary[]> {
  * of plugin markup on the in-app surface.
  */
 export async function fetchTilePluginHtml(id: string): Promise<string> {
-  const res = await fetch(`${REST_BASE}/${encodeURIComponent(id)}/html`, {
-    credentials: "include",
-    headers: { Accept: "text/html" },
-  });
-  if (!res.ok) throw new Error(`fetchTilePluginHtml(${id}) -> ${res.status}`);
-  return await res.text();
+	const res = await fetch(`${REST_BASE}/${encodeURIComponent(id)}/html`, {
+		credentials: 'include',
+		headers: { Accept: 'text/html' }
+	});
+	if (!res.ok) throw new Error(`fetchTilePluginHtml(${id}) -> ${res.status}`);
+	return await res.text();
 }

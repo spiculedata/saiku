@@ -7,190 +7,190 @@
  * its load/save hit the dashboards REST client. We mock all three so the tests
  * are pure and deterministic.
  */
-import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
-vi.mock("$lib/stores/session.svelte", () => ({
-  session: {
-    get current() {
-      return { username: "juan" };
-    },
-  },
+vi.mock('$lib/stores/session.svelte', () => ({
+	session: {
+		get current() {
+			return { username: 'juan' };
+		}
+	}
 }));
 
-vi.mock("$lib/stores/recentDashboards.svelte", () => ({
-  recentDashboards: { push: vi.fn(), remove: vi.fn(), all: () => [], clear: vi.fn() },
+vi.mock('$lib/stores/recentDashboards.svelte', () => ({
+	recentDashboards: { push: vi.fn(), remove: vi.fn(), all: () => [], clear: vi.fn() }
 }));
 
-vi.mock("$lib/api/dashboards", async (importActual) => {
-  const actual = await importActual<typeof import("$lib/api/dashboards")>();
-  return {
-    ...actual,
-    loadDashboard: vi.fn(),
-    saveDashboard: vi.fn(),
-  };
+vi.mock('$lib/api/dashboards', async (importActual) => {
+	const actual = await importActual<typeof import('$lib/api/dashboards')>();
+	return {
+		...actual,
+		loadDashboard: vi.fn(),
+		saveDashboard: vi.fn()
+	};
 });
 
-import { dashboardStore } from "./dashboard.svelte";
-import { loadDashboard, newDashboard, saveDashboard, type Dashboard } from "$lib/api/dashboards";
+import { dashboardStore } from './dashboard.svelte';
+import { loadDashboard, newDashboard, saveDashboard, type Dashboard } from '$lib/api/dashboards';
 
 const loadDashboardMock = loadDashboard as unknown as Mock;
 const saveDashboardMock = saveDashboard as unknown as Mock;
 
 function fetchedDashboard(name: string): Dashboard {
-  return { ...newDashboard(name), id: "server-id" };
+	return { ...newDashboard(name), id: 'server-id' };
 }
 
-describe("dashboardStore — REVIEW-THEN-SAVE persisted + path-bound adoption", () => {
-  beforeEach(() => {
-    dashboardStore.reset();
-    loadDashboardMock.mockReset();
-    saveDashboardMock.mockReset();
-    loadDashboardMock.mockResolvedValue(fetchedDashboard("Fetched Real"));
-    saveDashboardMock.mockResolvedValue({ status: "OK", path: "homes/juan/x.saikudash" });
-  });
+describe('dashboardStore — REVIEW-THEN-SAVE persisted + path-bound adoption', () => {
+	beforeEach(() => {
+		dashboardStore.reset();
+		loadDashboardMock.mockReset();
+		saveDashboardMock.mockReset();
+		loadDashboardMock.mockResolvedValue(fetchedDashboard('Fetched Real'));
+		saveDashboardMock.mockResolvedValue({ status: 'OK', path: 'homes/juan/x.saikudash' });
+	});
 
-  it("(a) beginReview → persisted false; a successful save flips it true", async () => {
-    const path = "homes/juan/ai-sales-abc.saikudash";
-    dashboardStore.beginReview(newDashboard("AI Sales"), path);
-    // Staged but nothing adopted yet — still not persisted.
-    expect(dashboardStore.persisted).toBe(false);
+	it('(a) beginReview → persisted false; a successful save flips it true', async () => {
+		const path = 'homes/juan/ai-sales-abc.saikudash';
+		dashboardStore.beginReview(newDashboard('AI Sales'), path);
+		// Staged but nothing adopted yet — still not persisted.
+		expect(dashboardStore.persisted).toBe(false);
 
-    // The editor's load() for the staged path adopts it (no fetch).
-    await dashboardStore.load(path);
-    expect(loadDashboardMock).not.toHaveBeenCalled();
-    expect(dashboardStore.current?.name).toBe("AI Sales");
-    expect(dashboardStore.savedPath).toBe(path);
-    expect(dashboardStore.dirty).toBe(true);
-    expect(dashboardStore.persisted).toBe(false);
+		// The editor's load() for the staged path adopts it (no fetch).
+		await dashboardStore.load(path);
+		expect(loadDashboardMock).not.toHaveBeenCalled();
+		expect(dashboardStore.current?.name).toBe('AI Sales');
+		expect(dashboardStore.savedPath).toBe(path);
+		expect(dashboardStore.dirty).toBe(true);
+		expect(dashboardStore.persisted).toBe(false);
 
-    // The user's Save writes the new file → now persisted.
-    const ok = await dashboardStore.save();
-    expect(ok).toBe(true);
-    expect(saveDashboardMock).toHaveBeenCalledTimes(1);
-    expect(dashboardStore.persisted).toBe(true);
-  });
+		// The user's Save writes the new file → now persisted.
+		const ok = await dashboardStore.save();
+		expect(ok).toBe(true);
+		expect(saveDashboardMock).toHaveBeenCalledTimes(1);
+		expect(dashboardStore.persisted).toBe(true);
+	});
 
-  it("a normally-fetched saved dashboard is persisted (no regression)", async () => {
-    await dashboardStore.load("homes/juan/real.saikudash");
-    expect(loadDashboardMock).toHaveBeenCalledTimes(1);
-    expect(dashboardStore.current?.name).toBe("Fetched Real");
-    expect(dashboardStore.persisted).toBe(true);
-  });
+	it('a normally-fetched saved dashboard is persisted (no regression)', async () => {
+		await dashboardStore.load('homes/juan/real.saikudash');
+		expect(loadDashboardMock).toHaveBeenCalledTimes(1);
+		expect(dashboardStore.current?.name).toBe('Fetched Real');
+		expect(dashboardStore.persisted).toBe(true);
+	});
 
-  it("(b) load() of a non-matching path does NOT adopt the staged review (abandons it, fetches)", async () => {
-    dashboardStore.beginReview(newDashboard("Staged AI"), "homes/juan/ai-x.saikudash");
+	it('(b) load() of a non-matching path does NOT adopt the staged review (abandons it, fetches)', async () => {
+		dashboardStore.beginReview(newDashboard('Staged AI'), 'homes/juan/ai-x.saikudash');
 
-    // A load for a DIFFERENT path falls through to the normal fetch.
-    await dashboardStore.load("homes/juan/other.saikudash");
-    expect(loadDashboardMock).toHaveBeenCalledTimes(1);
-    expect(dashboardStore.current?.name).toBe("Fetched Real");
-    expect(dashboardStore.persisted).toBe(true);
+		// A load for a DIFFERENT path falls through to the normal fetch.
+		await dashboardStore.load('homes/juan/other.saikudash');
+		expect(loadDashboardMock).toHaveBeenCalledTimes(1);
+		expect(dashboardStore.current?.name).toBe('Fetched Real');
+		expect(dashboardStore.persisted).toBe(true);
 
-    // The mismatched navigation abandoned the never-persisted review — a later
-    // load of what WOULD have been the review path now fetches (no stale adopt
-    // into the wrong place).
-    await dashboardStore.load("homes/juan/ai-x.saikudash");
-    expect(loadDashboardMock).toHaveBeenCalledTimes(2);
-    expect(dashboardStore.current?.name).toBe("Fetched Real");
-    expect(dashboardStore.persisted).toBe(true);
-  });
+		// The mismatched navigation abandoned the never-persisted review — a later
+		// load of what WOULD have been the review path now fetches (no stale adopt
+		// into the wrong place).
+		await dashboardStore.load('homes/juan/ai-x.saikudash');
+		expect(loadDashboardMock).toHaveBeenCalledTimes(2);
+		expect(dashboardStore.current?.name).toBe('Fetched Real');
+		expect(dashboardStore.persisted).toBe(true);
+	});
 
-  it("(c) reset() clears the staged review so a later matching load fetches", async () => {
-    dashboardStore.beginReview(newDashboard("Staged AI"), "homes/juan/ai-x.saikudash");
-    dashboardStore.reset();
+	it('(c) reset() clears the staged review so a later matching load fetches', async () => {
+		dashboardStore.beginReview(newDashboard('Staged AI'), 'homes/juan/ai-x.saikudash');
+		dashboardStore.reset();
 
-    await dashboardStore.load("homes/juan/ai-x.saikudash");
-    // No staged review left — the matching path now fetches from the server.
-    expect(loadDashboardMock).toHaveBeenCalledTimes(1);
-    expect(dashboardStore.current?.name).toBe("Fetched Real");
-    expect(dashboardStore.persisted).toBe(true);
-  });
+		await dashboardStore.load('homes/juan/ai-x.saikudash');
+		// No staged review left — the matching path now fetches from the server.
+		expect(loadDashboardMock).toHaveBeenCalledTimes(1);
+		expect(dashboardStore.current?.name).toBe('Fetched Real');
+		expect(dashboardStore.persisted).toBe(true);
+	});
 
-  it("(d) repeated load() of the currently-adopted unsaved review path does NOT re-fetch/clobber", async () => {
-    // Regression for the live bug: the editor re-invokes load(path) on
-    // mount + path-change (2+ times); a one-shot guard let the follow-up
-    // loads fetch a not-yet-saved path → 404 → blank grid, tiles gone.
-    const path = "homes/admin/ai-account-balance-analysis-a9ba0.saikudash";
-    dashboardStore.beginReview(newDashboard("AI Review"), path);
+	it('(d) repeated load() of the currently-adopted unsaved review path does NOT re-fetch/clobber', async () => {
+		// Regression for the live bug: the editor re-invokes load(path) on
+		// mount + path-change (2+ times); a one-shot guard let the follow-up
+		// loads fetch a not-yet-saved path → 404 → blank grid, tiles gone.
+		const path = 'homes/admin/ai-account-balance-analysis-a9ba0.saikudash';
+		dashboardStore.beginReview(newDashboard('AI Review'), path);
 
-    // First load adopts the staged dashboard (no fetch).
-    await dashboardStore.load(path);
-    expect(loadDashboardMock).not.toHaveBeenCalled();
-    expect(dashboardStore.current?.name).toBe("AI Review");
+		// First load adopts the staged dashboard (no fetch).
+		await dashboardStore.load(path);
+		expect(loadDashboardMock).not.toHaveBeenCalled();
+		expect(dashboardStore.current?.name).toBe('AI Review');
 
-    // The editor re-invokes load(path) — must NOT fetch, must keep the tiles.
-    await dashboardStore.load(path);
-    await dashboardStore.load(path);
-    expect(loadDashboardMock).not.toHaveBeenCalled();
-    expect(dashboardStore.current?.name).toBe("AI Review");
-    expect(dashboardStore.persisted).toBe(false);
-    expect(dashboardStore.dirty).toBe(true);
+		// The editor re-invokes load(path) — must NOT fetch, must keep the tiles.
+		await dashboardStore.load(path);
+		await dashboardStore.load(path);
+		expect(loadDashboardMock).not.toHaveBeenCalled();
+		expect(dashboardStore.current?.name).toBe('AI Review');
+		expect(dashboardStore.persisted).toBe(false);
+		expect(dashboardStore.dirty).toBe(true);
 
-    // Trailing-slash / leading-slash URL variants of the same path also no-op
-    // (the route URL carries a trailing slash; the fetch path does not).
-    await dashboardStore.load(path + "/");
-    await dashboardStore.load("/" + path);
-    expect(loadDashboardMock).not.toHaveBeenCalled();
-    expect(dashboardStore.current?.name).toBe("AI Review");
-  });
+		// Trailing-slash / leading-slash URL variants of the same path also no-op
+		// (the route URL carries a trailing slash; the fetch path does not).
+		await dashboardStore.load(path + '/');
+		await dashboardStore.load('/' + path);
+		expect(loadDashboardMock).not.toHaveBeenCalled();
+		expect(dashboardStore.current?.name).toBe('AI Review');
+	});
 
-  it("(e) once the user Saves the review, reloading its path fetches the real file", async () => {
-    const path = "homes/admin/ai-x.saikudash";
-    dashboardStore.beginReview(newDashboard("AI Review"), path);
-    await dashboardStore.load(path); // adopt
-    expect(dashboardStore.persisted).toBe(false);
+	it('(e) once the user Saves the review, reloading its path fetches the real file', async () => {
+		const path = 'homes/admin/ai-x.saikudash';
+		dashboardStore.beginReview(newDashboard('AI Review'), path);
+		await dashboardStore.load(path); // adopt
+		expect(dashboardStore.persisted).toBe(false);
 
-    const ok = await dashboardStore.save(); // persist — releases the sticky binding
-    expect(ok).toBe(true);
-    expect(dashboardStore.persisted).toBe(true);
+		const ok = await dashboardStore.save(); // persist — releases the sticky binding
+		expect(ok).toBe(true);
+		expect(dashboardStore.persisted).toBe(true);
 
-    // A subsequent load of the same path now fetches the saved file.
-    await dashboardStore.load(path);
-    expect(loadDashboardMock).toHaveBeenCalledTimes(1);
-    expect(dashboardStore.current?.name).toBe("Fetched Real");
-    expect(dashboardStore.persisted).toBe(true);
-  });
+		// A subsequent load of the same path now fetches the saved file.
+		await dashboardStore.load(path);
+		expect(loadDashboardMock).toHaveBeenCalledTimes(1);
+		expect(dashboardStore.current?.name).toBe('Fetched Real');
+		expect(dashboardStore.persisted).toBe(true);
+	});
 
-  describe("commentsPath — #942 badge gates on persisted, not savedPath", () => {
-    // Regression: the per-tile comment-count badge fetched comments against the
-    // review dashboard's not-yet-written savedPath, 403'ing (canReadDashboard
-    // ACL) — which the global fetch interceptor mis-surfaced as a bogus
-    // "Session expired" banner right after an AI dashboard build.
-    it("is empty for a staged/adopted AI review (savedPath set, persisted false)", async () => {
-      const path = "homes/juan/ai-sales-abc.saikudash";
-      dashboardStore.beginReview(newDashboard("AI Sales"), path);
-      await dashboardStore.load(path); // adopt — no fetch
-      expect(dashboardStore.savedPath).toBe(path);
-      expect(dashboardStore.persisted).toBe(false);
-      // The badge must stay disabled while the dashboard doesn't exist server-side.
-      expect(dashboardStore.commentsPath).toBe("");
-    });
+	describe('commentsPath — #942 badge gates on persisted, not savedPath', () => {
+		// Regression: the per-tile comment-count badge fetched comments against the
+		// review dashboard's not-yet-written savedPath, 403'ing (canReadDashboard
+		// ACL) — which the global fetch interceptor mis-surfaced as a bogus
+		// "Session expired" banner right after an AI dashboard build.
+		it('is empty for a staged/adopted AI review (savedPath set, persisted false)', async () => {
+			const path = 'homes/juan/ai-sales-abc.saikudash';
+			dashboardStore.beginReview(newDashboard('AI Sales'), path);
+			await dashboardStore.load(path); // adopt — no fetch
+			expect(dashboardStore.savedPath).toBe(path);
+			expect(dashboardStore.persisted).toBe(false);
+			// The badge must stay disabled while the dashboard doesn't exist server-side.
+			expect(dashboardStore.commentsPath).toBe('');
+		});
 
-    it("is empty for a 404 fallback (savedPath set, persisted false)", async () => {
-      loadDashboardMock.mockRejectedValueOnce(new Error("loadDashboard -> 404"));
-      await dashboardStore.load("homes/juan/does-not-exist.saikudash");
-      expect(dashboardStore.savedPath).toBe("homes/juan/does-not-exist.saikudash");
-      expect(dashboardStore.persisted).toBe(false);
-      expect(dashboardStore.commentsPath).toBe("");
-    });
+		it('is empty for a 404 fallback (savedPath set, persisted false)', async () => {
+			loadDashboardMock.mockRejectedValueOnce(new Error('loadDashboard -> 404'));
+			await dashboardStore.load('homes/juan/does-not-exist.saikudash');
+			expect(dashboardStore.savedPath).toBe('homes/juan/does-not-exist.saikudash');
+			expect(dashboardStore.persisted).toBe(false);
+			expect(dashboardStore.commentsPath).toBe('');
+		});
 
-    it("equals savedPath for a fetched dashboard, and after the review is saved", async () => {
-      // Fetched from the repository → persisted → comments enabled.
-      await dashboardStore.load("homes/juan/real.saikudash");
-      expect(dashboardStore.persisted).toBe(true);
-      expect(dashboardStore.commentsPath).toBe(dashboardStore.savedPath);
-      expect(dashboardStore.commentsPath).toBe("homes/juan/real.saikudash");
+		it('equals savedPath for a fetched dashboard, and after the review is saved', async () => {
+			// Fetched from the repository → persisted → comments enabled.
+			await dashboardStore.load('homes/juan/real.saikudash');
+			expect(dashboardStore.persisted).toBe(true);
+			expect(dashboardStore.commentsPath).toBe(dashboardStore.savedPath);
+			expect(dashboardStore.commentsPath).toBe('homes/juan/real.saikudash');
 
-      // A review only enables comments once the user Saves it.
-      dashboardStore.reset();
-      const path = "homes/juan/ai-x.saikudash";
-      dashboardStore.beginReview(newDashboard("AI Review"), path);
-      await dashboardStore.load(path); // adopt
-      expect(dashboardStore.commentsPath).toBe("");
-      const ok = await dashboardStore.save();
-      expect(ok).toBe(true);
-      expect(dashboardStore.persisted).toBe(true);
-      expect(dashboardStore.commentsPath).toBe(dashboardStore.savedPath);
-    });
-  });
+			// A review only enables comments once the user Saves it.
+			dashboardStore.reset();
+			const path = 'homes/juan/ai-x.saikudash';
+			dashboardStore.beginReview(newDashboard('AI Review'), path);
+			await dashboardStore.load(path); // adopt
+			expect(dashboardStore.commentsPath).toBe('');
+			const ok = await dashboardStore.save();
+			expect(ok).toBe(true);
+			expect(dashboardStore.persisted).toBe(true);
+			expect(dashboardStore.commentsPath).toBe(dashboardStore.savedPath);
+		});
+	});
 });

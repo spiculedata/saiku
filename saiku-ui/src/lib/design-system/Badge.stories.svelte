@@ -1,6 +1,6 @@
 <script module lang="ts">
 	import { defineMeta } from '@storybook/addon-svelte-csf';
-	import Badge from './Badge.svelte';
+	import { Badge } from '$lib/design-system';
 
 	const { Story } = defineMeta({
 		title: 'Compounds/Badge',

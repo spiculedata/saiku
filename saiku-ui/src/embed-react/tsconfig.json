@@ -1,19 +1,19 @@
 {
-  "//": "saiku#1432 — dedicated tsconfig for the embed-react public surface. Kept out of the main saiku-ui tsconfig graph because it's typed against React (which the SvelteKit app doesn't depend on), and because the ship artifact is hand-authored JS + .d.ts rather than compiled TS.",
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "jsx": "react-jsx",
-    "strict": true,
-    "noEmit": true,
-    "skipLibCheck": true,
-    "allowJs": true,
-    "checkJs": false,
-    "esModuleInterop": true,
-    "isolatedModules": true,
-    "resolveJsonModule": true,
-    "types": []
-  },
-  "include": ["./index.js", "./index.d.ts", "./__typecheck__.tsx"]
+	"//": "saiku#1432 — dedicated tsconfig for the embed-react public surface. Kept out of the main saiku-ui tsconfig graph because it's typed against React (which the SvelteKit app doesn't depend on), and because the ship artifact is hand-authored JS + .d.ts rather than compiled TS.",
+	"compilerOptions": {
+		"target": "ES2022",
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"jsx": "react-jsx",
+		"strict": true,
+		"noEmit": true,
+		"skipLibCheck": true,
+		"allowJs": true,
+		"checkJs": false,
+		"esModuleInterop": true,
+		"isolatedModules": true,
+		"resolveJsonModule": true,
+		"types": []
+	},
+	"include": ["./index.js", "./index.d.ts", "./__typecheck__.tsx"]
 }

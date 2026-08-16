@@ -8,20 +8,20 @@
  */
 
 class AiInsightStore {
-  /** Markdown body of the most recent insight turn, or null before the
-   *  first one / after a clear. */
-  latestMarkdown = $state<string | null>(null);
+	/** Markdown body of the most recent insight turn, or null before the
+	 *  first one / after a clear. */
+	latestMarkdown = $state<string | null>(null);
 
-  /** Record a fresh insight. Called from the drawer's submit() handler when
-   *  an insight turn is produced — never from an $effect. */
-  set(md: string): void {
-    this.latestMarkdown = md;
-  }
+	/** Record a fresh insight. Called from the drawer's submit() handler when
+	 *  an insight turn is produced — never from an $effect. */
+	set(md: string): void {
+		this.latestMarkdown = md;
+	}
 
-  /** Drop the stored insight. */
-  clear(): void {
-    this.latestMarkdown = null;
-  }
+	/** Drop the stored insight. */
+	clear(): void {
+		this.latestMarkdown = null;
+	}
 }
 
 export const aiInsight = new AiInsightStore();

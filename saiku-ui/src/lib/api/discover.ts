@@ -1,162 +1,162 @@
 export interface SaikuCube {
-  connection: string;
-  catalog: string;
-  schema: string;
-  name: string;
-  caption: string;
-  uniqueName: string;
-  visible: boolean;
-  /** Declarative time-intelligence directives parsed from the cube's
-   *  {@code <TimeCalcs>} schema section (saiku#1221 Phase 3). Surfaced by
-   *  the server so the SPA date-filter modal can offer them as one-click
-   *  measures rather than asking the user to author MDX. Empty / undefined
-   *  for cubes that don't ship any (the common case today). */
-  timeCalcs?: SaikuTimeCalc[];
+	connection: string;
+	catalog: string;
+	schema: string;
+	name: string;
+	caption: string;
+	uniqueName: string;
+	visible: boolean;
+	/** Declarative time-intelligence directives parsed from the cube's
+	 *  {@code <TimeCalcs>} schema section (saiku#1221 Phase 3). Surfaced by
+	 *  the server so the SPA date-filter modal can offer them as one-click
+	 *  measures rather than asking the user to author MDX. Empty / undefined
+	 *  for cubes that don't ship any (the common case today). */
+	timeCalcs?: SaikuTimeCalc[];
 }
 
 export interface SaikuTimeCalc {
-  /** Display name; also the {@code [Measures]} suffix the agent uses. */
-  name: string;
-  /** One of {@code yoy} / {@code pop} / {@code ytd} / {@code rolling}. */
-  type: string;
-  /** Underlying measure the calc derives from. */
-  measure: string;
-  /** Time dimension the calc operates against. */
-  timeDimension: string;
-  /** For {@code type=\"rolling\"}: window size; undefined otherwise. */
-  window?: number;
-  /** For {@code type=\"rolling\"}: aggregator (sum / avg / min / max). */
-  function?: string;
-  /** Mondrian format string for the resulting cell values. */
-  formatString?: string;
+	/** Display name; also the {@code [Measures]} suffix the agent uses. */
+	name: string;
+	/** One of {@code yoy} / {@code pop} / {@code ytd} / {@code rolling}. */
+	type: string;
+	/** Underlying measure the calc derives from. */
+	measure: string;
+	/** Time dimension the calc operates against. */
+	timeDimension: string;
+	/** For {@code type=\"rolling\"}: window size; undefined otherwise. */
+	window?: number;
+	/** For {@code type=\"rolling\"}: aggregator (sum / avg / min / max). */
+	function?: string;
+	/** Mondrian format string for the resulting cell values. */
+	formatString?: string;
 }
 
 export interface SaikuSchema {
-  name: string;
-  cubes: SaikuCube[];
+	name: string;
+	cubes: SaikuCube[];
 }
 
 export interface SaikuCatalog {
-  name: string;
-  schemas: SaikuSchema[];
+	name: string;
+	schemas: SaikuSchema[];
 }
 
 export interface SaikuConnection {
-  name: string;
-  catalogs: SaikuCatalog[];
-  /**
-   * Datasource kind exposed by the server so the workbench can pick the right sidebar
-   * without a second round-trip. `"OLAP"` (default) → Mondrian catalog/schema/cube tree.
-   * `"OSSIE"` → the workbench should call `/discover/{name}/ossie-model` for a
-   * dataset/metric/relationship tree; {@link catalogs} is empty for these.
-   *
-   * Older servers may omit the field entirely; treat missing as `"OLAP"` for backwards
-   * compatibility.
-   */
-  type?: "OLAP" | "OSSIE";
+	name: string;
+	catalogs: SaikuCatalog[];
+	/**
+	 * Datasource kind exposed by the server so the workbench can pick the right sidebar
+	 * without a second round-trip. `"OLAP"` (default) → Mondrian catalog/schema/cube tree.
+	 * `"OSSIE"` → the workbench should call `/discover/{name}/ossie-model` for a
+	 * dataset/metric/relationship tree; {@link catalogs} is empty for these.
+	 *
+	 * Older servers may omit the field entirely; treat missing as `"OLAP"` for backwards
+	 * compatibility.
+	 */
+	type?: 'OLAP' | 'OSSIE';
 }
 
 export interface SaikuMember {
-  uniqueName: string;
-  name: string;
-  caption: string;
-  description?: string;
-  levelUniqueName?: string;
-  hierarchyUniqueName?: string;
-  dimensionUniqueName?: string;
+	uniqueName: string;
+	name: string;
+	caption: string;
+	description?: string;
+	levelUniqueName?: string;
+	hierarchyUniqueName?: string;
+	dimensionUniqueName?: string;
 }
 
 export interface SaikuLevel {
-  name: string;
-  caption: string;
-  uniqueName: string;
-  description?: string;
-  /** Mondrian-native level type (olap4j {@code Level.Type}): one of
-   *  {@code TimeYears} / {@code TimeHalfYears} / {@code TimeQuarters} /
-   *  {@code TimeMonths} / {@code TimeWeeks} / {@code TimeDays} /
-   *  {@code TimeHours} / {@code TimeMinutes} / {@code TimeSeconds} /
-   *  {@code TimeUndefined} / {@code Regular}. Set from
-   *  {@code <Attribute levelType="...">} in the schema. saiku#1221 added
-   *  the JSON surface so the SPA can detect time levels deterministically
-   *  rather than substring-matching captions. */
-  levelType?: string;
+	name: string;
+	caption: string;
+	uniqueName: string;
+	description?: string;
+	/** Mondrian-native level type (olap4j {@code Level.Type}): one of
+	 *  {@code TimeYears} / {@code TimeHalfYears} / {@code TimeQuarters} /
+	 *  {@code TimeMonths} / {@code TimeWeeks} / {@code TimeDays} /
+	 *  {@code TimeHours} / {@code TimeMinutes} / {@code TimeSeconds} /
+	 *  {@code TimeUndefined} / {@code Regular}. Set from
+	 *  {@code <Attribute levelType="...">} in the schema. saiku#1221 added
+	 *  the JSON surface so the SPA can detect time levels deterministically
+	 *  rather than substring-matching captions. */
+	levelType?: string;
 }
 
 export interface SaikuHierarchy {
-  name: string;
-  caption: string;
-  uniqueName: string;
-  levels?: SaikuLevel[];
+	name: string;
+	caption: string;
+	uniqueName: string;
+	levels?: SaikuLevel[];
 }
 
 export interface SaikuDimension {
-  name: string;
-  caption: string;
-  uniqueName: string;
-  hierarchies: SaikuHierarchy[];
-  /** Mondrian-native dimension type from olap4j {@code Dimension.Type}:
-   *  one of {@code TIME} / {@code MEASURE} / {@code OTHER}. Set from
-   *  {@code <Dimension type="TIME">} in the schema. saiku#1221 added
-   *  this so the SPA's time-filter detection has a dimension-level
-   *  signal independent of caption text. */
-  dimensionType?: string;
-  /** Names of the MeasureGroups this dimension has a real (non-NoLink) join
-   *  to. Populated by SaikuMondrianHelper.getMeasureGroupsForDimension on
-   *  Mondrian providers; null elsewhere.
-   *
-   *  Used in DimensionList for applicability hinting on virtual cubes —
-   *  when the user has measures selected from MGs R, a dimension is
-   *  visually muted iff measureGroups doesn't cover R. Null is treated as
-   *  "no info, assume applicable" so legacy single-MG cubes render
-   *  identically to today. */
-  measureGroups?: string[] | null;
+	name: string;
+	caption: string;
+	uniqueName: string;
+	hierarchies: SaikuHierarchy[];
+	/** Mondrian-native dimension type from olap4j {@code Dimension.Type}:
+	 *  one of {@code TIME} / {@code MEASURE} / {@code OTHER}. Set from
+	 *  {@code <Dimension type="TIME">} in the schema. saiku#1221 added
+	 *  this so the SPA's time-filter detection has a dimension-level
+	 *  signal independent of caption text. */
+	dimensionType?: string;
+	/** Names of the MeasureGroups this dimension has a real (non-NoLink) join
+	 *  to. Populated by SaikuMondrianHelper.getMeasureGroupsForDimension on
+	 *  Mondrian providers; null elsewhere.
+	 *
+	 *  Used in DimensionList for applicability hinting on virtual cubes —
+	 *  when the user has measures selected from MGs R, a dimension is
+	 *  visually muted iff measureGroups doesn't cover R. Null is treated as
+	 *  "no info, assume applicable" so legacy single-MG cubes render
+	 *  identically to today. */
+	measureGroups?: string[] | null;
 }
 
 export interface SaikuMeasure {
-  name: string;
-  caption: string;
-  uniqueName: string;
-  formula?: string;
-  calculated?: boolean;
-  /** Backend may surface visible=false for helper measures. The server
-   *  filters these out unless ?includeHidden=true is set (see saiku#778
-   *  / OlapDiscoverResource.getCubeMeasures). The field is forwarded
-   *  raw so admin UIs can badge "(hidden)" rows without re-checking. */
-  visible?: boolean;
-  /** Mondrian-4 MeasureGroup the base measure belongs to. Populated by
-   *  SaikuMondrianHelper.getMeasureGroup; empty string for calculated
-   *  members (no MG) and null for non-Mondrian providers. Drives the
-   *  measure-tree grouping in DimensionList so virtual cubes that pull
-   *  from multiple fact tables (e.g. FoodMart's Warehouse and Sales)
-   *  render Sales / Warehouse / Calculated as separate sections instead
-   *  of one flat list. */
-  measureGroup?: string | null;
+	name: string;
+	caption: string;
+	uniqueName: string;
+	formula?: string;
+	calculated?: boolean;
+	/** Backend may surface visible=false for helper measures. The server
+	 *  filters these out unless ?includeHidden=true is set (see saiku#778
+	 *  / OlapDiscoverResource.getCubeMeasures). The field is forwarded
+	 *  raw so admin UIs can badge "(hidden)" rows without re-checking. */
+	visible?: boolean;
+	/** Mondrian-4 MeasureGroup the base measure belongs to. Populated by
+	 *  SaikuMondrianHelper.getMeasureGroup; empty string for calculated
+	 *  members (no MG) and null for non-Mondrian providers. Drives the
+	 *  measure-tree grouping in DimensionList so virtual cubes that pull
+	 *  from multiple fact tables (e.g. FoodMart's Warehouse and Sales)
+	 *  render Sales / Warehouse / Calculated as separate sections instead
+	 *  of one flat list. */
+	measureGroup?: string | null;
 }
 
-const REST_BASE = "/rest/saiku";
+const REST_BASE = '/rest/saiku';
 
 function cubeUrl(username: string, c: SaikuCube): string {
-  return `${REST_BASE}/${encodeURIComponent(username)}/discover/${encodeURIComponent(c.connection)}/${encodeURIComponent(c.catalog)}/${encodeURIComponent(c.schema)}/${encodeURIComponent(c.name)}`;
+	return `${REST_BASE}/${encodeURIComponent(username)}/discover/${encodeURIComponent(c.connection)}/${encodeURIComponent(c.catalog)}/${encodeURIComponent(c.schema)}/${encodeURIComponent(c.name)}`;
 }
 
 async function getJson<T>(url: string): Promise<T> {
-  const res = await fetch(url, { credentials: "include", headers: { Accept: "application/json" } });
-  if (!res.ok) throw new Error(`${url} -> ${res.status}`);
-  return (await res.json()) as T;
+	const res = await fetch(url, { credentials: 'include', headers: { Accept: 'application/json' } });
+	if (!res.ok) throw new Error(`${url} -> ${res.status}`);
+	return (await res.json()) as T;
 }
 
 export async function listConnections(username: string): Promise<SaikuConnection[]> {
-  return getJson<SaikuConnection[]>(`${REST_BASE}/${encodeURIComponent(username)}/discover`);
+	return getJson<SaikuConnection[]>(`${REST_BASE}/${encodeURIComponent(username)}/discover`);
 }
 
 export async function refreshConnections(username: string): Promise<SaikuConnection[]> {
-  return getJson<SaikuConnection[]>(
-    `${REST_BASE}/${encodeURIComponent(username)}/discover/refresh`,
-  );
+	return getJson<SaikuConnection[]>(
+		`${REST_BASE}/${encodeURIComponent(username)}/discover/refresh`
+	);
 }
 
 export async function listDimensions(username: string, cube: SaikuCube): Promise<SaikuDimension[]> {
-  return getJson<SaikuDimension[]>(`${cubeUrl(username, cube)}/dimensions`);
+	return getJson<SaikuDimension[]>(`${cubeUrl(username, cube)}/dimensions`);
 }
 
 /**
@@ -170,44 +170,44 @@ export async function listDimensions(username: string, cube: SaikuCube): Promise
  *   boundary.
  */
 export async function listMeasures(
-  username: string,
-  cube: SaikuCube,
-  includeHidden = false,
+	username: string,
+	cube: SaikuCube,
+	includeHidden = false
 ): Promise<SaikuMeasure[]> {
-  const base = `${cubeUrl(username, cube)}/measures/`;
-  const url = includeHidden ? `${base}?includeHidden=true` : base;
-  return getJson<SaikuMeasure[]>(url);
+	const base = `${cubeUrl(username, cube)}/measures/`;
+	const url = includeHidden ? `${base}?includeHidden=true` : base;
+	return getJson<SaikuMeasure[]>(url);
 }
 
 export async function listMemberChildren(
-  username: string,
-  cube: SaikuCube,
-  memberUniqueName: string,
+	username: string,
+	cube: SaikuCube,
+	memberUniqueName: string
 ): Promise<SaikuMember[]> {
-  return getJson<SaikuMember[]>(
-    `${cubeUrl(username, cube)}/member/${encodeURIComponent(memberUniqueName)}/children`,
-  );
+	return getJson<SaikuMember[]>(
+		`${cubeUrl(username, cube)}/member/${encodeURIComponent(memberUniqueName)}/children`
+	);
 }
 
 export async function listLevelMembers(
-  username: string,
-  cube: SaikuCube,
-  dimensionName: string,
-  hierarchyUniqueName: string,
-  levelName: string,
+	username: string,
+	cube: SaikuCube,
+	dimensionName: string,
+	hierarchyUniqueName: string,
+	levelName: string
 ): Promise<SaikuMember[]> {
-  const base = cubeUrl(username, cube);
-  return getJson<SaikuMember[]>(
-    `${base}/dimensions/${encodeURIComponent(dimensionName)}/hierarchies/${encodeURIComponent(hierarchyUniqueName)}/levels/${encodeURIComponent(levelName)}`,
-  );
+	const base = cubeUrl(username, cube);
+	return getJson<SaikuMember[]>(
+		`${base}/dimensions/${encodeURIComponent(dimensionName)}/hierarchies/${encodeURIComponent(hierarchyUniqueName)}/levels/${encodeURIComponent(levelName)}`
+	);
 }
 
 export async function listRootMembers(
-  username: string,
-  cube: SaikuCube,
-  hierarchyUniqueName: string,
+	username: string,
+	cube: SaikuCube,
+	hierarchyUniqueName: string
 ): Promise<SaikuMember[]> {
-  return getJson<SaikuMember[]>(
-    `${cubeUrl(username, cube)}/hierarchies/${encodeURIComponent(hierarchyUniqueName)}/rootmembers`,
-  );
+	return getJson<SaikuMember[]>(
+		`${cubeUrl(username, cube)}/hierarchies/${encodeURIComponent(hierarchyUniqueName)}/rootmembers`
+	);
 }

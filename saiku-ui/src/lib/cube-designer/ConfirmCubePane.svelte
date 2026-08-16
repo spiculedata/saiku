@@ -26,7 +26,7 @@
 		ListTree,
 		Rows3,
 		EyeOff
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import ConfirmCubeCanvas from './confirm-cube/ConfirmCubeCanvas.svelte';
 	import CubeDag from './confirm-cube/CubeDag.svelte';
 	import type { SchemaCanvasStore } from './state.svelte.js';
@@ -57,6 +57,15 @@
 		toggleOutlineSection: (s: OutlineSection) => void;
 		sampleDataTab: Snippet;
 		tryQueryTab: Snippet;
+		/**
+		 * Where the per-cube "Open in Saiku" button points, given the cube it sits on.
+		 *
+		 * saiku#1859: this used to be a hard-coded `/saiku/launch`, which is a Saiku Cloud
+		 * route. The OSS host has no such route, so the button 404'd there even once it was
+		 * reachable. The default keeps Cloud's behaviour exactly; OSS passes its own builder
+		 * (`/ui/?starterCube*=…`, the generic contract in `$lib/api/starterCube`).
+		 */
+		launchUrlFor?: (cube: WorkbenchCube) => string;
 	}
 
 	let {
@@ -76,7 +85,8 @@
 		switchCube,
 		toggleOutlineSection,
 		sampleDataTab,
-		tryQueryTab
+		tryQueryTab,
+		launchUrlFor = () => '/saiku/launch'
 	}: Props = $props();
 </script>
 
@@ -158,7 +168,7 @@
 						     Studio.  Solid primary fill + white text +
 						     shadow. -->
 						<a
-							href="/saiku/launch"
+							href={launchUrlFor(c)}
 							target="_blank"
 							rel="noopener noreferrer"
 							onclick={() => {
@@ -399,7 +409,16 @@
 								</div>
 								{#if (mg.measureColumns ?? []).length > 0}
 									<ul class="flex flex-col gap-0 pl-5 font-mono text-[10px] text-muted-foreground">
-										{#each mg.measureColumns ?? [] as m (m)}
+										<!-- saiku#1842: keyed by index, NOT by the column name. A measure
+										     group may legitimately expose several measures over the SAME
+										     column — a count and a distinct-count on the same key, a sum and
+										     an average on the same amount. Keying on the bare name made those
+										     duplicates collide, and Svelte's each_key_duplicate is thrown
+										     during render: the whole ConfirmCubePane tore down, taking the
+										     page with it (the error propagates to root.svelte), so the app
+										     was dead until reload. This list is read-only display, so index
+										     keys are safe — there is no reorder-preserving state to keep. -->
+										{#each mg.measureColumns ?? [] as m, mi (`${m}#${mi}`)}
 											<li class="truncate" title={m}>{m}</li>
 										{/each}
 									</ul>

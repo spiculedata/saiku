@@ -23,7 +23,7 @@
 	} from '@xyflow/svelte';
 	import '@xyflow/svelte/dist/style.css';
 	import { untrack, type Snippet } from 'svelte';
-	import { ChevronRight, X, EyeOff } from 'lucide-svelte';
+	import { ChevronRight, X, EyeOff } from '@lucide/svelte';
 	import TableNode from './TableNode.svelte';
 	import CanvasEdge from './CanvasEdge.svelte';
 	import JumpHandler from './JumpHandler.svelte';
@@ -61,7 +61,7 @@
 	}: Props = $props();
 
 	const nodeTypes = { table: TableNode };
-	 
+
 	const edgeTypes = { canvasJoin: CanvasEdge } as any;
 
 	const schemaFilteredSourceTables = $derived(

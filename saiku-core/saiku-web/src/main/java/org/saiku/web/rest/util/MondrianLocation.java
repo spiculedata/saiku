@@ -109,4 +109,33 @@ public final class MondrianLocation {
     public String jdbcDrivers() {
         return jdbcDrivers;
     }
+
+    /**
+     * Rebuild this location with a different {@code Catalog=}, keeping the JDBC URL and driver
+     * exactly as they were.
+     *
+     * <p>saiku#1872: the Cube Designer's query preview needs to run an unsaved schema against the
+     * datasource the user is designing against. Reusing the stored location and swapping only the
+     * catalog means the preview connects with the SAME warehouse, credentials and driver as the
+     * real thing — and, critically, means the JDBC URL can never come from the request. A preview
+     * endpoint that accepted a URL would be a way to make the server connect anywhere.
+     *
+     * @param newCatalog the catalog reference to use, e.g. a {@code mondrian://} repository path
+     * @return a full {@code jdbc:mondrian:...} location string
+     * @throws IllegalStateException if this location had no {@code Jdbc=} component to reuse
+     */
+    public String withCatalog(String newCatalog) {
+        if (jdbc == null || jdbc.isBlank()) {
+            throw new IllegalStateException("cannot build a Mondrian location without a Jdbc= component");
+        }
+        StringBuilder out = new StringBuilder(MONDRIAN_PREFIX);
+        out.append("Jdbc=").append(jdbc);
+        if (newCatalog != null && !newCatalog.isBlank()) {
+            out.append(";Catalog=").append(newCatalog);
+        }
+        if (jdbcDrivers != null && !jdbcDrivers.isBlank()) {
+            out.append(";JdbcDrivers=").append(jdbcDrivers);
+        }
+        return out.toString();
+    }
 }

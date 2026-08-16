@@ -64,8 +64,8 @@
 		Minimize2,
 		ChevronsUpDown,
 		KeyRound
-	} from 'lucide-svelte';
-	import Button from './primitives/button.svelte';
+	} from '@lucide/svelte';
+	import { Button } from '$lib/components/ui';
 	import ConfirmCubePane from './ConfirmCubePane.svelte';
 	import FactsMeasuresPane from './FactsMeasuresPane.svelte';
 	import DimensionsHierarchiesPane from './DimensionsHierarchiesPane.svelte';
@@ -98,7 +98,13 @@
 		JoinGroupDragPayload,
 		AttributeDragPayload
 	} from './workbench-dnd';
-	import { blankCube, cubeFromDoc, cubeToDoc, renderCalcTokens } from './workbench-cubes';
+	import {
+		blankCube,
+		cubeFromDoc,
+		cubeToDoc,
+		renderCalcTokens,
+		resolveCubeFactTableId
+	} from './workbench-cubes';
 	import type {
 		FactsCalcToken,
 		FactsCalcMode,
@@ -127,9 +133,17 @@
 		 *  button — greyed out when dirty/unsaved (with a tooltip
 		 *  pointing at the top-right Save), enabled when saved+clean. */
 		isSchemaDirty?: boolean;
+		/** Where the Confirm-cube rail's "Open in Saiku" button points.
+		 *  Host-supplied; defaults to Saiku Cloud's launch route (saiku#1859). */
+		launchUrlFor?: (cube: WorkbenchCube) => string;
 	}
 
-	let { store, isSchemaSaved = false, isSchemaDirty = true }: Props = $props();
+	let {
+		store,
+		isSchemaSaved = false,
+		isSchemaDirty = true,
+		launchUrlFor = undefined
+	}: Props = $props();
 
 	// Injected backend (Sample-data + Try-a-query transport); host-provided.
 	const designerBackend = getCubeDesignerBackend();
@@ -1770,15 +1784,16 @@
 	// canvas to actually run.  `missing` is a list of plain-English deficiencies
 	// the empty-state can render so the user knows what to author next.
 	//
-	// Source of truth for "the fact table" is `factsSelectedTableId` (set by
-	// the workbench's fact-table picker), not `role === 'fact'` — the picker
-	// is the canonical workbench-side selection.  Fall back to role only when
-	// no workbench pick has been made yet (legacy / freshly loaded canvases).
+	// saiku#1858: a fact table can be bound in three places and readiness has to
+	// see all of them.  `factsSelectedTableId` is Step 1's cube-level picker, but
+	// the Mondrian 4 flow this workbench actually walks a user through binds the
+	// fact table PER MEASURE GROUP — and that is the binding the Model tab shows.
+	// Consulting only the cube-level pick told users to "Pick a fact table" while
+	// the pane beside them displayed one.  `resolveCubeFactTableId` holds the
+	// precedence rule (and its tests); keep it there rather than inlining it here.
 	const cubeFactTable = $derived.by(() => {
-		const picked = factsSelectedTableId
-			? store.doc.tables.find((t) => t.id === factsSelectedTableId)
-			: undefined;
-		return picked ?? store.doc.tables.find((t) => t.role === 'fact') ?? null;
+		const id = resolveCubeFactTableId(factsSelectedTableId, factsMeasureGroups, store.doc.tables);
+		return id ? (store.doc.tables.find((t) => t.id === id) ?? null) : null;
 	});
 	const sampleDataReadiness = $derived.by<{ ready: boolean; missing: string[] }>(() => {
 		const missing: string[] = [];
@@ -2074,7 +2089,11 @@
 				proposal,
 				connectionId,
 				mdx,
-				cubeName: cube.name
+				cubeName: cube.name,
+				// saiku#1872: the OSS preview endpoint runs the actual schema rather than a
+				// gateway-side IR, so hand it the same XML the export produces. Additive —
+				// Saiku Cloud builds from `proposal` and ignores this field.
+				mondrianXml: workbenchPreviewXml()
 			});
 			const body = (await resp.json().catch(() => null)) as {
 				columns?: string[];
@@ -2857,6 +2876,7 @@
 			{factsMeasureGroups}
 			{isSchemaSaved}
 			{isSchemaDirty}
+			{...launchUrlFor ? { launchUrlFor } : {}}
 			refreshSignal={confirmCubeRefreshTs}
 			bind:validateTab
 			bind:modelViewMode

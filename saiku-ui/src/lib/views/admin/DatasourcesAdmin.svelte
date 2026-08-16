@@ -1,271 +1,275 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import { base } from "$app/paths";
-  import { Button, buttonVariants } from "$lib/components/ui";
-  import { adminDatasources, type AdminDatasource } from "$lib/api/admin";
-  import { toasts } from "$lib/stores/toasts.svelte";
-  import { i18n } from "$lib/stores/i18n.svelte";
-  import { platform } from "$lib/stores/platform.svelte";
-  import ConfirmModal from "$lib/modals/ConfirmModal.svelte";
-  import Modal from "$lib/components/Modal.svelte";
-  import Skeleton from "$lib/components/Skeleton.svelte";
-  import { generateSchemaHref, generateSchemaLabel } from "./dataSourceActions";
+	import { onMount } from 'svelte';
+	import { base } from '$app/paths';
+	import { Button, Input, Select, buttonVariants } from '$lib/components/ui';
+	import { adminDatasources, type AdminDatasource } from '$lib/api/admin';
+	import { toasts } from '$lib/stores/toasts.svelte';
+	import { i18n } from '$lib/stores/i18n.svelte';
+	import { platform } from '$lib/stores/platform.svelte';
+	import ConfirmModal from '$lib/modals/ConfirmModal.svelte';
+	import Modal from '$lib/components/Modal.svelte';
+	import { FormField, Skeleton } from '$lib/design-system';
+	import {
+		generateSchemaHref,
+		generateSchemaLabel,
+		supportsCubeDesigner
+	} from './dataSourceActions';
 
-  let list = $state<AdminDatasource[]>([]);
-  let loading = $state(true);
-  let error = $state<string | null>(null);
-  let editing = $state<AdminDatasource | null>(null);
-  let deleting = $state<AdminDatasource | null>(null);
+	let list = $state<AdminDatasource[]>([]);
+	let loading = $state(true);
+	let error = $state<string | null>(null);
+	let editing = $state<AdminDatasource | null>(null);
+	let deleting = $state<AdminDatasource | null>(null);
 
-  // saiku#1636: on a public demo (SAIKU_DEMO), visitors must not be able to
-  // create / edit / delete datasources — a broken connection string takes down
-  // the shared instance for everyone. Hide every mutating control; the
-  // cube-designer link + Refresh (read-only re-introspect) stay available.
-  const demoMode = $derived(platform.capabilities?.demoMode === true);
+	// saiku#1636: on a public demo (SAIKU_DEMO), visitors must not be able to
+	// create / edit / delete datasources — a broken connection string takes down
+	// the shared instance for everyone. Hide every mutating control; the
+	// cube-designer link + Refresh (read-only re-introspect) stay available.
+	const demoMode = $derived(platform.capabilities?.demoMode === true);
 
-  async function refresh() {
-    loading = true;
-    error = null;
-    try {
-      list = await adminDatasources.list();
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    } finally {
-      loading = false;
-    }
-  }
+	async function refresh() {
+		loading = true;
+		error = null;
+		try {
+			list = await adminDatasources.list();
+		} catch (e) {
+			error = e instanceof Error ? e.message : String(e);
+		} finally {
+			loading = false;
+		}
+	}
 
-  onMount(async () => {
-    if (!platform.capabilities) await platform.loadCapabilities();
-    await refresh();
-  });
+	onMount(async () => {
+		if (!platform.capabilities) await platform.loadCapabilities();
+		await refresh();
+	});
 
-  function startNew() {
-    editing = {
-      id: "",
-      name: "",
-      connectionName: "",
-      driver: "mondrian.olap4j.MondrianOlap4jDriver",
-      location: "",
-      type: "OLAP",
-      connectiontype: "MONDRIAN",
-      username: "",
-      password: "",
-      schemaName: "",
-      ossieYaml: "",
-    };
-  }
+	function startNew() {
+		editing = {
+			id: '',
+			name: '',
+			connectionName: '',
+			driver: 'mondrian.olap4j.MondrianOlap4jDriver',
+			location: '',
+			type: 'OLAP',
+			connectiontype: 'MONDRIAN',
+			username: '',
+			password: '',
+			schemaName: '',
+			ossieYaml: ''
+		};
+	}
 
-  /**
-   * True when the currently-edited datasource is Ossie-typed. Drives the field-swap so the
-   * form shows the YAML path + warehouse fields instead of the Mondrian driver / catalog
-   * ones. Kept as a $derived so flipping the Type dropdown auto-updates the visible fields.
-   */
-  const isOssie = $derived(editing?.connectiontype === "OSSIE" || editing?.type === "OSSIE");
+	/**
+	 * True when the currently-edited datasource is Ossie-typed. Drives the field-swap so the
+	 * form shows the YAML path + warehouse fields instead of the Mondrian driver / catalog
+	 * ones. Kept as a $derived so flipping the Type dropdown auto-updates the visible fields.
+	 */
+	const isOssie = $derived(editing?.connectiontype === 'OSSIE' || editing?.type === 'OSSIE');
 
-  /**
-   * Keep {@link AdminDatasource.connectiontype} in sync with the Type dropdown value so the
-   * server's DataSourceMapper picks the right branch: OLAP → MONDRIAN, RELATIONAL → XMLA,
-   * OSSIE → OSSIE. Called from the dropdown's onchange rather than a $effect to avoid the
-   * effect-write-tracking pitfall (CLAUDE.md's Svelte 5 effect-discipline note).
-   */
-  /**
-   * Materialise the form's `editing` state from an existing datasource. The wire carries
-   * {@link AdminDatasource.connectiontype} as the persisted discriminator; the form's dropdown
-   * binds to `type`, so we back-fill `type` from `connectiontype` here so opening an
-   * OSSIE-typed datasource for edit lands on the OSSIE branch instead of defaulting to OLAP.
-   */
-  function openForEdit(ds: AdminDatasource): AdminDatasource {
-    const copy: AdminDatasource = { ...ds };
-    if (copy.connectiontype === "OSSIE") copy.type = "OSSIE";
-    else if (copy.connectiontype === "XMLA") copy.type = "RELATIONAL";
-    else if (copy.connectiontype === "MONDRIAN") copy.type = "OLAP";
-    return copy;
-  }
+	/**
+	 * Keep {@link AdminDatasource.connectiontype} in sync with the Type dropdown value so the
+	 * server's DataSourceMapper picks the right branch: OLAP → MONDRIAN, RELATIONAL → XMLA,
+	 * OSSIE → OSSIE. Called from the dropdown's onchange rather than a $effect to avoid the
+	 * effect-write-tracking pitfall (CLAUDE.md's Svelte 5 effect-discipline note).
+	 */
+	/**
+	 * Materialise the form's `editing` state from an existing datasource. The wire carries
+	 * {@link AdminDatasource.connectiontype} as the persisted discriminator; the form's dropdown
+	 * binds to `type`, so we back-fill `type` from `connectiontype` here so opening an
+	 * OSSIE-typed datasource for edit lands on the OSSIE branch instead of defaulting to OLAP.
+	 */
+	function openForEdit(ds: AdminDatasource): AdminDatasource {
+		const copy: AdminDatasource = { ...ds };
+		if (copy.connectiontype === 'OSSIE') copy.type = 'OSSIE';
+		else if (copy.connectiontype === 'XMLA') copy.type = 'RELATIONAL';
+		else if (copy.connectiontype === 'MONDRIAN') copy.type = 'OLAP';
+		return copy;
+	}
 
-  function onTypeChange() {
-    if (!editing) return;
-    if (editing.type === "OSSIE") {
-      editing.connectiontype = "OSSIE";
-      // Driver is unused for OSSIE — the backend derives everything from the Ossie YAML.
-      // We clear it so the on-disk .sds doesn't carry a misleading Mondrian driver hint.
-      editing.driver = "";
-    } else if (editing.type === "RELATIONAL") {
-      editing.connectiontype = "XMLA";
-    } else {
-      editing.connectiontype = "MONDRIAN";
-      if (!editing.driver) editing.driver = "mondrian.olap4j.MondrianOlap4jDriver";
-    }
-  }
+	function onTypeChange() {
+		if (!editing) return;
+		if (editing.type === 'OSSIE') {
+			editing.connectiontype = 'OSSIE';
+			// Driver is unused for OSSIE — the backend derives everything from the Ossie YAML.
+			// We clear it so the on-disk .sds doesn't carry a misleading Mondrian driver hint.
+			editing.driver = '';
+		} else if (editing.type === 'RELATIONAL') {
+			editing.connectiontype = 'XMLA';
+		} else {
+			editing.connectiontype = 'MONDRIAN';
+			if (!editing.driver) editing.driver = 'mondrian.olap4j.MondrianOlap4jDriver';
+		}
+	}
 
-  async function save() {
-    if (!editing || demoMode) return; // mutations disabled in demo mode
-    try {
-      if (!editing.id) await adminDatasources.create(editing);
-      else await adminDatasources.update(editing);
-      toasts.success("Saved", editing.name);
-      editing = null;
-      await refresh();
-    } catch (e) {
-      toasts.danger("Save failed", e instanceof Error ? e.message : String(e));
-    }
-  }
+	async function save() {
+		if (!editing || demoMode) return; // mutations disabled in demo mode
+		try {
+			if (!editing.id) await adminDatasources.create(editing);
+			else await adminDatasources.update(editing);
+			toasts.success('Saved', editing.name);
+			editing = null;
+			await refresh();
+		} catch (e) {
+			toasts.danger('Save failed', e instanceof Error ? e.message : String(e));
+		}
+	}
 
-  async function doDelete() {
-    if (!deleting || demoMode) return; // mutations disabled in demo mode
-    try {
-      await adminDatasources.remove(deleting.id);
-      toasts.success("Deleted", deleting.name);
-      deleting = null;
-      await refresh();
-    } catch (e) {
-      toasts.danger("Delete failed", e instanceof Error ? e.message : String(e));
-    }
-  }
+	async function doDelete() {
+		if (!deleting || demoMode) return; // mutations disabled in demo mode
+		try {
+			await adminDatasources.remove(deleting.id);
+			toasts.success('Deleted', deleting.name);
+			deleting = null;
+			await refresh();
+		} catch (e) {
+			toasts.danger('Delete failed', e instanceof Error ? e.message : String(e));
+		}
+	}
 
-  async function refreshDs(ds: AdminDatasource) {
-    try {
-      await adminDatasources.refresh(ds.id);
-      toasts.success("Refreshed", ds.name);
-      await refresh();
-    } catch (e) {
-      toasts.danger("Refresh failed", e instanceof Error ? e.message : String(e));
-    }
-  }
+	async function refreshDs(ds: AdminDatasource) {
+		try {
+			// The refresh endpoint keys on the datasource NAME, not the id (saiku#1862).
+			await adminDatasources.refresh(ds.name);
+			toasts.success('Refreshed', ds.name);
+			await refresh();
+		} catch (e) {
+			toasts.danger('Refresh failed', e instanceof Error ? e.message : String(e));
+		}
+	}
 </script>
 
 <div class="pane">
-  <header class="flex justify-between items-center mb-3">
-    <h2>{i18n.t("admin.tabs.datasources")}</h2>
-    {#if demoMode}
-      <span class="text-xs text-fg-muted">Read-only in demo mode</span>
-    {:else}
-      <Button onclick={startNew}>{i18n.t("admin.addDatasource")}</Button>
-    {/if}
-  </header>
-  {#if error}<p class="callout callout--danger">{error}</p>{/if}
-  {#if loading}
-    <Skeleton rows={5} variant="table" />
-  {:else}
-    <table class="data-grid">
-      <thead><tr><th>Name</th><th>Driver</th><th>Type</th><th>Schema</th><th></th></tr></thead>
-      <tbody>
-        {#each list as ds}
-          <tr>
-            <td>{ds.name}</td>
-            <td>{ds.driver}</td>
-            <td>{ds.type}</td>
-            <td>{ds.schemaName ?? ""}</td>
-            <td class="data-grid__actions">
-              <a
-                class={buttonVariants({ variant: "outline" })}
-                data-testid="generate-schema-link"
-                href={`${base}${generateSchemaHref(ds)}`}
-              >
-                {generateSchemaLabel(ds)}
-              </a>
-              <Button variant="outline" onclick={() => refreshDs(ds)}>{i18n.t("admin.refresh")}</Button>
-              {#if !demoMode}
-                <Button variant="outline" onclick={() => (editing = openForEdit(ds))}>{i18n.t("admin.edit")}</Button>
-                <Button variant="destructive" onclick={() => (deleting = ds)}>{i18n.t("admin.delete")}</Button>
-              {/if}
-            </td>
-          </tr>
-        {/each}
-        {#if list.length === 0}
-          <tr><td colspan="5" class="data-grid__empty">No datasources.</td></tr>
-        {/if}
-      </tbody>
-    </table>
-  {/if}
+	<header class="mb-3 flex items-center justify-between">
+		<h2>{i18n.t('admin.tabs.datasources')}</h2>
+		{#if demoMode}
+			<span class="text-xs text-fg-muted">Read-only in demo mode</span>
+		{:else}
+			<Button onclick={startNew}>{i18n.t('admin.addDatasource')}</Button>
+		{/if}
+	</header>
+	{#if error}<p class="callout callout--danger">{error}</p>{/if}
+	{#if loading}
+		<Skeleton rows={5} variant="table" />
+	{:else}
+		<table class="data-grid">
+			<thead><tr><th>Name</th><th>Driver</th><th>Type</th><th>Schema</th><th></th></tr></thead>
+			<tbody>
+				{#each list as ds}
+					<tr>
+						<td>{ds.name}</td>
+						<td>{ds.driver}</td>
+						<td>{ds.type}</td>
+						<td>{ds.schemaName ?? ''}</td>
+						<td class="data-grid__actions">
+							<!-- Mondrian-only: the cube designer has nothing to edit on an Ossie
+							     source, so it isn't offered. See supportsCubeDesigner(). -->
+							{#if supportsCubeDesigner(ds)}
+								<a
+									class={buttonVariants({ variant: 'outline' })}
+									data-testid="generate-schema-link"
+									href={`${base}${generateSchemaHref(ds)}`}
+								>
+									{generateSchemaLabel(ds)}
+								</a>
+							{/if}
+							<Button variant="outline" onclick={() => refreshDs(ds)}
+								>{i18n.t('admin.refresh')}</Button
+							>
+							{#if !demoMode}
+								<Button variant="outline" onclick={() => (editing = openForEdit(ds))}
+									>{i18n.t('admin.edit')}</Button
+								>
+								<Button variant="destructive" onclick={() => (deleting = ds)}
+									>{i18n.t('admin.delete')}</Button
+								>
+							{/if}
+						</td>
+					</tr>
+				{/each}
+				{#if list.length === 0}
+					<tr><td colspan="5" class="data-grid__empty">No datasources.</td></tr>
+				{/if}
+			</tbody>
+		</table>
+	{/if}
 </div>
 
 <Modal
-  title={editing?.id ? `Edit ${editing.name}` : "New datasource"}
-  open={editing !== null}
-  size="lg"
-  onClose={() => (editing = null)}
+	title={editing?.id ? `Edit ${editing.name}` : 'New datasource'}
+	open={editing !== null}
+	size="lg"
+	onClose={() => (editing = null)}
 >
-  {#if editing}
-    <label class="field">
-      <span class="field__label">Name</span>
-      <input class="field__input" bind:value={editing.name} />
-    </label>
-    <label class="field">
-      <span class="field__label">Type</span>
-      <select class="field__input" bind:value={editing.type} onchange={onTypeChange}>
-        <option value="OLAP">Semantic Layer (Mondrian)</option>
-        <option value="RELATIONAL">Relational</option>
-        <option value="OSSIE">Ossie (SQL semantic model)</option>
-      </select>
-    </label>
-    {#if isOssie}
-      <label class="field">
-        <span class="field__label">Ossie YAML path</span>
-        <input
-          class="field__input"
-          placeholder="/saiku-home/data/ossie/pharma.ossie.yaml"
-          bind:value={editing.ossieYaml}
-        />
-      </label>
-      <label class="field">
-        <span class="field__label">Warehouse JDBC URL</span>
-        <input
-          class="field__input"
-          placeholder="jdbc:postgresql://localhost:5432/warehouse"
-          bind:value={editing.location}
-        />
-      </label>
-      <label class="field">
-        <span class="field__label">Ossie model name</span>
-        <input
-          class="field__input"
-          placeholder="Semantic model name inside the YAML (defaults to datasource name)"
-          bind:value={editing.schemaName}
-        />
-      </label>
-    {:else}
-      <label class="field">
-        <span class="field__label">Driver</span>
-        <input class="field__input" bind:value={editing.driver} />
-      </label>
-      <label class="field">
-        <span class="field__label">Location (JDBC url)</span>
-        <input class="field__input" bind:value={editing.location} />
-      </label>
-      <label class="field">
-        <span class="field__label">Schema name</span>
-        <input class="field__input" bind:value={editing.schemaName} />
-      </label>
-    {/if}
-    <div class="flex gap-3">
-      <label class="field flex-1">
-        <span class="field__label">Username</span>
-        <input class="field__input" bind:value={editing.username} />
-      </label>
-      <label class="field flex-1">
-        <span class="field__label">Password</span>
-        <input class="field__input" type="password" bind:value={editing.password} />
-      </label>
-    </div>
-  {/if}
-  {#snippet footer()}
-    <Button variant="outline" onclick={() => (editing = null)}>Cancel</Button>
-    <Button onclick={save}>Save</Button>
-  {/snippet}
+	{#if editing}
+		<FormField label="Name">
+			<Input bind:value={editing.name} />
+		</FormField>
+		<FormField label="Type">
+			<Select bind:value={editing.type} onchange={onTypeChange}>
+				<option value="OLAP">Semantic Layer (Mondrian)</option>
+				<option value="RELATIONAL">Relational</option>
+				<option value="OSSIE">Ossie (SQL semantic model)</option>
+			</Select>
+		</FormField>
+		{#if isOssie}
+			<FormField label="Ossie YAML path">
+				<Input
+					placeholder="/saiku-home/data/ossie/pharma.ossie.yaml"
+					bind:value={editing.ossieYaml}
+				/>
+			</FormField>
+			<FormField label="Warehouse JDBC URL">
+				<Input
+					placeholder="jdbc:postgresql://localhost:5432/warehouse"
+					bind:value={editing.location}
+				/>
+			</FormField>
+			<FormField label="Ossie model name">
+				<Input
+					placeholder="Semantic model name inside the YAML (defaults to datasource name)"
+					bind:value={editing.schemaName}
+				/>
+			</FormField>
+		{:else}
+			<FormField label="Driver">
+				<Input bind:value={editing.driver} />
+			</FormField>
+			<FormField label="Location (JDBC url)">
+				<Input bind:value={editing.location} />
+			</FormField>
+			<FormField label="Schema name">
+				<Input bind:value={editing.schemaName} />
+			</FormField>
+		{/if}
+		<div class="flex gap-3">
+			<FormField label="Username">
+				<Input bind:value={editing.username} />
+			</FormField>
+			<FormField label="Password">
+				<Input type="password" bind:value={editing.password} />
+			</FormField>
+		</div>
+	{/if}
+	{#snippet footer()}
+		<Button variant="outline" onclick={() => (editing = null)}>Cancel</Button>
+		<Button onclick={save}>Save</Button>
+	{/snippet}
 </Modal>
 
 <ConfirmModal
-  title="Delete datasource"
-  message={`Delete datasource "${deleting?.name ?? ""}"? Saved queries pointing at it will fail.`}
-  confirmLabel="Delete"
-  variant="danger"
-  open={deleting !== null}
-  onConfirm={doDelete}
-  onCancel={() => (deleting = null)}
+	title="Delete datasource"
+	message={`Delete datasource "${deleting?.name ?? ''}"? Saved queries pointing at it will fail.`}
+	confirmLabel="Delete"
+	variant="danger"
+	open={deleting !== null}
+	onConfirm={doDelete}
+	onCancel={() => (deleting = null)}
 />
 
 <style>
-h2 { margin: 0; }
-  /* .data-grid / .data-grid__actions / .data-grid__empty come from app.css */
+	h2 {
+		margin: 0;
+	}
+	/* .data-grid / .data-grid__actions / .data-grid__empty come from app.css */
 </style>

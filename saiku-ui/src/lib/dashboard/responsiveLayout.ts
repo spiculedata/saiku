@@ -20,7 +20,7 @@
  *     left-to-right within a row.
  */
 
-import type { DashboardTile } from "$lib/api/dashboards";
+import type { DashboardTile } from '$lib/api/dashboards';
 
 /** Default narrow breakpoint in CSS pixels. At or below this container
  *  width the grid auto-stacks. Mirrors the issue's 768px default; the
@@ -34,8 +34,8 @@ export const DEFAULT_STACK_BREAKPOINT = 768;
  *  A non-positive width (container not yet measured) is treated as wide
  *  so the free-form layout renders until the first real measurement. */
 export function isNarrow(width: number, breakpoint: number = DEFAULT_STACK_BREAKPOINT): boolean {
-  if (!Number.isFinite(width) || width <= 0) return false;
-  return width <= breakpoint;
+	if (!Number.isFinite(width) || width <= 0) return false;
+	return width <= breakpoint;
 }
 
 /* Stacked-cell sizing — mirror the desktop grid's row metrics so a tile
@@ -51,15 +51,15 @@ export const STACK_MIN_PX = 160;
  *  desktop height instead of collapsing to one auto-row. Floored at
  *  {@link STACK_MIN_PX}. Pure. */
 export function stackedCellHeight(h: number): number {
-  const rows = Math.max(1, Math.floor(h) || 1);
-  return Math.max(STACK_MIN_PX, rows * STACK_ROW_PX + (rows - 1) * STACK_GAP_PX);
+	const rows = Math.max(1, Math.floor(h) || 1);
+	return Math.max(STACK_MIN_PX, rows * STACK_ROW_PX + (rows - 1) * STACK_GAP_PX);
 }
 
 /** True for tile types that pin to the top of the mobile stack. Today
  *  that's only the "filter" tile type; isolated here so the rule has a
  *  single home if more pinned types appear. */
 export function isPinnedToTop(tile: DashboardTile): boolean {
-  return tile.type === "filter";
+	return tile.type === 'filter';
 }
 
 /** Compare two tiles by saved position: row first (y ascending), then
@@ -67,9 +67,9 @@ export function isPinnedToTop(tile: DashboardTile): boolean {
  *  left-to-right. Ties (same x and y) fall back to a stable-ish id
  *  compare so the order is deterministic across renders. */
 export function compareByPosition(a: DashboardTile, b: DashboardTile): number {
-  if (a.y !== b.y) return a.y - b.y;
-  if (a.x !== b.x) return a.x - b.x;
-  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+	if (a.y !== b.y) return a.y - b.y;
+	if (a.x !== b.x) return a.x - b.x;
+	return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
 /**
@@ -82,9 +82,12 @@ export function compareByPosition(a: DashboardTile, b: DashboardTile): number {
  * {@code #each} is overridden visually without re-keying the list.
  */
 export function stackedOrder(tiles: readonly DashboardTile[]): DashboardTile[] {
-  const pinned = tiles.filter(isPinnedToTop).slice().sort(compareByPosition);
-  const rest = tiles.filter((t) => !isPinnedToTop(t)).slice().sort(compareByPosition);
-  return [...pinned, ...rest];
+	const pinned = tiles.filter(isPinnedToTop).slice().sort(compareByPosition);
+	const rest = tiles
+		.filter((t) => !isPinnedToTop(t))
+		.slice()
+		.sort(compareByPosition);
+	return [...pinned, ...rest];
 }
 
 /**
@@ -93,8 +96,8 @@ export function stackedOrder(tiles: readonly DashboardTile[]): DashboardTile[] {
  * tiles are still rendered in saved order by the template's {@code #each}.
  */
 export function stackOrderMap(tiles: readonly DashboardTile[]): Map<string, number> {
-  const order = stackedOrder(tiles);
-  const map = new Map<string, number>();
-  order.forEach((tile, index) => map.set(tile.id, index));
-  return map;
+	const order = stackedOrder(tiles);
+	const map = new Map<string, number>();
+	order.forEach((tile, index) => map.set(tile.id, index));
+	return map;
 }

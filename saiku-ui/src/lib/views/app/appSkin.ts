@@ -18,8 +18,8 @@
  *  (e.g. `[data-saiku-app="preview"]`). Pure string — the shell sets it as a
  *  <style> element's textContent (never {@html}). */
 export function appSkinCss(scope: string): string {
-  const s = scope;
-  return `
+	const s = scope;
+	return `
 ${s} .saiku-app__body, ${s} .saiku-app__main, ${s} .app-page {
   background: var(--saiku-app-ground, hsl(var(--bg)));
 }

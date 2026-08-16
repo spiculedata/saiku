@@ -11,7 +11,7 @@
   indicator so the user doesn't double-add them.
 -->
 <script lang="ts">
-	import { Search, GripVertical, ChevronRight, Plus } from 'lucide-svelte';
+	import { Search, GripVertical, ChevronRight, Plus } from '@lucide/svelte';
 	import type { SourceTableCandidate } from './types.js';
 
 	interface Props {

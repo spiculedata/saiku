@@ -19,122 +19,129 @@
 *,
 *::before,
 *::after {
-  box-sizing: border-box;
+	box-sizing: border-box;
 }
 
 html,
 body {
-  height: 100%;
-  margin: 0;
+	height: 100%;
+	margin: 0;
 }
 
 @layer base {
-  body {
-    background: hsl(var(--bg));
-    color: hsl(var(--fg));
-    font-family: var(--font-sans);
-    font-size: var(--fs-md);
-    font-weight: var(--weight-normal);
-    line-height: var(--lh-normal);
-    -webkit-font-smoothing: antialiased;
-  }
+	body {
+		background: hsl(var(--bg));
+		color: hsl(var(--fg));
+		font-family: var(--font-sans);
+		font-size: var(--fs-md);
+		font-weight: var(--weight-normal);
+		line-height: var(--lh-normal);
+		-webkit-font-smoothing: antialiased;
+	}
 
-  /* Heading scale. Components should default to these and only override
+	/* Heading scale. Components should default to these and only override
      when they have a deliberate type-treatment reason. Margins follow the
      space token grid so heading-followed-by-body has consistent rhythm. */
-  h1, h2, h3, h4, h5, h6 {
-    margin: 0 0 var(--space-3);
-    color: hsl(var(--fg));
-    font-weight: var(--weight-semibold);
-    line-height: var(--lh-tight);
-  }
+	h1,
+	h2,
+	h3,
+	h4,
+	h5,
+	h6 {
+		margin: 0 0 var(--space-3);
+		color: hsl(var(--fg));
+		font-weight: var(--weight-semibold);
+		line-height: var(--lh-tight);
+	}
 
-  h1 {
-    font-size: var(--fs-2xl);
-    font-weight: var(--weight-bold);
-  }
+	h1 {
+		font-size: var(--fs-2xl);
+		font-weight: var(--weight-bold);
+	}
 
-  h2 {
-    font-size: var(--fs-xl);
-  }
+	h2 {
+		font-size: var(--fs-xl);
+	}
 
-  h3 {
-    font-size: var(--fs-lg);
-  }
+	h3 {
+		font-size: var(--fs-lg);
+	}
 
-  h4, h5, h6 {
-    font-size: var(--fs-md);
-  }
+	h4,
+	h5,
+	h6 {
+		font-size: var(--fs-md);
+	}
 
-  button {
-    font-family: inherit;
-    font-size: inherit;
-    /* Tailwind preflight is deliberately skipped (see tailwind.css), so raw
+	button {
+		font-family: inherit;
+		font-size: inherit;
+		/* Tailwind preflight is deliberately skipped (see tailwind.css), so raw
        <button>s otherwise fall back to the UA default — a 2px outset white
        border on a grey face. Replicate preflight's button normalisation here
        so bare buttons (mode tabs, inspector tabs, the Button primitive's
        default variant) render flat; `border-*` / `bg-*` utilities in the
        utilities layer still override this base reset. (saiku#1636) */
-    appearance: none;
-    -webkit-appearance: none;
-    background-color: transparent;
-    background-image: none;
-    border: 0 solid transparent;
-    color: inherit;
-    cursor: pointer;
-  }
+		appearance: none;
+		-webkit-appearance: none;
+		background-color: transparent;
+		background-image: none;
+		border: 0 solid transparent;
+		color: inherit;
+		cursor: pointer;
+	}
 
-  button:disabled {
-    cursor: default;
-  }
+	button:disabled {
+		cursor: default;
+	}
 
-  input,
-  select,
-  textarea {
-    font-family: inherit;
-    font-size: inherit;
-    color: inherit;
-  }
+	input,
+	select,
+	textarea {
+		font-family: inherit;
+		font-size: inherit;
+		color: inherit;
+	}
 
-  a {
-    color: hsl(var(--primary));
-    text-decoration: none;
-  }
+	a {
+		color: hsl(var(--primary));
+		text-decoration: none;
+	}
 
-  a:hover {
-    text-decoration: underline;
-  }
+	a:hover {
+		text-decoration: underline;
+	}
 
-  :focus-visible {
-    outline: none;
-    box-shadow: var(--focus-ring);
-    border-radius: var(--radius-sm);
-  }
+	:focus-visible {
+		outline: none;
+		box-shadow: var(--focus-ring);
+		border-radius: var(--radius-sm);
+	}
 }
 
 .btn {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  background: hsl(var(--bg-muted));
-  color: hsl(var(--fg));
-  border: 1px solid hsl(var(--border-strong));
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition:
-    background var(--duration-fast),
-    border-color var(--duration-fast),
-    color var(--duration-fast);
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-2);
+	padding: var(--space-2) var(--space-3);
+	background: hsl(var(--bg-muted));
+	color: hsl(var(--fg));
+	border: 1px solid hsl(var(--border-strong));
+	border-radius: var(--radius-sm);
+	cursor: pointer;
+	transition:
+		background var(--duration-fast),
+		border-color var(--duration-fast),
+		color var(--duration-fast);
 }
 
 .btn:hover:not(:disabled) {
-  background: hsl(var(--bg-hover));
+	background: hsl(var(--bg-hover));
 }
 
 .btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+	opacity: 0.6;
+	cursor: not-allowed;
 }
 
 /* ----------------------------------------------------------------- *
@@ -146,36 +153,36 @@ body {
  * .icon-btn declarations should be removed in favor of this class.
  * ----------------------------------------------------------------- */
 .icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  color: hsl(var(--fg-muted));
-  cursor: pointer;
-  transition:
-    background var(--duration-fast),
-    border-color var(--duration-fast),
-    color var(--duration-fast);
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	padding: 0;
+	background: transparent;
+	border: 1px solid transparent;
+	border-radius: var(--radius-sm);
+	color: hsl(var(--fg-muted));
+	cursor: pointer;
+	transition:
+		background var(--duration-fast),
+		border-color var(--duration-fast),
+		color var(--duration-fast);
 }
 
 .icon-btn:hover:not(:disabled) {
-  background: hsl(var(--bg-hover));
-  border-color: hsl(var(--border));
-  color: hsl(var(--fg));
+	background: hsl(var(--bg-hover));
+	border-color: hsl(var(--border));
+	color: hsl(var(--fg));
 }
 
 .icon-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+	opacity: 0.5;
+	cursor: not-allowed;
 }
 
 .icon-btn--danger:hover:not(:disabled) {
-  color: hsl(var(--danger));
+	color: hsl(var(--danger));
 }
 
 /* ----------------------------------------------------------------- *
@@ -194,91 +201,91 @@ body {
  * for a right-aligned flex row of buttons.
  * ----------------------------------------------------------------- */
 .data-grid {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--fs-sm);
+	width: 100%;
+	border-collapse: collapse;
+	font-size: var(--fs-sm);
 }
 
 .data-grid th,
 .data-grid td {
-  padding: var(--space-3);
-  text-align: left;
-  border-bottom: 1px solid hsl(var(--border));
+	padding: var(--space-3);
+	text-align: left;
+	border-bottom: 1px solid hsl(var(--border));
 }
 
 .data-grid th {
-  background: hsl(var(--bg-muted));
-  font-weight: var(--weight-semibold);
-  color: hsl(var(--fg));
+	background: hsl(var(--bg-muted));
+	font-weight: var(--weight-semibold);
+	color: hsl(var(--fg));
 }
 
 .data-grid tbody tr {
-  transition: background var(--duration-fast);
+	transition: background var(--duration-fast);
 }
 
 .data-grid tbody tr:nth-child(even) {
-  background: hsl(var(--bg-subtle));
+	background: hsl(var(--bg-subtle));
 }
 
 .data-grid tbody tr:hover {
-  background: hsl(var(--bg-hover));
+	background: hsl(var(--bg-hover));
 }
 
 .data-grid__actions {
-  display: flex;
-  gap: var(--space-1);
-  justify-content: flex-end;
+	display: flex;
+	gap: var(--space-1);
+	justify-content: flex-end;
 }
 
 .data-grid__empty {
-  text-align: center;
-  color: hsl(var(--fg-muted));
-  padding: var(--space-5);
+	text-align: center;
+	color: hsl(var(--fg-muted));
+	padding: var(--space-5);
 }
 
 .btn--primary {
-  background: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
-  border-color: hsl(var(--primary));
-  font-weight: var(--weight-semibold);
+	background: hsl(var(--primary));
+	color: hsl(var(--primary-foreground));
+	border-color: hsl(var(--primary));
+	font-weight: var(--weight-semibold);
 }
 
 .btn--primary:hover:not(:disabled) {
-  background: hsl(var(--primary-hover));
+	background: hsl(var(--primary-hover));
 }
 
 .btn--danger {
-  background: hsl(var(--danger));
-  color: #fff;
-  border-color: hsl(var(--danger));
+	background: hsl(var(--danger));
+	color: #fff;
+	border-color: hsl(var(--danger));
 }
 
 .field {
-  display: block;
-  margin-bottom: var(--space-4);
+	display: block;
+	margin-bottom: var(--space-4);
 }
 
 .field__label {
-  display: block;
-  margin-bottom: var(--space-1);
-  color: hsl(var(--fg-muted));
-  font-size: var(--fs-sm);
+	display: block;
+	margin-bottom: var(--space-1);
+	color: hsl(var(--fg-muted));
+	font-size: var(--fs-sm);
 }
 
 .field__input {
-  width: 100%;
-  padding: var(--space-2) var(--space-3);
-  background: hsl(var(--bg));
-  color: hsl(var(--fg));
-  border: 1px solid hsl(var(--border-strong));
-  border-radius: var(--radius-sm);
-  transition:
-    border-color var(--duration-fast),
-    box-shadow var(--duration-fast);
+	width: 100%;
+	padding: var(--space-2) var(--space-3);
+	background: hsl(var(--bg));
+	color: hsl(var(--fg));
+	border: 1px solid hsl(var(--border-strong));
+	border-radius: var(--radius-sm);
+	transition:
+		border-color var(--duration-fast),
+		box-shadow var(--duration-fast);
 }
 
 .field__input:focus-visible {
-  border-color: hsl(var(--primary));
+	border-color: hsl(var(--primary));
 }
 
 /* Invalid form-field state. Set the .field--invalid modifier on the
@@ -286,94 +293,76 @@ body {
    below renders with an alert icon. Centralized so every form modal
    communicates validation the same way. */
 .field--invalid .field__input {
-  border-color: hsl(var(--danger));
+	border-color: hsl(var(--danger));
 }
 
 .field--invalid .field__input:focus-visible {
-  box-shadow: 0 0 0 2px hsl(var(--bg)), 0 0 0 4px hsl(var(--danger));
-  border-color: hsl(var(--danger));
+	box-shadow:
+		0 0 0 2px hsl(var(--bg)),
+		0 0 0 4px hsl(var(--danger));
+	border-color: hsl(var(--danger));
 }
 
 .field__error {
-  display: flex;
-  gap: var(--space-1);
-  align-items: center;
-  margin-top: var(--space-1);
-  color: hsl(var(--danger));
-  font-size: var(--fs-sm);
+	display: flex;
+	gap: var(--space-1);
+	align-items: center;
+	margin-top: var(--space-1);
+	color: hsl(var(--danger));
+	font-size: var(--fs-sm);
 }
 
 .field__error svg {
-  flex-shrink: 0;
+	flex-shrink: 0;
 }
 
 .callout {
-  padding: var(--space-3);
-  border-radius: var(--radius-sm);
-  background: hsl(var(--bg-subtle));
-  border-left: 3px solid hsl(var(--primary));
+	padding: var(--space-3);
+	border-radius: var(--radius-sm);
+	background: hsl(var(--bg-subtle));
+	border-left: 3px solid hsl(var(--primary));
 }
 
 .callout--danger {
-  border-left-color: hsl(var(--danger));
-  color: hsl(var(--danger));
+	border-left-color: hsl(var(--danger));
+	color: hsl(var(--danger));
 }
 
 .callout__text {
-  margin: 0;
-  font-weight: var(--weight-medium);
+	margin: 0;
+	font-weight: var(--weight-medium);
 }
 
 .callout__details {
-  margin-top: var(--space-2);
-  color: hsl(var(--fg-muted));
-  font-weight: var(--weight-normal);
+	margin-top: var(--space-2);
+	color: hsl(var(--fg-muted));
+	font-weight: var(--weight-normal);
 }
 
 .callout__details summary {
-  cursor: pointer;
-  font-size: var(--fs-sm);
-  user-select: none;
+	cursor: pointer;
+	font-size: var(--fs-sm);
+	user-select: none;
 }
 
 .callout__detail-text {
-  margin: var(--space-2) 0 0;
-  padding: var(--space-2);
-  background: hsl(var(--bg-muted));
-  border-radius: var(--radius-sm);
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: var(--fs-xs);
-  white-space: pre-wrap;
-  word-break: break-word;
-  color: hsl(var(--fg));
+	margin: var(--space-2) 0 0;
+	padding: var(--space-2);
+	background: hsl(var(--bg-muted));
+	border-radius: var(--radius-sm);
+	font-family: var(--font-mono, ui-monospace, monospace);
+	font-size: var(--fs-xs);
+	white-space: pre-wrap;
+	word-break: break-word;
+	color: hsl(var(--fg));
 }
 
-/* Motion baseline. Modals, context menus, and toasts appear instantly
-   by default — feels like UI is teleporting rather than responding.
-   These two short keyframes give every overlay-style surface a 120ms
-   fade-in (200ms for the panel content, which also lifts a hair).
-   Components opt in by adding the matching animation:* rule. The
-   prefers-reduced-motion guard suppresses everything for users who
-   need it. */
-@keyframes saiku-overlay-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes saiku-panel-in {
-  from { opacity: 0; transform: translateY(4px) scale(0.98); }
-  to { opacity: 1; transform: none; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.001ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
-  }
-}
+/* Motion baseline (@keyframes saiku-overlay-in / saiku-panel-in) and the
+   prefers-reduced-motion guard moved to the design-system package —
+   @concepttocloud/saiku-design-system/motion.css, imported in +layout.svelte.
+   Design-system components (ContextMenu, Modal, the toast surfaces) animate
+   against those keyframes by name, so a component that shipped in the package
+   while its keyframes stayed here would silently stop animating. */
 
 /* -------------------------------------------------------------------------
  * Embed mode (?embed=1): chromeless layout for iframes. The topbar/sidebar/
@@ -382,14 +371,14 @@ body {
  * padding so the grid fills the viewport.
  * ------------------------------------------------------------------------- */
 body.saiku-embed .canvas {
-  padding: 4px;
+	padding: 4px;
 }
 body.saiku-embed .canvas__body {
-  grid-template-columns: 1fr;
-  gap: 0;
+	grid-template-columns: 1fr;
+	gap: 0;
 }
 body.saiku-embed .dropzones {
-  display: none;
+	display: none;
 }
 
 /* -------------------------------------------------------------------------
@@ -400,17 +389,21 @@ body.saiku-embed .dropzones {
  * we force white paper + black ink across the board.
  * ------------------------------------------------------------------------- */
 @media print {
-  @page { size: auto; margin: 14mm; }
+	@page {
+		size: auto;
+		margin: 14mm;
+	}
 
-  html, body {
-    background: white !important;
-    color: black !important;
-    height: auto !important;
-    overflow: visible !important;
-  }
+	html,
+	body {
+		background: white !important;
+		color: black !important;
+		height: auto !important;
+		overflow: visible !important;
+	}
 
-  /* Kill chrome */
-  .topbar,
+	/* Kill chrome */
+	.topbar,
   .workspace__sidebar,
   .tabset,
   .toolbar,
@@ -423,67 +416,74 @@ body.saiku-embed .dropzones {
   /* Any open modal or context menu shouldn't appear in the printout. */
   .modal,
   .cellset-ctx-menu {
-    display: none !important;
-  }
+		display: none !important;
+	}
 
-  /* Let content cascade naturally across pages instead of being clipped. */
-  .app,
-  .app__main,
-  .workspace,
-  .workspace__main,
-  .canvas,
-  .canvas__body,
-  .canvas__result,
-  .result-host {
-    display: block !important;
-    overflow: visible !important;
-    height: auto !important;
-    min-height: 0 !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    background: white !important;
-    color: black !important;
-  }
+	/* Let content cascade naturally across pages instead of being clipped. */
+	.app,
+	.app__main,
+	.workspace,
+	.workspace__main,
+	.canvas,
+	.canvas__body,
+	.canvas__result,
+	.result-host {
+		display: block !important;
+		overflow: visible !important;
+		height: auto !important;
+		min-height: 0 !important;
+		padding: 0 !important;
+		margin: 0 !important;
+		background: white !important;
+		color: black !important;
+	}
 
-  /* Workspace grid → single column once sidebar is gone. */
-  .workspace { grid-template-columns: 1fr !important; gap: 0 !important; }
+	/* Workspace grid → single column once sidebar is gone. */
+	.workspace {
+		grid-template-columns: 1fr !important;
+		gap: 0 !important;
+	}
 
-  /* Cellset: let tables paginate cleanly across pages. */
-  .cellset-wrap {
-    overflow: visible !important;
-    border: 0 !important;
-    background: white !important;
-  }
-  .cellset {
-    break-inside: auto;
-    width: 100%;
-    background: white !important;
-    color: black !important;
-  }
-  .cellset thead {
-    /* Repeat column headers at the top of each printed page. */
-    display: table-header-group;
-  }
-  .cellset tr { break-inside: avoid; }
-  .cellset th,
-  .cellset td {
-    background: white !important;
-    color: black !important;
-    border-color: #888 !important;
-  }
-  .cellset td.data--selected,
-  .cellset td.data--focused {
-    box-shadow: none !important;
-    background: white !important;
-  }
+	/* Cellset: let tables paginate cleanly across pages. */
+	.cellset-wrap {
+		overflow: visible !important;
+		border: 0 !important;
+		background: white !important;
+	}
+	.cellset {
+		break-inside: auto;
+		width: 100%;
+		background: white !important;
+		color: black !important;
+	}
+	.cellset thead {
+		/* Repeat column headers at the top of each printed page. */
+		display: table-header-group;
+	}
+	.cellset tr {
+		break-inside: avoid;
+	}
+	.cellset th,
+	.cellset td {
+		background: white !important;
+		color: black !important;
+		border-color: #888 !important;
+	}
+	.cellset td.data--selected,
+	.cellset td.data--focused {
+		box-shadow: none !important;
+		background: white !important;
+	}
 
-  /* Keep the runtime line — useful context when reviewing printouts. */
-  .runtime {
-    color: black !important;
-    font-size: 10pt;
-    margin-top: 6mm;
-  }
+	/* Keep the runtime line — useful context when reviewing printouts. */
+	.runtime {
+		color: black !important;
+		font-size: 10pt;
+		margin-top: 6mm;
+	}
 
-  a { color: black !important; text-decoration: none !important; }
+	a {
+		color: black !important;
+		text-decoration: none !important;
+	}
 }
-

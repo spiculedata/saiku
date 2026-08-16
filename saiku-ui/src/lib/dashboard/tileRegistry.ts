@@ -13,67 +13,82 @@
  * to a barrel that the dashboard + embed entry points import.
  */
 
-import type { Component } from "svelte";
+import type { Component } from 'svelte';
 
 /** Persisted per-tile config for a custom-rendered tile. Carried on
  *  {@code DashboardTile.custom} and handed verbatim to the renderer. */
 export interface CustomTileConfig {
-  /** Renderer id — matches a {@link TileRenderer.id} in the registry. */
-  renderer: string;
-  /** Opaque renderer-specific options. Validated by the renderer's
-   *  {@link TileRenderer.validateOptions} before use. */
-  options: Record<string, unknown>;
-  /** echarts-option renderer only: emphasise the final data point of the first
-   *  series with an accent-coloured marker (the "current period" dot). */
-  emphasizeLast?: boolean;
-  /** echarts-option renderer only: render a "Trend / Breakdown" toggle in the
-   *  tile corner that swaps the series between a line (trend) and bars
-   *  (breakdown) over the same query — the reference trend-card control. */
-  trendBreakdown?: boolean;
-  /** echarts-option renderer only: value-axis number format, as a KPI-style
-   *  pattern ("$c0", "2%", "0"). Declarative because ECharts numeric axis
-   *  formatting needs a FUNCTION and the option validator rejects those — see
-   *  valueAxisFormat.ts. Blank/absent leaves ECharts' default labels. */
-  valueFormat?: string;
+	/** Renderer id — matches a {@link TileRenderer.id} in the registry. */
+	renderer: string;
+	/** Opaque renderer-specific options. Validated by the renderer's
+	 *  {@link TileRenderer.validateOptions} before use. */
+	options: Record<string, unknown>;
+	/** echarts-option renderer only: emphasise the final data point of the first
+	 *  series with an accent-coloured marker (the "current period" dot). */
+	emphasizeLast?: boolean;
+	/** echarts-option renderer only: render a "Trend / Breakdown" toggle in the
+	 *  tile corner that swaps the series between a line (trend) and bars
+	 *  (breakdown) over the same query — the reference trend-card control. */
+	trendBreakdown?: boolean;
+	/** echarts-option renderer only: value-axis number format, as a KPI-style
+	 *  pattern ("$c0", "2%", "0"). Declarative because ECharts numeric axis
+	 *  formatting needs a FUNCTION and the option validator rejects those — see
+	 *  valueAxisFormat.ts. Blank/absent leaves ECharts' default labels. */
+	valueFormat?: string;
 }
 
 /** Result of validating a custom tile's opaque options blob. */
 export type ValidateOptionsResult =
-  | { ok: true; value: Record<string, unknown> }
-  | { ok: false; error: string };
+	{ ok: true; value: Record<string, unknown> } | { ok: false; error: string };
 
 /** A pluggable tile renderer. Registered by import side-effect; looked up by
  *  {@link id} when a tile of type "custom" is dispatched. */
 export interface TileRenderer {
-  /** Stable identifier, referenced by {@link CustomTileConfig.renderer}. */
-  id: string;
-  /** Human-readable label for the add-tile / renderer picker. */
-  label: string;
-  /** Optional icon (emoji or glyph) for the picker entry. */
-  icon?: string;
-  /** In-app tile body component. Receives the same props built-in tiles get. */
-  component: Component;
-  /** Token-scoped embed tile body. Omit → "Unsupported" in the embed surface. */
-  embedComponent?: Component;
-  /** Whether this renderer issues a query (drives embed fetch / edit affordances). */
-  isQueryable: boolean;
-  /** Validate + normalise the tile's opaque options blob. */
-  validateOptions: (options: unknown) => ValidateOptionsResult;
+	/** Stable identifier, referenced by {@link CustomTileConfig.renderer}. */
+	id: string;
+	/** Human-readable label for the add-tile / renderer picker. */
+	label: string;
+	/** Optional icon (emoji or glyph) for the picker entry. */
+	icon?: string;
+	/** One-line description shown in the add-tile picker. Without it every
+	 *  renderer reads as the same generic "custom renderer" entry, which tells
+	 *  an app author nothing about what it draws. */
+	description?: string;
+	/** Where this renderer belongs in the add-tile UI.
+	 *
+	 *  'chart'    — it draws data, so it appears INSIDE the Chart type gallery
+	 *               alongside the built-in chart types. An app author picking a
+	 *               visualisation shouldn't have to know that Graph happens to
+	 *               be implemented as a custom renderer while Bar isn't.
+	 *  'advanced' — an escape hatch (raw ECharts JSON, sandboxed JS). Real, but
+	 *               not a peer of "Chart" for someone assembling an app.
+	 *
+	 *  Defaults to 'advanced' so a newly registered third-party renderer can't
+	 *  quietly appear in the primary gallery. */
+	placement?: 'chart' | 'advanced';
+	/** In-app tile body component. Receives the same props built-in tiles get. */
+	component: Component;
+	/** Token-scoped embed tile body. Omit → "Unsupported" in the embed surface. */
+	embedComponent?: Component;
+	/** Whether this renderer issues a query (drives embed fetch / edit affordances). */
+	isQueryable: boolean;
+	/** Validate + normalise the tile's opaque options blob. */
+	validateOptions: (options: unknown) => ValidateOptionsResult;
 }
 
 const REGISTRY = new Map<string, TileRenderer>();
 
 /** Register (or replace) a tile renderer under its {@link TileRenderer.id}. */
 export function registerTileRenderer(renderer: TileRenderer): void {
-  REGISTRY.set(renderer.id, renderer);
+	REGISTRY.set(renderer.id, renderer);
 }
 
 /** Look up a registered renderer by id, or {@code undefined} if none. */
 export function getTileRenderer(id: string): TileRenderer | undefined {
-  return REGISTRY.get(id);
+	return REGISTRY.get(id);
 }
 
 /** All registered renderers, in insertion order. */
 export function listTileRenderers(): TileRenderer[] {
-  return [...REGISTRY.values()];
+	return [...REGISTRY.values()];
 }

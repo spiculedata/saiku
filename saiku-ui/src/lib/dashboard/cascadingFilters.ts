@@ -14,27 +14,32 @@
  * declaration order (root-most first).
  */
 
-import type { ActiveFilter } from "$lib/stores/activeFilters.svelte";
-import type { SchemaLike } from "$lib/dashboard/effectiveQuery";
-import type { CubeRef, DashboardFilter } from "$lib/api/dashboards";
+import type { ActiveFilter } from '$lib/stores/activeFilters.svelte';
+import type { SchemaLike } from '$lib/dashboard/effectiveQuery';
+import type { CubeRef, DashboardFilter } from '$lib/api/dashboards';
 
 function k(s: string | undefined | null): string {
-  return (s ?? "").trim().toLowerCase();
+	return (s ?? '').trim().toLowerCase();
 }
 
 function cubeKey(c: CubeRef): string {
-  return `${c.connectionName}/${c.catalog}/${c.schema}/${c.cubeName}`;
+	return `${c.connectionName}/${c.catalog}/${c.schema}/${c.cubeName}`;
 }
 
 /** Position of {@code levelName} within {@code hierarchy.levels} (0 =
  *  root-most). Returns -1 when the level isn't in the hierarchy. */
-function levelIndex(schema: SchemaLike, dimName: string, hierName: string, levelName: string): number {
-  const dim = schema.dimensions?.[k(dimName)];
-  if (!dim) return -1;
-  const hier = dim.hierarchies?.[k(hierName)];
-  if (!hier) return -1;
-  const keys = Object.keys(hier.levels ?? {});
-  return keys.indexOf(k(levelName));
+function levelIndex(
+	schema: SchemaLike,
+	dimName: string,
+	hierName: string,
+	levelName: string
+): number {
+	const dim = schema.dimensions?.[k(dimName)];
+	if (!dim) return -1;
+	const hier = dim.hierarchies?.[k(hierName)];
+	if (!hier) return -1;
+	const keys = Object.keys(hier.levels ?? {});
+	return keys.indexOf(k(levelName));
 }
 
 /** Collect every selected member from active filters that target an
@@ -45,33 +50,38 @@ function levelIndex(schema: SchemaLike, dimName: string, hierName: string, level
  *  Empty result = no ancestor restriction (the widget shows every
  *  member at its level). */
 export function ancestorSelections(
-  active: ActiveFilter[],
-  schema: SchemaLike | null,
-  childCube: CubeRef | null,
-  childTarget: DashboardFilter | undefined,
+	active: ActiveFilter[],
+	schema: SchemaLike | null,
+	childCube: CubeRef | null,
+	childTarget: DashboardFilter | undefined
 ): string[] {
-  if (!schema || !childCube || !childTarget) return [];
-  const childIdx = levelIndex(schema, childTarget.dimension, childTarget.hierarchy, childTarget.level);
-  if (childIdx <= 0) return []; // root-most or unknown — no ancestor possible
+	if (!schema || !childCube || !childTarget) return [];
+	const childIdx = levelIndex(
+		schema,
+		childTarget.dimension,
+		childTarget.hierarchy,
+		childTarget.level
+	);
+	if (childIdx <= 0) return []; // root-most or unknown — no ancestor possible
 
-  const out: string[] = [];
-  for (const af of active) {
-    const f = af.filter;
-    if (k(f.dimension) !== k(childTarget.dimension)) continue;
-    if (k(f.hierarchy) !== k(childTarget.hierarchy)) continue;
-    const fIdx = levelIndex(schema, f.dimension, f.hierarchy, f.level);
-    if (fIdx === -1 || fIdx >= childIdx) continue;
-    for (const m of f.members) {
-      if (m && !out.includes(m)) out.push(m);
-    }
-  }
-  // childCube guard belongs at the source — every filter chip is cube-
-  // agnostic. The caller should only invoke this for tiles whose cube
-  // matches the filter's source; we keep the param for symmetry with
-  // future per-cube scoping but don't filter on it here. cubeKey() is
-  // imported to keep that intent obvious in code review.
-  void cubeKey(childCube);
-  return out;
+	const out: string[] = [];
+	for (const af of active) {
+		const f = af.filter;
+		if (k(f.dimension) !== k(childTarget.dimension)) continue;
+		if (k(f.hierarchy) !== k(childTarget.hierarchy)) continue;
+		const fIdx = levelIndex(schema, f.dimension, f.hierarchy, f.level);
+		if (fIdx === -1 || fIdx >= childIdx) continue;
+		for (const m of f.members) {
+			if (m && !out.includes(m)) out.push(m);
+		}
+	}
+	// childCube guard belongs at the source — every filter chip is cube-
+	// agnostic. The caller should only invoke this for tiles whose cube
+	// matches the filter's source; we keep the param for symmetry with
+	// future per-cube scoping but don't filter on it here. cubeKey() is
+	// imported to keep that intent obvious in code review.
+	void cubeKey(childCube);
+	return out;
 }
 
 /** True iff {@code member} sits under any of the supplied {@code parents}
@@ -79,10 +89,10 @@ export function ancestorSelections(
  *  child widget's displayed members to descendants of the active parent
  *  selection. */
 export function memberDescendsFromAny(member: string, parents: string[]): boolean {
-  for (const p of parents) {
-    if (!p) continue;
-    if (member === p) continue; // exact match isn't a descendant
-    if (member.startsWith(p + ".")) return true;
-  }
-  return false;
+	for (const p of parents) {
+		if (!p) continue;
+		if (member === p) continue; // exact match isn't a descendant
+		if (member.startsWith(p + '.')) return true;
+	}
+	return false;
 }

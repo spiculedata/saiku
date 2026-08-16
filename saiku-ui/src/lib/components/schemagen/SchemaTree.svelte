@@ -1,132 +1,126 @@
 <script lang="ts">
-  /*
-   * Left-pane tree view for the schema-generator draft. Purely presentational —
-   * all path/label/provenance derivation lives in schemaTree.model.ts so it can
-   * be unit-tested without a browser.
-   *
-   * Renders a nested list keyed by node path. Clicking a node fires onSelect
-   * (and updates the bindable selectedPath) so the parent can open the drawer.
-   */
-  import type { DraftView } from "$lib/api/schemaGen";
-  import {
-    buildTree,
-    provenanceBadgeLabel,
-    type TreeNode,
-  } from "./schemaTree.model";
+	/*
+	 * Left-pane tree view for the schema-generator draft. Purely presentational —
+	 * all path/label/provenance derivation lives in schemaTree.model.ts so it can
+	 * be unit-tested without a browser.
+	 *
+	 * Renders a nested list keyed by node path. Clicking a node fires onSelect
+	 * (and updates the bindable selectedPath) so the parent can open the drawer.
+	 */
+	import type { DraftView } from '$lib/api/schemaGen';
+	import { buildTree, provenanceBadgeLabel, type TreeNode } from './schemaTree.model';
 
-  interface Props {
-    draft: DraftView | null;
-    selectedPath?: string | null;
-    onSelect?: (path: string) => void;
-  }
+	interface Props {
+		draft: DraftView | null;
+		selectedPath?: string | null;
+		onSelect?: (path: string) => void;
+	}
 
-  let {
-    draft,
-    selectedPath = $bindable(null),
-    onSelect,
-  }: Props = $props();
+	let { draft, selectedPath = $bindable(null), onSelect }: Props = $props();
 
-  const tree = $derived(buildTree(draft));
+	const tree = $derived(buildTree(draft));
 
-  function handleSelect(path: string) {
-    selectedPath = path;
-    onSelect?.(path);
-  }
+	function handleSelect(path: string) {
+		selectedPath = path;
+		onSelect?.(path);
+	}
 </script>
 
 {#snippet renderNode(node: TreeNode)}
-  <li class="tree__item">
-    <button
-      type="button"
-      class="tree__row"
-      class:tree__row--selected={selectedPath === node.path}
-      data-kind={node.kind}
-      data-path={node.path}
-      onclick={() => handleSelect(node.path)}
-    >
-      <span class="flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{node.label}</span>
-      {#if node.provenance}
-        <span
-          class="tree__badge tree__badge--{node.provenance.toLowerCase()}"
-          title={node.ruleId ?? provenanceBadgeLabel(node.provenance)}
-        >
-          {provenanceBadgeLabel(node.provenance)}
-        </span>
-      {/if}
-    </button>
-    {#if node.children.length > 0}
-      <ul class="list-none m-0 p-0">
-        {#each node.children as child (child.path)}
-          {@render renderNode(child)}
-        {/each}
-      </ul>
-    {/if}
-  </li>
+	<li class="tree__item">
+		<button
+			type="button"
+			class="tree__row"
+			class:tree__row--selected={selectedPath === node.path}
+			data-kind={node.kind}
+			data-path={node.path}
+			onclick={() => handleSelect(node.path)}
+		>
+			<span class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap"
+				>{node.label}</span
+			>
+			{#if node.provenance}
+				<span
+					class="tree__badge tree__badge--{node.provenance.toLowerCase()}"
+					title={node.ruleId ?? provenanceBadgeLabel(node.provenance)}
+				>
+					{provenanceBadgeLabel(node.provenance)}
+				</span>
+			{/if}
+		</button>
+		{#if node.children.length > 0}
+			<ul class="m-0 list-none p-0">
+				{#each node.children as child (child.path)}
+					{@render renderNode(child)}
+				{/each}
+			</ul>
+		{/if}
+	</li>
 {/snippet}
 
 <nav class="tree" aria-label="Schema draft">
-  {#if tree.length === 0}
-    <p class="text-fg-muted p-3">No draft loaded.</p>
-  {:else}
-    <ul class="tree__root">
-      {#each tree as node (node.path)}
-        {@render renderNode(node)}
-      {/each}
-    </ul>
-  {/if}
+	{#if tree.length === 0}
+		<p class="p-3 text-fg-muted">No draft loaded.</p>
+	{:else}
+		<ul class="tree__root">
+			{#each tree as node (node.path)}
+				{@render renderNode(node)}
+			{/each}
+		</ul>
+	{/if}
 </nav>
 
 <style>
-.tree {
-    font-family: var(--font-sans);
-    font-size: var(--fs-sm);
-    color: hsl(var(--fg));
-    padding: var(--space-2);
-    overflow: auto;
-  }
-  .tree__root,
-  .tree__children {
-    padding-left: var(--space-4);
-    border-left: 1px dashed hsl(var(--border));
-    margin-left: var(--space-2);
-  }
-  .tree__item {
-    margin: 2px 0;
-  }
-  .tree__row {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    width: 100%;
-    background: transparent;
-    border: 0;
-    color: inherit;
-    text-align: left;
-    padding: 3px var(--space-2);
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    font: inherit;
-  }
-  .tree__row:hover {
-    background: hsl(var(--bg-muted));
-  }
-  .tree__row:focus-visible {
-    outline: none;
-    box-shadow: var(--focus-ring);
-  }
-  .tree__badge {
-    font-size: 10px;
-    line-height: 1;
-    padding: 2px 6px;
-    border-radius: 999px;
-    font-weight: var(--weight-semibold);
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-    color: hsl(var(--primary-foreground));
-    background: hsl(var(--fg-subtle));
-  }
-  .tree__badge--user {
-    background: hsl(var(--success));
-    color: #fff;
-  }
+	.tree {
+		font-family: var(--font-sans);
+		font-size: var(--fs-sm);
+		color: hsl(var(--fg));
+		padding: var(--space-2);
+		overflow: auto;
+	}
+	.tree__root,
+	.tree__children {
+		padding-left: var(--space-4);
+		border-left: 1px dashed hsl(var(--border));
+		margin-left: var(--space-2);
+	}
+	.tree__item {
+		margin: 2px 0;
+	}
+	.tree__row {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-2);
+		width: 100%;
+		background: transparent;
+		border: 0;
+		color: inherit;
+		text-align: left;
+		padding: 3px var(--space-2);
+		border-radius: var(--radius-sm);
+		cursor: pointer;
+		font: inherit;
+	}
+	.tree__row:hover {
+		background: hsl(var(--bg-muted));
+	}
+	.tree__row:focus-visible {
+		outline: none;
+		box-shadow: var(--focus-ring);
+	}
+	.tree__badge {
+		font-size: 10px;
+		line-height: 1;
+		padding: 2px 6px;
+		border-radius: 999px;
+		font-weight: var(--weight-semibold);
+		letter-spacing: 0.03em;
+		text-transform: uppercase;
+		color: hsl(var(--primary-foreground));
+		background: hsl(var(--fg-subtle));
+	}
+	.tree__badge--user {
+		background: hsl(var(--success));
+		color: #fff;
+	}
 </style>

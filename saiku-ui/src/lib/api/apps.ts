@@ -19,16 +19,16 @@
  */
 
 export interface SaikuApp {
-  id: string;
-  name: string;
-  version: number;
-  logo?: string | null;
-  theme: AppTheme;
-  nav: AppNav;
-  header?: AppHeaderConfig;
-  assistantSlot: AppAssistantSlot;
-  pages: AppPage[];
-  tags: string[];
+	id: string;
+	name: string;
+	version: number;
+	logo?: string | null;
+	theme: AppTheme;
+	nav: AppNav;
+	header?: AppHeaderConfig;
+	assistantSlot: AppAssistantSlot;
+	pages: AppPage[];
+	tags: string[];
 }
 
 /** Branded-header configuration — the primitives needed to pixel-port a
@@ -37,86 +37,86 @@ export interface SaikuApp {
  *  when absent the header falls back to a plain {@link SaikuApp.name}. */
 /** One entry in the header context selector. */
 export interface AppContextPillOption {
-  /** Shown in the selector, e.g. "Portland #14 · Pacific NW". */
-  label: string;
-  /** MDX member unique name to filter on. Two special cases:
-   *   - {@code "*"} (or blank label-only with no match) means ALL — selecting
-   *     it clears the filter rather than adding one.
-   *   - blank resolves {@link label} as a member CAPTION against the bound
-   *     level, so an author can type "Portland #14" instead of hunting down
-   *     "[Store].[Stores].[USA].[OR].[Portland].[Store 14]". */
-  member?: string;
+	/** Shown in the selector, e.g. "Portland #14 · Pacific NW". */
+	label: string;
+	/** MDX member unique name to filter on. Two special cases:
+	 *   - {@code "*"} (or blank label-only with no match) means ALL — selecting
+	 *     it clears the filter rather than adding one.
+	 *   - blank resolves {@link label} as a member CAPTION against the bound
+	 *     level, so an author can type "Portland #14" instead of hunting down
+	 *     "[Store].[Stores].[USA].[OR].[Portland].[Store 14]". */
+	member?: string;
 }
 
 /** Header context selector — the "STORE / Portland #14 ▾" control. Static text
  *  when it has no {@link options}; a real filter control when it does. */
 export interface AppContextPill {
-  /** Tiny uppercase label above the value, e.g. "Store". */
-  label: string;
-  /** Current / default value shown when nothing is selected. */
-  value: string;
-  /** Where the selectable options come from.
-   *   - "list" (default) — the hand-authored {@link options} array.
-   *   - "level" — every member of the bound {@link filter} level, read from
-   *     the cube at render. A typed list goes stale the moment a store is
-   *     opened or renamed; the cube is the thing that actually knows.
-   *  Absent means "list", so apps authored before this field are unchanged. */
-  optionsSource?: "list" | "level";
-  /** Selectable options when {@link optionsSource} is "list". Absent or empty
-   *  → the pill stays static text. */
-  options?: AppContextPillOption[];
-  /** Prepend an entry that clears the filter (an "All stores" row). Only
-   *  meaningful for "level" source — a hand-authored list can just include one. */
-  includeAll?: boolean;
-  /** Wording for that entry. Defaults to "All". */
-  allLabel?: string;
-  /** The dim/hier/level the selection filters. Without it the selector only
-   *  changes the displayed label — useful for a purely cosmetic pill. */
-  filter?: { dimension: string; hierarchy: string; level: string };
+	/** Tiny uppercase label above the value, e.g. "Store". */
+	label: string;
+	/** Current / default value shown when nothing is selected. */
+	value: string;
+	/** Where the selectable options come from.
+	 *   - "list" (default) — the hand-authored {@link options} array.
+	 *   - "level" — every member of the bound {@link filter} level, read from
+	 *     the cube at render. A typed list goes stale the moment a store is
+	 *     opened or renamed; the cube is the thing that actually knows.
+	 *  Absent means "list", so apps authored before this field are unchanged. */
+	optionsSource?: 'list' | 'level';
+	/** Selectable options when {@link optionsSource} is "list". Absent or empty
+	 *  → the pill stays static text. */
+	options?: AppContextPillOption[];
+	/** Prepend an entry that clears the filter (an "All stores" row). Only
+	 *  meaningful for "level" source — a hand-authored list can just include one. */
+	includeAll?: boolean;
+	/** Wording for that entry. Defaults to "All". */
+	allLabel?: string;
+	/** The dim/hier/level the selection filters. Without it the selector only
+	 *  changes the displayed label — useful for a purely cosmetic pill. */
+	filter?: { dimension: string; hierarchy: string; level: string };
 }
 
 export interface AppHeaderConfig {
-  /** Substring of {@link SaikuApp.name} rendered in the accent colour, e.g.
-   *  "Mart" in "FoodMart Ops" → "Food<accent>Mart</accent> Ops". First match. */
-  wordmarkAccent?: string;
-  /** Small uppercase eyebrow after the wordmark (e.g. "Store Intelligence"),
-   *  separated by a vertical divider. */
-  eyebrow?: string;
-  /** Right-aligned context pill: a tiny label over a bold value with a ▾.
-   *  With {@link AppContextPill.options} it becomes a real selector that
-   *  filters the whole app. */
-  contextPill?: AppContextPill;
-  /** Right-aligned live-status badge text (rendered with a ● dot), e.g.
-   *  "Live · Saiku". */
-  liveBadge?: string;
+	/** Substring of {@link SaikuApp.name} rendered in the accent colour, e.g.
+	 *  "Mart" in "FoodMart Ops" → "Food<accent>Mart</accent> Ops". First match. */
+	wordmarkAccent?: string;
+	/** Small uppercase eyebrow after the wordmark (e.g. "Store Intelligence"),
+	 *  separated by a vertical divider. */
+	eyebrow?: string;
+	/** Right-aligned context pill: a tiny label over a bold value with a ▾.
+	 *  With {@link AppContextPill.options} it becomes a real selector that
+	 *  filters the whole app. */
+	contextPill?: AppContextPill;
+	/** Right-aligned live-status badge text (rendered with a ● dot), e.g.
+	 *  "Live · Saiku". */
+	liveBadge?: string;
 }
 
 /** The right-hand "Ask" assistant column. When enabled, the app renders an
  *  in-app natural-language chat scoped to {@link cube}, hitting /ai/ask. */
 export interface AppAssistantSlot {
-  enabled: boolean;
-  /** Panel title, e.g. "FoodMart" → rendered as "Ask FoodMart". */
-  title?: string;
-  /** Persona label shown under the title, e.g. "Sales Analyst". */
-  persona?: string;
-  /** Small scope note after the persona, e.g. "scoped to your stores". */
-  scope?: string;
-  /** Opening assistant message (markdown-ish plain text). */
-  greeting?: string;
-  /** Suggested prompt chips under a "Try asking" heading. */
-  suggestedPrompts?: string[];
-  /** Extra chips rendered in a monospace "skill" style (⌘ prefix) — for
-   *  named saved workflows the analyst can invoke by name. */
-  skillPrompts?: string[];
-  /** Header glyph: "sparkles" (default) or "crosshair" (a targeting reticle,
-   *  matching a scoped-assistant look). */
-  icon?: "sparkles" | "crosshair";
-  /** Keyboard hint shown in the composer footer, e.g. "↵ to send · ⇧↵ new line". */
-  footerHint?: string;
-  /** Small right-aligned attribution in the composer footer, e.g. "powered by Saiku". */
-  poweredBy?: string;
-  /** Cube the assistant queries. Falls back to the first queryable tile's cube. */
-  cube?: { connectionName: string; catalog: string; schema: string; cubeName: string };
+	enabled: boolean;
+	/** Panel title, e.g. "FoodMart" → rendered as "Ask FoodMart". */
+	title?: string;
+	/** Persona label shown under the title, e.g. "Sales Analyst". */
+	persona?: string;
+	/** Small scope note after the persona, e.g. "scoped to your stores". */
+	scope?: string;
+	/** Opening assistant message (markdown-ish plain text). */
+	greeting?: string;
+	/** Suggested prompt chips under a "Try asking" heading. */
+	suggestedPrompts?: string[];
+	/** Extra chips rendered in a monospace "skill" style (⌘ prefix) — for
+	 *  named saved workflows the analyst can invoke by name. */
+	skillPrompts?: string[];
+	/** Header glyph: "sparkles" (default) or "crosshair" (a targeting reticle,
+	 *  matching a scoped-assistant look). */
+	icon?: 'sparkles' | 'crosshair';
+	/** Keyboard hint shown in the composer footer, e.g. "↵ to send · ⇧↵ new line". */
+	footerHint?: string;
+	/** Small right-aligned attribution in the composer footer, e.g. "powered by Saiku". */
+	poweredBy?: string;
+	/** Cube the assistant queries. Falls back to the first queryable tile's cube. */
+	cube?: { connectionName: string; catalog: string; schema: string; cubeName: string };
 }
 
 /**
@@ -130,104 +130,104 @@ export interface AppAssistantSlot {
  * tokens during serialisation.
  */
 export interface AppTheme {
-  mode: "light" | "dark" | "auto";
-  /** Named preset key (see appThemePresets.ts) — a starting token set the
-   *  individual token fields below then override. */
-  preset?: string;
+	mode: 'light' | 'dark' | 'auto';
+	/** Named preset key (see appThemePresets.ts) — a starting token set the
+	 *  individual token fields below then override. */
+	preset?: string;
 
-  /* --- colour tokens --- */
-  /** Page background (the "ground"). */
-  ground?: string;
-  /** Card / tile / panel background. */
-  surface?: string;
-  /** Primary foreground / text. */
-  fg?: string;
-  /** Muted secondary text (labels, captions). */
-  muted?: string;
-  /** Brand accent (active nav, links, primary emphasis). */
-  accent?: string;
-  /** Secondary brand mark colour (logo/wordmark highlight, brand squares) —
-   *  the second colour a two-accent identity uses. Defaults to {@link accent}. */
-  accent2?: string;
-  /** Soft accent tint (badges, active-item backgrounds). */
-  accentSoft?: string;
-  /** Strong accent (on-tint text). */
-  accentStrong?: string;
-  /** Negative / decline colour. */
-  danger?: string;
-  /** Positive / growth colour. */
-  positive?: string;
-  /** Card border colour. */
-  cardBorder?: string;
-  /** Rail (side-nav) background + its muted icon colour. */
-  railBg?: string;
-  railFg?: string;
+	/* --- colour tokens --- */
+	/** Page background (the "ground"). */
+	ground?: string;
+	/** Card / tile / panel background. */
+	surface?: string;
+	/** Primary foreground / text. */
+	fg?: string;
+	/** Muted secondary text (labels, captions). */
+	muted?: string;
+	/** Brand accent (active nav, links, primary emphasis). */
+	accent?: string;
+	/** Secondary brand mark colour (logo/wordmark highlight, brand squares) —
+	 *  the second colour a two-accent identity uses. Defaults to {@link accent}. */
+	accent2?: string;
+	/** Soft accent tint (badges, active-item backgrounds). */
+	accentSoft?: string;
+	/** Strong accent (on-tint text). */
+	accentStrong?: string;
+	/** Negative / decline colour. */
+	danger?: string;
+	/** Positive / growth colour. */
+	positive?: string;
+	/** Card border colour. */
+	cardBorder?: string;
+	/** Rail (side-nav) background + its muted icon colour. */
+	railBg?: string;
+	railFg?: string;
 
-  /* --- type tokens (font-allowlist keys, see appTheme.ts) --- */
-  /** Display / heading font key. */
-  fontDisplay?: string;
-  /** Body / UI font key. */
-  fontBody?: string;
-  /** Which font carries figures — KPI headline numbers and numeric table
-   *  cells. "mono" gives the tabular, ledger-like look data products use;
-   *  "body"/"display" reuse those stacks. */
-  numerals?: "body" | "display" | "mono";
+	/* --- type tokens (font-allowlist keys, see appTheme.ts) --- */
+	/** Display / heading font key. */
+	fontDisplay?: string;
+	/** Body / UI font key. */
+	fontBody?: string;
+	/** Which font carries figures — KPI headline numbers and numeric table
+	 *  cells. "mono" gives the tabular, ledger-like look data products use;
+	 *  "body"/"display" reuse those stacks. */
+	numerals?: 'body' | 'display' | 'mono';
 
-  /* --- form tokens (named scales, mapped to px/values in appTheme.ts) --- */
-  radius?: "none" | "sm" | "md" | "lg" | "xl";
-  shadow?: "none" | "sm" | "md" | "lg";
-  density?: "compact" | "cozy" | "comfortable";
-  /** Coloured edge bar on KPI tiles. "tone" colours it by the delta's
-   *  direction (positive / negative / accent when flat); "none" omits it. */
-  kpiAccent?: "none" | "tone";
+	/* --- form tokens (named scales, mapped to px/values in appTheme.ts) --- */
+	radius?: 'none' | 'sm' | 'md' | 'lg' | 'xl';
+	shadow?: 'none' | 'sm' | 'md' | 'lg';
+	density?: 'compact' | 'cozy' | 'comfortable';
+	/** Coloured edge bar on KPI tiles. "tone" colours it by the delta's
+	 *  direction (positive / negative / accent when flat); "none" omits it. */
+	kpiAccent?: 'none' | 'tone';
 
-  /* --- legacy (pre-token apps) --- */
-  primary?: string;
-  bg?: string;
-  font?: string;
+	/* --- legacy (pre-token apps) --- */
+	primary?: string;
+	bg?: string;
+	font?: string;
 
-  /** Advanced escape hatch — sanitised + scoped author CSS for the long tail
-   *  the tokens don't cover. Hidden by default in the analyst UI. */
-  customCss?: string;
+	/** Advanced escape hatch — sanitised + scoped author CSS for the long tail
+	 *  the tokens don't cover. Hidden by default in the analyst UI. */
+	customCss?: string;
 }
 
 export interface AppNav {
-  position: "rail" | "top";
-  /** Start the left rail collapsed to icons-only (matches the compact
-   *  section-rail look of the reference dashboards). */
-  railCollapsed?: boolean;
-  /** Run the rail the full height of the shell, with the header beside it
-   *  rather than above it — the product-shell look where the rail is the
-   *  outermost chrome. Ignored on narrow layouts, where the rail becomes a
-   *  bottom bar. */
-  railFullHeight?: boolean;
-  /** Pinned rail footer: a settings gear and/or a user-avatar disc — the
-   *  bottom-of-rail chrome most product shells carry. Omit for no footer. */
-  footer?: {
-    settings?: boolean;
-    /** Literal initials. Used only when {@link avatarSource} is "fixed". */
-    avatar?: string;
-    /** Where the disc's initials come from. "user" derives them from the
-     *  signed-in user (what a real avatar does); "fixed" renders
-     *  {@link avatar} verbatim. Absent means "fixed", so apps authored before
-     *  this field keep their literal. */
-    avatarSource?: "user" | "fixed";
-  };
+	position: 'rail' | 'top';
+	/** Start the left rail collapsed to icons-only (matches the compact
+	 *  section-rail look of the reference dashboards). */
+	railCollapsed?: boolean;
+	/** Run the rail the full height of the shell, with the header beside it
+	 *  rather than above it — the product-shell look where the rail is the
+	 *  outermost chrome. Ignored on narrow layouts, where the rail becomes a
+	 *  bottom bar. */
+	railFullHeight?: boolean;
+	/** Pinned rail footer: a settings gear and/or a user-avatar disc — the
+	 *  bottom-of-rail chrome most product shells carry. Omit for no footer. */
+	footer?: {
+		settings?: boolean;
+		/** Literal initials. Used only when {@link avatarSource} is "fixed". */
+		avatar?: string;
+		/** Where the disc's initials come from. "user" derives them from the
+		 *  signed-in user (what a real avatar does); "fixed" renders
+		 *  {@link avatar} verbatim. Absent means "fixed", so apps authored before
+		 *  this field keep their literal. */
+		avatarSource?: 'user' | 'fixed';
+	};
 }
 
 export interface AppPage {
-  id: string;
-  title: string;
-  icon?: string;
-  /** Optional page-title row shown above the grid (big heading + muted sub +
-   *  right-aligned meta) — the "Portland #14 · Today / Regional manager view"
-   *  band the reference dashboards open with. */
-  heading?: string;
-  subheading?: string;
-  meta?: string;
-  /** Inline dashboard-layout object — opaque here; the dashboard grid
-   *  (see $lib/api/dashboards → DashboardLayout) is the schema authority. */
-  grid: unknown;
+	id: string;
+	title: string;
+	icon?: string;
+	/** Optional page-title row shown above the grid (big heading + muted sub +
+	 *  right-aligned meta) — the "Portland #14 · Today / Regional manager view"
+	 *  band the reference dashboards open with. */
+	heading?: string;
+	subheading?: string;
+	meta?: string;
+	/** Inline dashboard-layout object — opaque here; the dashboard grid
+	 *  (see $lib/api/dashboards → DashboardLayout) is the schema authority. */
+	grid: unknown;
 }
 
 let seq = 0;
@@ -235,70 +235,70 @@ let seq = 0;
 /** Client-local id for a freshly-minted page/app before the first save.
  *  Stable-ish within a session; the backend assigns the durable id on save. */
 function localId(prefix: string): string {
-  seq += 1;
-  return `${prefix}-${seq}-${Math.round(performance.now())}`;
+	seq += 1;
+	return `${prefix}-${seq}-${Math.round(performance.now())}`;
 }
 
 /** A blank page carrying an empty (but valid) dashboard-layout grid. */
-export function emptyPage(title = "Page 1"): AppPage {
-  return { id: localId("page"), title, grid: { cols: 12, tiles: [] } };
+export function emptyPage(title = 'Page 1'): AppPage {
+	return { id: localId('page'), title, grid: { cols: 12, tiles: [] } };
 }
 
 /** Build an empty app with one blank page and default nav/theme, ready to be
  *  populated by the editor before the first save. */
-export function emptyApp(name = "New app"): SaikuApp {
-  return {
-    id: "",
-    name,
-    version: 1,
-    logo: null,
-    theme: { mode: "auto" },
-    nav: { position: "rail" },
-    assistantSlot: { enabled: false },
-    pages: [emptyPage("Overview")],
-    tags: [],
-  };
+export function emptyApp(name = 'New app'): SaikuApp {
+	return {
+		id: '',
+		name,
+		version: 1,
+		logo: null,
+		theme: { mode: 'auto' },
+		nav: { position: 'rail' },
+		assistantSlot: { enabled: false },
+		pages: [emptyPage('Overview')],
+		tags: []
+	};
 }
 
 /** Parity / back-compat: wrap an existing dashboard layout as page 0 of a
  *  fresh single-page app. The layout is stored verbatim as the page's grid. */
 export function appFromDashboard(name: string, dashboardLayout: unknown): SaikuApp {
-  const app = emptyApp(name);
-  return {
-    ...app,
-    pages: [{ id: localId("page"), title: name, grid: dashboardLayout }],
-  };
+	const app = emptyApp(name);
+	return {
+		...app,
+		pages: [{ id: localId('page'), title: name, grid: dashboardLayout }]
+	};
 }
 
 /** Input to {@link normaliseApp} — a possibly-partial doc loaded from storage
  *  or hand-authored. Every field is defaulted so callers can pass raw JSON. */
-export type SaikuAppInput = Partial<Omit<SaikuApp, "theme" | "nav" | "assistantSlot" | "pages">> & {
-  theme?: Partial<AppTheme>;
-  nav?: Partial<AppNav>;
-  assistantSlot?: Partial<AppAssistantSlot>;
-  pages?: Partial<AppPage>[];
+export type SaikuAppInput = Partial<Omit<SaikuApp, 'theme' | 'nav' | 'assistantSlot' | 'pages'>> & {
+	theme?: Partial<AppTheme>;
+	nav?: Partial<AppNav>;
+	assistantSlot?: Partial<AppAssistantSlot>;
+	pages?: Partial<AppPage>[];
 };
 
 /** Fill missing fields with defaults so a raw / partial doc becomes a complete
  *  SaikuApp. Idempotent — normalising an already-normalised app is a no-op. */
 export function normaliseApp(raw: SaikuAppInput): SaikuApp {
-  return {
-    id: raw.id ?? "",
-    name: raw.name ?? "Untitled app",
-    version: raw.version ?? 1,
-    logo: raw.logo ?? null,
-    theme: { mode: raw.theme?.mode ?? "auto", ...raw.theme },
-    nav: { ...raw.nav, position: raw.nav?.position ?? "rail" },
-    ...(raw.header ? { header: raw.header } : {}),
-    assistantSlot: { ...raw.assistantSlot, enabled: raw.assistantSlot?.enabled ?? false },
-    pages: (raw.pages ?? []).map((p, i) => ({
-      ...p,
-      id: p.id ?? localId("page"),
-      title: p.title ?? `Page ${i + 1}`,
-      grid: p.grid ?? { cols: 12, tiles: [] },
-    })),
-    tags: raw.tags ?? [],
-  };
+	return {
+		id: raw.id ?? '',
+		name: raw.name ?? 'Untitled app',
+		version: raw.version ?? 1,
+		logo: raw.logo ?? null,
+		theme: { mode: raw.theme?.mode ?? 'auto', ...raw.theme },
+		nav: { ...raw.nav, position: raw.nav?.position ?? 'rail' },
+		...(raw.header ? { header: raw.header } : {}),
+		assistantSlot: { ...raw.assistantSlot, enabled: raw.assistantSlot?.enabled ?? false },
+		pages: (raw.pages ?? []).map((p, i) => ({
+			...p,
+			id: p.id ?? localId('page'),
+			title: p.title ?? `Page ${i + 1}`,
+			grid: p.grid ?? { cols: 12, tiles: [] }
+		})),
+		tags: raw.tags ?? []
+	};
 }
 
 /* =========================================================================
@@ -310,7 +310,7 @@ export function normaliseApp(raw: SaikuAppInput): SaikuApp {
  * injected globally by the http.ts fetch interceptor — no per-call handling.
  * ========================================================================= */
 
-const REST_BASE = "/rest/saiku/api/apps";
+const REST_BASE = '/rest/saiku/api/apps';
 
 /** One row in the saved-apps catalogue. Matches the {@code RepositoryFileObject}
  *  shape AppResource#list returns (a flat list of {@code .saikuapp} files, each
@@ -318,60 +318,60 @@ const REST_BASE = "/rest/saiku/api/apps";
  *  fields the catalogue UI needs; the rest are carried through for #935-style
  *  owner/modified sorting when a list view wants them. */
 export interface AppSummary {
-  path: string;
-  name: string;
-  type?: "FILE" | "FOLDER";
-  fileType?: string;
-  id?: string;
-  owner?: string | null;
-  modified?: number;
+	path: string;
+	name: string;
+	type?: 'FILE' | 'FOLDER';
+	fileType?: string;
+	id?: string;
+	owner?: string | null;
+	modified?: number;
 }
 
 /** List saved apps. Throws on any non-2xx. */
 export async function listApps(): Promise<AppSummary[]> {
-  const res = await fetch(REST_BASE, {
-    credentials: "include",
-    headers: { Accept: "application/json" },
-  });
-  if (!res.ok) throw new Error(`listApps -> ${res.status}`);
-  return (await res.json()) as AppSummary[];
+	const res = await fetch(REST_BASE, {
+		credentials: 'include',
+		headers: { Accept: 'application/json' }
+	});
+	if (!res.ok) throw new Error(`listApps -> ${res.status}`);
+	return (await res.json()) as AppSummary[];
 }
 
 /** Load a raw app doc by repository path and normalise it into a complete
  *  {@link SaikuApp}. Throws on any non-2xx. */
 export async function getApp(path: string): Promise<SaikuApp> {
-  const res = await fetch(`${REST_BASE}/${encodePath(path)}`, {
-    credentials: "include",
-    headers: { Accept: "application/json" },
-  });
-  if (!res.ok) throw new Error(`${path} -> ${res.status}`);
-  const raw = (await res.json()) as SaikuAppInput;
-  return normaliseApp(raw);
+	const res = await fetch(`${REST_BASE}/${encodePath(path)}`, {
+		credentials: 'include',
+		headers: { Accept: 'application/json' }
+	});
+	if (!res.ok) throw new Error(`${path} -> ${res.status}`);
+	const raw = (await res.json()) as SaikuAppInput;
+	return normaliseApp(raw);
 }
 
 /** Save (create or overwrite) an app at {@code path}. Throws on any non-2xx. */
 export async function saveApp(path: string, app: SaikuApp): Promise<void> {
-  const res = await fetch(`${REST_BASE}/${encodePath(path)}`, {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify(app),
-  });
-  if (!res.ok) throw new Error(`${path} -> ${res.status}`);
+	const res = await fetch(`${REST_BASE}/${encodePath(path)}`, {
+		method: 'POST',
+		credentials: 'include',
+		headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+		body: JSON.stringify(app)
+	});
+	if (!res.ok) throw new Error(`${path} -> ${res.status}`);
 }
 
 /** Delete the app at {@code path}. Throws on any non-2xx. */
 export async function deleteApp(path: string): Promise<void> {
-  const res = await fetch(`${REST_BASE}/${encodePath(path)}`, {
-    method: "DELETE",
-    credentials: "include",
-    headers: { Accept: "application/json" },
-  });
-  if (!res.ok) throw new Error(`${path} -> ${res.status}`);
+	const res = await fetch(`${REST_BASE}/${encodePath(path)}`, {
+		method: 'DELETE',
+		credentials: 'include',
+		headers: { Accept: 'application/json' }
+	});
+	if (!res.ok) throw new Error(`${path} -> ${res.status}`);
 }
 
 /** URL-encode each path segment but leave slashes as-is — AppResource binds
  *  {@code {path:.+}} which captures slashes natively (same as DashboardResource). */
 function encodePath(path: string): string {
-  return path.split("/").map(encodeURIComponent).join("/");
+	return path.split('/').map(encodeURIComponent).join('/');
 }

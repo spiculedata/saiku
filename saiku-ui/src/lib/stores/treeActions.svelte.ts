@@ -12,7 +12,7 @@
  * `seq` makes each request distinct so repeated clicks on the same node
  * re-trigger the consuming effect even when the payload is identical.
  */
-export type TreeActionKind = "topcount" | "sort";
+export type TreeActionKind = 'topcount' | 'sort';
 
 export interface TreeActionRequest {
 	kind: TreeActionKind;

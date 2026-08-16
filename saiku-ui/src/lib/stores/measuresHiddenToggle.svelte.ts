@@ -21,68 +21,68 @@
  * server filters hidden measures regardless.
  */
 
-const STORAGE_KEY = "saiku:measures:includeHidden";
+const STORAGE_KEY = 'saiku:measures:includeHidden';
 
 function hasSessionStorage(): boolean {
-  // SSR-safe: SvelteKit can prerender pages, so sessionStorage may not
-  // exist when this module is first evaluated. We don't import
-  // `$app/environment` here so the helper stays trivially unit-testable
-  // outside the SvelteKit harness (vitest doesn't load SvelteKit).
-  return typeof globalThis !== "undefined" && typeof globalThis.sessionStorage !== "undefined";
+	// SSR-safe: SvelteKit can prerender pages, so sessionStorage may not
+	// exist when this module is first evaluated. We don't import
+	// `$app/environment` here so the helper stays trivially unit-testable
+	// outside the SvelteKit harness (vitest doesn't load SvelteKit).
+	return typeof globalThis !== 'undefined' && typeof globalThis.sessionStorage !== 'undefined';
 }
 
 function readStorage(): boolean {
-  if (!hasSessionStorage()) return false;
-  try {
-    return globalThis.sessionStorage.getItem(STORAGE_KEY) === "1";
-  } catch {
-    return false;
-  }
+	if (!hasSessionStorage()) return false;
+	try {
+		return globalThis.sessionStorage.getItem(STORAGE_KEY) === '1';
+	} catch {
+		return false;
+	}
 }
 
 function writeStorage(value: boolean): void {
-  if (!hasSessionStorage()) return;
-  try {
-    if (value) {
-      globalThis.sessionStorage.setItem(STORAGE_KEY, "1");
-    } else {
-      globalThis.sessionStorage.removeItem(STORAGE_KEY);
-    }
-  } catch {
-    // sessionStorage may be unavailable (private mode, quota, blocked
-    // by an enterprise policy). Failing silently is the right call: the
-    // toggle is a per-session convenience, not a contract.
-  }
+	if (!hasSessionStorage()) return;
+	try {
+		if (value) {
+			globalThis.sessionStorage.setItem(STORAGE_KEY, '1');
+		} else {
+			globalThis.sessionStorage.removeItem(STORAGE_KEY);
+		}
+	} catch {
+		// sessionStorage may be unavailable (private mode, quota, blocked
+		// by an enterprise policy). Failing silently is the right call: the
+		// toggle is a per-session convenience, not a contract.
+	}
 }
 
 class MeasuresHiddenToggleStore {
-  /** Source of truth for the current toggle value. Initialised from
-   *  sessionStorage so reloads keep the admin's prior choice. */
-  enabled = $state<boolean>(readStorage());
+	/** Source of truth for the current toggle value. Initialised from
+	 *  sessionStorage so reloads keep the admin's prior choice. */
+	enabled = $state<boolean>(readStorage());
 
-  /** Flip to a specific value (idempotent). Persists when changed. */
-  set(value: boolean): void {
-    if (this.enabled === value) return;
-    this.enabled = value;
-    writeStorage(value);
-  }
+	/** Flip to a specific value (idempotent). Persists when changed. */
+	set(value: boolean): void {
+		if (this.enabled === value) return;
+		this.enabled = value;
+		writeStorage(value);
+	}
 
-  /** Convenience: flip the current value. */
-  toggle(): void {
-    this.set(!this.enabled);
-  }
+	/** Convenience: flip the current value. */
+	toggle(): void {
+		this.set(!this.enabled);
+	}
 
-  /** Reset to false and drop the persisted entry. Used by the test
-   *  harness; not surfaced in the UI. */
-  reset(): void {
-    this.enabled = false;
-    if (!hasSessionStorage()) return;
-    try {
-      globalThis.sessionStorage.removeItem(STORAGE_KEY);
-    } catch {
-      // see writeStorage()
-    }
-  }
+	/** Reset to false and drop the persisted entry. Used by the test
+	 *  harness; not surfaced in the UI. */
+	reset(): void {
+		this.enabled = false;
+		if (!hasSessionStorage()) return;
+		try {
+			globalThis.sessionStorage.removeItem(STORAGE_KEY);
+		} catch {
+			// see writeStorage()
+		}
+	}
 }
 
 export const measuresHiddenToggle = new MeasuresHiddenToggleStore();

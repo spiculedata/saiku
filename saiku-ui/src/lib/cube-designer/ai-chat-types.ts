@@ -9,42 +9,39 @@
  */
 
 export interface AnthropicTextBlock {
-  type: "text";
-  text: string;
+	type: 'text';
+	text: string;
 }
 export interface AnthropicToolUseBlock {
-  type: "tool_use";
-  id: string;
-  name: string;
-  input: Record<string, unknown>;
+	type: 'tool_use';
+	id: string;
+	name: string;
+	input: Record<string, unknown>;
 }
 export interface AnthropicToolResultBlock {
-  type: "tool_result";
-  tool_use_id: string;
-  content: string;
-  is_error?: boolean;
+	type: 'tool_result';
+	tool_use_id: string;
+	content: string;
+	is_error?: boolean;
 }
 export interface AnthropicThinkingBlock {
-  type: "thinking";
-  thinking: string;
-  signature: string;
+	type: 'thinking';
+	thinking: string;
+	signature: string;
 }
 export type AnthropicBlock =
-  | AnthropicTextBlock
-  | AnthropicToolUseBlock
-  | AnthropicToolResultBlock
-  | AnthropicThinkingBlock;
+	AnthropicTextBlock | AnthropicToolUseBlock | AnthropicToolResultBlock | AnthropicThinkingBlock;
 
 export interface ChatMessage {
-  role: "user" | "assistant";
-  content: string | AnthropicBlock[];
-  ts: number;
+	role: 'user' | 'assistant';
+	content: string | AnthropicBlock[];
+	ts: number;
 }
 
 /** Summary of a completed DimSum canvas mutation, shown as the
  *  Confirm/Cancel banner inside the widget. */
 export interface DimSumMutationResult {
-  tables: number;
-  joins: number;
-  warnings: string[];
+	tables: number;
+	joins: number;
+	warnings: string[];
 }

@@ -10,7 +10,7 @@
  * logic stays unit-testable without DOM or fetch mocks.
  */
 
-import type { PanelFilter } from "$lib/api/dashboards";
+import type { PanelFilter } from '$lib/api/dashboards';
 
 /** Map of {@code PanelFilter.id} → the members[] those widgets had on
  *  the saved-to-disk dashboard. Captured at {@link snapshotPanelDefaults}
@@ -26,12 +26,12 @@ export type SavedDefaultMembers = Record<string, string[]>;
  *  in-memory mutations on the live panel can't leak back into the
  *  snapshot. */
 export function snapshotPanelDefaults(filters: PanelFilter[] | undefined): SavedDefaultMembers {
-  const out: SavedDefaultMembers = {};
-  if (!filters) return out;
-  for (const f of filters) {
-    out[f.id] = [...(f.members ?? [])];
-  }
-  return out;
+	const out: SavedDefaultMembers = {};
+	if (!filters) return out;
+	for (const f of filters) {
+		out[f.id] = [...(f.members ?? [])];
+	}
+	return out;
 }
 
 /** True iff any panel widget's members[] differs from its saved
@@ -39,16 +39,16 @@ export function snapshotPanelDefaults(filters: PanelFilter[] | undefined): Saved
  *  considered non-default when they carry any members; empty-member
  *  new widgets count as default (nothing to reset). */
 export function panelDiffersFromDefaults(
-  filters: PanelFilter[] | undefined,
-  defaults: SavedDefaultMembers,
+	filters: PanelFilter[] | undefined,
+	defaults: SavedDefaultMembers
 ): boolean {
-  if (!filters || filters.length === 0) return false;
-  for (const f of filters) {
-    const cur = f.members ?? [];
-    const saved = defaults[f.id] ?? [];
-    if (!arraysEqual(cur, saved)) return true;
-  }
-  return false;
+	if (!filters || filters.length === 0) return false;
+	for (const f of filters) {
+		const cur = f.members ?? [];
+		const saved = defaults[f.id] ?? [];
+		if (!arraysEqual(cur, saved)) return true;
+	}
+	return false;
 }
 
 /** Return a new filters array where each widget's members[] is restored
@@ -61,24 +61,24 @@ export function panelDiffersFromDefaults(
  *  can use referential identity to short-circuit a markDirty() / no-op
  *  store update. */
 export function restoreMembersToDefaults(
-  filters: PanelFilter[],
-  defaults: SavedDefaultMembers,
+	filters: PanelFilter[],
+	defaults: SavedDefaultMembers
 ): PanelFilter[] {
-  let changed = false;
-  const next = filters.map((f) => {
-    const saved = defaults[f.id] ?? [];
-    const cur = f.members ?? [];
-    if (arraysEqual(cur, saved)) return f;
-    changed = true;
-    return { ...f, members: [...saved] };
-  });
-  return changed ? next : filters;
+	let changed = false;
+	const next = filters.map((f) => {
+		const saved = defaults[f.id] ?? [];
+		const cur = f.members ?? [];
+		if (arraysEqual(cur, saved)) return f;
+		changed = true;
+		return { ...f, members: [...saved] };
+	});
+	return changed ? next : filters;
 }
 
 function arraysEqual(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) {
-    if (a[i] !== b[i]) return false;
-  }
-  return true;
+	if (a.length !== b.length) return false;
+	for (let i = 0; i < a.length; i++) {
+		if (a[i] !== b[i]) return false;
+	}
+	return true;
 }

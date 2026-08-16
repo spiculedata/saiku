@@ -109,4 +109,31 @@ class SmtpMailSenderTest {
         assertNotNull(lup);
         assertEquals("List-Unsubscribe=One-Click", lup[0]);
     }
+
+    @Test
+    void listUnsubscribe_crlfIsStripped_noHeaderInjection() throws Exception {
+        // saiku#1811 PR4 (SEC carry-forward #1): a CR/LF smuggled into the List-Unsubscribe value must be
+        // stripped before setHeader so it can't inject an additional SMTP header.
+        MailConfig cfg = new MailConfig(
+                "127.0.0.1", greenMail.getSmtp().getPort(), null, null, "saiku@example.com", false, false, null);
+        SmtpMailSender sender = new SmtpMailSender(cfg);
+
+        String malicious = "<https://host/u?a=x>\r\nBcc: victim@evil.com";
+        MailMessage m = new MailMessage(
+                "me@example.com", "saiku@example.com", "CRLF", "<p>hi</p>", List.of(), List.of(), malicious);
+        sender.send(m);
+
+        assertTrue(greenMail.waitForIncomingEmail(5000, 1));
+        MimeMessage received = greenMail.getReceivedMessages()[0];
+        String[] lu = received.getHeader("List-Unsubscribe");
+        assertNotNull(lu);
+        // No raw CR/LF survives in the header value.
+        assertFalse(lu[0].contains("\r"), "CR must be stripped");
+        assertFalse(lu[0].contains("\n"), "LF must be stripped");
+        // The smuggled Bcc header must NOT exist as a real header, and no extra recipient was injected.
+        assertNull(received.getHeader("Bcc"), "smuggled Bcc must not become a real header");
+        for (jakarta.mail.Address a : received.getAllRecipients()) {
+            assertFalse(a.toString().contains("victim@evil.com"), "no injected recipient may appear");
+        }
+    }
 }

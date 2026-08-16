@@ -16,18 +16,18 @@
  * Pure: no DOM, no fetches.
  */
 
-import type { CubeRef } from "$lib/api/dashboards";
+import type { CubeRef } from '$lib/api/dashboards';
 
-export type SourceKind = "mdx" | "ossie";
+export type SourceKind = 'mdx' | 'ossie';
 
 /** The kind of a source ref, resolving the absent-means-mdx default. */
 export function sourceKind(cube: CubeRef | null | undefined): SourceKind {
-  return cube?.kind === "ossie" ? "ossie" : "mdx";
+	return cube?.kind === 'ossie' ? 'ossie' : 'mdx';
 }
 
 /** True when the tile queries an Ossie semantic model rather than a cube. */
 export function isOssieSource(cube: CubeRef | null | undefined): boolean {
-  return sourceKind(cube) === "ossie";
+	return sourceKind(cube) === 'ossie';
 }
 
 /**
@@ -39,14 +39,14 @@ export function isOssieSource(cube: CubeRef | null | undefined): boolean {
  * keeps all of that correct instead of showing an empty label.
  */
 export function ossieSource(connectionName: string, modelName: string): CubeRef {
-  return {
-    kind: "ossie",
-    connectionName,
-    modelName,
-    catalog: modelName,
-    schema: modelName,
-    cubeName: modelName,
-  };
+	return {
+		kind: 'ossie',
+		connectionName,
+		modelName,
+		catalog: modelName,
+		schema: modelName,
+		cubeName: modelName
+	};
 }
 
 /**
@@ -57,18 +57,18 @@ export function ossieSource(connectionName: string, modelName: string): CubeRef 
  * collapsed them would hand one tile the other's schema.
  */
 export function sourceKey(cube: CubeRef): string {
-  return isOssieSource(cube)
-    ? `ossie:${cube.connectionName}/${cube.modelName ?? cube.cubeName}`
-    : `mdx:${cube.connectionName}/${cube.catalog}/${cube.schema}/${cube.cubeName}`;
+	return isOssieSource(cube)
+		? `ossie:${cube.connectionName}/${cube.modelName ?? cube.cubeName}`
+		: `mdx:${cube.connectionName}/${cube.catalog}/${cube.schema}/${cube.cubeName}`;
 }
 
 /** Human label for the source — what a tile says it is reading. */
 export function sourceLabel(cube: CubeRef): string {
-  return isOssieSource(cube) ? (cube.modelName ?? cube.cubeName) : cube.cubeName;
+	return isOssieSource(cube) ? (cube.modelName ?? cube.cubeName) : cube.cubeName;
 }
 
 /** True when two refs address the same source. */
 export function sameSource(a: CubeRef | null | undefined, b: CubeRef | null | undefined): boolean {
-  if (!a || !b) return false;
-  return sourceKey(a) === sourceKey(b);
+	if (!a || !b) return false;
+	return sourceKey(a) === sourceKey(b);
 }

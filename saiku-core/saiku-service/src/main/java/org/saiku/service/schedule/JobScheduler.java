@@ -202,6 +202,23 @@ public class JobScheduler {
     }
 
     /**
+     * Public fire-now entry point (saiku#1809 PR4 — admin "run now" action). Loads the job by id from
+     * the store and runs it once synchronously through the SAME per-job overlap guard as the ticker, so
+     * a manual run never interleaves with a ticker run of the same job. Returns the persisted post-run
+     * record, or null if the id is unknown / a run was already in flight (overlap-skipped).
+     *
+     * <p>This runs the owner-identity {@link JobRunner} exactly as the ticker does — a job with no
+     * registered handler is recorded FAILED (never throws), so the caller is safe to call it for any id.
+     */
+    public ScheduledJobFile runNow(String id) {
+        if (id == null) {
+            return null;
+        }
+        ScheduledJobFile job = store.load(id);
+        return job == null ? null : runNow(job);
+    }
+
+    /**
      * Run one job now, synchronously on the caller's thread, and write bookkeeping back to the store.
      * This is the deterministic entry point tests drive.
      *

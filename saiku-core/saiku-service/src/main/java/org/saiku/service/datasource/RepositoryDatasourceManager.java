@@ -125,6 +125,16 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
             log.error("Could not start repo", e);
         }
 
+        // saiku#1844: teach Mondrian to read schemas out of THIS repository. Every data source
+        // the admin UI writes carries Catalog=mondrian://<schema> (see DataSourceMapper), a
+        // scheme Mondrian's stock file handler has never been able to resolve — so the cube
+        // never loaded. Installed after irm.start() so the reader is usable the moment
+        // loadDatasources() below triggers the first connection.
+        SaikuVirtualFileHandler.install(this::readRepositoryFileQuietly);
+        // saiku#1845: and confine file: catalogs to the Saiku data directories, so a data source
+        // can't be pointed at an arbitrary host file.
+        SaikuVirtualFileHandler.setFileGuard(SchemaFileAccessGuard.fromEnvironment(datadir));
+
         // Load the datasources
         loadDatasources(ext);
     }
@@ -204,6 +214,14 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
     public SaikuDatasource addDatasource(SaikuDatasource datasource) throws Exception {
         DataSource ds = new DataSource(datasource);
 
+        // saiku#1864: the load path decorates every name as `<workspace>_<storedName>`
+        // (FilesystemRepositoryManager.getAllDataSources). Nothing undid that here, so a client
+        // that read a datasource, changed a field and wrote it back saved `unknown_foo.sds`
+        // ALONGSIDE the original `foo.sds` — a duplicate sharing the same id, with the original
+        // name still serving the old catalog. Strip the decoration so read-modify-write lands on
+        // the datasource it came from.
+        ds.setName(DatasourceNameDecoration.undecorate(ds.getName(), currentWorkspaceKey()));
+
         if (ds.getCsv() != null && ds.getCsv().equals("true")) {
             String split[] = ds.getLocation().split("=");
             String loc = split[2];
@@ -271,14 +289,15 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
 
             irm.saveDataSource(ds, separator + "datasources" + separator + ds.getName() + ".sds", "fixme");
 
-            String name = ds.getName();
+            // Cache under the decorated name — the key a reload would produce (saiku#1864).
+            String name = decoratedName(ds.getName());
 
             // Adding the connection before refreshing it
             // Preserve the incoming type (OLAP/OSSIE) rather than hard-coding OLAP — Ossie
             // datasources need their type carried through so the connection factory picks the
             // right ISaikuConnection subclass.
             SaikuDatasource sds = new SaikuDatasource(name, datasource.getType(), datasource.getProperties());
-            datasourcesForCurrentWorkspace().put(ds.getName(), sds);
+            datasourcesForCurrentWorkspace().put(name, sds);
 
             // In a workspace environment it is necessary to prefix the datasource name with the workspace name
             connectionManager.refreshConnection(name);
@@ -286,7 +305,10 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
             irm.saveDataSource(ds, separator + "datasources" + separator + ds.getName() + ".sds", "fixme");
         }
 
-        String name = ds.getName();
+        // The FILE is stored undecorated (see the strip at the top of this method), but the cache
+        // has to be keyed the way a reload would key it — decorated — or every lookup between now
+        // and the next restart misses (saiku#1864).
+        String name = decoratedName(ds.getName());
         SaikuDatasource sds = new SaikuDatasource(name, SaikuDatasource.Type.OLAP, datasource.getProperties());
 
         // Cache per-workspace — see datasourcesForCurrentWorkspace() for the
@@ -294,6 +316,18 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
         datasourcesForCurrentWorkspace().put(name, sds);
 
         return datasource;
+    }
+
+    /**
+     * The name a stored datasource is surfaced under, i.e. what {@code getAllDataSources} will call
+     * it after the next load. Keep this the inverse of {@link DatasourceNameDecoration#undecorate}.
+     */
+    private String decoratedName(String storedName) {
+        String workspace = currentWorkspaceKey();
+        if (storedName == null || workspace == null || workspace.isEmpty()) {
+            return storedName;
+        }
+        return storedName.startsWith(workspace + "_") ? storedName : workspace + "_" + storedName;
     }
 
     public SaikuDatasource setDatasource(SaikuDatasource datasource) throws Exception {
@@ -365,7 +399,43 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
     }
 
     public SaikuDatasource getDatasource(String datasourceName) {
-        return datasourcesForCurrentWorkspace().get(datasourceName);
+        return lookup(datasourcesForCurrentWorkspace(), datasourceName);
+    }
+
+    /**
+     * Resolve a datasource by name, accepting it with OR without the workspace decoration.
+     *
+     * <p>saiku#1869: every datasource is surfaced as {@code <workspace>_<storedName>} — in
+     * single-tenant OSS that is always {@code unknown_}, a multi-tenant artefact carrying no
+     * information. It is baked into saved queries, dashboards and apps, both as the connection name
+     * and inside MDX unique names ({@code [unknown_foodmart].[FoodMart]...}), so it cannot simply be
+     * dropped without breaking every existing install.
+     *
+     * <p>Accepting both spellings here is step one, and it is deliberately harmless on its own:
+     * nothing is renamed yet, so this only widens what already resolves. It is what lets the
+     * decoration be switched off later without a migration — old content keeps resolving through
+     * the alias, and if some path is missed it degrades to a lookup that still works rather than a
+     * connection that cannot be found.
+     *
+     * <p>Every by-name path funnels through here ({@code getConnection}, {@code getOlapConnection},
+     * {@code refreshConnection}, discover, query), which is why the alias lives at this one point
+     * rather than at each caller.
+     */
+    private SaikuDatasource lookup(Map<String, SaikuDatasource> pool, String datasourceName) {
+        if (pool == null || datasourceName == null) {
+            return null;
+        }
+        SaikuDatasource exact = pool.get(datasourceName);
+        if (exact != null) {
+            return exact;
+        }
+        String workspace = currentWorkspaceKey();
+        // Asked for "foodmart" but stored/keyed as "unknown_foodmart", or vice versa.
+        SaikuDatasource decorated = pool.get(DatasourceNameDecoration.decorate(datasourceName, workspace));
+        if (decorated != null) {
+            return decorated;
+        }
+        return pool.get(DatasourceNameDecoration.undecorate(datasourceName, workspace));
     }
 
     @Override
@@ -373,7 +443,7 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
         Map<String, SaikuDatasource> current = datasourcesForCurrentWorkspace();
         if (!refresh) {
             if (current.size() > 0) {
-                return current.get(datasourceName);
+                return lookup(current, datasourceName);
             }
         } else {
             return getDatasource(datasourceName);
@@ -415,6 +485,24 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
     public String getInternalFileData(String file) throws RepositoryException {
 
         return irm.getInternalFile(file);
+    }
+
+    /**
+     * Repository read that reports "absent" instead of throwing — the shape
+     * {@link SaikuVirtualFileHandler} needs.
+     *
+     * <p>saiku#1844. A miss here is ordinary: {@link MondrianCatalogResolver} probes more than one
+     * candidate path per catalog and expects null for the ones that don't exist. Mondrian is
+     * mid-connection when this runs, and a thrown {@link RepositoryException} would surface as an
+     * opaque schema-load failure rather than the resolver simply trying its next candidate.
+     */
+    private String readRepositoryFileQuietly(String path) {
+        try {
+            return irm.getInternalFile(path);
+        } catch (RepositoryException e) {
+            log.debug("No repository file at {}", path, e);
+            return null;
+        }
     }
 
     public InputStream getBinaryInternalFileData(String file) throws RepositoryException {

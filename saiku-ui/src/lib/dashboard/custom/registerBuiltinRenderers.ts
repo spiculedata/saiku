@@ -15,69 +15,77 @@
  * the self-contained embed IIFE.
  */
 
-import type { Component } from "svelte";
-import { registerTileRenderer, type ValidateOptionsResult } from "$lib/dashboard/tileRegistry";
-import { validateEchartsOption } from "$lib/dashboard/custom/echartsOption";
-import { validateGraphConfig } from "$lib/dashboard/custom/graphTile";
-import { validatePluginOptions } from "$lib/dashboard/custom/pluginBridge";
-import { validateRankedListConfig } from "$lib/dashboard/custom/rankedList";
-import EChartsOptionTile from "$lib/views/dashboard/tiles/custom/EChartsOptionTile.svelte";
-import EmbedEChartsOptionTile from "$lib/views/dashboard/tiles/custom/EmbedEChartsOptionTile.svelte";
-import GraphTile from "$lib/views/dashboard/tiles/custom/GraphTile.svelte";
-import EmbedGraphTile from "$lib/views/dashboard/tiles/custom/EmbedGraphTile.svelte";
-import PluginTile from "$lib/views/dashboard/tiles/custom/PluginTile.svelte";
-import EmbedPluginTile from "$lib/views/dashboard/tiles/custom/EmbedPluginTile.svelte";
-import RankedListTile from "$lib/views/dashboard/tiles/custom/RankedListTile.svelte";
-import EmbedRankedListTile from "$lib/views/dashboard/tiles/custom/EmbedRankedListTile.svelte";
+import type { Component } from 'svelte';
+import { registerTileRenderer, type ValidateOptionsResult } from '$lib/dashboard/tileRegistry';
+import { validateEchartsOption } from '$lib/dashboard/custom/echartsOption';
+import { validateGraphConfig } from '$lib/dashboard/custom/graphTile';
+import { validatePluginOptions } from '$lib/dashboard/custom/pluginBridge';
+import { validateRankedListConfig } from '$lib/dashboard/custom/rankedList';
+import EChartsOptionTile from '$lib/views/dashboard/tiles/custom/EChartsOptionTile.svelte';
+import EmbedEChartsOptionTile from '$lib/views/dashboard/tiles/custom/EmbedEChartsOptionTile.svelte';
+import GraphTile from '$lib/views/dashboard/tiles/custom/GraphTile.svelte';
+import EmbedGraphTile from '$lib/views/dashboard/tiles/custom/EmbedGraphTile.svelte';
+import PluginTile from '$lib/views/dashboard/tiles/custom/PluginTile.svelte';
+import EmbedPluginTile from '$lib/views/dashboard/tiles/custom/EmbedPluginTile.svelte';
+import RankedListTile from '$lib/views/dashboard/tiles/custom/RankedListTile.svelte';
+import EmbedRankedListTile from '$lib/views/dashboard/tiles/custom/EmbedRankedListTile.svelte';
 
 // The registry types `component`/`embedComponent` as the prop-erased `Component`
 // (renderers are dispatched dynamically); these tiles declare a required `tile`
 // prop, so cast through `Component` at the registration boundary.
 registerTileRenderer({
-  id: "echarts-option",
-  label: "ECharts option",
-  icon: "📉",
-  component: EChartsOptionTile as unknown as Component,
-  embedComponent: EmbedEChartsOptionTile as unknown as Component,
-  isQueryable: true,
-  validateOptions: validateEchartsOption,
+	id: 'echarts-option',
+	label: 'ECharts option',
+	icon: '📉',
+	description: 'Hand-authored ECharts JSON, for a visual the type gallery does not cover.',
+	placement: 'advanced',
+	component: EChartsOptionTile as unknown as Component,
+	embedComponent: EmbedEChartsOptionTile as unknown as Component,
+	isQueryable: true,
+	validateOptions: validateEchartsOption
 });
 
 registerTileRenderer({
-  id: "graph",
-  label: "Graph",
-  icon: "🕸️",
-  component: GraphTile as unknown as Component,
-  embedComponent: EmbedGraphTile as unknown as Component,
-  isQueryable: true,
-  // GraphConfig is a typed shape (no index signature); the registry types the
-  // validated value as Record<string, unknown>. The runtime value is a plain
-  // record, so widen it at the registration boundary.
-  validateOptions: validateGraphConfig as (o: unknown) => ValidateOptionsResult,
+	id: 'graph',
+	label: 'Graph (nodes + edges)',
+	icon: '🕸️',
+	description: 'Relationships between values — each row is an edge, nodes are deduped.',
+	placement: 'chart',
+	component: GraphTile as unknown as Component,
+	embedComponent: EmbedGraphTile as unknown as Component,
+	isQueryable: true,
+	// GraphConfig is a typed shape (no index signature); the registry types the
+	// validated value as Record<string, unknown>. The runtime value is a plain
+	// record, so widen it at the registration boundary.
+	validateOptions: validateGraphConfig as (o: unknown) => ValidateOptionsResult
 });
 
 // The "Movers" card as a tile — a ranked run of label + signed value rows.
 // Exists so that composition stops being a custom-CSS exercise; see
 // rankedList.ts for the `.tile:has(tbody)` hack it replaces.
 registerTileRenderer({
-  id: "ranked-list",
-  label: "Ranked list",
-  icon: "🏅",
-  component: RankedListTile as unknown as Component,
-  embedComponent: EmbedRankedListTile as unknown as Component,
-  isQueryable: true,
-  validateOptions: validateRankedListConfig,
+	id: 'ranked-list',
+	label: 'Ranked list',
+	icon: '🏅',
+	description: 'Top movers as label + signed value rows.',
+	placement: 'chart',
+	component: RankedListTile as unknown as Component,
+	embedComponent: EmbedRankedListTile as unknown as Component,
+	isQueryable: true,
+	validateOptions: validateRankedListConfig
 });
 
 // Tier-2 `plugin` renderer — runs ARBITRARY author JavaScript inside a
 // locked-down iframe (sandbox="allow-scripts" + strict CSP + per-mount nonce).
 // See PluginTile.svelte / pluginBridge.ts for the full containment contract.
 registerTileRenderer({
-  id: "plugin",
-  label: "Plugin (sandboxed JS)",
-  icon: "🧩",
-  component: PluginTile as unknown as Component,
-  embedComponent: EmbedPluginTile as unknown as Component,
-  isQueryable: true,
-  validateOptions: validatePluginOptions,
+	id: 'plugin',
+	label: 'Plugin (sandboxed JS)',
+	icon: '🧩',
+	description: 'Author JavaScript, run inside a locked-down iframe.',
+	placement: 'advanced',
+	component: PluginTile as unknown as Component,
+	embedComponent: EmbedPluginTile as unknown as Component,
+	isQueryable: true,
+	validateOptions: validatePluginOptions
 });

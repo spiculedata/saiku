@@ -25,15 +25,15 @@
 const MARKER_RE = /^\|(.*)\|style=(#[0-9a-fA-F]{3,8}|[a-zA-Z]+)$/;
 
 export interface ParsedCell {
-  /** What to render in the cell. */
-  display: string;
-  /** Inline CSS colour to apply, if the marker carried one. */
-  color?: string;
+	/** What to render in the cell. */
+	display: string;
+	/** Inline CSS colour to apply, if the marker carried one. */
+	color?: string;
 }
 
 export function parseFormattedCell(raw: string | null | undefined): ParsedCell {
-  if (raw == null) return { display: "" };
-  const m = MARKER_RE.exec(raw);
-  if (!m) return { display: raw };
-  return { display: m[1], color: m[2] };
+	if (raw == null) return { display: '' };
+	const m = MARKER_RE.exec(raw);
+	if (!m) return { display: raw };
+	return { display: m[1], color: m[2] };
 }

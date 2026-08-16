@@ -11,8 +11,8 @@
  * the project's `node` vitest environment.
  */
 
-import type { QueryResult, CellEntry } from "$lib/api/query";
-import type { AiDrillthroughResult, AiCell } from "$lib/api/aiQuery";
+import type { QueryResult, CellEntry } from '$lib/api/query';
+import type { AiDrillthroughResult, AiCell } from '$lib/api/aiQuery';
 
 /**
  * Build the `position` param for a drillthrough on a single aggregated cell.
@@ -22,12 +22,12 @@ import type { AiDrillthroughResult, AiCell } from "$lib/api/aiQuery";
  *   click where the renderer couldn't resolve a series/category index).
  */
 export function drillthroughPosition(columnIndex: number, rowIndex: number): string | null {
-  if (!isNonNegativeInt(columnIndex) || !isNonNegativeInt(rowIndex)) return null;
-  return `${columnIndex}:${rowIndex}`;
+	if (!isNonNegativeInt(columnIndex) || !isNonNegativeInt(rowIndex)) return null;
+	return `${columnIndex}:${rowIndex}`;
 }
 
 function isNonNegativeInt(n: number): boolean {
-  return Number.isInteger(n) && n >= 0;
+	return Number.isInteger(n) && n >= 0;
 }
 
 /**
@@ -38,26 +38,26 @@ function isNonNegativeInt(n: number): boolean {
  * "true"` so the modal right-aligns them, matching the workspace path.
  */
 export function drillthroughToQueryResult(
-  dt: AiDrillthroughResult,
-  runtimeMs?: number,
+	dt: AiDrillthroughResult,
+	runtimeMs?: number
 ): QueryResult {
-  const header: CellEntry[] = dt.columns.map((caption) => ({
-    value: caption,
-    type: "COLUMN_HEADER",
-  }));
-  const body: CellEntry[][] = dt.rows.map((row) =>
-    dt.columns.map((col) => {
-      const cell = row[col] as AiCell | undefined;
-      const numeric = cell && cell.value != null && typeof cell.value === "number";
-      return {
-        value: cell?.formatted ?? "",
-        type: "DATA_CELL",
-        ...(numeric ? { properties: { numeric: "true" } } : {}),
-      } satisfies CellEntry;
-    }),
-  );
-  return {
-    cellset: [header, ...body],
-    runtime: runtimeMs,
-  };
+	const header: CellEntry[] = dt.columns.map((caption) => ({
+		value: caption,
+		type: 'COLUMN_HEADER'
+	}));
+	const body: CellEntry[][] = dt.rows.map((row) =>
+		dt.columns.map((col) => {
+			const cell = row[col] as AiCell | undefined;
+			const numeric = cell && cell.value != null && typeof cell.value === 'number';
+			return {
+				value: cell?.formatted ?? '',
+				type: 'DATA_CELL',
+				...(numeric ? { properties: { numeric: 'true' } } : {})
+			} satisfies CellEntry;
+		})
+	);
+	return {
+		cellset: [header, ...body],
+		runtime: runtimeMs
+	};
 }

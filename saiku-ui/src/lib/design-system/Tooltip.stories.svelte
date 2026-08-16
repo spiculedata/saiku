@@ -1,14 +1,14 @@
 <!--
-  Primitives/Tooltip — shadcn primitive at `src/lib/components/ui/tooltip.svelte`.
+  Primitives/Tooltip — shadcn primitive from @concepttocloud/saiku-design-system/ui.
   Built on bits-ui. Wraps a single child (the trigger) and surfaces `text`
   on hover/focus. Pass `text={null}` or `text=""` to disable the tooltip
   conditionally without removing the wrapper.
 -->
 <script module lang="ts">
 	import { defineMeta } from '@storybook/addon-svelte-csf';
-	import Tooltip from '$lib/components/ui/tooltip.svelte';
-	import Button from '$lib/components/ui/button.svelte';
-	import { Info, Trash2 } from 'lucide-svelte';
+	import { Tooltip } from '$lib/components/ui';
+	import { Button } from '$lib/components/ui';
+	import { Info, Trash2 } from '@lucide/svelte';
 
 	const { Story } = defineMeta({
 		title: 'Primitives/Tooltip',

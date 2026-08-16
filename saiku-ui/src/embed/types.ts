@@ -18,17 +18,17 @@
  *   render headers.
  */
 export interface EmbedQueryResponse {
-  /** "records" or "matrix". */
-  format: string;
-  /** Records format: one {column-caption → cell} per data row. */
-  data?: EmbedRow[];
-  /** Matrix format: one {"0" → cell, "1" → cell, …} per row. */
-  matrix?: EmbedMatrixRow[];
-  /** Matrix format only: row + column headers. */
-  metadata?: EmbedQueryMetadata;
-  /** Echoed by the AI Query API; useful for client-side debugging but
-   *  the bundle doesn't render it. */
-  queryId?: string;
+	/** "records" or "matrix". */
+	format: string;
+	/** Records format: one {column-caption → cell} per data row. */
+	data?: EmbedRow[];
+	/** Matrix format: one {"0" → cell, "1" → cell, …} per row. */
+	matrix?: EmbedMatrixRow[];
+	/** Matrix format only: row + column headers. */
+	metadata?: EmbedQueryMetadata;
+	/** Echoed by the AI Query API; useful for client-side debugging but
+	 *  the bundle doesn't render it. */
+	queryId?: string;
 }
 
 /** {column-caption → cell} for one row. */
@@ -43,14 +43,14 @@ export type EmbedMatrixRow = Record<string, EmbedCell>;
  * j (the value the client puts on that column of the emitted table).
  */
 export interface EmbedQueryMetadata {
-  rows: EmbedCaption[];
-  columns: EmbedCaption[];
+	rows: EmbedCaption[];
+	columns: EmbedCaption[];
 }
 
 /** Mondrian name/caption pair — captions are already localised on the server. */
 export interface EmbedCaption {
-  name: string;
-  caption: string;
+	name: string;
+	caption: string;
 }
 
 /**
@@ -64,17 +64,17 @@ export interface EmbedCaption {
  * can treat them as strings rather than numbers.
  */
 export interface EmbedCell {
-  value: number | null;
-  formatted: string;
-  unit?: string;
+	value: number | null;
+	formatted: string;
+	unit?: string;
 }
 
 /** Error envelope the server returns on the embed surface (mirrors the
  *  EMBED_INVALID 401 + the AI Query error shapes). */
 export interface EmbedError {
-  status: string;
-  error?: string;
-  field?: string;
+	status: string;
+	error?: string;
+	field?: string;
 }
 
 /* ------------------------- dashboard shapes ------------------------ */
@@ -87,13 +87,13 @@ export interface EmbedError {
  * tile so extra fields don't fight the renderer.
  */
 export interface EmbedDashboardLayout {
-  id: string;
-  name: string;
-  version: number;
-  layout: {
-    cols: number;
-    tiles: EmbedDashboardTile[];
-  };
+	id: string;
+	name: string;
+	version: number;
+	layout: {
+		cols: number;
+		tiles: EmbedDashboardTile[];
+	};
 }
 
 /**
@@ -103,45 +103,45 @@ export interface EmbedDashboardLayout {
  * the abstract row height to CSS).
  */
 export interface EmbedDashboardTile {
-  id: string;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  /** "text" | "chart" | "kpi" | "filter" — the renderer dispatches
-   *  on this. Unknown types are skipped with a friendly placeholder so
-   *  a server-side tile-type addition doesn't break old embed bundles. */
-  type: string;
-  title?: string;
-  /** Chart-specific. */
-  chartType?: string;
-  /** KPI-specific. */
-  kpi?: {
-    measure: string;
-    measureCaption?: string;
-    format?: string;
-  };
-  /** Text-tile body — plain string in v1, markdown rendered as
-   *  paragraphs (no `marked` import to keep the bundle tight). */
-  text?: string;
-  /** Filter-tile axis binding — which dimension/hierarchy/level the widget
-   *  drives. Null for non-filter tiles. Server-authored; the guest never
-   *  overrides it (that would defeat the purpose of pinning). */
-  target?: EmbedFilterTarget;
-  /** Filter widget subtype: "single-select" | "multi-select". Defaults to
-   *  multi-select if omitted. */
-  widget?: string;
-  /** Custom-renderer config (App Builder Phase 2, saiku#1441). Only consulted
-   *  when {@code type === "custom"} — names the registered renderer and carries
-   *  its opaque options. Absent renderer / embedComponent → "Unsupported tile". */
-  custom?: { renderer: string; options?: Record<string, unknown> };
+	id: string;
+	x: number;
+	y: number;
+	w: number;
+	h: number;
+	/** "text" | "chart" | "kpi" | "filter" — the renderer dispatches
+	 *  on this. Unknown types are skipped with a friendly placeholder so
+	 *  a server-side tile-type addition doesn't break old embed bundles. */
+	type: string;
+	title?: string;
+	/** Chart-specific. */
+	chartType?: string;
+	/** KPI-specific. */
+	kpi?: {
+		measure: string;
+		measureCaption?: string;
+		format?: string;
+	};
+	/** Text-tile body — plain string in v1, markdown rendered as
+	 *  paragraphs (no `marked` import to keep the bundle tight). */
+	text?: string;
+	/** Filter-tile axis binding — which dimension/hierarchy/level the widget
+	 *  drives. Null for non-filter tiles. Server-authored; the guest never
+	 *  overrides it (that would defeat the purpose of pinning). */
+	target?: EmbedFilterTarget;
+	/** Filter widget subtype: "single-select" | "multi-select". Defaults to
+	 *  multi-select if omitted. */
+	widget?: string;
+	/** Custom-renderer config (App Builder Phase 2, saiku#1441). Only consulted
+	 *  when {@code type === "custom"} — names the registered renderer and carries
+	 *  its opaque options. Absent renderer / embedComponent → "Unsupported tile". */
+	custom?: { renderer: string; options?: Record<string, unknown> };
 }
 
 /** Filter-tile axis binding. Mirrors the server-side {@code DashboardFilter}. */
 export interface EmbedFilterTarget {
-  dimension: string;
-  hierarchy?: string;
-  level: string;
+	dimension: string;
+	hierarchy?: string;
+	level: string;
 }
 
 /* ---------------------------- app shapes --------------------------- */
@@ -154,13 +154,13 @@ export interface EmbedFilterTarget {
  * anything else round-trips untouched (the launcher serves the doc verbatim).
  */
 export interface EmbedAppDoc {
-  id: string;
-  name: string;
-  version: number;
-  logo?: string | null;
-  nav?: { position?: "rail" | "top" };
-  theme?: { mode?: "light" | "dark" | "auto" };
-  pages: EmbedAppPage[];
+	id: string;
+	name: string;
+	version: number;
+	logo?: string | null;
+	nav?: { position?: 'rail' | 'top' };
+	theme?: { mode?: 'light' | 'dark' | 'auto' };
+	pages: EmbedAppPage[];
 }
 
 /**
@@ -170,11 +170,11 @@ export interface EmbedAppDoc {
  * dashboard embed does (see EmbedGrid + api.fetchAppTile).
  */
 export interface EmbedAppPage {
-  id: string;
-  title: string;
-  icon?: string;
-  grid: {
-    cols?: number;
-    tiles?: EmbedDashboardTile[];
-  };
+	id: string;
+	title: string;
+	icon?: string;
+	grid: {
+		cols?: number;
+		tiles?: EmbedDashboardTile[];
+	};
 }

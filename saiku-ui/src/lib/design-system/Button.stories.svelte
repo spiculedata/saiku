@@ -1,12 +1,12 @@
 <!--
-  Primitives/Button — shadcn primitive at `src/lib/components/ui/button.svelte`.
+  Primitives/Button — shadcn primitive from @concepttocloud/saiku-design-system/ui.
   Six variants (default, destructive, outline, secondary, ghost, link, text)
   × five sizes (default, sm, lg, icon, none). Theme toggle flips light/dark.
 -->
 <script module lang="ts">
 	import { defineMeta } from '@storybook/addon-svelte-csf';
-	import Button from '$lib/components/ui/button.svelte';
-	import { Plus } from 'lucide-svelte';
+	import { Button } from '$lib/components/ui';
+	import { Plus } from '@lucide/svelte';
 
 	const { Story } = defineMeta({
 		title: 'Primitives/Button',

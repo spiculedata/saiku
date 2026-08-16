@@ -28,27 +28,27 @@ const SEPARATORS = /[\s._\-@]+/;
  * Non-letter leading characters are skipped so "1st.user" doesn't render "1U".
  */
 export function userInitials(username: string | null | undefined): string {
-  if (!username) return "";
-  const parts = username
-    .split(SEPARATORS)
-    .map((p) => p.replace(/[^\p{L}\p{N}]/gu, ""))
-    .filter((p) => p.length > 0);
-  if (parts.length === 0) return "";
+	if (!username) return '';
+	const parts = username
+		.split(SEPARATORS)
+		.map((p) => p.replace(/[^\p{L}\p{N}]/gu, ''))
+		.filter((p) => p.length > 0);
+	if (parts.length === 0) return '';
 
-  if (parts.length === 1) {
-    // One word carries no second initial, so take its first two letters —
-    // "AD" reads as a monogram where a bare "A" reads as a mistake.
-    return parts[0].slice(0, MAX).toUpperCase();
-  }
-  return parts
-    .slice(0, MAX)
-    .map((p) => p[0])
-    .join("")
-    .toUpperCase();
+	if (parts.length === 1) {
+		// One word carries no second initial, so take its first two letters —
+		// "AD" reads as a monogram where a bare "A" reads as a mistake.
+		return parts[0].slice(0, MAX).toUpperCase();
+	}
+	return parts
+		.slice(0, MAX)
+		.map((p) => p[0])
+		.join('')
+		.toUpperCase();
 }
 
 /** How the rail's user disc gets its label. */
-export type AvatarSource = "user" | "fixed";
+export type AvatarSource = 'user' | 'fixed';
 
 /**
  * Resolve what the disc should show.
@@ -61,11 +61,11 @@ export type AvatarSource = "user" | "fixed";
  * Returns "" when there's nothing to show — the caller hides the disc.
  */
 export function resolveAvatar(
-  footer: { avatar?: string; avatarSource?: AvatarSource } | null | undefined,
-  username: string | null | undefined,
+	footer: { avatar?: string; avatarSource?: AvatarSource } | null | undefined,
+	username: string | null | undefined
 ): string {
-  if (!footer) return "";
-  const source: AvatarSource = footer.avatarSource ?? "fixed";
-  if (source === "user") return userInitials(username);
-  return (footer.avatar ?? "").trim();
+	if (!footer) return '';
+	const source: AvatarSource = footer.avatarSource ?? 'fixed';
+	if (source === 'user') return userInitials(username);
+	return (footer.avatar ?? '').trim();
 }
