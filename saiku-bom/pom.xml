@@ -6,7 +6,7 @@
 
     <groupId>org.saikuanalytics</groupId>
     <artifactId>saiku-bom</artifactId>
-    <version>4.7.1</version>
+    <version>4.8.0-RC1</version>
     <packaging>pom</packaging>
     <name>Saiku BOM</name>
     <description>Central dependency-version catalogue for Saiku modules.</description>

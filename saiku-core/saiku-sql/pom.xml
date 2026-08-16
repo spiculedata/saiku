@@ -6,7 +6,7 @@
     <parent>
         <groupId>org.saikuanalytics</groupId>
         <artifactId>saiku-core</artifactId>
-        <version>4.7.1</version>
+        <version>4.8.0-RC1</version>
     </parent>
 
     <artifactId>saiku-sql</artifactId>
