@@ -130,8 +130,7 @@ public class SaikuVirtualFileHandlerTest {
         SaikuVirtualFileHandler.setRepositoryReader(p -> null);
         VirtualFileHandler fakeProvider = url -> {
             assertEquals("mondrian:///datasources/cloud-uploads/t/v1.xml", url);
-            return new java.io.ByteArrayInputStream(
-                    "<Schema name='FromCloud'/>".getBytes(StandardCharsets.UTF_8));
+            return new java.io.ByteArrayInputStream("<Schema name='FromCloud'/>".getBytes(StandardCharsets.UTF_8));
         };
 
         try (InputStream in = new SaikuVirtualFileHandler(fakeProvider)
