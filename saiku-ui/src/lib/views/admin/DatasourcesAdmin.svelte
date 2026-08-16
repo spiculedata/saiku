@@ -9,7 +9,11 @@
 	import ConfirmModal from '$lib/modals/ConfirmModal.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import { FormField, Skeleton } from '$lib/design-system';
-	import { generateSchemaHref, generateSchemaLabel } from './dataSourceActions';
+	import {
+		generateSchemaHref,
+		generateSchemaLabel,
+		supportsCubeDesigner
+	} from './dataSourceActions';
 
 	let list = $state<AdminDatasource[]>([]);
 	let loading = $state(true);
@@ -158,13 +162,17 @@
 						<td>{ds.type}</td>
 						<td>{ds.schemaName ?? ''}</td>
 						<td class="data-grid__actions">
-							<a
-								class={buttonVariants({ variant: 'outline' })}
-								data-testid="generate-schema-link"
-								href={`${base}${generateSchemaHref(ds)}`}
-							>
-								{generateSchemaLabel(ds)}
-							</a>
+							<!-- Mondrian-only: the cube designer has nothing to edit on an Ossie
+							     source, so it isn't offered. See supportsCubeDesigner(). -->
+							{#if supportsCubeDesigner(ds)}
+								<a
+									class={buttonVariants({ variant: 'outline' })}
+									data-testid="generate-schema-link"
+									href={`${base}${generateSchemaHref(ds)}`}
+								>
+									{generateSchemaLabel(ds)}
+								</a>
+							{/if}
 							<Button variant="outline" onclick={() => refreshDs(ds)}
 								>{i18n.t('admin.refresh')}</Button
 							>
