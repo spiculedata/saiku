@@ -106,7 +106,20 @@ public class SaikuVirtualFileHandler implements VirtualFileHandler {
         return PREVIEWS.size();
     }
 
-    private final VirtualFileHandler delegate = new ApacheVfs2VirtualFileHandler();
+    private final VirtualFileHandler delegate;
+
+    /** Mondrian constructs this reflectively with no arguments; delegate to the stock handler. */
+    public SaikuVirtualFileHandler() {
+        this(new ApacheVfs2VirtualFileHandler());
+    }
+
+    /**
+     * Test seam: inject the stock delegate so the {@code mondrian://} fall-through path
+     * (saiku#1844 Cloud) can be exercised without registering a real VFS provider.
+     */
+    SaikuVirtualFileHandler(VirtualFileHandler delegate) {
+        this.delegate = delegate;
+    }
 
     /**
      * Install this handler as Mondrian's file handler and point it at the repository.
@@ -180,6 +193,30 @@ public class SaikuVirtualFileHandler implements VirtualFileHandler {
                 String xml = MondrianCatalogResolver.resolve(url, reader);
                 if (xml != null) {
                     return new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8));
+                }
+            }
+            // saiku#1844 (Cloud): a reference carrying the EXPLICIT mondrian:// scheme may be served
+            // by a VFS provider registered for that scheme rather than by the reader. Saiku Cloud has
+            // no filesystem repository — it registers a mondrian: provider (MondrianVfsBootstrap ->
+            // MondrianRepoFileProvider) that resolves the tenant's schema out of Postgres. The reader
+            // installed here (irm.getInternalFile) cannot reach that store, so a null result is not a
+            // genuine miss; delegate to the stock handler, which consults the same global VFS manager
+            // and hits the registered provider. This restores the pre-4.8.0 resolution path.
+            //
+            // Delegating is safe ONLY for the explicit scheme: a mondrian:// URL routes to that
+            // provider, never the raw filesystem. A bare, schemeless path must still fail closed
+            // (saiku#1845) — "../../etc/shadow" satisfies isRepositoryReference() and handing it to
+            // the VFS delegate would resolve it against the process working directory, turning a
+            // failed repository lookup into a host-file read.
+            if (url != null && url.trim().startsWith(MondrianCatalogResolver.SCHEME)) {
+                try {
+                    return delegate.readVirtualFile(url.trim());
+                } catch (Exception fromDelegate) {
+                    // No provider resolved it — e.g. the OSS build, where no mondrian: VFS provider is
+                    // registered, so the stock handler raises "Virtual file is not readable" (a
+                    // MondrianException, not an IOException). Any delegate failure means "not
+                    // resolvable"; fall through to the informative repository error below.
+                    log.debug("mondrian: VFS delegate could not resolve {} ({})", url, fromDelegate.toString());
                 }
             }
             // saiku#1845: a repository reference that didn't resolve must NOT fall through to the

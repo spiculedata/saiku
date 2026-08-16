@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.HashMap;
 import java.util.Map;
+import mondrian.spi.VirtualFileHandler;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -114,6 +115,47 @@ public class SaikuVirtualFileHandlerTest {
             // The old failure was a bare "Virtual file is not readable" with no hint where it
             // looked. An admin needs the candidate paths to fix their schema field.
             assertTrue(e.getMessage(), e.getMessage().contains("/datasources/Missing.xml"));
+        }
+    }
+
+    // --- saiku#1844 Cloud: mondrian:// falls through to a registered VFS provider ----------
+
+    @Test
+    public void anUnresolvedMondrianSchemeFallsThroughToTheRegisteredVfsProvider() throws Exception {
+        // Saiku Cloud has no filesystem repository: the reader (irm.getInternalFile) cannot reach
+        // the tenant's Postgres-hosted schema, so it returns null. A mondrian:// provider IS
+        // registered on the global VFS manager, though, and must get the chance to resolve it —
+        // otherwise every cloud-authored cube goes Broken. The stock delegate stands in for that
+        // provider here.
+        SaikuVirtualFileHandler.setRepositoryReader(p -> null);
+        VirtualFileHandler fakeProvider = url -> {
+            assertEquals("mondrian:///datasources/cloud-uploads/t/v1.xml", url);
+            return new java.io.ByteArrayInputStream(
+                    "<Schema name='FromCloud'/>".getBytes(StandardCharsets.UTF_8));
+        };
+
+        try (InputStream in = new SaikuVirtualFileHandler(fakeProvider)
+                .readVirtualFile("mondrian:///datasources/cloud-uploads/t/v1.xml")) {
+            assertEquals("<Schema name='FromCloud'/>", read(in));
+        }
+    }
+
+    @Test
+    public void aBarePathIsNeverHandedToTheDelegateEvenWhenOneCouldResolveIt() throws Exception {
+        // The scheme guard, not just a null reader, is what keeps saiku#1845 closed: a schemeless
+        // "../../etc/shadow" must fail closed even if the delegate would happily read it.
+        SaikuVirtualFileHandler.setRepositoryReader(p -> null);
+        boolean[] delegateTouched = {false};
+        VirtualFileHandler wouldResolveAnything = url -> {
+            delegateTouched[0] = true;
+            return new java.io.ByteArrayInputStream("SECRET".getBytes(StandardCharsets.UTF_8));
+        };
+
+        try {
+            new SaikuVirtualFileHandler(wouldResolveAnything).readVirtualFile("../../etc/shadow");
+            fail("a bare path must fail closed, never reach the delegate");
+        } catch (FileNotFoundException expected) {
+            assertTrue("delegate must not be consulted for a schemeless path", !delegateTouched[0]);
         }
     }
 
