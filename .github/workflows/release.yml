@@ -21,6 +21,10 @@ jobs:
     name: Build fat JAR + dist zip
     runs-on: ubuntu-latest
     outputs:
+      # ref_tag is the tag as pushed (v-prefixed); version has the v
+      # stripped for filenames and headings. Anything addressing GitHub
+      # — the releases API, a release URL — needs ref_tag, not version.
+      ref_tag: ${{ steps.meta.outputs.ref_tag }}
       version: ${{ steps.meta.outputs.version }}
       jar_name: ${{ steps.meta.outputs.jar_name }}
       dist_name: ${{ steps.meta.outputs.dist_name }}
@@ -70,6 +74,7 @@ jobs:
             REF_TAG="${GITHUB_REF_NAME}"
           fi
           VERSION="${REF_TAG#v}"
+          echo "ref_tag=$REF_TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "jar_name=saiku-${VERSION}.jar" >> "$GITHUB_OUTPUT"
           echo "dist_name=saiku-dist-${VERSION}.zip" >> "$GITHUB_OUTPUT"
@@ -374,7 +379,9 @@ jobs:
       - name: Prepend draft changelog entry
         if: steps.guard.outputs.skip != 'true'
         env:
+          REF_TAG: ${{ needs.jar.outputs.ref_tag }}
           VERSION: ${{ needs.jar.outputs.version }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           cd saiku-cloud
@@ -382,63 +389,84 @@ jobs:
           DATE=$(date -u +'%-d %B %Y')
 
           # Pull the GitHub-generated "What's Changed" markdown for this
-          # tag and demote it to a sub-bullet list. softprops/action
-          # already wrote it to the release body; we just refetch via
-          # the API so this job stays decoupled from the upstream job.
+          # tag. softprops/action already wrote it to the release body; we
+          # refetch via the API so this job stays decoupled from the
+          # upstream job. Releases are tagged WITH the leading v (the push
+          # trigger is tags: ["v*"]), so query by $REF_TAG — querying by
+          # the v-stripped $VERSION 404s and silently yields empty notes.
           NOTES=$(curl -sSL \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${{ github.repository }}/releases/tags/$VERSION" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/${REF_TAG}" \
             | python3 -c "import json,sys; print(json.load(sys.stdin).get('body','') or '')")
 
-          # Build the new section. The placeholder bullet asks a human
-          # editor to summarise the auto-generated notes in customer-
-          # facing language before merging; the raw merge log goes into
-          # a collapsible <details> below.
-          NEW_SECTION=$(cat <<EOF
-          ## **${VERSION#v}** &nbsp;·&nbsp; *${DATE}*
+          # Build the new section in a temp file rather than a shell
+          # variable. $(cat <<EOF) strips every trailing newline from the
+          # captured string, which is what previously welded the section's
+          # closing --- onto the next line of the file.
+          #
+          # The placeholder bullet asks a human editor to summarise the
+          # notes in customer-facing language before merging; the raw merge
+          # log goes into a collapsible <details> below.
+          SECTION_FILE="$(mktemp)"
+          {
+            printf '## **%s** &nbsp;·&nbsp; *%s*\n\n' "$VERSION" "$DATE"
+            printf '> **Draft** — replace these bullets with a customer-facing\n'
+            printf '> summary of what changed, then merge. The auto-generated\n'
+            printf '> merge log lives in the details block below for reference.\n\n'
+            printf -- '- _Summarise the highlights here._\n\n'
+            printf '<details>\n<summary>Auto-generated merge log</summary>\n\n'
+            printf '%s\n\n' "$NOTES"
+            printf '</details>\n\n'
+            printf -- '---\n\n'
+          } > "$SECTION_FILE"
 
-          > **Draft** — replace these bullets with a customer-facing
-          > summary of what changed, then merge. The auto-generated
-          > merge log lives in the details block below for reference.
+          # Insert directly ABOVE the first existing entry — the first
+          # level-2 "## " heading. This is frontmatter-agnostic: it always
+          # lands below the intro (and its rule), newest-first, and never
+          # between the frontmatter fence and the import/intro, which a
+          # "\n---\n\n" search does because that marker matches the
+          # frontmatter CLOSE. Both files are read by python from
+          # env-provided paths — no shell-into-source interpolation, so
+          # quotes and backslashes in the release notes can't break it.
+          CHANGELOG="$CHANGELOG" SECTION_FILE="$SECTION_FILE" python3 - <<'PY'
+          import os
+          import re
 
-          - _Summarise the highlights here._
+          changelog_path = os.environ["CHANGELOG"]
+          section_path = os.environ["SECTION_FILE"]
 
-          <details>
-          <summary>Auto-generated merge log</summary>
+          with open(section_path, "r", encoding="utf-8") as f:
+              new_section = f.read()
 
-          ${NOTES}
-
-          </details>
-
-          ---
-
-          EOF
-          )
-
-          # Insert after the first --- horizontal rule (which sits below
-          # the page intro), preserving the rest of the file unchanged.
-          python3 - "$CHANGELOG" <<PY
-          import sys
-          path = sys.argv[1]
-          with open(path) as f:
+          with open(changelog_path, "r", encoding="utf-8") as f:
               body = f.read()
-          marker = "\n---\n\n"
-          idx = body.find(marker)
-          if idx < 0:
-              # Fall back to appending if the file shape has drifted.
-              with open(path, 'a') as f:
-                  f.write("\n" + """${NEW_SECTION}""")
+
+          match = re.search(r"^## ", body, re.MULTILINE)
+          if match is None:
+              # No entries yet — append after the existing content.
+              updated = body.rstrip("\n") + "\n\n" + new_section
           else:
-              insertion = body[: idx + len(marker)] + """${NEW_SECTION}""" + body[idx + len(marker) :]
-              with open(path, 'w') as f:
-                  f.write(insertion)
+              cut = match.start()
+              updated = body[:cut] + new_section + body[cut:]
+
+          with open(changelog_path, "w", encoding="utf-8") as f:
+              f.write(updated)
           PY
+
+          # Fail loudly rather than opening another unmergeable PR: the
+          # import must survive at the head of its own line, and the new
+          # heading must exist exactly once.
+          grep -qx "import { Aside } from '@astrojs/starlight/components';" "$CHANGELOG" \
+            || { echo "::error::changelog import line was mangled by the insert"; exit 1; }
+          [ "$(grep -c "^## \*\*${VERSION}\*\*" "$CHANGELOG")" = "1" ] \
+            || { echo "::error::expected exactly one '## **${VERSION}**' heading"; exit 1; }
 
       - name: Open the PR
         if: steps.guard.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.DOCS_SITE_PAT }}
+          REF_TAG: ${{ needs.jar.outputs.ref_tag }}
           VERSION: ${{ needs.jar.outputs.version }}
         run: |
           set -euo pipefail
@@ -461,7 +489,7 @@ jobs:
             --title "docs(changelog): draft entry for ${VERSION}" \
             --body "Auto-opened by the saiku release workflow. The new section at the top of \`help/changelog.mdx\` is a draft — replace the placeholder bullet with a customer-facing summary of what changed, then merge.
 
-          See [saiku release ${VERSION}](https://github.com/${{ github.repository }}/releases/tag/${VERSION}) for the full notes.")
+          See [saiku release ${VERSION}](https://github.com/${{ github.repository }}/releases/tag/${REF_TAG}) for the full notes.")
           echo "Opened: $PR_URL"
           # Best-effort labelling — surface a warning but don't fail.
           gh pr edit "$PR_URL" --repo spiculedata/saiku-cloud --add-label docs --add-label release \
