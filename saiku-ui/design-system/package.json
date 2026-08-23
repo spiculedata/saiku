@@ -46,7 +46,7 @@
 		"tailwindcss": "^4.0.0"
 	},
 	"dependencies": {
-		"bits-ui": "^2.18.1",
+		"bits-ui": "^2.18.2",
 		"clsx": "^2.1.1",
 		"tailwind-merge": "^3.6.0",
 		"tailwind-variants": "^3.3.1"
