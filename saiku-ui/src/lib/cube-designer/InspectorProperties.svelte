@@ -1236,8 +1236,7 @@
 								description: e.currentTarget.value.trim() || undefined
 							})}
 						class="min-h-14 rounded border bg-background p-2 text-[11px]"
-						style:border-color="hsl(var(--border))"
-					></textarea>
+						style:border-color="hsl(var(--border))"></textarea>
 				</label>
 			</div>
 		</div>

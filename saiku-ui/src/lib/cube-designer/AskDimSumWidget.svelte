@@ -366,8 +366,7 @@
 				maxlength="2000"
 				disabled={drafting}
 				class="min-h-0 flex-1 resize-none rounded border border-input bg-background px-2 py-1 text-[11px] leading-snug placeholder:text-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring focus:outline-none disabled:opacity-60"
-				data-testid="canvas-ai-intent"
-			></textarea>
+				data-testid="canvas-ai-intent"></textarea>
 			<button
 				type="button"
 				onclick={() => onDraft()}

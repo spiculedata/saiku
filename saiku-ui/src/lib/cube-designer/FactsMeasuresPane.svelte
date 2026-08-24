@@ -1151,8 +1151,7 @@
 										rows="3"
 										class="min-h-0 w-full resize-y rounded border bg-muted/40 px-1.5 py-1 font-mono text-[11px] focus:border-ring focus:ring-1 focus:ring-ring focus:outline-none"
 										style:border-color="hsl(var(--border))"
-										aria-label="Free-text formula"
-									></textarea>
+										aria-label="Free-text formula"></textarea>
 								{:else}
 									<div
 										class="rounded border bg-elev-1 px-1.5 py-1 font-mono text-[11px]"

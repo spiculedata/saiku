@@ -196,8 +196,7 @@
 			placeholder={i18n.t(
 				'modal.emailMeThis.summaryPlaceholder',
 				'Add a short summary, or generate one.'
-			)}
-		></textarea>
+			)}></textarea>
 	</label>
 	{#if canGenerate}
 		<Button variant="outline" size="sm" disabled={generating} onclick={handleGenerate}>

@@ -264,8 +264,7 @@
 						maxlength="2000"
 						disabled={drafting}
 						class="min-h-0 flex-1 resize-none rounded border border-input bg-background px-2 py-1.5 text-xs leading-relaxed placeholder:text-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring focus:outline-none disabled:opacity-60"
-						data-testid="canvas-ai-chat-input"
-					></textarea>
+						data-testid="canvas-ai-chat-input"></textarea>
 					<button
 						type="button"
 						onclick={() => onSend(chatDraft)}

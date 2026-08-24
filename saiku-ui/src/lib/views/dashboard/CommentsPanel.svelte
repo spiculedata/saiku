@@ -213,8 +213,7 @@
 					onkeydown={onKeydown}
 					oninput={refreshSuggestions}
 					onclick={refreshSuggestions}
-					onkeyup={refreshSuggestions}
-				></textarea>
+					onkeyup={refreshSuggestions}></textarea>
 				{#if suggestions.length > 0}
 					<ul class="cmts__mentions" role="listbox">
 						{#each suggestions as u, i (u)}
