@@ -38,7 +38,7 @@
         <batik.version>1.19</batik.version>
         <jersey.version>3.1.9</jersey.version>
         <saiku-query.version>0.4-SNAPSHOT</saiku-query.version>
-        <jackson.version>2.21.5</jackson.version>
+        <jackson.version>2.22.1</jackson.version>
         <arrow.version>19.0.0</arrow.version>
         <caffeine.version>3.2.4</caffeine.version>
         <!-- JSON Schema (draft 2020-12) validator for the AiQueryRequest
