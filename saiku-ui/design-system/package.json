@@ -54,8 +54,8 @@
 	"devDependencies": {
 		"@sveltejs/package": "^2.5.4",
 		"@sveltejs/vite-plugin-svelte": "^7.0.0",
-		"svelte": "^5.56.8",
-		"svelte-check": "^4.7.5",
+		"svelte": "^5.56.10",
+		"svelte-check": "^4.7.6",
 		"typescript": "^5.7.2"
 	},
 	"keywords": [
