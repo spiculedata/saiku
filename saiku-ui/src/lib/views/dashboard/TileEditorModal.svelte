@@ -1404,8 +1404,7 @@
 							},
 							null,
 							2
-						)}
-					></textarea>
+						)}></textarea>
 					{#if customOptionsValidation.ok}
 						<span class="hint ok"
 							>✓ Valid option — query data is merged into the series on render.</span
@@ -1728,8 +1727,7 @@
 									{ cube: cube ?? null, measures: [{ name: '...' }], rows: [] },
 									null,
 									2
-								)}
-							></textarea>
+								)}></textarea>
 							{#if bodyError}
 								<span class="hint error">{bodyError}</span>
 							{:else}

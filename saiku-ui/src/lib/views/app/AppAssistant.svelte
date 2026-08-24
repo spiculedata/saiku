@@ -199,8 +199,7 @@
 			placeholder={`Ask ${title}…`}
 			bind:value={input}
 			onkeydown={onKeydown}
-			disabled={busy}
-		></textarea>
+			disabled={busy}></textarea>
 		<button
 			type="submit"
 			class="assistant__send"

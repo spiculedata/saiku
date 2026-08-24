@@ -140,8 +140,7 @@
 					rows="6"
 					bind:value={form.formula}
 					bind:this={textarea}
-					placeholder={i18n.t('modal.calc.formulaPlaceholder')}
-				></textarea>
+					placeholder={i18n.t('modal.calc.formulaPlaceholder')}></textarea>
 			</label>
 
 			<label class="field">

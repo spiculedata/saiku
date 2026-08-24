@@ -1125,8 +1125,7 @@
 				bind:value={prompt}
 				rows="3"
 				disabled={inflight}
-				onkeydown={handleKeydown}
-			></textarea>
+				onkeydown={handleKeydown}></textarea>
 			<button
 				type="button"
 				class="ai-drawer__submit"

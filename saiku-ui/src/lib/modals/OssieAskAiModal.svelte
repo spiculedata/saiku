@@ -124,8 +124,7 @@
 				bind:value={question}
 				onkeydown={onKeyDown}
 				disabled={running}
-				rows="2"
-			></textarea>
+				rows="2"></textarea>
 			<div class="ossie-ask__buttons">
 				<Button type="submit" disabled={running || !question.trim()}>
 					{#if running}

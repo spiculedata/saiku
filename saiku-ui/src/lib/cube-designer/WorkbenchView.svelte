@@ -5817,8 +5817,7 @@
 				spellcheck="false"
 				value={previewMdx}
 				oninput={(e) => (tryQueryMdxOverride = (e.currentTarget as HTMLTextAreaElement).value)}
-				data-testid="workbench-try-query-mdx"
-			></textarea>
+				data-testid="workbench-try-query-mdx"></textarea>
 
 			{#if tryQueryState.kind === 'idle'}
 				<div class="flex flex-1 items-center justify-center text-center">

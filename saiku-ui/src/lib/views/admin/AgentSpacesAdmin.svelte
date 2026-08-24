@@ -202,8 +202,7 @@
 					<textarea
 						bind:value={form.systemPrompt}
 						rows="7"
-						placeholder="You are the … Analyst. Answer only questions about …"
-					></textarea>
+						placeholder="You are the … Analyst. Answer only questions about …"></textarea>
 				</label>
 
 				<div class="field">

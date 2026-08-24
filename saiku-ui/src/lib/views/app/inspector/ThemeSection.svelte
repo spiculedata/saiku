@@ -47,8 +47,7 @@
 		class="insp-textarea"
 		rows="2"
 		placeholder="e.g. warm editorial look, green accent, rounded cards"
-		bind:value={brief}
-	></textarea>
+		bind:value={brief}></textarea>
 	<button type="button" class="brief-btn" onclick={applyBrief} disabled={!brief.trim()}>
 		<Sparkles size={13} /> Generate theme
 	</button>
@@ -194,8 +193,7 @@
 			placeholder="/* scoped custom CSS */"
 			value={theme.customCss ?? ''}
 			oninput={(e) =>
-				appDoc.setTheme({ customCss: (e.currentTarget as HTMLTextAreaElement).value })}
-		></textarea>
+				appDoc.setTheme({ customCss: (e.currentTarget as HTMLTextAreaElement).value })}></textarea>
 	{/if}
 </div>
 

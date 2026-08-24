@@ -73,8 +73,7 @@
 				class="drawer__textarea"
 				rows="3"
 				value={node.description ?? ''}
-				oninput={(e) => fireEdit('description', e.currentTarget.value)}
-			></textarea>
+				oninput={(e) => fireEdit('description', e.currentTarget.value)}></textarea>
 		</label>
 
 		{#if resolved.kind === 'measure'}
