@@ -316,12 +316,6 @@ export const adminAgentSpaces = {
 	remove: (id: string) => json<null>('DELETE', `/agent-spaces/${encodeURIComponent(id)}`)
 };
 
-export async function getVersion(): Promise<string> {
-	const res = await fetch(`${BASE}/version`, { credentials: 'include' });
-	if (!res.ok) throw new Error(`version -> ${res.status}`);
-	return res.text();
-}
-
 /* ---------------- Mondrian statistics ---------------- */
 
 export interface MondrianVersion {
