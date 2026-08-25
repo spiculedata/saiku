@@ -1,3 +1,7 @@
+/*
+ *   Copyright 2026 Spicule Ltd
+ *   Apache License, Version 2.0.
+ */
 package org.saiku.web.util;
 
 import static org.junit.Assert.assertFalse;

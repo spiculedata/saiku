@@ -1,0 +1,43 @@
+Saiku Analytics
+Copyright 2026 Spicule Ltd
+Portions Copyright 2010-2015 OSBI Ltd
+Portions Copyright Paul Stoellberger
+
+This product includes software developed at Spicule Ltd
+(https://www.spicule.co.uk/) and by the original Saiku authors.
+
+Licensed under the Apache License, Version 2.0. See the LICENSE file
+for the full licence text.
+
+------------------------------------------------------------------------
+Third-party source included in this repository
+------------------------------------------------------------------------
+
+The following source files are NOT covered by the Apache License 2.0 and
+retain the licence of their original project. They are included in source
+form because they override a class of the same fully-qualified name in an
+upstream dependency, which requires them to sit in that dependency's
+package.
+
+  saiku-webapp/src/main/java/mondrian/rolap/SqlStatement.java
+      Derived from Mondrian.
+      Copyright (C) 2007-2013 Pentaho and others. All Rights Reserved.
+      Licensed under the Eclipse Public License v1.0
+      http://www.eclipse.org/legal/epl-v10.html
+
+      This file shadows mondrian.rolap.SqlStatement from the
+      pentaho:mondrian dependency via classpath precedence
+      (WEB-INF/classes wins over WEB-INF/lib). It exists to track the
+      mondrian-saiku 4.8.1.x retyping of RolapUtil.SQL_LOGGER from
+      org.apache.log4j.Logger to org.slf4j.Logger. Keep it in lock-step
+      with upstream.
+
+------------------------------------------------------------------------
+Bundled dependencies
+------------------------------------------------------------------------
+
+Binary distributions of Saiku (the Docker image and the launcher
+fat-JAR) bundle third-party libraries under their own licences,
+including but not limited to Apache-2.0, EPL-1.0, MPL-2.0 and BSD
+terms. Run `mvn license:aggregate-add-third-party` to regenerate a full
+dependency licence inventory for a given release.

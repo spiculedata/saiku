@@ -152,14 +152,6 @@ export function flatten(nodes: RepositoryNode[]): RepositoryNode[] {
 /* Saved-query helpers (thin wrappers around the generic repo calls)   */
 /* ------------------------------------------------------------------ */
 
-export async function listSavedQueries(): Promise<SavedQueryFile[]> {
-	const tree = await listRepository(['saiku']);
-	const flat = flatten(tree);
-	return flat
-		.filter((n) => n.type === 'FILE' && (n.fileType === 'saiku' || n.path.endsWith('.saiku')))
-		.map((n) => ({ path: n.path, name: n.name, type: 'saiku' as const }));
-}
-
 export async function readSavedQuery(path: string): Promise<ThinQuery> {
 	const body = await getResource(path);
 	return JSON.parse(body) as ThinQuery;

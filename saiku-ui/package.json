@@ -2,6 +2,7 @@
 	"name": "saiku-ui",
 	"private": true,
 	"version": "3.20.0",
+	"license": "Apache-2.0",
 	"type": "module",
 	"//workspaces": "design-system/ is the shared design system, published as @concepttocloud/saiku-design-system. It's a workspace rather than a `file:` dep so npm hoists svelte/bits-ui to one copy — two svelte installs make `Snippet` from the package structurally incompatible with `Snippet` in the app.",
 	"workspaces": [
@@ -75,6 +76,7 @@
 		"bits-ui": "^2.18.2",
 		"clsx": "^2.1.1",
 		"css-tree": "^3.2.1",
+		"dompurify": "^3.4.0",
 		"echarts": "^6.0.0",
 		"elkjs": "^0.12.0",
 		"html-to-image": "^1.11.13",
