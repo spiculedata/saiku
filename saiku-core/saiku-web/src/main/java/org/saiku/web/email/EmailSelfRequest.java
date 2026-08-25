@@ -1,3 +1,7 @@
+/*
+ *   Copyright 2026 Spicule Ltd
+ *   Apache License, Version 2.0.
+ */
 package org.saiku.web.email;
 
 /** Request body for POST /saiku/api/email/self — the browser-rendered artifacts to email. */

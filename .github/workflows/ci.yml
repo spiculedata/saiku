@@ -87,6 +87,12 @@ jobs:
             </servers>
           </settings>
           EOF
+      - name: Check licence headers
+        # Presence-check only: the tree carries Spicule, OSBI, Stoellberger and
+        # Pentaho EPL headers that must not be homogenised, which is why Spotless's
+        # <licenseHeader> is not used here. See scripts/check-licence-headers.sh.
+        run: ./scripts/check-licence-headers.sh
+
       - name: mvn verify
         # spotless:check is bound to the verify phase by the root pom's
         # <execution>, so `mvn verify` covers formatting too. A standalone

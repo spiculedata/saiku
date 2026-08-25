@@ -1,3 +1,7 @@
+/*
+ *   Copyright 2026 Spicule Ltd
+ *   Apache License, Version 2.0.
+ */
 package org.saiku.semantic;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
