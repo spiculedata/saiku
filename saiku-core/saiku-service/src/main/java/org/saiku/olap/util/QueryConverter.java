@@ -1,6 +1,7 @@
 package org.saiku.olap.util;
 
 import org.olap4j.mdx.SelectNode;
+import org.olap4j.metadata.Hierarchy;
 import org.olap4j.metadata.Level;
 import org.olap4j.metadata.Member;
 import org.olap4j.query.Query;
@@ -64,19 +65,25 @@ public class QueryConverter {
     private static void convertDimension(
             QueryDimension qD, org.saiku.query.QueryAxis sAxis, org.saiku.query.Query sQuery) throws Exception {
         boolean first = true;
-        String hierarchyName = null;
         QueryHierarchy qh = null;
         for (Selection sel : qD.getInclusions()) {
             if (first) {
-                if ((sel.getRootElement() instanceof Member)) {
-                    hierarchyName =
-                            ((Member) sel.getRootElement()).getHierarchy().getUniqueName();
-                } else {
-                    hierarchyName =
-                            ((Level) sel.getRootElement()).getHierarchy().getUniqueName();
-                }
+                Hierarchy hierarchy = (sel.getRootElement() instanceof Member)
+                        ? ((Member) sel.getRootElement()).getHierarchy()
+                        : ((Level) sel.getRootElement()).getHierarchy();
 
-                qh = sQuery.getHierarchy(hierarchyName);
+                // Resolve through the metadata object rather than the unique name: getHierarchy(String)
+                // matches on the key convention of the query's hierarchy map, which does not always
+                // agree with Hierarchy.getUniqueName(). The name is kept as a fallback.
+                qh = sQuery.getHierarchy(hierarchy);
+                if (qh == null) {
+                    qh = sQuery.getHierarchy(hierarchy.getUniqueName());
+                }
+                if (qh == null) {
+                    throw new SaikuIncompatibleException(
+                            "Cannot convert query: hierarchy not found in the target cube: "
+                                    + hierarchy.getUniqueName());
+                }
                 first = false;
             }
 
@@ -93,6 +100,12 @@ public class QueryConverter {
             } else {
                 qh.includeLevel(sel.getRootElement().getName());
             }
+        }
+        if (qh == null) {
+            // A dimension carrying no inclusion at all - filter-only, or exclusions alone - never
+            // enters the loop above, and addHierarchy(null) fails inside QueryAxis. There is
+            // nothing to place on the axis, so leave it alone.
+            return;
         }
         sAxis.addHierarchy(qh);
     }
