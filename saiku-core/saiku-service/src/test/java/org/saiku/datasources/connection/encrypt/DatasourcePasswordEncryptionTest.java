@@ -100,6 +100,42 @@ public class DatasourcePasswordEncryptionTest {
         assertEquals(plaintext, CryptoUtil.decrypt(b));
     }
 
+    /**
+     * Golden vectors pinning the legacy static-3DES wire format.
+     *
+     * <p>The other legacy test round-trips {@code legacyEncrypt} through {@code decrypt}, which would
+     * still pass if BOTH sides changed algorithm together. These are hard-coded ciphertexts produced
+     * by the original hand-rolled DES implementation, so they fail if the legacy format ever shifts —
+     * which would silently lock every pre-v2 {@code .sds} file out of its own password.
+     *
+     * <p>{@code 63cb6745f7b4324f} is the sample value that lived in the historical
+     * {@code CryptoUtil.main} debug harness.
+     */
+    @Test
+    public void legacyCiphertextGoldenVectorsStillDecrypt() {
+        assertEquals("password", CryptoUtil.legacyDecrypt("6b51c16f30bd7191255cc1984c2bd67b"));
+        assertEquals("admin123", CryptoUtil.legacyDecrypt("149c68daef5b360f255cc1984c2bd67b"));
+        assertEquals(
+                "aVeryLongPassword_16", CryptoUtil.legacyDecrypt("c93724bafea237f872cf13ed0991252e8edf885dbcfd7d27"));
+        assertEquals("deea", CryptoUtil.legacyDecrypt("63cb6745f7b4324f"));
+    }
+
+    /** The legacy encoder must keep emitting exactly the historical ciphertext, byte for byte. */
+    @Test
+    public void legacyEncryptStillProducesHistoricalCiphertext() {
+        assertEquals("6b51c16f30bd7191255cc1984c2bd67b", CryptoUtil.legacyEncrypt("password"));
+        assertEquals("149c68daef5b360f255cc1984c2bd67b", CryptoUtil.legacyEncrypt("admin123"));
+        assertEquals(
+                "c93724bafea237f872cf13ed0991252e8edf885dbcfd7d27", CryptoUtil.legacyEncrypt("aVeryLongPassword_16"));
+    }
+
+    /** Non-ASCII plaintext must survive the legacy path unchanged (UTF-8 in, UTF-8 out). */
+    @Test
+    public void legacyPathHandlesNonAsciiPlaintext() {
+        assertEquals("911edbbfc664afa8", CryptoUtil.legacyEncrypt("\u00e9\u00fc\u00f1x"));
+        assertEquals("\u00e9\u00fc\u00f1x", CryptoUtil.legacyDecrypt("911edbbfc664afa8"));
+    }
+
     @Test
     public void legacyThreeDesValueStillDecryptsViaFallback() {
         String plaintext = "old-foodmart-pw";
