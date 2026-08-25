@@ -30,7 +30,6 @@
              warnings and make builds byte-identical across locales — children inherit
              this (saiku-bom sets it too, but bom properties don't flow to siblings). -->
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <top.dir>${project.basedir}</top.dir>
         <!-- These properties are shadowed at module level by saiku-bom's
              dependencyManagement, but a child not importing the BOM would
              otherwise inherit the stale 4.3.30/1.19 values — kept in sync
@@ -176,45 +175,6 @@
                     </execution>
                 </executions>
             </plugin>
-      <!--      <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-changes-plugin</artifactId>
-                <version>2.11</version>
-                <executions>
-                    <execution>
-                        <id>include-announcement-file</id>
-                        <phase>generate-resources</phase>
-                        <goals>
-                            <goal>announcement-generate</goal>
-                        </goals>
-                        <configuration>
-                            <announcementFile>CHANGES.txt</announcementFile>
-                            <announcementDirectory>${project.build.outputDirectory}/META-INF</announcementDirectory>
-                        </configuration>
-                    </execution>
-                </executions>
-                <configuration>
-                    <issueManagementSystems>
-                        <issueManagementSystem>JIRA</issueManagementSystem>
-                    </issueManagementSystems>
-                    <smtpHost>mail.yourhost.com</smtpHost>
-                    <smtpPort implementation="java.lang.Integer">25</smtpPort>
-                    <mailSender>
-                        <name>Release Notification</name>
-                        <email>build@example.com</email>
-                    </mailSender>
-                    <toAddresses>
-                        <toAddress implementation="java.lang.String">to@example.com</toAddress>
-                    </toAddresses>
-                    <useJql>true</useJql>
-                    <onlyCurrentVersion>true</onlyCurrentVersion>
-                    <resolutionIds>Fixed,Done</resolutionIds>
-                    <statusIds>Closed,Resolved,Done</statusIds>
-                    <columnNames>Type,Key,Summary,Priority,Status,Resolution,Fix Version,Assignee</columnNames>
-                    <webUser>...</webUser>
-                    <webPassword>...</webPassword>
-                </configuration>
-            </plugin>-->
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>license-maven-plugin</artifactId>
@@ -276,27 +236,6 @@
                     <target>1.6</target>
                 </configuration>
             </plugin>
-            <!--<plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-checkstyle-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>validate</id>
-                        <phase>validate</phase>
-                        <configuration>
-                            <configLocation>${top.dir}/src/main/config/checkstyle/checker.xml</configLocation>
-                            <suppressionsLocation>${top.dir}/src/main/config/checkstyle/suppressions.xml</suppressionsLocation>
-                            <consoleOutput>true</consoleOutput>
-                            <headerLocation>${top.dir}/src/main/config/checkstyle/header.txt</headerLocation>
-                            <failOnViolation>true</failOnViolation>
-                            <includeTestSourceDirectory>true</includeTestSourceDirectory>
-                        </configuration>
-                        <goals>
-                            <goal>check</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>-->
 
         </plugins>
         <pluginManagement>
@@ -323,15 +262,6 @@
         <system>JIRA</system>
         <url>http://jira.meteorite.bi/browse/SKU</url>
     </issueManagement>
-    <!--<reporting>
-        <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-changes-plugin</artifactId>
-                <version>2.11</version>
-            </plugin>
-        </plugins>
-    </reporting>-->
     <profiles>
         <!-- Phase 0 note: the legacy "ci" profile (which used to exclude the
              Pentaho plugin from the reactor) has been removed; its membership

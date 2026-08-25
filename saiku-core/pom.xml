@@ -38,26 +38,6 @@
                     </execution>
                 </executions>
             </plugin>
-            <!-- <plugin>
-                <artifactId>maven-javadoc-plugin</artifactId>
-                <version>2.7</version>
-                <configuration>
-                    <charset>UTF-8</charset>
-                    <docencoding>UTF-8</docencoding>
-                    <encoding>UTF-8</encoding>
-                    <verbose>false</verbose>
-                    <quiet>true</quiet>
-                </configuration>
-                <executions>
-                    <execution>
-                        <id>attach-javadocs</id>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>javadoc</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin> -->
         </plugins>
     </build>
     <reporting>
@@ -98,7 +78,6 @@
                 <artifactId>maven-checkstyle-plugin</artifactId>
                 <version>3.6.0</version>
                 <configuration>
-                    <!--configLocation>checkstyle.xml</configLocation-->
                     <configLocation>../pentaho_checkStyle.xml</configLocation>
                     <enableRulesSummary>false</enableRulesSummary>
                 </configuration>

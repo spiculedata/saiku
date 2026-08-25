@@ -486,7 +486,6 @@
                 <artifactId>maven-checkstyle-plugin</artifactId>
                 <version>3.6.0</version>
                 <configuration>
-                    <!--configLocation>checkstyle.xml</configLocation -->
                     <enableRulesSummary>false</enableRulesSummary>
                 </configuration>
             </plugin>
