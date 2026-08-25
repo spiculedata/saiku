@@ -11,25 +11,6 @@
     <name>saiku - services</name>
     <build>
         <plugins>
-           <!-- <plugin>
-                <groupId>org.apache.felix</groupId>
-                <artifactId>maven-bundle-plugin</artifactId>
-                <version>2.4.0</version>
-                <extensions>true</extensions>
-                <configuration>
-                    <instructions>
-                        <Bundle-SymbolicName>${pom.groupId}.${pom.artifactId}</Bundle-SymbolicName>
-                        <Bundle-Name>${pom.artifactId}</Bundle-Name>
-                        <Bundle-Version>1.0.0</Bundle-Version>
-                        <Private-Package>org.saiku</Private-Package>
-                        <Bundle-Activator>org.saiku.Activator</Bundle-Activator>
-                        <Import-Package>
-                            org.osgi.framework,
-                            *;resolution:=optional
-                        </Import-Package>
-                    </instructions>
-                </configuration>
-            </plugin>-->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
@@ -332,8 +313,6 @@
 			<artifactId>hamcrest</artifactId>
 			<scope>test</scope>
 		</dependency>
-		<!--<dependency> <groupId>net.thucydides</groupId> <artifactId>thucydides-jbehave-plugin</artifactId> 
-			<scope>test</scope> </dependency> -->
 		<dependency>
 			<groupId>commons-io</groupId>
 			<artifactId>commons-io</artifactId>
