@@ -28,9 +28,11 @@ import org.olap4j.Axis;
 import org.olap4j.OlapConnection;
 import org.olap4j.OlapException;
 import org.olap4j.mdx.IdentifierNode;
+import org.olap4j.mdx.IdentifierSegment;
 import org.olap4j.metadata.Catalog;
 import org.olap4j.metadata.Cube;
 import org.olap4j.metadata.Database;
+import org.olap4j.metadata.Dimension;
 import org.olap4j.metadata.Hierarchy;
 import org.olap4j.metadata.Level;
 import org.olap4j.metadata.Schema;
@@ -308,6 +310,81 @@ public class QueryDeserializer {
         }
     }
 
+    /**
+     * Finds a level of a dimension from the unique name a saved query carries.
+     *
+     * <p>An exact match is tried first. Failing that, the last segment is matched against the level
+     * names of the dimension: Saiku 2.x wrote a level as {@code [dimension].[level]}, two segments,
+     * because Mondrian 3 named it that way when a dimension held a single hierarchy. Mondrian 4
+     * always writes the three-segment {@code [dimension].[hierarchy].[level]}, so a query saved
+     * before the upgrade no longer matches on the unique name alone.
+     *
+     * @param dimension the dimension the selection belongs to
+     * @param uniqueName the level unique name as stored in the saved query
+     * @return the level, or null when the dimension holds nothing by that name
+     */
+    private static Level findLevel(Dimension dimension, String uniqueName) {
+        for (Hierarchy hierarchy : dimension.getHierarchies()) {
+            for (Level level : hierarchy.getLevels()) {
+                if (level.getUniqueName().equals(uniqueName)) {
+                    return level;
+                }
+            }
+        }
+
+        List<IdentifierSegment> segments = IdentifierNode.parseIdentifier(uniqueName).getSegmentList();
+        if (segments.isEmpty()) {
+            return null;
+        }
+        String levelName = segments.get(segments.size() - 1).getName();
+        for (Hierarchy hierarchy : dimension.getHierarchies()) {
+            for (Level level : hierarchy.getLevels()) {
+                if (level.getName().equals(levelName)) {
+                    return level;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Includes a member, tolerating the way Mondrian 3 wrote a member path.
+     *
+     * <p>Mondrian 3 could write the head of a path as a single segment holding a dot, such as
+     * {@code [dimension.hierarchy].[member]}. Mondrian 4 writes {@code [dimension].[hierarchy].
+     * [member]} and rejects the first form, so the head is split and the include retried once.
+     *
+     * @param dim the dimension the selection belongs to
+     * @param operator the selection operator
+     * @param name the member path as stored in the saved query
+     * @return the selection, or null when neither form resolves
+     */
+    private static Selection includeMember(QueryDimension dim, Selection.Operator operator, String name)
+            throws OlapException {
+        try {
+            return dim.include(operator, IdentifierNode.parseIdentifier(name).getSegmentList());
+        } catch (RuntimeException e) {
+            List<IdentifierSegment> segments = IdentifierNode.parseIdentifier(name).getSegmentList();
+            if (segments.isEmpty() || !segments.get(0).getName().contains(".")) {
+                throw e;
+            }
+            StringBuilder rewritten = new StringBuilder();
+            for (String part : segments.get(0).getName().split("\\.")) {
+                rewritten.append('[').append(part).append(']').append('.');
+            }
+            for (int i = 1; i < segments.size(); i++) {
+                rewritten.append('[').append(segments.get(i).getName()).append(']');
+                if (i < segments.size() - 1) {
+                    rewritten.append('.');
+                }
+            }
+            log.warn("Member " + name + " not found, retrying as " + rewritten
+                    + ": Mondrian 3 wrote the dimension and hierarchy as one segment");
+            return dim.include(
+                    operator, IdentifierNode.parseIdentifier(rewritten.toString()).getSegmentList());
+        }
+    }
+
     private void processDimension(Element dimension, String location) throws OlapException {
 
         String dimName = dimension.getAttributeValue("name");
@@ -346,17 +423,14 @@ public class QueryDeserializer {
                     String type = selectionElement.getAttributeValue("type");
                     Selection sel = null;
                     if ("level".equals(type)) {
-                        for (Hierarchy hierarchy : dim.getDimension().getHierarchies()) {
-                            for (Level level : hierarchy.getLevels()) {
-                                if (level.getUniqueName().equals(name)) {
-                                    sel = dim.include(level);
-                                }
-                            }
+                        Level level = findLevel(dim.getDimension(), name);
+                        if (level != null) {
+                            sel = dim.include(level);
+                        } else {
+                            log.warn("Level not found in dimension " + dim.getName() + ": " + name);
                         }
                     } else if ("member".equals(type)) {
-                        sel = dim.include(
-                                Selection.Operator.valueOf(operator),
-                                IdentifierNode.parseIdentifier(name).getSegmentList());
+                        sel = includeMember(dim, Selection.Operator.valueOf(operator), name);
                     }
 
                     Element contextElement = selectionElement.getChild("Context");
