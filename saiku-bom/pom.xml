@@ -45,7 +45,7 @@
              body. Used by AiRequestSchemaValidator to enforce shape errors
              before the converter's domain-resolution layer runs. Apache 2.0,
              ~200KB, no heavy transitives. Pairs with Jackson 2.21.x. -->
-        <jsonSchemaValidator.version>1.5.8</jsonSchemaValidator.version>
+        <jsonSchemaValidator.version>3.0.7</jsonSchemaValidator.version>
         <!-- Spring GraphQL 1.4.x is the current release line paired with Spring
              Framework 6.2.x. Provides the GraphQlSource / GraphQlHttpHandler
              plumbing that we hang the /rest/saiku/api/graphql endpoint off.
