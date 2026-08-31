@@ -16,7 +16,7 @@
 
     <properties>
         <jetty.version>12.1.10</jetty.version>
-        <picocli.version>4.7.6</picocli.version>
+        <picocli.version>4.7.7</picocli.version>
         <maven.compiler.release>21</maven.compiler.release>
         <!-- Default: skip launcher ITs so a bare local `mvn verify` stays fast.
              CI passes `-DskipITs=false` to flip them on; the `integration`
