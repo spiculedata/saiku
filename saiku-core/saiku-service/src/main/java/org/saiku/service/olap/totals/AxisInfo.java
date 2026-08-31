@@ -31,7 +31,7 @@ public class AxisInfo {
     }
 
     private static void calcAxisInfo(AxisInfo axisInfo, CellSetAxis axis) {
-        final List<Hierarchy> hierarchies = axis.getAxisMetaData().getHierarchies();
+        final List<Hierarchy> hierarchies = resolveHierarchies(axis);
         final int hCount = hierarchies.size();
         final List<Integer> levels[] = new List[hCount];
         final HashSet<Integer>[][] usedLevels = new HashSet[hCount][];
@@ -41,7 +41,7 @@ public class AxisInfo {
             maxDepth[i] = -1;
             levels[i] = new ArrayList<>();
 
-            usedLevels[i] = new HashSet[hierarchies.get(i).getLevels().size()];
+            usedLevels[i] = new HashSet[levelCount(hierarchies.get(i), axis, i)];
 
             for (int j = 0; j < usedLevels[i].length; j++) {
                 usedLevels[i][j] = new HashSet<>();
@@ -69,8 +69,10 @@ public class AxisInfo {
                         levels[i].add(it.next());
                     }
 
-                    axisInfo.uniqueLevelNames.add(
-                            hierarchies.get(i).getLevels().get(j).getUniqueName());
+                    if (hierarchies.get(i) != null) {
+                        axisInfo.uniqueLevelNames.add(
+                                hierarchies.get(i).getLevels().get(j).getUniqueName());
+                    }
                 }
             }
         }
@@ -82,6 +84,59 @@ public class AxisInfo {
         axisInfo.levels = levels;
         axisInfo.maxDepth = maxAxisDepth;
         findFullPositions(axisInfo, axis);
+    }
+
+    /**
+     * Returns the axis hierarchies, filling any null entry from the members present on that axis.
+     *
+     * <p>{@link org.olap4j.CellSetAxisMetaData#getHierarchies()} can report a null entry: it happens
+     * with a Mondrian 4 schema converted from a Mondrian 3 one, where a hierarchy of the axis has no
+     * metadata counterpart. The list is positional, so the slot cannot be dropped; it is resolved
+     * from the members instead, and left null only when no member can fill it.
+     *
+     * @param axis the axis being measured
+     * @return a positional list of hierarchies, null only where nothing could resolve the slot
+     */
+    private static List<Hierarchy> resolveHierarchies(CellSetAxis axis) {
+        final List<Hierarchy> resolved = new ArrayList<>(axis.getAxisMetaData().getHierarchies());
+        if (!resolved.contains(null)) {
+            return resolved;
+        }
+        for (final Position p : axis.getPositions()) {
+            int i = 0;
+            for (final Member m : p.getMembers()) {
+                if (i < resolved.size() && resolved.get(i) == null && m.getLevel() != null) {
+                    resolved.set(i, m.getLevel().getHierarchy());
+                }
+                i++;
+            }
+            if (!resolved.contains(null)) {
+                break;
+            }
+        }
+        return resolved;
+    }
+
+    /**
+     * Number of level slots to reserve for one hierarchy of the axis.
+     *
+     * @param hierarchy the hierarchy, possibly null when it could not be resolved
+     * @param axis the axis being measured
+     * @param index position of the hierarchy on the axis
+     * @return a size large enough for every level depth used at that position
+     */
+    private static int levelCount(Hierarchy hierarchy, CellSetAxis axis, int index) {
+        if (hierarchy != null) {
+            return hierarchy.getLevels().size();
+        }
+        int deepest = -1;
+        for (final Position p : axis.getPositions()) {
+            final List<Member> members = p.getMembers();
+            if ((index < members.size()) && (members.get(index).getLevel() != null)) {
+                deepest = Math.max(deepest, members.get(index).getLevel().getDepth());
+            }
+        }
+        return deepest + 1;
     }
 
     private static void findFullPositions(AxisInfo axisInfo, CellSetAxis axis) {
