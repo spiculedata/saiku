@@ -319,11 +319,17 @@ public class QueryDeserializer {
      * always writes the three-segment {@code [dimension].[hierarchy].[level]}, so a query saved
      * before the upgrade no longer matches on the unique name alone.
      *
+     * <p>The name fallback prefers the dimension's default hierarchy: when several hierarchies
+     * share a level name — the classic {@code [Time].[Year]} next to {@code [Time.Weekly].[Year]} —
+     * a plain first-match scan can bind the wrong hierarchy, and a two-segment Saiku 2.x name can
+     * only have meant the dimension's single (now default) hierarchy. Either fallback logs the
+     * stored name and the level it actually chose, so a wrong bind is diagnosable from the log.
+     *
      * @param dimension the dimension the selection belongs to
      * @param uniqueName the level unique name as stored in the saved query
      * @return the level, or null when the dimension holds nothing by that name
      */
-    private static Level findLevel(Dimension dimension, String uniqueName) {
+    static Level findLevel(Dimension dimension, String uniqueName) {
         for (Hierarchy hierarchy : dimension.getHierarchies()) {
             for (Level level : hierarchy.getLevels()) {
                 if (level.getUniqueName().equals(uniqueName)) {
@@ -332,14 +338,27 @@ public class QueryDeserializer {
             }
         }
 
-        List<IdentifierSegment> segments = IdentifierNode.parseIdentifier(uniqueName).getSegmentList();
+        List<IdentifierSegment> segments =
+                IdentifierNode.parseIdentifier(uniqueName).getSegmentList();
         if (segments.isEmpty()) {
             return null;
         }
         String levelName = segments.get(segments.size() - 1).getName();
+        Hierarchy defaultHierarchy = dimension.getDefaultHierarchy();
+        if (defaultHierarchy != null) {
+            for (Level level : defaultHierarchy.getLevels()) {
+                if (level.getName().equals(levelName)) {
+                    log.warn("Level " + uniqueName + " matched by name on the default hierarchy, using "
+                            + level.getUniqueName() + " (Saiku 2.x two-segment form)");
+                    return level;
+                }
+            }
+        }
         for (Hierarchy hierarchy : dimension.getHierarchies()) {
             for (Level level : hierarchy.getLevels()) {
                 if (level.getName().equals(levelName)) {
+                    log.warn("Level " + uniqueName + " matched by name outside the default hierarchy, using "
+                            + level.getUniqueName() + " (Saiku 2.x two-segment form)");
                     return level;
                 }
             }
@@ -359,12 +378,12 @@ public class QueryDeserializer {
      * @param name the member path as stored in the saved query
      * @return the selection, or null when neither form resolves
      */
-    private static Selection includeMember(QueryDimension dim, Selection.Operator operator, String name)
-            throws OlapException {
+    static Selection includeMember(QueryDimension dim, Selection.Operator operator, String name) throws OlapException {
         try {
             return dim.include(operator, IdentifierNode.parseIdentifier(name).getSegmentList());
         } catch (RuntimeException e) {
-            List<IdentifierSegment> segments = IdentifierNode.parseIdentifier(name).getSegmentList();
+            List<IdentifierSegment> segments =
+                    IdentifierNode.parseIdentifier(name).getSegmentList();
             if (segments.isEmpty() || !segments.get(0).getName().contains(".")) {
                 throw e;
             }
@@ -381,7 +400,8 @@ public class QueryDeserializer {
             log.warn("Member " + name + " not found, retrying as " + rewritten
                     + ": Mondrian 3 wrote the dimension and hierarchy as one segment");
             return dim.include(
-                    operator, IdentifierNode.parseIdentifier(rewritten.toString()).getSegmentList());
+                    operator,
+                    IdentifierNode.parseIdentifier(rewritten.toString()).getSegmentList());
         }
     }
 
