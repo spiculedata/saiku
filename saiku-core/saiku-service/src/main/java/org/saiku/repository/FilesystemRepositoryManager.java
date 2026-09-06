@@ -131,8 +131,12 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
      * <ul>
      *   <li><b>/homes/</b> — SECURED, defaultRole READ. Per-user PRIVATE folders
      *       are added on first login via {@link #createUser(String)}.</li>
-     *   <li><b>/datasources/</b> — PUBLIC, ROLE_ADMIN WRITE/READ/GRANT. Authenticated
-     *       users can READ (rootMethod fallback); only admins mutate.</li>
+     *   <li><b>/datasources/</b> — SECURED, ROLE_ADMIN WRITE/READ/GRANT, nothing for anyone
+     *       else. saiku#1904: this was PUBLIC, and PUBLIC resolved to WRITE for every
+     *       authenticated user, so any account could drop a datasource descriptor here
+     *       (the write half of the saiku#1902/#1903 RCE chain). Descriptors carry warehouse
+     *       credentials and are consumed server-side, so non-admins have no reason to see
+     *       them either.</li>
      *   <li><b>/dashboards/</b> — SECURED, ROLE_ADMIN WRITE/READ/GRANT. User-saved
      *       dashboards live under {@code /homes/<user>/} where the home ACL applies;
      *       the top-level folder is admin-only-write to prevent cross-user clobber
@@ -140,7 +144,8 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
      *   <li><b>/queries/</b> — SECURED, ROLE_ADMIN WRITE/READ/GRANT. Same rationale
      *       as {@code /dashboards/}.</li>
      *   <li><b>/legacyreports/</b> — PUBLIC, ROLE_ADMIN WRITE/READ/GRANT. Mirrors
-     *       historical behaviour.</li>
+     *       historical behaviour; since saiku#1904 PUBLIC grants READ, not WRITE, to
+     *       non-admins.</li>
      * </ul>
      *
      * <p>Historical bug fixed inline: prior code captured one {@code File n} for
@@ -151,7 +156,9 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
      */
     private void seedSkeleton() throws RepositoryException {
         seedAcl(this.createFolder(sep + "homes"), homesGrant());
-        seedAcl(this.createFolder(sep + "datasources"), publicAdminGrant());
+        // saiku#1904: admin-only. Re-applied on every start(), so an established home is
+        // tightened on its next boot without a migration step.
+        seedAcl(this.createFolder(sep + "datasources"), securedAdminGrant());
         seedAcl(this.createFolder(sep + "dashboards"), securedAdminGrant());
         seedAcl(this.createFolder(sep + "queries"), securedAdminGrant());
         seedAcl(this.createFolder(sep + "legacyreports"), publicAdminGrant());
@@ -247,6 +254,49 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
         return false;
     }
 
+    /**
+     * saiku#1903: is {@code path} a datasource descriptor ({@code *.sds}, any case) or anything
+     * under the {@code /datasources} tree? Both are consumed by the datasource loader, which lists
+     * {@code *.sds} recursively across the whole datadir — so a descriptor written into a user's
+     * own home is loaded (and its JDBC URL connected) exactly like one in {@code /datasources}.
+     */
+    static boolean isDatasourceDescriptorPath(String path) {
+        if (path == null) {
+            return false;
+        }
+        String p = path.replace('\\', '/').trim().toLowerCase(java.util.Locale.ROOT);
+        while (p.startsWith("./")) {
+            p = p.substring(2);
+        }
+        if (p.endsWith(".sds")) {
+            return true;
+        }
+        String noLead = p.startsWith("/") ? p.substring(1) : p;
+        return noLead.equals("datasources") || noLead.startsWith("datasources/") || p.contains("/datasources/");
+    }
+
+    /**
+     * Refuse a descriptor write unless {@code roles} carries an admin role. Enforced here — the
+     * layer every REST save/move funnels through — rather than only at the resource, so a new
+     * caller can't reopen the write half of the saiku#1902 chain by accident. Admin-side writes
+     * ({@code saveDataSource}, internal files) don't pass through here and are unaffected.
+     */
+    private void requireAdminForDatasourceDescriptor(String path, List<String> roles) {
+        if (!isDatasourceDescriptorPath(path)) {
+            return;
+        }
+        List<String> adminRoles = userService != null ? userService.getAdminRoles() : null;
+        if (adminRoles == null || adminRoles.isEmpty()) {
+            adminRoles = java.util.Collections.singletonList("ROLE_ADMIN");
+        }
+        if (roles != null && !java.util.Collections.disjoint(roles, adminRoles)) {
+            return;
+        }
+        log.warn("Refused non-admin write of a datasource descriptor (saiku#1903): {}", path);
+        throw new SaikuServiceException(
+                "Datasource descriptors (.sds) and the /datasources tree can only be modified by an administrator");
+    }
+
     public Object saveFile(Object file, String path, String user, String type, List<String> roles)
             throws RepositoryException {
         if (file == null) {
@@ -290,6 +340,10 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
             // separatorless path as living at the repository root, so it resolves
             // to a real parent folder and the canWrite gate below still runs.
             String parentPath = pos >= 0 ? path.substring(0, pos) : sep;
+            // saiku#1903: datasource descriptors are admin-only, wherever they land. The
+            // loader lists *.sds recursively across the whole datadir, so a descriptor in a
+            // user's own (writable) home is picked up exactly like one in /datasources.
+            requireAdminForDatasourceDescriptor(path, roles);
             File parent = getFolder(parentPath);
             // saiku#895: gate the write on canWrite. #940: when OVERWRITING an
             // existing file, check that file's own ACL (which inherits the
@@ -364,6 +418,8 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
         if (!srcAcl.canWrite(src, user, roles)) {
             throw new SaikuServiceException("You don't have permission to move " + source);
         }
+        // saiku#1903: a rename into *.sds (or into /datasources) is a descriptor write.
+        requireAdminForDatasourceDescriptor(target, roles);
         File dest = getNode(target);
         if (dest.exists()) {
             throw new RepositoryException("Cannot move: target already exists (" + target + ")");

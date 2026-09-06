@@ -134,6 +134,13 @@ public class OlapDiscoverResource implements Serializable {
 
     /**
      * Refresh the Saiku connections.
+     *
+     * <p>Deliberately NOT admin-gated (saiku#1903): the workbench's cube picker polls this endpoint
+     * for every user to pick up late-arriving cubes, so a role gate here would break ordinary use.
+     * It is safe to leave open because a refresh can only re-load descriptors an administrator was
+     * able to write (non-admin {@code .sds} writes are refused, {@code /datasources} is SECURED) and
+     * every descriptor is validated by {@code JdbcUrlPolicy} before any driver is touched.
+     *
      * @Summary Refresh connections.
      * @return The existing connections.
      */

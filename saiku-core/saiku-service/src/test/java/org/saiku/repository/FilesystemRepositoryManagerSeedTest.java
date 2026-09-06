@@ -64,9 +64,10 @@ public class FilesystemRepositoryManagerSeedTest {
     }
 
     @Test
-    public void datasources_seeded_with_PUBLIC_admin_grant() throws Exception {
+    public void datasources_seeded_with_SECURED_admin_grant() throws Exception {
+        // saiku#1904: was PUBLIC, which resolved to WRITE for every authenticated user.
         JsonNode entry = readEntry("datasources");
-        assertEquals("PUBLIC", entry.get("type").asText());
+        assertEquals("SECURED", entry.get("type").asText());
         JsonNode roles = entry.get("roles");
         assertTrue("ROLE_ADMIN grant must be present on /datasources/", roles.has("ROLE_ADMIN"));
     }
@@ -85,6 +86,37 @@ public class FilesystemRepositoryManagerSeedTest {
         assertEquals("SECURED", entry.get("type").asText());
         JsonNode roles = entry.get("roles");
         assertTrue("ROLE_ADMIN grant must be present on /queries/", roles.has("ROLE_ADMIN"));
+    }
+
+    /**
+     * saiku#1904: what the seeded ACL actually RESOLVES to for a non-admin — the
+     * property the RCE chain abused. /datasources is now closed to non-admins
+     * (no read: descriptors carry warehouse credentials; no write: that's how a
+     * descriptor got planted), and admins keep full control.
+     */
+    @Test
+    public void datasources_folder_is_closed_to_nonAdmins_and_open_to_admins() {
+        File datasources = new File(datadir, "unknown/datasources");
+        Acl2 acl = new Acl2(datasources);
+        acl.setAdminRoles(Collections.singletonList("ROLE_ADMIN"));
+        java.util.List<String> user = Collections.singletonList("ROLE_USER");
+        java.util.List<String> admin = java.util.Arrays.asList("ROLE_USER", "ROLE_ADMIN");
+        assertTrue("non-admin must not be able to write /datasources", !acl.canWrite(datasources, "bob", user));
+        assertTrue("non-admin must not be able to read /datasources", !acl.canRead(datasources, "bob", user));
+        assertTrue("admin must be able to write /datasources", acl.canWrite(datasources, "root", admin));
+        assertTrue("admin must be able to grant on /datasources", acl.canGrant(datasources, "root", admin));
+    }
+
+    @Test
+    public void legacyreports_stays_PUBLIC_but_PUBLIC_now_means_read_only() throws Exception {
+        JsonNode entry = readEntry("legacyreports");
+        assertEquals("PUBLIC", entry.get("type").asText());
+        File legacy = new File(datadir, "unknown/legacyreports");
+        Acl2 acl = new Acl2(legacy);
+        acl.setAdminRoles(Collections.singletonList("ROLE_ADMIN"));
+        java.util.List<String> user = Collections.singletonList("ROLE_USER");
+        assertTrue(acl.canRead(legacy, "bob", user));
+        assertTrue("PUBLIC must not resolve to WRITE any more (saiku#1904)", !acl.canWrite(legacy, "bob", user));
     }
 
     /**

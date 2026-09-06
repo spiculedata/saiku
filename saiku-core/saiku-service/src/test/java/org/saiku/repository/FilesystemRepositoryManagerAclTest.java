@@ -5,6 +5,7 @@
 package org.saiku.repository;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -22,6 +23,7 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 import org.saiku.service.user.UserService;
+import org.saiku.service.util.exception.SaikuServiceException;
 
 /**
  * Regression coverage for saiku#895 (saveFile missing canWrite check) and
@@ -87,6 +89,90 @@ public class FilesystemRepositoryManagerAclTest {
     @After
     public void tearDown() throws Exception {
         resetSingleton();
+    }
+
+    // ---- saiku#1903: datasource descriptors are admin-only, wherever they land ----
+
+    @Test
+    public void saveFile_nonAdmin_cannot_write_sds_into_their_own_home() throws Exception {
+        // bob owns his home (PRIVATE), so the plain ACL would allow the write — the
+        // descriptor guard must refuse it regardless, because the loader lists *.sds
+        // recursively and would connect its URL on the next refresh.
+        File bobHome = new File(datadir, "unknown/homes/bob");
+        assertTrue(bobHome.mkdirs());
+        writeAclJson(bobHome, bobHome.getPath(), "PRIVATE", "bob");
+        try {
+            manager.saveFile("<dataSource/>", "/homes/bob/evil.sds", "bob", "nt:saikufiles", ROLES_USER);
+            fail("non-admin .sds write must be refused");
+        } catch (SaikuServiceException expected) {
+            assertTrue(expected.getMessage(), expected.getMessage().contains("administrator"));
+        }
+        assertFalse("nothing may be written", new File(bobHome, "evil.sds").exists());
+        // Case must not matter: the guard is what stops a descriptor, not the listing's case rules.
+        try {
+            manager.saveFile("<dataSource/>", "/homes/bob/evil.SDS", "bob", "nt:saikufiles", ROLES_USER);
+            fail("non-admin .SDS write must be refused");
+        } catch (SaikuServiceException expected) {
+            // expected
+        }
+    }
+
+    @Test
+    public void saveFile_nonAdmin_cannot_write_anything_under_datasources() throws Exception {
+        try {
+            manager.saveFile("x", "/datasources/schema.xml", "bob", "nt:saikufiles", ROLES_USER);
+            fail("non-admin write under /datasources must be refused");
+        } catch (SaikuServiceException expected) {
+            assertTrue(expected.getMessage(), expected.getMessage().contains("administrator"));
+        }
+    }
+
+    @Test
+    public void saveFile_admin_can_still_write_sds() throws Exception {
+        manager.saveFile("<dataSource/>", "/homes/admin/tool.sds", "admin", "nt:saikufiles", ROLES_ADMIN);
+        assertEquals(
+                "<dataSource/>",
+                new String(Files.readAllBytes(new File(adminHomeDir, "tool.sds").toPath()), StandardCharsets.UTF_8));
+    }
+
+    @Test
+    public void saveFile_nonAdmin_can_still_write_ordinary_files_in_their_home() throws Exception {
+        File bobHome = new File(datadir, "unknown/homes/bob");
+        assertTrue(bobHome.mkdirs());
+        writeAclJson(bobHome, bobHome.getPath(), "PRIVATE", "bob");
+        manager.saveFile("{}", "/homes/bob/report.saiku", "bob", "nt:saikufiles", ROLES_USER);
+        assertTrue("ordinary saves are untouched by the descriptor guard", new File(bobHome, "report.saiku").exists());
+    }
+
+    @Test
+    public void moveFile_nonAdmin_cannot_rename_into_sds() throws Exception {
+        File bobHome = new File(datadir, "unknown/homes/bob");
+        assertTrue(bobHome.mkdirs());
+        writeAclJson(bobHome, bobHome.getPath(), "PRIVATE", "bob");
+        Files.write(new File(bobHome, "innocent.txt").toPath(), "<dataSource/>".getBytes(StandardCharsets.UTF_8));
+        try {
+            manager.moveFile("/homes/bob/innocent.txt", "/homes/bob/evil.sds", "bob", ROLES_USER);
+            fail("renaming a file into *.sds is a descriptor write and must be refused for non-admins");
+        } catch (SaikuServiceException expected) {
+            assertTrue(expected.getMessage(), expected.getMessage().contains("administrator"));
+        }
+        assertFalse(new File(bobHome, "evil.sds").exists());
+        assertTrue(new File(bobHome, "innocent.txt").exists());
+    }
+
+    @Test
+    public void isDatasourceDescriptorPath_recognisesTheShapesTheLoaderConsumes() {
+        assertTrue(FilesystemRepositoryManager.isDatasourceDescriptorPath("/homes/bob/x.sds"));
+        assertTrue(FilesystemRepositoryManager.isDatasourceDescriptorPath("x.SDS"));
+        assertTrue(FilesystemRepositoryManager.isDatasourceDescriptorPath("/datasources/schema.xml"));
+        assertTrue(FilesystemRepositoryManager.isDatasourceDescriptorPath("datasources/schema.xml"));
+        assertTrue(FilesystemRepositoryManager.isDatasourceDescriptorPath("./datasources/schema.xml"));
+        assertTrue(FilesystemRepositoryManager.isDatasourceDescriptorPath("\\datasources\\schema.xml"));
+        assertTrue(FilesystemRepositoryManager.isDatasourceDescriptorPath("/tenant/datasources/x.xml"));
+        assertFalse(FilesystemRepositoryManager.isDatasourceDescriptorPath("/homes/bob/report.saiku"));
+        assertFalse(FilesystemRepositoryManager.isDatasourceDescriptorPath("/homes/bob/my-datasources-notes.txt"));
+        assertFalse(FilesystemRepositoryManager.isDatasourceDescriptorPath("/homes/bob/x.sds.bak"));
+        assertFalse(FilesystemRepositoryManager.isDatasourceDescriptorPath(null));
     }
 
     // ---- saiku#895: saveFile authorization ----------------------------

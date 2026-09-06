@@ -46,6 +46,7 @@ import org.saiku.repository.AclEntry;
 import org.saiku.repository.IRepositoryObject;
 import org.saiku.service.ISessionService;
 import org.saiku.service.datasource.DatasourceService;
+import org.saiku.service.user.UserService;
 import org.saiku.service.util.exception.SaikuServiceException;
 import org.saiku.web.rest.util.SessionRoles;
 import org.slf4j.Logger;
@@ -65,10 +66,65 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
 
     // private Acl acl;
     private DatasourceService datasourceService;
+    private UserService userService;
     private File repo;
 
     public void setDatasourceService(DatasourceService ds) {
         datasourceService = ds;
+    }
+
+    /**
+     * saiku#1903: used for the admin check on datasource-descriptor writes. Optional — when not
+     * wired the check falls back to a {@code ROLE_ADMIN} lookup on the authoritative
+     * {@link SessionRoles}.
+     */
+    public void setUserService(UserService userService) {
+        this.userService = userService;
+    }
+
+    /**
+     * saiku#1903: is {@code path} a datasource descriptor ({@code *.sds}) or anything under the
+     * {@code /datasources} tree? The datasource loader lists {@code *.sds} recursively across the
+     * whole repository, so a descriptor saved into a user's own home is loaded — and its JDBC URL
+     * connected — exactly like one an admin placed in {@code /datasources}. Non-admins therefore
+     * may not write one anywhere. Mirrors {@code FilesystemRepositoryManager}'s own guard, which
+     * is the hard stop; this one turns the refusal into a clean 403 instead of a 500.
+     */
+    static boolean isDatasourceDescriptorPath(String path) {
+        if (path == null) {
+            return false;
+        }
+        String p = path.replace('\\', '/').trim().toLowerCase(java.util.Locale.ROOT);
+        while (p.startsWith("./")) {
+            p = p.substring(2);
+        }
+        if (p.endsWith(".sds")) {
+            return true;
+        }
+        String noLead = p.startsWith("/") ? p.substring(1) : p;
+        return noLead.equals("datasources") || noLead.startsWith("datasources/") || p.contains("/datasources/");
+    }
+
+    private boolean callerIsAdmin() {
+        if (userService != null) {
+            return userService.isAdmin();
+        }
+        return SessionRoles.currentRoles().contains("ROLE_ADMIN");
+    }
+
+    /** {@code null} when the write may proceed, otherwise the 403 to return. */
+    private Response refuseDatasourceDescriptorWrite(String... paths) {
+        for (String p : paths) {
+            if (isDatasourceDescriptorPath(p) && !callerIsAdmin()) {
+                log.warn("Refused non-admin write of a datasource descriptor (saiku#1903): {}", p);
+                return Response.status(Status.FORBIDDEN)
+                        .entity("Datasource descriptors (.sds) and the /datasources tree can only be modified by an"
+                                + " administrator")
+                        .type("text/plain")
+                        .build();
+            }
+        }
+        return null;
     }
 
     public void setPath(String path) throws Exception {
@@ -221,6 +277,11 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
     @POST
     @Path("/resource")
     public Response saveResource(@FormParam("file") String file, @FormParam("content") String content) {
+        // saiku#1903: datasource descriptors are admin-only, wherever they would land.
+        Response refused = refuseDatasourceDescriptorWrite(file);
+        if (refused != null) {
+            return refused;
+        }
         String username = sessionService.getAllSessionObjects().get("username").toString();
         // saiku#1752: authoritative SecurityContextHolder read, not the session "roles" map.
         List<String> roles = SessionRoles.currentRoles();
@@ -272,6 +333,12 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
     @POST
     @Path("/resource/move")
     public Response moveResource(@FormParam("source") String source, @FormParam("target") String target) {
+        // saiku#1903: a rename into *.sds / into /datasources is a descriptor write; moving an
+        // existing descriptor is equally admin-only.
+        Response refused = refuseDatasourceDescriptorWrite(source, target);
+        if (refused != null) {
+            return refused;
+        }
         String username = sessionService.getAllSessionObjects().get("username").toString();
         // saiku#1752: authoritative SecurityContextHolder read, not the session "roles" map.
         List<String> roles = SessionRoles.currentRoles();
