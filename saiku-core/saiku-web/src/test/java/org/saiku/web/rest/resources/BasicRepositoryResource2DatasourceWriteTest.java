@@ -77,6 +77,27 @@ public class BasicRepositoryResource2DatasourceWriteTest {
     }
 
     @Test
+    public void nonAdmin_cannotSaveSdsWithWindowsFilenameEvasion() {
+        // saiku#1903 SEC follow-up: Win32 drops trailing dots/spaces and NTFS ADS suffixes, so
+        // each of these lands on disk as evil.sds. All must 403.
+        loginAs("bob", "ROLE_USER");
+        assertEquals(
+                403,
+                resource.saveResource("/homes/bob/evil.sds.", PG_GADGET_SDS).getStatus());
+        assertEquals(
+                403,
+                resource.saveResource("/homes/bob/evil.sds ", PG_GADGET_SDS).getStatus());
+        assertEquals(
+                403,
+                resource.saveResource("/homes/bob/EVIL.SDS.", PG_GADGET_SDS).getStatus());
+        assertEquals(
+                403,
+                resource.saveResource("/homes/bob/evil.sds::$DATA", PG_GADGET_SDS)
+                        .getStatus());
+        assertEquals(0, files.saves);
+    }
+
+    @Test
     public void nonAdmin_cannotSaveAnythingUnderDatasources() {
         loginAs("bob", "ROLE_USER");
         assertEquals(
@@ -188,6 +209,12 @@ public class BasicRepositoryResource2DatasourceWriteTest {
         assertFalse(BasicRepositoryResource2.isDatasourceDescriptorPath("/homes/bob/x.sds.bak"));
         assertFalse(BasicRepositoryResource2.isDatasourceDescriptorPath("/homes/bob/report.saiku"));
         assertFalse(BasicRepositoryResource2.isDatasourceDescriptorPath(null));
+        // Windows filename-normalisation evasions (saiku#1903 SEC follow-up).
+        assertTrue(BasicRepositoryResource2.isDatasourceDescriptorPath("/homes/bob/evil.sds."));
+        assertTrue(BasicRepositoryResource2.isDatasourceDescriptorPath("/homes/bob/evil.sds "));
+        assertTrue(BasicRepositoryResource2.isDatasourceDescriptorPath("/homes/bob/EVIL.SDS."));
+        assertTrue(BasicRepositoryResource2.isDatasourceDescriptorPath("/homes/bob/evil.sds::$DATA"));
+        assertTrue(BasicRepositoryResource2.isDatasourceDescriptorPath("/homes/bob/evil.sds:stream"));
     }
 
     /* ---------------------------------------------------------------- fixtures */

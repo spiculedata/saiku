@@ -259,6 +259,11 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
      * under the {@code /datasources} tree? Both are consumed by the datasource loader, which lists
      * {@code *.sds} recursively across the whole datadir — so a descriptor written into a user's
      * own home is loaded (and its JDBC URL connected) exactly like one in {@code /datasources}.
+     *
+     * <p>The check is made against the name the file would actually have <em>on disk</em>: Win32
+     * silently strips trailing dots and spaces and treats an NTFS alternate-data-stream suffix as
+     * the base file, so {@code evil.sds.}, {@code "evil.sds "} and {@code evil.sds::$DATA} all land
+     * as {@code evil.sds} and would otherwise slip past a naive {@code endsWith(".sds")}.
      */
     static boolean isDatasourceDescriptorPath(String path) {
         if (path == null) {
@@ -268,11 +273,31 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
         while (p.startsWith("./")) {
             p = p.substring(2);
         }
+        p = stripWindowsFilenameTail(p);
         if (p.endsWith(".sds")) {
             return true;
         }
         String noLead = p.startsWith("/") ? p.substring(1) : p;
         return noLead.equals("datasources") || noLead.startsWith("datasources/") || p.contains("/datasources/");
+    }
+
+    /**
+     * Normalise a repository path to the name Win32 would actually create on disk: drop an NTFS
+     * alternate-data-stream suffix on the final segment (everything from the first {@code :} after
+     * the last {@code /} — repository paths are relative, so there is no drive-letter colon), then
+     * strip trailing dots and spaces. Shared by both saiku#1903 descriptor guards.
+     */
+    static String stripWindowsFilenameTail(String p) {
+        int lastSlash = p.lastIndexOf('/');
+        int colon = p.indexOf(':', lastSlash + 1);
+        if (colon >= 0) {
+            p = p.substring(0, colon);
+        }
+        int end = p.length();
+        while (end > 0 && (p.charAt(end - 1) == '.' || p.charAt(end - 1) == ' ')) {
+            end--;
+        }
+        return p.substring(0, end);
     }
 
     /**

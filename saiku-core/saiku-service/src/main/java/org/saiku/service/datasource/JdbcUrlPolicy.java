@@ -230,9 +230,18 @@ public final class JdbcUrlPolicy {
 
     private static final Pattern SCHEME_TOKEN = Pattern.compile("[a-z0-9+.-]+");
 
-    private static final Pattern SCHEME_HEAD = Pattern.compile("(?i)^jdbc:[a-z0-9+.-]*:");
-
-    private static final Pattern PROPERTY_DELIMITERS = Pattern.compile("[;&?#]");
+    /**
+     * saiku#1902 (SEC bypass): matches EVERY {@code key=} occurrence anywhere in the string, not
+     * just the first one per {@code ;&?#}-delimited token. The old token split missed keys nested
+     * in MySQL/MariaDB host-group and {@code address=(...)} forms
+     * ({@code jdbc:mysql://(host=h,socketFactory=evil)/db}) and Teradata's comma-separated params
+     * ({@code jdbc:teradata://h/DATABASE=x,LOGMECH=y,socketFactory=evil}) — a key run is a maximal
+     * span of {@code [A-Za-z0-9_.-]} immediately before an {@code =} (optional whitespace between),
+     * so it is found regardless of the {@code ( , / ; & ?} that precedes it. Values are never
+     * treated as keys (only a run directly followed by {@code =} matches), and we reject only
+     * known-dangerous key names, so a comma or paren inside a legitimate value can't produce one.
+     */
+    private static final Pattern PROPERTY_KEY = Pattern.compile("([A-Za-z0-9_.\\-]+)\\s*=");
 
     private static final Pattern KEY_NOISE = Pattern.compile("[\\s_.\\-'\"]");
 
@@ -264,10 +273,31 @@ public final class JdbcUrlPolicy {
         return DriverManager.getConnection(url, user, password);
     }
 
-    /** Validate, then {@link DriverManager#getConnection(String, Properties)}. */
+    /**
+     * Validate the URL <em>and</em> the {@code info} property map, then
+     * {@link DriverManager#getConnection(String, Properties)}. A driver merges {@code info} with
+     * any properties in the URL, so a denied key smuggled through the map (e.g. a future caller
+     * copying request-supplied properties) is exactly as dangerous as one in the URL. Today's
+     * callers only put {@code user}/{@code password} here, which pass.
+     */
     public static Connection openConnection(String url, Properties info) throws SQLException {
         validate(url);
+        rejectDeniedInfoProperties(info);
         return DriverManager.getConnection(url, info);
+    }
+
+    /** Apply the connection-property deny-list to the keys of a {@link Properties} map. */
+    static void rejectDeniedInfoProperties(Properties info) {
+        if (info == null) {
+            return;
+        }
+        for (String name : info.stringPropertyNames()) {
+            String key = normaliseKey(name);
+            if (!key.isEmpty()) {
+                // false: the calcite model/schemaFactory operands are URL-only, never info keys.
+                rejectIfDeniedKey(key, false);
+            }
+        }
     }
 
     /**
@@ -426,34 +456,28 @@ public final class JdbcUrlPolicy {
 
     private static void rejectDeniedProperties(String url, String scheme) {
         boolean calcite = "calcite".equals(scheme) || "avatica".equals(scheme);
-        String[] tokens = PROPERTY_DELIMITERS.split(url);
-        for (int i = 0; i < tokens.length; i++) {
-            String token = tokens[i];
-            if (i == 0) {
-                // Some drivers start their properties right after the scheme
-                // (jdbc:calcite:model=..., jdbc:mondrian:Jdbc=...): drop the "jdbc:<scheme>:" head
-                // so the first key is seen as a key.
-                token = SCHEME_HEAD.matcher(token).replaceFirst("");
-            }
-            int eq = token.indexOf('=');
-            if (eq <= 0) {
-                continue;
-            }
-            String key = normaliseKey(token.substring(0, eq));
+        Matcher m = PROPERTY_KEY.matcher(url);
+        while (m.find()) {
+            String key = normaliseKey(m.group(1));
             if (key.isEmpty()) {
                 continue;
             }
-            if (DENIED_KEYS.contains(key)) {
-                throw reject("connection property '" + key + "' is not permitted");
+            rejectIfDeniedKey(key, calcite);
+        }
+    }
+
+    /** The deny-list decision for a single normalised property key. */
+    private static void rejectIfDeniedKey(String key, boolean calcite) {
+        if (DENIED_KEYS.contains(key)) {
+            throw reject("connection property '" + key + "' is not permitted");
+        }
+        for (String prefix : DENIED_KEY_PREFIXES) {
+            if (key.startsWith(prefix)) {
+                throw reject("connection property family '" + prefix + "*' is not permitted");
             }
-            for (String prefix : DENIED_KEY_PREFIXES) {
-                if (key.startsWith(prefix)) {
-                    throw reject("connection property family '" + prefix + "*' is not permitted");
-                }
-            }
-            if (calcite && DENIED_CALCITE_KEYS.contains(key)) {
-                throw reject("Calcite model / schema-factory operands are not permitted");
-            }
+        }
+        if (calcite && DENIED_CALCITE_KEYS.contains(key)) {
+            throw reject("Calcite model / schema-factory operands are not permitted");
         }
     }
 
@@ -465,8 +489,19 @@ public final class JdbcUrlPolicy {
     /**
      * Structural checks on a {@code jdbc:mondrian:} / {@code jdbc:mondrian4:} wrapper: every
      * {@code Jdbc=} occurrence is validated as a JDBC URL in its own right (Mondrian's property
-     * list lets a later duplicate key win, so <em>all</em> of them are checked), and every
-     * {@code DataSource=} must be a plain JNDI name.
+     * list lets a later duplicate key win, so <em>all</em> of them are checked), every
+     * {@code DataSource=} must be a plain JNDI name, and the class-instantiating hooks
+     * {@code DynamicSchemaProcessor=} / {@code DataSourceChangeListener=} are refused outright —
+     * Mondrian would {@code Class.forName}+instantiate whatever they name, and no legitimate Saiku
+     * datasource sets them (saiku#1903, defence in depth).
+     *
+     * <p>Note: two other Mondrian keys also drive class-loading / inline content —
+     * {@code JdbcDrivers=} (names the JDBC driver class, a legitimate and required part of a
+     * Mondrian connect string) and {@code CatalogContent=} (an inline schema). These are left
+     * permitted on purpose: a Mondrian wrapper is only ever authored as part of a datasource
+     * descriptor or schema, which saiku#1903 + saiku#1904 make admin-only to write — so their
+     * class-loading is admin-reachable-by-design, and blanket-denying {@code JdbcDrivers=} would
+     * break every real Mondrian datasource.
      */
     private static void checkMondrianWrapper(String url, int depth) {
         String lower = url.toLowerCase(Locale.ROOT);
@@ -474,6 +509,14 @@ public final class JdbcUrlPolicy {
         String body = url.substring(bodyStart);
 
         Map<String, List<String>> props = parseMondrianBody(body);
+
+        // parseMondrianBody lower-cases its keys.
+        if (props.containsKey("dynamicschemaprocessor")) {
+            throw reject("Mondrian DynamicSchemaProcessor= (class instantiation) is not permitted in a datasource");
+        }
+        if (props.containsKey("datasourcechangelistener")) {
+            throw reject("Mondrian DataSourceChangeListener= (class instantiation) is not permitted in a datasource");
+        }
 
         for (String inner : props.getOrDefault("jdbc", List.of())) {
             String v = unquote(inner);

@@ -175,6 +175,32 @@ public class FilesystemRepositoryManagerAclTest {
         assertFalse(FilesystemRepositoryManager.isDatasourceDescriptorPath(null));
     }
 
+    @Test
+    public void isDatasourceDescriptorPath_seesThroughWindowsFilenameNormalisation() {
+        // saiku#1903 SEC follow-up: Win32 strips trailing dots/spaces and treats an NTFS ADS suffix
+        // as the base file, so these all land on disk as evil.sds and must be recognised.
+        assertTrue(FilesystemRepositoryManager.isDatasourceDescriptorPath("/homes/bob/evil.sds."));
+        assertTrue(FilesystemRepositoryManager.isDatasourceDescriptorPath("/homes/bob/evil.sds.. "));
+        assertTrue(FilesystemRepositoryManager.isDatasourceDescriptorPath("/homes/bob/evil.sds "));
+        assertTrue(FilesystemRepositoryManager.isDatasourceDescriptorPath("/homes/bob/EVIL.SDS."));
+        assertTrue(FilesystemRepositoryManager.isDatasourceDescriptorPath("/homes/bob/evil.sds::$DATA"));
+        assertTrue(FilesystemRepositoryManager.isDatasourceDescriptorPath("/homes/bob/evil.sds:$DATA"));
+        assertTrue(FilesystemRepositoryManager.isDatasourceDescriptorPath("/homes/bob/evil.sds:stream"));
+    }
+
+    @Test
+    public void saveFile_nonAdmin_cannot_write_sds_with_trailing_dot() throws Exception {
+        File bobHome = new File(datadir, "unknown/homes/bob");
+        assertTrue(bobHome.mkdirs());
+        writeAclJson(bobHome, bobHome.getPath(), "PRIVATE", "bob");
+        try {
+            manager.saveFile("<dataSource/>", "/homes/bob/evil.sds.", "bob", "nt:saikufiles", ROLES_USER);
+            fail("a trailing-dot .sds write must be refused (Win32 would drop the dot)");
+        } catch (SaikuServiceException expected) {
+            assertTrue(expected.getMessage(), expected.getMessage().contains("administrator"));
+        }
+    }
+
     // ---- saiku#895: saveFile authorization ----------------------------
 
     @Test

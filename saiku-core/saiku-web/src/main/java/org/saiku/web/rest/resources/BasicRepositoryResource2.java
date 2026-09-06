@@ -89,6 +89,10 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
      * connected — exactly like one an admin placed in {@code /datasources}. Non-admins therefore
      * may not write one anywhere. Mirrors {@code FilesystemRepositoryManager}'s own guard, which
      * is the hard stop; this one turns the refusal into a clean 403 instead of a 500.
+     *
+     * <p>saiku#1903 (SEC follow-up): the check is against the on-disk name Win32 would create —
+     * trailing dots/spaces stripped and any NTFS alternate-data-stream suffix removed — so
+     * {@code evil.sds.}, {@code "evil.sds "} and {@code evil.sds::$DATA} don't slip past.
      */
     static boolean isDatasourceDescriptorPath(String path) {
         if (path == null) {
@@ -98,11 +102,31 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
         while (p.startsWith("./")) {
             p = p.substring(2);
         }
+        p = stripWindowsFilenameTail(p);
         if (p.endsWith(".sds")) {
             return true;
         }
         String noLead = p.startsWith("/") ? p.substring(1) : p;
         return noLead.equals("datasources") || noLead.startsWith("datasources/") || p.contains("/datasources/");
+    }
+
+    /**
+     * Drop an NTFS alternate-data-stream suffix on the final segment (everything from the first
+     * {@code :} after the last {@code /} — repository paths are relative, no drive-letter colon),
+     * then strip trailing dots and spaces. Kept in sync with
+     * {@code FilesystemRepositoryManager.stripWindowsFilenameTail}.
+     */
+    static String stripWindowsFilenameTail(String p) {
+        int lastSlash = p.lastIndexOf('/');
+        int colon = p.indexOf(':', lastSlash + 1);
+        if (colon >= 0) {
+            p = p.substring(0, colon);
+        }
+        int end = p.length();
+        while (end > 0 && (p.charAt(end - 1) == '.' || p.charAt(end - 1) == ' ')) {
+            end--;
+        }
+        return p.substring(0, end);
     }
 
     private boolean callerIsAdmin() {

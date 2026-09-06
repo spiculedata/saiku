@@ -165,6 +165,28 @@ public class JdbcUrlPolicyTest {
         assertRejected("jdbc:mysql://h/db?ha.loadBalanceStrategy=evil.Cls", "loadbalancestrategy");
         assertRejected("jdbc:mysql:loadbalance://h1,h2/db?loadBalanceStrategy=evil.Cls", "loadbalancestrategy");
         assertRejected("jdbc:mariadb://h/db?allowLocalInfile=true", "allowlocalinfile");
+        // SEC bypass: Connector/J host-list form — the denied key is NOT the first key in the
+        // token, and comma is a property separator here. Must still be caught.
+        assertRejected("jdbc:mysql://(host=localhost,port=3306,socketFactory=com.evil.Factory)/db", "socketfactory");
+    }
+
+    /**
+     * saiku#1902 (SEC-confirmed bypass): denied keys nested in MySQL/MariaDB host-property groups,
+     * the {@code address=(...)} form, and Teradata's comma-separated parameters must all be caught —
+     * the old first-{@code =}-per-token scan missed them and let a Connector/J socketFactory gadget
+     * (RCE) through.
+     */
+    @Test
+    public void rejectsDeniedKeysInHostGroupAndCommaForms() {
+        // MySQL/MariaDB (host=...,key=...) group.
+        assertRejected("jdbc:mysql://(host=h,port=3306,socketFactory=com.evil.Factory)/db", "socketfactory");
+        assertRejected("jdbc:mariadb://(host=h,autoDeserialize=true)/db", "autodeserialize");
+        // MySQL address=(...)(...) form — the denied key is in a second parenthesised group.
+        assertRejected("jdbc:mysql://address=(host=h)(socketFactory=com.evil.Factory)/db", "socketfactory");
+        // Teradata comma-separated params.
+        assertRejected("jdbc:teradata://h/DATABASE=x,LOGMECH=LDAP,socketFactory=com.evil.Factory", "socketfactory");
+        // Second occurrence after a benign first key in the same ?query token (comma-joined).
+        assertRejected("jdbc:postgresql://h/db?ApplicationName=ok,socketFactory=com.evil.Factory", "socketfactory");
     }
 
     @Test
@@ -224,6 +246,47 @@ public class JdbcUrlPolicyTest {
         assertRejected("jdbc:mondrian:DataSource=ldap://evil.example:1389/x;Catalog=file:/x.xml", "JNDI");
         assertRejected("jdbc:mondrian:DataSource=rmi://evil.example:1099/x;Catalog=file:/x.xml", "JNDI");
         assertRejected("jdbc:mondrian:DataSource='ldap://evil.example/x';Catalog=file:/x.xml", "JNDI");
+    }
+
+    @Test
+    public void rejectsMondrianClassInstantiationHooks() {
+        // saiku#1903 defence in depth: Mondrian would Class.forName+instantiate these.
+        assertRejected(
+                "jdbc:mondrian:Jdbc=jdbc:h2:mem:x;DynamicSchemaProcessor=com.evil.X;Catalog=file:/x.xml",
+                "DynamicSchemaProcessor");
+        assertRejected(
+                "jdbc:mondrian:Jdbc=jdbc:h2:mem:x;DataSourceChangeListener=com.evil.X;Catalog=file:/x.xml",
+                "DataSourceChangeListener");
+        // Case-insensitive, and inside the mondrian4 rewrite form too.
+        assertRejected(
+                "jdbc:mondrian4:Jdbc=jdbc:h2:mem:x;dynamicschemaprocessor=com.evil.X;Catalog=file:/x.xml",
+                "DynamicSchemaProcessor");
+    }
+
+    @Test
+    public void allowsMondrianJdbcDriversByDesign() {
+        // JdbcDrivers= names the JDBC driver class and is a required, legitimate part of a Mondrian
+        // connect string — it must NOT be blanket-denied (admin-authored, admin-only to write).
+        JdbcUrlPolicy.validate(
+                "jdbc:mondrian:Jdbc=jdbc:h2:mem:x;Catalog=file:/x.xml;JdbcDrivers=org.h2.Driver,com.mysql.cj.jdbc.Driver");
+    }
+
+    @Test
+    public void openConnectionInfoMap_rejectsDeniedKeys() throws Exception {
+        java.util.Properties benign = new java.util.Properties();
+        benign.setProperty("user", "sa");
+        benign.setProperty("password", "");
+        JdbcUrlPolicy.rejectDeniedInfoProperties(benign); // no throw
+
+        java.util.Properties gadget = new java.util.Properties();
+        gadget.setProperty("socketFactory", "com.evil.Factory");
+        try {
+            JdbcUrlPolicy.rejectDeniedInfoProperties(gadget);
+            fail("a denied key smuggled through the info map must be rejected");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(
+                    expected.getMessage(), expected.getMessage().toLowerCase().contains("socketfactory"));
+        }
     }
 
     @Test
