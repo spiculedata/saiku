@@ -14,6 +14,7 @@ import org.saiku.database.dto.SaikuUser;
 import org.saiku.service.ISessionService;
 import org.saiku.service.datasource.DatasourceService;
 import org.saiku.service.datasource.IDatasourceManager;
+import org.saiku.service.util.security.Usernames;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
@@ -113,7 +114,10 @@ public class UserService implements IUserManager, Serializable {
         }
         try {
             for (SaikuUser u : getUsers()) {
-                if (u != null && username.equals(u.getUsername())) {
+                // saiku#1907 F4: case-insensitive identity — a job owned by an admin-typed
+                // mixed-case name must still resolve its enabled-state (else the scheduler
+                // fail-closes and auto-disables a legitimately-owned job).
+                if (u != null && Usernames.sameUser(username, u.getUsername())) {
                     return u.isEnabled();
                 }
             }

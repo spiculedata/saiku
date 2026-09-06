@@ -9,6 +9,7 @@ import java.util.Arrays;
 import java.util.List;
 import org.saiku.database.dto.SaikuUser;
 import org.saiku.service.user.UserService;
+import org.saiku.service.util.security.Usernames;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,7 +49,9 @@ public final class UserServiceOwnerIdentityResolver implements OwnerIdentityReso
         try {
             SaikuUser owner = null;
             for (SaikuUser u : userService.getUsers()) {
-                if (u != null && username.equals(u.getUsername())) {
+                // saiku#1907 F4: case-insensitive owner match, so a job owned by a mixed-case
+                // account name resolves rather than fail-closing to absent (skip + auto-disable).
+                if (u != null && Usernames.sameUser(username, u.getUsername())) {
                     owner = u;
                     break;
                 }
