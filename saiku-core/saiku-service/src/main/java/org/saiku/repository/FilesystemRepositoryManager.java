@@ -202,6 +202,14 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
     }
 
     public void createUser(String u) throws RepositoryException {
+        // saiku#1907: the username is concatenated into "/homes/" + u to build the
+        // home path. The #1906 createFolder guard rejects a path that ESCAPES the
+        // datadir, but a ".." (or a separator) that stays INSIDE it — e.g.
+        // "../datasources" or "a/b" — resolves to another folder within the repo,
+        // letting createUser rewrite that folder's acl.json and plant the caller as
+        // its PRIVATE owner. Require the username to be a single safe path segment
+        // before it is ever used to build a path. Fail closed.
+        validateUsernameSegment(u);
 
         File node = this.createFolder(sep + "homes" + sep + u);
 
@@ -210,6 +218,30 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
         Acl2 acl2 = new Acl2(node);
         acl2.addEntry(node.getPath(), e);
         acl2.serialize(node);
+    }
+
+    /**
+     * saiku#1907: validate that {@code u} is a single safe path segment usable as a
+     * home-folder name — no separators ({@code /} or {@code \}), no {@code ..}
+     * traversal, no leading dot ({@code .} / {@code ..} / hidden segments), and no
+     * control characters. Rejects fail-closed with a {@link SaikuServiceException}.
+     * This is the choke point every login / admin add-user path funnels through
+     * ({@link org.saiku.service.user.UserService#addUser} and the {@code checkFolders}
+     * first-login home creation both reach {@code createUser}).
+     */
+    private static void validateUsernameSegment(String u) {
+        if (u == null || u.isEmpty()) {
+            throw new SaikuServiceException("Invalid username for home folder");
+        }
+        if (u.indexOf('/') >= 0 || u.indexOf('\\') >= 0 || u.contains("..") || u.charAt(0) == '.') {
+            throw new SaikuServiceException("Invalid username for home folder");
+        }
+        for (int i = 0; i < u.length(); i++) {
+            char c = u.charAt(i);
+            if (c < 0x20 || c == 0x7f) {
+                throw new SaikuServiceException("Invalid username for home folder");
+            }
+        }
     }
 
     public Object getHomeFolders() throws RepositoryException {

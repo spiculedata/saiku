@@ -4,8 +4,10 @@
  */
 package org.saiku.repository;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.File;
@@ -267,6 +269,67 @@ public class FilesystemRepositoryManagerPathTraversalTest {
                     + expected.getAbsolutePath()
                     + " but it is missing.");
         }
+    }
+
+    // --- saiku#1907 (c): createUser username must be a single safe path segment ---
+
+    /**
+     * saiku#1907: a {@code ..} segment that stays INSIDE the datadir is not caught
+     * by the #1906 createFolder escape guard, so {@code createUser("../datasources")}
+     * would resolve to another repo folder and rewrite its {@code acl.json} (planting
+     * the caller as PRIVATE owner). The username-segment guard must reject it
+     * fail-closed, leaving the target folder's ACL untouched.
+     */
+    @Test
+    public void createUser_rejects_inside_datadir_traversal_targeting_another_folder() throws Exception {
+        // A folder inside the datadir with its own ACL — stands in for /datasources
+        // or a victim's home. It must survive the malicious createUser untouched.
+        File victim = new File(datadir, "unknown/datasources");
+        if (!victim.mkdirs()) {
+            throw new IllegalStateException("Could not create " + victim);
+        }
+        File aclJson = new File(victim, "acl.json");
+        String original = "{\"" + victim.getPath().replace("\\", "\\\\").replace("\"", "\\\"")
+                + "\":{\"owner\":\"admin\",\"type\":\"SECURED\",\"roles\":null,\"users\":null}}";
+        Files.write(aclJson.toPath(), original.getBytes(StandardCharsets.UTF_8));
+
+        try {
+            manager.createUser("../datasources");
+            fail("createUser must reject a username containing a .. traversal segment");
+        } catch (RuntimeException expected) {
+            // fail-closed (SaikuServiceException)
+        }
+
+        String after = new String(Files.readAllBytes(aclJson.toPath()), StandardCharsets.UTF_8);
+        assertEquals("the target folder's acl.json must be left untouched", original, after);
+    }
+
+    /**
+     * A username carrying a path separator ({@code a/b}) must be rejected — it would
+     * otherwise create a nested folder under {@code /homes} rather than a single home.
+     */
+    @Test
+    public void createUser_rejects_nested_path_segment() throws Exception {
+        try {
+            manager.createUser("a/b");
+            fail("createUser must reject a username containing a path separator");
+        } catch (RuntimeException expected) {
+            // fail-closed
+        }
+        assertFalse("no nested home may be created", new File(datadir, "unknown/homes/a/b").exists());
+        assertFalse("no intermediate home segment may be created", new File(datadir, "unknown/homes/a").exists());
+    }
+
+    /**
+     * Positive control: an ordinary username must still get its home folder — the
+     * guard must not false-positive on safe input.
+     */
+    @Test
+    public void createUser_accepts_ordinary_username() throws Exception {
+        manager.createUser("normal");
+        assertTrue(
+                "an ordinary username must still create its home folder",
+                new File(datadir, "unknown/homes/normal").isDirectory());
     }
 
     // --- helpers -------------------------------------------------------------
