@@ -208,6 +208,71 @@ public class FilesystemRepositoryManagerCaseOwnerTest {
                 entry.getOwner() != null && "admin".equalsIgnoreCase(entry.getOwner()));
     }
 
+    /**
+     * saiku#1907 (SEC round-3 polish): a SECURED share in a NESTED subfolder of a mixed-case home
+     * must survive the one-time rename-to-canonical — the acl.json re-key recurses over the whole
+     * renamed subtree, not just the root. RED before the recursive re-key (the nested share's key
+     * kept its old absolute path → dropped → sharee denied).
+     */
+    @Test
+    public void nested_subfolder_share_survives_rename_to_canonical() throws Exception {
+        org.junit.Assume.assumeFalse(
+                "requires a case-sensitive filesystem",
+                System.getProperty("os.name", "")
+                        .toLowerCase(java.util.Locale.ROOT)
+                        .contains("win"));
+
+        File variant = new File(datadir, "unknown/homes/Admin");
+        assertTrue(variant.mkdirs());
+        writeFolderAclJson(variant, "PRIVATE", "Admin"); // home root owned by Admin
+
+        File reports = new File(variant, "reports");
+        assertTrue(reports.mkdirs());
+        File shared = new File(reports, "shared.saikudash");
+        Files.write(shared.toPath(), "SHARED".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        // Nested per-file SECURED share (ROLE_USER READ), keyed by the file's OLD canonical path.
+        String key = shared.getCanonicalPath().replace("\\", "\\\\").replace("\"", "\\\"");
+        String json = "{\"" + key
+                + "\":{\"owner\":\"Admin\",\"type\":\"SECURED\",\"roles\":{\"ROLE_USER\":[\"READ\"]},\"users\":null}}";
+        Files.write(new File(reports, "acl.json").toPath(), json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        manager.createUser("admin"); // renames /homes/Admin -> /homes/admin and recursively re-keys
+
+        String body = manager.getFile("/homes/admin/reports/shared.saikudash", "bob", ROLES_USER);
+        assertEquals("a nested subfolder share must survive the rename-to-canonical", "SHARED", body);
+    }
+
+    /**
+     * saiku#1907 (SEC round-3 polish): direct, platform-independent coverage of the recursive
+     * re-key — a NESTED subfolder's acl.json keys are rewritten too, not only the root's. RED
+     * before the recursion (nested acl.json keeps the old prefix).
+     */
+    @Test
+    public void rekeyAclPaths_recurses_into_nested_acl_json() throws Exception {
+        File home = new File(datadir, "rk/home");
+        assertTrue(home.mkdirs());
+        File sub = new File(home, "sub");
+        assertTrue(sub.mkdirs());
+        Files.write(
+                new File(home, "acl.json").toPath(),
+                ("{\"/old/home\":{\"owner\":\"a\",\"type\":\"PRIVATE\",\"roles\":null,\"users\":null},"
+                                + "\"/old/home/x.saikudash\":{\"owner\":\"a\",\"type\":\"PRIVATE\",\"roles\":null,\"users\":null}}")
+                        .getBytes(StandardCharsets.UTF_8));
+        Files.write(
+                new File(sub, "acl.json").toPath(),
+                "{\"/old/home/sub/y.saikudash\":{\"owner\":\"a\",\"type\":\"PRIVATE\",\"roles\":null,\"users\":null}}"
+                        .getBytes(StandardCharsets.UTF_8));
+
+        Acl2.rekeyAclPaths(home, "/old/home", "/new/home");
+
+        String root = new String(Files.readAllBytes(new File(home, "acl.json").toPath()), StandardCharsets.UTF_8);
+        String nested = new String(Files.readAllBytes(new File(sub, "acl.json").toPath()), StandardCharsets.UTF_8);
+        assertTrue("root keys must be re-keyed", root.contains("/new/home") && !root.contains("/old/home"));
+        assertTrue(
+                "NESTED acl.json keys must be re-keyed (recursion)",
+                nested.contains("/new/home/sub/y.saikudash") && !nested.contains("/old/home"));
+    }
+
     // ---- helpers ------------------------------------------------------
 
     private static void writeFolderAclJson(File dir, String aclType, String owner) throws Exception {

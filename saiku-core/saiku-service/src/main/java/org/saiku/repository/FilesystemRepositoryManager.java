@@ -701,13 +701,17 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
         // skipped the ACL gate entirely and then mkdirs()'d it. A missing parent is NEVER
         // permission — resolve to the nearest existing ancestor and gate on that.
         File writeAnchor = (destParent != null && destParent.exists()) ? destParent : nearestExistingAncestor(dest);
-        if (writeAnchor != null) {
-            Acl2 destAcl = new Acl2(writeAnchor);
-            destAcl.setAdminRoles(userService.getAdminRoles());
-            destAcl.setHomesRoot(homesRoot());
-            if (!destAcl.canWrite(writeAnchor, user, roles)) {
-                throw new SaikuServiceException("You don't have permission to write to " + target);
-            }
+        // Fail closed if there is no existing ancestor to gate on (unreachable today — dest comes
+        // from resolveWithinDatadir so an ancestor always exists — but never treat "no anchor" as
+        // permission).
+        if (writeAnchor == null) {
+            throw new SaikuServiceException("You don't have permission to write to " + target);
+        }
+        Acl2 destAcl = new Acl2(writeAnchor);
+        destAcl.setAdminRoles(userService.getAdminRoles());
+        destAcl.setHomesRoot(homesRoot());
+        if (!destAcl.canWrite(writeAnchor, user, roles)) {
+            throw new SaikuServiceException("You don't have permission to write to " + target);
         }
         // saiku#1907 N1: never let a non-admin create a NEW direct child of /homes other than
         // their own canonical home (defence-in-depth beyond the ancestor gate above).

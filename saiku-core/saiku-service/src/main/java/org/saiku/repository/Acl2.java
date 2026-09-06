@@ -490,11 +490,38 @@ class Acl2 {
     /**
      * saiku#1907 F4: after a home folder is renamed to its canonical name, its {@code acl.json}
      * keys still point at the OLD absolute path. Rewrite every key that equals or is nested under
-     * {@code oldPrefix} to the {@code newPrefix} so the folder's own entry and any per-file shares
-     * inside keep resolving. Best-effort — a missing/malformed file is left untouched.
+     * {@code oldPrefix} to the {@code newPrefix} across the WHOLE renamed subtree — the home root's
+     * {@code acl.json} AND every nested {@code sub/acl.json} — so the folder's own entry and any
+     * per-file / subfolder shares survive the one-time rename. Best-effort — a missing/malformed
+     * file is left untouched; {@code createUser} re-stamps the root folder entry regardless.
      */
     static void rekeyAclPaths(@NotNull File dir, @NotNull String oldPrefix, @NotNull String newPrefix) {
-        File aclFile = new File(dir, "acl.json");
+        rekeyAclPaths(dir, oldPrefix, newPrefix, 0);
+    }
+
+    private static void rekeyAclPaths(@Nullable File dir, String oldPrefix, String newPrefix, int depth) {
+        // Depth cap + symlink skip guard against a pathological (or malicious) home tree.
+        if (dir == null || depth > 64 || !dir.isDirectory()) {
+            return;
+        }
+        rekeyOneAclFile(new File(dir, "acl.json"), oldPrefix, newPrefix);
+        File[] children = dir.listFiles();
+        if (children == null) {
+            return;
+        }
+        for (File c : children) {
+            try {
+                if (c.isDirectory() && !java.nio.file.Files.isSymbolicLink(c.toPath())) {
+                    rekeyAclPaths(c, oldPrefix, newPrefix, depth + 1);
+                }
+            } catch (Exception ignored) {
+                // Skip an unreadable child; keep re-keying the rest.
+            }
+        }
+    }
+
+    /** Rewrite {@code oldPrefix}-rooted keys to {@code newPrefix} in a single {@code acl.json}. */
+    private static void rekeyOneAclFile(File aclFile, String oldPrefix, String newPrefix) {
         if (!aclFile.exists()) {
             return;
         }
@@ -523,7 +550,7 @@ class Acl2 {
                 mapper.writeValue(aclFile, rekeyed);
             }
         } catch (Exception ignored) {
-            // Best-effort: createUser re-stamps the folder's own entry regardless.
+            // Best-effort: createUser re-stamps the root folder entry regardless.
         }
     }
 
