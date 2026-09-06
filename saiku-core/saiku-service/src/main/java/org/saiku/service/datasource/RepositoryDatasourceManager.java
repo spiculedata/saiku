@@ -21,6 +21,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
@@ -348,7 +349,17 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
 
     /**
      * Reject any datasource name that could escape the datadir once concatenated into a file path
-     * (see {@link #DATASOURCE_NAME_PATTERN}). Fail-closed: null or non-matching names are rejected.
+     * (see {@link #DATASOURCE_NAME_PATTERN}), or that could silently fail to persist because the
+     * resulting filename is too long for the underlying filesystem. Fail-closed: null,
+     * non-matching, or over-length names are all rejected.
+     *
+     * <p>saiku#1906 SEC follow-up (data loss): {@link #DATASOURCE_NAME_PATTERN} caps at 128
+     * Unicode code points, but {@code saveDataSource} writes the name as UTF-8 bytes in a
+     * filename — 128 CJK/astral characters can already be 380+ UTF-8 bytes, past ext4's
+     * 255-byte {@code NAME_MAX} once the {@code -csv.json} suffix or a workspace prefix is
+     * added. {@code saveDataSource} swallows the resulting IOException, so without this check a
+     * REST caller would see 200 OK while the datasource silently vanishes on the next restart.
+     * 200 bytes leaves headroom for both.
      *
      * <p>saiku#1906 SEC follow-up (CWE-117): the rejection message deliberately does NOT echo the
      * raw name. This exception's message ends up in a REST 500 body and in {@code log.error} call
@@ -356,7 +367,9 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
      * attacker-supplied name containing a newline would otherwise be log-line injection.
      */
     private static void validateDatasourceName(String name) {
-        if (name == null || !DATASOURCE_NAME_PATTERN.matcher(name).matches()) {
+        if (name == null
+                || !DATASOURCE_NAME_PATTERN.matcher(name).matches()
+                || name.getBytes(StandardCharsets.UTF_8).length > 200) {
             throw new IllegalArgumentException("Illegal datasource name");
         }
     }
@@ -392,7 +405,7 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
                 datasourcesForCurrentWorkspace().put(datasource.getName(), datasource);
 
             } catch (IllegalArgumentException | RepositoryException e) {
-                log.error("Could not add data source" + datasource.getName(), e);
+                log.error("Could not add data source: {}", datasource.getName(), e);
             }
         }
         return dsources;

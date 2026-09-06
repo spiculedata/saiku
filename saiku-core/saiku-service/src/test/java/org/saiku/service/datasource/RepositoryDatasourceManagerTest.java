@@ -134,6 +134,38 @@ public class RepositoryDatasourceManagerTest {
         rdManager.addDatasource(ds);
     }
 
+    @Test(expected = IllegalArgumentException.class)
+    public void testAddDatasourceRejectsNameExceedingUtf8ByteCap() throws Exception {
+        // saiku#1906 SEC follow-up (data loss): DATASOURCE_NAME_PATTERN caps at 128 Unicode
+        // CODE POINTS, which a CJK/astral name can satisfy while still blowing past the
+        // 200-UTF-8-byte cap validateDatasourceName also enforces -- needed because ext4's
+        // NAME_MAX is 255 bytes, and saveDataSource swallows the resulting IOException
+        // instead of surfacing it, so an unvalidated over-long name would 200 OK on the REST
+        // call and then silently vanish on the next restart. This name is 70 Hiragana
+        // characters -- well under the 128-code-point limit -- but is 210 UTF-8 bytes (3
+        // bytes/char), over the 200-byte cap.
+        String longCjkName = "あ".repeat(70);
+
+        SaikuDatasource ds = new SaikuDatasource() {
+            @Override
+            public Type getType() {
+                return Type.OLAP;
+            }
+
+            @Override
+            public String getName() {
+                return longCjkName;
+            }
+
+            @Override
+            public Properties getProperties() {
+                return new Properties();
+            }
+        };
+
+        rdManager.addDatasource(ds);
+    }
+
     @Test
     public void testAddDatasourceAllowsInternalSpacesInName() throws Exception {
         // saiku#1906 SEC follow-up: the original version of this test only asserted "does

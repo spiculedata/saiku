@@ -1025,7 +1025,11 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
         } catch (RepositoryException | InvalidPathException e) {
             // Preserve historical signature (no checked exception) by throwing unchecked.
             // Path-traversal attempts are programmer / attacker errors, not flow control.
-            throw new SaikuServiceException("Path traversal attempt rejected: " + path, e);
+            // saiku#1906 SEC follow-up (CWE-117): don't echo the raw path into the message --
+            // Paths.get() accepts a newline character on Linux, so a crafted path would be
+            // log-line injection once this surfaces in a REST 500 body or a log.error call
+            // site. The raw value is still available in the cause, for debugging.
+            throw new SaikuServiceException("Path traversal attempt rejected", e);
         }
         resolved.mkdirs();
         return resolved;
@@ -1121,7 +1125,12 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
             // Path-traversal attempts are programmer / attacker errors, not flow control.
             // InvalidPathException (e.g. a NUL byte or a stray ':' on Windows) means
             // Paths.get() itself rejected the input — fail closed the same way.
-            throw new SaikuServiceException("Path traversal attempt rejected: " + filename, e);
+            // saiku#1906 SEC follow-up (CWE-117): don't echo the raw filename into the
+            // message -- Paths.get() accepts a newline character on Linux, so a crafted
+            // path would be log-line injection once this surfaces in a REST 500 body or a
+            // log.error call site. The raw value is still available in the cause, for
+            // debugging.
+            throw new SaikuServiceException("Path traversal attempt rejected", e);
         }
     }
 
