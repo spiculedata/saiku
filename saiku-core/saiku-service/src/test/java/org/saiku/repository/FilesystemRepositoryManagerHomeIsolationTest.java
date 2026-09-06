@@ -216,7 +216,57 @@ public class FilesystemRepositoryManagerHomeIsolationTest {
         assertEquals("the owner must read it too", "TEAMDATA", aliceView);
     }
 
+    /**
+     * saiku#1907 F6: a non-admin catalogue listing must return the owner's own items. The ACL
+     * check runs against the ABSOLUTE on-disk file now, so it no longer resolves against the JVM
+     * CWD and come back empty on a case-sensitive FS (Linux/CI). RED pre-fix (empty listing).
+     */
+    @Test
+    public void non_admin_listing_returns_owners_items() throws Exception {
+        manager.createUser("alice");
+        manager.saveFile("Q", "/homes/alice/report.saikudash", "alice", "nt:saikufiles", ROLES_USER);
+
+        List<IRepositoryObject> tree = manager.getAllFiles(Arrays.asList("saikudash"), "alice", ROLES_USER);
+        assertNotNull("listing must not be null", tree);
+        assertTrue(
+                "alice's own home file must appear in her listing",
+                flattenPaths(tree).stream().anyMatch(p -> p.contains("report.saikudash")));
+    }
+
+    /**
+     * saiku#1907 F7: the {@code /homes} guard is anchored to the real datadir container, so a
+     * folder literally named "homes" nested inside a user's home cannot impersonate it and grant
+     * access by folder name. RED pre-fix (bob reads a file under alice's nested homes/bob).
+     */
+    @Test
+    public void nested_homes_subfolder_cannot_be_abused_by_name() throws Exception {
+        manager.createUser("alice");
+        File nested = new File(datadir, "unknown/homes/alice/homes/bob");
+        assertTrue(nested.mkdirs());
+        Files.write(new File(nested, "loot.saikudash").toPath(), "LOOT".getBytes(StandardCharsets.UTF_8));
+
+        try {
+            String body = manager.getFile("/homes/alice/homes/bob/loot.saikudash", "bob", ROLES_USER);
+            fail("a nested 'homes' folder must not grant access by name; leaked: " + body);
+        } catch (RepositoryException | org.saiku.service.util.exception.SaikuServiceException denied) {
+            // expected — the guard is anchored to the real /homes container
+        }
+    }
+
     // ---- helpers ------------------------------------------------------
+
+    private static List<String> flattenPaths(List<IRepositoryObject> nodes) {
+        List<String> out = new java.util.ArrayList<>();
+        if (nodes != null) {
+            for (IRepositoryObject n : nodes) {
+                out.add(n.getName());
+                if (n instanceof RepositoryFolderObject) {
+                    out.addAll(flattenPaths(((RepositoryFolderObject) n).getRepoObjects()));
+                }
+            }
+        }
+        return out;
+    }
 
     private static FilesystemRepositoryManager newManager(String path) throws Exception {
         Constructor<FilesystemRepositoryManager> ctor = FilesystemRepositoryManager.class.getDeclaredConstructor(

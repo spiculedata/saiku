@@ -69,9 +69,24 @@ class Acl2 {
     @Nullable
     private final File node;
 
+    /**
+     * saiku#1907 F7: canonical path of the real {@code <datadir>/homes} container, when the
+     * caller wires it in. When set, {@link #isHomesDir(File)} anchors the home-isolation guard
+     * to THIS directory instead of matching any folder named {@code "homes"} — so a nested
+     * {@code /homes/alice/homes/} or a {@code /dashboards/homes/} cannot impersonate the
+     * container. Null leaves the name-based fallback (direct {@code Acl2} use / unit tests).
+     */
+    @Nullable
+    private String homesRoot;
+
     public Acl2(File n) {
         this.node = n;
         loadAclHome();
+    }
+
+    /** saiku#1907 F7: anchor the {@code /homes} guard to the real datadir container (see {@link #homesRoot}). */
+    public void setHomesRoot(@Nullable File homesRoot) {
+        this.homesRoot = homesRoot == null ? null : canonicalKey(homesRoot);
     }
 
     /**
@@ -470,13 +485,21 @@ class Acl2 {
     }
 
     /**
-     * Is {@code dir} the {@code /homes} container — the direct parent of every
-     * per-user home folder? Matched by the folder's own name so it holds
-     * regardless of the datadir/workspace prefix ({@code unknown/} vs a workspace)
-     * that varies across call contexts — the seam saiku#1907 closes.
+     * Is {@code dir} the {@code /homes} container — the direct parent of every per-user home
+     * folder? When a {@link #homesRoot} has been wired in (saiku#1907 F7), match ONLY that exact
+     * datadir container by canonical path, so a nested {@code /homes/alice/homes/} or a
+     * {@code /dashboards/homes/} cannot impersonate it and abuse the owner-by-name grant. When no
+     * root is wired (direct {@code Acl2} use / unit tests) fall back to matching the folder name,
+     * which still holds regardless of the datadir/workspace prefix ({@code unknown/} vs a workspace).
      */
-    private static boolean isHomesDir(@Nullable File dir) {
-        return dir != null && "homes".equals(dir.getName());
+    private boolean isHomesDir(@Nullable File dir) {
+        if (dir == null) {
+            return false;
+        }
+        if (homesRoot != null) {
+            return homesRoot.equals(canonicalKey(dir));
+        }
+        return "homes".equals(dir.getName());
     }
 
     /**

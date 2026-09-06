@@ -442,6 +442,7 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
             File node = getFolder(parent);
             Acl2 acl2 = new Acl2(node);
             acl2.setAdminRoles(userService.getAdminRoles());
+            acl2.setHomesRoot(homesRoot());
             if (!acl2.canWrite(node, user, roles)) {
                 throw new SaikuServiceException("You don't have permission to write to " + path);
             }
@@ -485,6 +486,7 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
             File aclNode = target.exists() ? target : parent;
             Acl2 acl2 = new Acl2(aclNode);
             acl2.setAdminRoles(userService.getAdminRoles());
+            acl2.setHomesRoot(homesRoot());
             if (!acl2.canWrite(aclNode, user, roles)) {
                 throw new SaikuServiceException("You don't have permission to write to " + path);
             }
@@ -548,6 +550,7 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
             Acl2 acl2 = new Acl2(resNode);
             if (userService != null) {
                 acl2.setAdminRoles(userService.getAdminRoles());
+                acl2.setHomesRoot(homesRoot());
             }
             AclType ancestorType = acl2.nearestAncestorAclType(resNode);
             boolean privateContext = (ancestorType == null || ancestorType == AclType.PRIVATE);
@@ -587,6 +590,7 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
         File node = getFolder(path);
         Acl2 acl2 = new Acl2(node);
         acl2.setAdminRoles(userService.getAdminRoles());
+        acl2.setHomesRoot(homesRoot());
         if (!acl2.canWrite(node, user, roles)) {
             throw new SaikuServiceException("You don't have permission to remove " + path);
         }
@@ -607,6 +611,7 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
         }
         Acl2 srcAcl = new Acl2(src);
         srcAcl.setAdminRoles(userService.getAdminRoles());
+        srcAcl.setHomesRoot(homesRoot());
         if (!srcAcl.canWrite(src, user, roles)) {
             throw new SaikuServiceException("You don't have permission to move " + source);
         }
@@ -621,6 +626,7 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
             // Writing the node into its new parent requires write on that parent.
             Acl2 destAcl = new Acl2(destParent);
             destAcl.setAdminRoles(userService.getAdminRoles());
+            destAcl.setHomesRoot(homesRoot());
             if (!destAcl.canWrite(destParent, user, roles)) {
                 throw new SaikuServiceException("You don't have permission to write to " + target);
             }
@@ -704,6 +710,7 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
         File node = getFolder(s);
         Acl2 acl2 = new Acl2(node);
         acl2.setAdminRoles(userService.getAdminRoles());
+        acl2.setHomesRoot(homesRoot());
         if (!acl2.canRead(node, username, roles)) {
             throw new RepositoryException();
         }
@@ -845,6 +852,7 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
         }
         Acl2 acl2 = new Acl2(node);
         acl2.setAdminRoles(userService.getAdminRoles());
+        acl2.setHomesRoot(homesRoot());
         AclEntry entry = node != null ? acl2.getEntry(node.getPath()) : null;
         if (entry == null) entry = new AclEntry();
         return entry;
@@ -859,6 +867,7 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
         }
         Acl2 acl2 = new Acl2(node);
         acl2.setAdminRoles(userService.getAdminRoles());
+        acl2.setHomesRoot(homesRoot());
 
         if (acl2.canGrant(node, username, roles)) {
             return getAclObj(object);
@@ -887,6 +896,7 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
 
         Acl2 acl2 = new Acl2(node);
         acl2.setAdminRoles(userService.getAdminRoles());
+        acl2.setHomesRoot(homesRoot());
 
         if (acl2.canGrant(node, username, roles)) {
             if (node != null) {
@@ -1075,6 +1085,7 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
 
         Acl2 acl = new Acl2(root);
         acl.setAdminRoles(userService.getAdminRoles());
+        acl.setHomesRoot(homesRoot());
 
         for (File file : objects) {
             try {
@@ -1090,8 +1101,14 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
 
                     relativePath = relativePath.replace("\\", "/");
 
-                    if (acl.canRead(relativePath, username, roles)) {
-                        List<AclMethod> acls = acl.getMethods(new File(relativePath), username, roles);
+                    // saiku#1907 F6: run the ACL check against the ABSOLUTE on-disk file, not the
+                    // datadir-relative string. new File(relativePath) resolves against the JVM CWD
+                    // (nothing there), so on a case-sensitive FS (Linux/CI) every acl.json read
+                    // missed and getMethods walked up to a null parent -> NONE, making non-admin
+                    // catalogue listings come back EMPTY (admins were masked by the role
+                    // short-circuit). The absolute file finds the real acl.json chain.
+                    if (acl.canRead(file, username, roles)) {
+                        List<AclMethod> acls = acl.getMethods(file, username, roles);
 
                         if (file.isFile()) {
                             if (!fileType.isEmpty()) {
@@ -1101,7 +1118,7 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
                                     }
 
                                     String extension = FilenameUtils.getExtension(file.getPath());
-                                    String owner = acl.getOwner(new File(relativePath));
+                                    String owner = acl.getOwner(file);
                                     long modified = file.lastModified();
                                     repoObjects.add(new RepositoryFileObject(
                                             filename,
@@ -1217,6 +1234,20 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
 
     private File getFolder(String path) throws RepositoryException {
         return this.getNode(path);
+    }
+
+    /**
+     * saiku#1907 F7: the real {@code <datadir>/homes} container for the current context, used to
+     * anchor {@link Acl2}'s home-isolation guard so it can't be impersonated by a nested or
+     * elsewhere-named {@code homes} folder. Best-effort — null on any resolution problem, which
+     * leaves {@link Acl2} on its name-based fallback.
+     */
+    private File homesRoot() {
+        try {
+            return getNode(sep + "homes");
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private File getNode(String path) {
