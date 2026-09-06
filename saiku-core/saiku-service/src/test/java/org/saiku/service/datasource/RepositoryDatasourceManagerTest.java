@@ -108,6 +108,67 @@ public class RepositoryDatasourceManagerTest {
         rdManager.addDatasource(ds);
     }
 
+    @Test(expected = IllegalArgumentException.class)
+    public void testAddDatasourceRejectsPathTraversalName() throws Exception {
+        // saiku#1906: a name carrying ../ segments must never reach the file-write branches
+        // (csv json / workspace mondrian catalog / .sds descriptor) that key off ds.getName().
+        // Validation fires immediately after `new DataSource(datasource)`, before any manager
+        // wiring is touched, so minimal properties/no wiring is fine here.
+        SaikuDatasource ds = new SaikuDatasource() {
+            @Override
+            public Type getType() {
+                return Type.OLAP;
+            }
+
+            @Override
+            public String getName() {
+                return "../../evil";
+            }
+
+            @Override
+            public Properties getProperties() {
+                return new Properties();
+            }
+        };
+
+        rdManager.addDatasource(ds);
+    }
+
+    @Test
+    public void testAddDatasourceAllowsInternalSpacesInName() {
+        // saiku#1906: the allowlist deliberately permits internal spaces (upgrade-safety —
+        // existing datasource names may already contain them). This manager is intentionally
+        // left unwired (no connection/repository manager), so addDatasource may still fail
+        // downstream for unrelated reasons (e.g. a null repository manager) — we only assert
+        // the name allowlist itself does not reject spaces.
+        SaikuDatasource ds = new SaikuDatasource() {
+            @Override
+            public Type getType() {
+                return Type.OLAP;
+            }
+
+            @Override
+            public String getName() {
+                return "My Sales DB";
+            }
+
+            @Override
+            public Properties getProperties() {
+                return new Properties();
+            }
+        };
+
+        try {
+            rdManager.addDatasource(ds);
+        } catch (IllegalArgumentException unexpected) {
+            fail("datasource name with internal spaces must not be rejected by the allowlist: "
+                    + unexpected.getMessage());
+        } catch (Exception otherFailure) {
+            // Acceptable: this manager has no connection/repository manager wired, so the
+            // write path may fail for reasons unrelated to name validation.
+        }
+    }
+
     @Test
     public void testDatasourceProcessorAdded() throws Exception {
         MockConnectionManager cManager = new MockConnectionManager();

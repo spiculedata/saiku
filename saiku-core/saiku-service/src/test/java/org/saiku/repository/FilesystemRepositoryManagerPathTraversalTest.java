@@ -147,6 +147,36 @@ public class FilesystemRepositoryManagerPathTraversalTest {
     }
 
     @Test
+    public void saveBinaryInternalFile_rejects_dotdot_traversal_write() throws Exception {
+        // Mirror of saveBinaryInternalFile_writes_inside_datadir_not_jvm_cwd above, but the
+        // repo-relative path climbs out of <datadir>/unknown/ via ../../ instead of staying
+        // inside it. createNode() must resolve strictly inside the datadir (the same guard
+        // getNode()/resolveWithinDatadir already apply on the read side) instead of naively
+        // concatenating the datadir with the caller-supplied path.
+        byte[] payload = "evil".getBytes(StandardCharsets.UTF_8);
+        String traversalPath = "../../outside/evil.sds";
+
+        try {
+            manager.saveBinaryInternalFile(
+                    new java.io.ByteArrayInputStream(payload), traversalPath, "application/octet-stream");
+        } catch (RuntimeException expected) {
+            // Acceptable: the createNode guard fails closed (throws SaikuServiceException, a
+            // RuntimeException) rather than silently writing outside the datadir.
+        }
+
+        // Whichever way the call above resolved, the escaped file must never land on disk.
+        // The traversal targets the same "outside" folder planted in setUp() for outsideSecret.
+        File escaped = new File(outsideSecret.getParentFile(), "evil.sds");
+        if (escaped.exists()) {
+            try {
+                Files.delete(escaped.toPath());
+            } catch (Exception ignored) {
+            }
+            fail("saveBinaryInternalFile must not write outside the repo root; found: " + escaped.getAbsolutePath());
+        }
+    }
+
+    @Test
     public void getInternalFile_absolute_path_outside_datadir_is_rejected() throws Exception {
         // An absolute path that doesn't start with the datadir must not be readable either.
         String absoluteOutside = outsideSecret.getAbsolutePath();

@@ -1078,18 +1078,30 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
         return resolved;
     }
 
+    /**
+     * Resolve {@code filename} strictly inside the datadir and return the (not-yet-created)
+     * {@link File} node, via the same {@link #resolveWithinDatadir(String)} guard the read paths
+     * ({@link #getNode(String)}) already use.
+     *
+     * <p>Historically this concatenated the datadir with the caller-supplied path with no bounds
+     * check at all — unlike the read side — so a {@code ../} sequence (including one arriving via
+     * an unsanitised datasource name written straight into {@code <datadir>/datasources/<name>.sds}
+     * or {@code <name>-csv.json}) escaped the repo root on every write funnelled through here:
+     * {@link #saveInternalFile}, {@link #saveBinaryInternalFile}, {@link #saveDataSource}, and the
+     * {@code saveFile} path (closes saiku#1906, CWE-22). Fails closed: a path that normalises
+     * outside the datadir throws unchecked, mirroring {@link #getNode(String)}.
+     */
     private File createNode(String filename) {
         filename = fixPath(filename);
-        File nodeFile = new File(filename);
-
-        if (nodeFile.isAbsolute() && filename.startsWith(this.getDatadir())) { // Check if it's a full path already
-            log.debug("Creating file:" + filename);
-        } else { // If not, prefix it with the datadir
-            log.debug("Creating file:" + this.getDatadir() + filename);
-            nodeFile = new File(this.getDatadir(), filename);
+        try {
+            File nodeFile = resolveWithinDatadir(filename).toFile();
+            log.debug("Creating file:" + nodeFile);
+            return nodeFile;
+        } catch (RepositoryException e) {
+            // Preserve historical signature (no checked exception) by throwing unchecked.
+            // Path-traversal attempts are programmer / attacker errors, not flow control.
+            throw new SaikuServiceException("Path traversal attempt rejected: " + filename, e);
         }
-
-        return nodeFile;
     }
 
     private HttpSession getSession() {

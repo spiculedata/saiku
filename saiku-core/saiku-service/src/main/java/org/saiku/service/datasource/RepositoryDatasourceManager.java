@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Pattern;
 import org.apache.commons.lang3.StringUtils;
 import org.saiku.database.dto.MondrianSchema;
 import org.saiku.datasources.connection.IConnectionManager;
@@ -69,6 +70,17 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
      * unscoped default.
      */
     private static final String DEFAULT_WORKSPACE = "unknown";
+
+    /**
+     * Allowlist for datasource names (saiku#1906, CWE-22): the connection name flows straight
+     * into filesystem paths — {@code <datadir>/datasources/<name>.sds} and, for CSV datasources,
+     * {@code <name>-csv.json} — with no sanitisation, so a name carrying {@code ../} segments (or
+     * a Windows drive letter / UNC / ADS colon) can escape the datadir entirely. Must start
+     * alphanumeric, then alphanumerics / space / dot / underscore / hyphen, max 128 chars.
+     * Deliberately ALLOWS internal spaces: existing datasource names may already contain them, so
+     * this is a path-safety filter, not a strict identifier rule.
+     */
+    private static final Pattern DATASOURCE_NAME_PATTERN = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9 ._-]{0,127}$");
 
     public IConnectionManager connectionManager;
     private ScopedRepo sessionRegistry;
@@ -213,6 +225,10 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
 
     public SaikuDatasource addDatasource(SaikuDatasource datasource) throws Exception {
         DataSource ds = new DataSource(datasource);
+        // saiku#1906: defence-in-depth behind FilesystemRepositoryManager's own path-traversal
+        // guard — reject the name here, at the one chokepoint every write below (csv json,
+        // workspace mondrian catalog path, and the final .sds descriptor) keys off.
+        validateDatasourceName(ds.getName());
 
         // saiku#1864: the load path decorates every name as `<workspace>_<storedName>`
         // (FilesystemRepositoryManager.getAllDataSources). Nothing undid that here, so a client
@@ -316,6 +332,16 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
         datasourcesForCurrentWorkspace().put(name, sds);
 
         return datasource;
+    }
+
+    /**
+     * Reject any datasource name that could escape the datadir once concatenated into a file path
+     * (see {@link #DATASOURCE_NAME_PATTERN}). Fail-closed: null or non-matching names are rejected.
+     */
+    private static void validateDatasourceName(String name) {
+        if (name == null || !DATASOURCE_NAME_PATTERN.matcher(name).matches()) {
+            throw new IllegalArgumentException("Illegal datasource name: " + name);
+        }
     }
 
     /**
