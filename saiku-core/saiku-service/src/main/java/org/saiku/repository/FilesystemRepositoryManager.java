@@ -40,6 +40,7 @@ import org.saiku.database.dto.MondrianSchema;
 import org.saiku.datasources.connection.RepositoryFile;
 import org.saiku.service.user.UserService;
 import org.saiku.service.util.exception.SaikuServiceException;
+import org.saiku.service.util.security.Usernames;
 import org.saiku.service.util.xml.SecureXml;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -211,13 +212,62 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
         // before it is ever used to build a path. Fail closed.
         validateUsernameSegment(u);
 
-        File node = this.createFolder(sep + "homes" + sep + u);
-
-        AclEntry e = new AclEntry(u, AclType.PRIVATE, null, null);
+        // saiku#1907 F4/F5: reuse an existing case-variant home instead of creating a
+        // divergent canonical duplicate, so a pre-existing mixed-case home (/homes/Admin)
+        // remains the user's single home once identity canonicalises to "admin", and its
+        // content stays reachable. F5 guard: if the case-variant home is owned by a
+        // DIFFERENT principal, fail closed rather than conflate two identities.
+        File homesDir = this.createFolder(sep + "homes");
+        File node = resolveHomeFolder(homesDir, u);
 
         Acl2 acl2 = new Acl2(node);
-        acl2.addEntry(node.getPath(), e);
-        acl2.serialize(node);
+        // Non-clobbering: only stamp the PRIVATE owner entry when the folder has none, so a
+        // reused home keeps its existing owner and a user-set SECURED share on the home root
+        // survives a re-login (createUser runs on every login via checkFolders).
+        if (acl2.getEntry(node.getPath()) == null) {
+            acl2.addEntry(node.getPath(), new AclEntry(u, AclType.PRIVATE, null, null));
+            acl2.serialize(node);
+        }
+    }
+
+    /**
+     * Resolve the home folder for {@code u}: the exact {@code /homes/<u>} when it exists,
+     * else a case-variant sibling ({@code /homes/Admin} for {@code admin}) reused in place
+     * (saiku#1907 F4), else a freshly created {@code /homes/<u>}. F5: a case-variant home
+     * owned by a different principal is refused fail-closed rather than conflated.
+     */
+    private File resolveHomeFolder(File homesDir, String u) {
+        File candidate = new File(homesDir, u);
+        if (!candidate.isDirectory()) {
+            candidate = findCaseVariantHome(homesDir, u);
+        }
+        if (candidate == null) {
+            return this.createFolder(sep + "homes" + sep + u); // fresh home
+        }
+        // An existing home (exact, a case-variant on a case-sensitive FS, or the same dir on a
+        // case-insensitive FS): F5 — it must not belong to a DIFFERENT principal. Fail closed.
+        Acl2 acl2 = new Acl2(candidate);
+        AclEntry owner = acl2.getEntry(candidate.getPath());
+        if (owner != null
+                && owner.getOwner() != null
+                && !owner.getOwner().trim().isEmpty()
+                && !Usernames.sameUser(owner.getOwner(), u)) {
+            throw new SaikuServiceException("Home folder conflict: an existing home is owned by a different principal");
+        }
+        return candidate;
+    }
+
+    /** The first {@code /homes} subfolder whose name is a case-variant of {@code u} (not exact), or null. */
+    private static File findCaseVariantHome(File homesDir, String u) {
+        File[] children = homesDir.listFiles();
+        if (children != null) {
+            for (File c : children) {
+                if (c.isDirectory() && !c.getName().equals(u) && Usernames.sameUser(c.getName(), u)) {
+                    return c;
+                }
+            }
+        }
+        return null;
     }
 
     /**

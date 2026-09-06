@@ -26,6 +26,7 @@ import java.util.TreeMap;
 import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.saiku.service.util.security.Usernames;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -488,7 +489,7 @@ class Acl2 {
      * case, an insensitive match never conflates two distinct users.
      */
     private static boolean sameUser(@Nullable String a, @Nullable String b) {
-        return a != null && b != null && a.equalsIgnoreCase(b);
+        return Usernames.sameUser(a, b);
     }
 
     /**
@@ -507,6 +508,6 @@ class Acl2 {
             return false;
         }
         String owner = folderName.startsWith("home:") ? folderName.substring("home:".length()) : folderName;
-        return owner.equalsIgnoreCase(username);
+        return Usernames.sameUser(owner, username);
     }
 }

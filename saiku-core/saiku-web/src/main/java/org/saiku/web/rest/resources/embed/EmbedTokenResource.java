@@ -21,6 +21,7 @@ import java.util.Map;
 import org.saiku.repository.AclEntry;
 import org.saiku.service.datasource.DatasourceService;
 import org.saiku.service.user.UserService;
+import org.saiku.service.util.security.Usernames;
 import org.saiku.web.embed.EmbedPublicGrant;
 import org.saiku.web.embed.EmbedPublicRegistry;
 import org.saiku.web.embed.EmbedToken;
@@ -243,7 +244,7 @@ public class EmbedTokenResource {
         }
         String username = currentUsername();
         List<String> roles = currentRoles();
-        boolean canManage = (username != null && username.equals(t.createdBy))
+        boolean canManage = Usernames.sameUser(username, t.createdBy)
                 || isAdmin(roles)
                 || hasGrant(t.resourcePath, username, roles);
         if (!canManage) {
@@ -368,9 +369,8 @@ public class EmbedTokenResource {
         }
         String username = currentUsername();
         List<String> roles = currentRoles();
-        boolean canManage = (username != null && username.equals(existing.grantedBy))
-                || isAdmin(roles)
-                || hasGrant(path, username, roles);
+        boolean canManage =
+                Usernames.sameUser(username, existing.grantedBy) || isAdmin(roles) || hasGrant(path, username, roles);
         if (!canManage) {
             return forbidden("You can't revoke this public grant");
         }

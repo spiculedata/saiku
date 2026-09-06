@@ -5,6 +5,7 @@
 package org.saiku.repository;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -121,6 +122,52 @@ public class FilesystemRepositoryManagerCaseOwnerTest {
             fail("a genuinely different user must still be denied; leaked: " + leaked);
         } catch (RepositoryException | org.saiku.service.util.exception.SaikuServiceException denied) {
             // expected
+        }
+    }
+
+    /**
+     * saiku#1907 F4: createUser must REUSE an existing case-variant home rather than create a
+     * divergent canonical duplicate, so a pre-existing /homes/Admin stays the single home for
+     * identity "admin" and its content stays reachable.
+     */
+    @Test
+    public void createUser_reuses_existing_case_variant_home() throws Exception {
+        // Two case-variant home dirs can only coexist on a case-sensitive filesystem; on
+        // Windows /homes/admin and /homes/Admin are the same directory (reuse is automatic).
+        org.junit.Assume.assumeFalse(
+                "requires a case-sensitive filesystem",
+                System.getProperty("os.name", "")
+                        .toLowerCase(java.util.Locale.ROOT)
+                        .contains("win"));
+        File adminHome = new File(datadir, "unknown/homes/Admin");
+        assertTrue(adminHome.mkdirs());
+        writeFolderAclJson(adminHome, "PRIVATE", "Admin");
+
+        manager.createUser("admin");
+
+        assertTrue("the existing case-variant home must be reused", adminHome.isDirectory());
+        assertFalse(
+                "a divergent canonical duplicate must NOT be created",
+                new File(datadir, "unknown/homes/admin").exists());
+    }
+
+    /**
+     * saiku#1907 F5: if a case-variant home is owned by a DIFFERENT principal, createUser must
+     * fail closed rather than conflate the two identities. (Unreachable on the shipped
+     * case-insensitive store; defends a mis-configured case-sensitive external store.)
+     */
+    @Test
+    public void createUser_fails_closed_on_case_variant_home_of_different_principal() throws Exception {
+        File adminHome = new File(datadir, "unknown/homes/Admin");
+        assertTrue(adminHome.mkdirs());
+        // Folder name is a case-variant of "admin" but it is owned by a different principal.
+        writeFolderAclJson(adminHome, "PRIVATE", "mallory");
+
+        try {
+            manager.createUser("admin");
+            fail("createUser must fail closed when a case-variant home is owned by a different principal");
+        } catch (RuntimeException expected) {
+            // fail-closed (SaikuServiceException)
         }
     }
 

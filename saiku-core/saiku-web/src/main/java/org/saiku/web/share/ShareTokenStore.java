@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
+import org.saiku.service.util.security.Usernames;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -115,7 +116,7 @@ public class ShareTokenStore {
         List<ShareToken> all = listAll();
         List<ShareToken> out = new ArrayList<>();
         for (ShareToken t : all) {
-            if (owner != null && owner.equals(t.createdBy)) {
+            if (Usernames.sameUser(owner, t.createdBy)) {
                 out.add(t);
             }
         }

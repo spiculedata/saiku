@@ -16,6 +16,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import org.saiku.service.util.security.Usernames;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -156,7 +157,7 @@ public class EmbedPublicRegistry {
     public List<EmbedPublicGrant> listByOwner(String owner) {
         List<EmbedPublicGrant> out = new ArrayList<>();
         for (EmbedPublicGrant g : grants.values()) {
-            if (owner != null && owner.equals(g.grantedBy)) {
+            if (Usernames.sameUser(owner, g.grantedBy)) {
                 out.add(g);
             }
         }
