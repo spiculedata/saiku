@@ -135,11 +135,20 @@ public class SessionService implements ISessionService {
                 log.debug("Creating Session for Anonymous User");
             }
 
-            if (StringUtils.isNotBlank(username)) {
-                session.put("username", username);
-            } else {
-                session.put("username", authUser);
+            // saiku#1907 (CWE-178): canonicalise identity to the authenticated
+            // principal, lower-cased, so a case-variant login ("Admin" vs "admin")
+            // — the same account under the store's case-insensitive match — resolves
+            // to ONE ACL principal and ONE /homes/<user> path. Previously the RAW
+            // submitted `username` was stored, so "Admin" got a distinct ACL
+            // principal and home from "admin", desynchronising ownership from the
+            // account. The principal (from the account store) is authoritative;
+            // anonymous keeps its exact well-known name (no home / ownership
+            // semantics attach to it).
+            String canonicalUser = StringUtils.isNotBlank(authUser) ? authUser : username;
+            if (canonicalUser != null && !isAnonymous) {
+                canonicalUser = canonicalUser.toLowerCase(java.util.Locale.ROOT);
             }
+            session.put("username", canonicalUser);
             if (StringUtils.isNotBlank(password)) {
                 session.put("password", password);
             }

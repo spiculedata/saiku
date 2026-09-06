@@ -338,7 +338,8 @@ class Acl2 {
             if (entry != null) {
                 switch (entry.getType()) {
                     case PRIVATE:
-                        if (!entry.getOwner().equals(username)) {
+                        // saiku#1907 (CWE-178): case-insensitive owner match — see sameUser().
+                        if (!sameUser(entry.getOwner(), username)) {
                             method = AclMethod.NONE;
                         } else {
                             method = AclMethod.GRANT;
@@ -347,8 +348,7 @@ class Acl2 {
                     case SECURED:
                         List<AclMethod> allMethods = new ArrayList<>();
 
-                        if (StringUtils.isNotBlank(entry.getOwner())
-                                && entry.getOwner().equals(username)) {
+                        if (StringUtils.isNotBlank(entry.getOwner()) && sameUser(entry.getOwner(), username)) {
                             allMethods.add(AclMethod.GRANT);
                         }
 
@@ -426,6 +426,19 @@ class Acl2 {
      */
     private static boolean isHomesDir(@Nullable File dir) {
         return dir != null && "homes".equals(dir.getName());
+    }
+
+    /**
+     * Case-insensitive principal/owner comparison (saiku#1907, CWE-178). The
+     * account store matches usernames case-insensitively, so the same account can
+     * present as {@code admin} or {@code Admin}; a case-sensitive {@code equals}
+     * desynchronised ACL ownership from the account, which could both lock the
+     * owner out of their own resources and — with a mixed-case home — leak across
+     * identities. Because the store cannot hold two accounts differing only in
+     * case, an insensitive match never conflates two distinct users.
+     */
+    private static boolean sameUser(@Nullable String a, @Nullable String b) {
+        return a != null && b != null && a.equalsIgnoreCase(b);
     }
 
     /**
