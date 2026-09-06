@@ -30,6 +30,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
@@ -328,9 +329,11 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
             // Create new folder. saiku#895 fix: the canWrite check below was
             // previously INVERTED (`if (canWrite) throw`), denying writes to
             // any user who actually had permission and permitting everyone
-            // else. Branch is dead code today (no REST caller reaches it
-            // with file == null), but left in place so a future folder-
-            // create caller doesn't trip the latent footgun.
+            // else. saiku#1906 SEC review corrected the record here: this branch
+            // is NOT dead code (an earlier comment claimed no caller reaches it
+            // with file == null) — it's reachable with a caller-controlled `path`,
+            // and the createFolder() call below now guards against a `../`
+            // segment in `path` escaping the datadir.
             String parent;
             if (path.contains(sep)) {
                 parent = path.substring(0, path.lastIndexOf(sep));
@@ -1004,10 +1007,26 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
      * disk. The new return value is the actual data-dir-relative File so
      * ACLs land where the caller expects (closes the latent bug behind
      * saiku#948).
+     *
+     * <p>saiku#1906 SEC follow-up: this used to build the target via raw string
+     * concatenation ({@code fixPath(getDatadir() + path)}) with no bounds check, so a
+     * {@code ../} segment in {@code path} escaped the datadir. That's reachable with
+     * caller-controlled input via {@link #createUser(String)} (every login / admin
+     * add-user path is {@code "/homes/" + username}) and the {@code saveFile} /
+     * {@code saveInternalFile} null-content branches. Now resolves through the same
+     * {@link #resolveWithinDatadir(String)} guard {@link #createNode(String)} uses,
+     * fail-closed.
      */
     private File createFolder(String path) {
-        String appended = fixPath(getDatadir() + path);
-        File resolved = new File(appended);
+        path = fixPath(path);
+        File resolved;
+        try {
+            resolved = resolveWithinDatadir(path).toFile();
+        } catch (RepositoryException | InvalidPathException e) {
+            // Preserve historical signature (no checked exception) by throwing unchecked.
+            // Path-traversal attempts are programmer / attacker errors, not flow control.
+            throw new SaikuServiceException("Path traversal attempt rejected: " + path, e);
+        }
         resolved.mkdirs();
         return resolved;
     }
@@ -1097,9 +1116,11 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
             File nodeFile = resolveWithinDatadir(filename).toFile();
             log.debug("Creating file:" + nodeFile);
             return nodeFile;
-        } catch (RepositoryException e) {
+        } catch (RepositoryException | InvalidPathException e) {
             // Preserve historical signature (no checked exception) by throwing unchecked.
             // Path-traversal attempts are programmer / attacker errors, not flow control.
+            // InvalidPathException (e.g. a NUL byte or a stray ':' on Windows) means
+            // Paths.get() itself rejected the input — fail closed the same way.
             throw new SaikuServiceException("Path traversal attempt rejected: " + filename, e);
         }
     }
