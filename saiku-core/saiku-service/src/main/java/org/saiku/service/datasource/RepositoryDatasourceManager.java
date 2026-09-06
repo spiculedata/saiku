@@ -21,8 +21,10 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Pattern;
 import org.apache.commons.lang3.StringUtils;
 import org.saiku.database.dto.MondrianSchema;
 import org.saiku.datasources.connection.IConnectionManager;
@@ -69,6 +71,29 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
      * unscoped default.
      */
     private static final String DEFAULT_WORKSPACE = "unknown";
+
+    /**
+     * Allowlist for datasource names (saiku#1906, CWE-22): the connection name flows straight
+     * into filesystem paths — {@code <datadir>/datasources/<name>.sds} and, for CSV datasources,
+     * {@code <name>-csv.json} — with no sanitisation, so a name carrying {@code ../} segments (or
+     * a Windows drive letter / UNC / ADS colon) can escape the datadir entirely. Must start with
+     * a Unicode letter or digit, then Unicode letters/digits plus space / dot / underscore /
+     * parens / hyphen, max 128 chars.
+     *
+     * <p>saiku#1906 SEC follow-up: the original ASCII-only {@code [A-Za-z0-9 ._-]} rejected real,
+     * already-stored datasource names on re-save (admin update, cube-designer save-and-attach) —
+     * accented/international names and parenthesised names especially. Widened to Unicode letters
+     * and digits ({@code \p{L}}/{@code \p{N}}, which are Unicode-aware by definition — no
+     * {@code UNICODE_CHARACTER_CLASS} flag needed) plus parens. Still an allowlist: every
+     * path/URL/JSON metacharacter ({@code / \ : * ? " < > |}), control chars, {@code '}, and
+     * {@code & # , @ ; =} stay excluded — the name also flows into a
+     * {@code mondrian://…/<name>.xml} URL and a quoted CSV JSON, so punctuation stays
+     * conservative; this only widens enough to stop breaking real names. Deliberately ALLOWS
+     * internal spaces: existing datasource names may already contain them, so this is a
+     * path-safety filter, not a strict identifier rule.
+     */
+    private static final Pattern DATASOURCE_NAME_PATTERN =
+            Pattern.compile("^[\\p{L}\\p{N}][\\p{L}\\p{N} ._()-]{0,127}$");
 
     public IConnectionManager connectionManager;
     private ScopedRepo sessionRegistry;
@@ -213,6 +238,10 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
 
     public SaikuDatasource addDatasource(SaikuDatasource datasource) throws Exception {
         DataSource ds = new DataSource(datasource);
+        // saiku#1906: defence-in-depth behind FilesystemRepositoryManager's own path-traversal
+        // guard — reject the name here, at the one chokepoint every write below (csv json,
+        // workspace mondrian catalog path, and the final .sds descriptor) keys off.
+        validateDatasourceName(ds.getName());
 
         // saiku#1864: the load path decorates every name as `<workspace>_<storedName>`
         // (FilesystemRepositoryManager.getAllDataSources). Nothing undid that here, so a client
@@ -319,6 +348,33 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
     }
 
     /**
+     * Reject any datasource name that could escape the datadir once concatenated into a file path
+     * (see {@link #DATASOURCE_NAME_PATTERN}), or that could silently fail to persist because the
+     * resulting filename is too long for the underlying filesystem. Fail-closed: null,
+     * non-matching, or over-length names are all rejected.
+     *
+     * <p>saiku#1906 SEC follow-up (data loss): {@link #DATASOURCE_NAME_PATTERN} caps at 128
+     * Unicode code points, but {@code saveDataSource} writes the name as UTF-8 bytes in a
+     * filename — 128 CJK/astral characters can already be 380+ UTF-8 bytes, past ext4's
+     * 255-byte {@code NAME_MAX} once the {@code -csv.json} suffix or a workspace prefix is
+     * added. {@code saveDataSource} swallows the resulting IOException, so without this check a
+     * REST caller would see 200 OK while the datasource silently vanishes on the next restart.
+     * 200 bytes leaves headroom for both.
+     *
+     * <p>saiku#1906 SEC follow-up (CWE-117): the rejection message deliberately does NOT echo the
+     * raw name. This exception's message ends up in a REST 500 body and in {@code log.error} call
+     * sites downstream, and the whole point of this check is that the name isn't trusted yet — an
+     * attacker-supplied name containing a newline would otherwise be log-line injection.
+     */
+    private static void validateDatasourceName(String name) {
+        if (name == null
+                || !DATASOURCE_NAME_PATTERN.matcher(name).matches()
+                || name.getBytes(StandardCharsets.UTF_8).length > 200) {
+            throw new IllegalArgumentException("Illegal datasource name");
+        }
+    }
+
+    /**
      * The name a stored datasource is surfaced under, i.e. what {@code getAllDataSources} will call
      * it after the next load. Keep this the inverse of {@link DatasourceNameDecoration#undecorate}.
      */
@@ -339,11 +395,17 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
             DataSource ds = new DataSource(datasource);
 
             try {
+                // saiku#1906: same allowlist chokepoint as addDatasource() — this bulk path
+                // built the .sds file path off the name with no validation at all. The
+                // FilesystemRepositoryManager-side createNode() backstop only protects the
+                // filesystem impl; a non-filesystem IRepositoryManager (e.g. Saiku Cloud's
+                // Postgres-backed store) wouldn't get it, so validate here too.
+                validateDatasourceName(ds.getName());
                 irm.saveDataSource(ds, separator + "datasources" + separator + ds.getName() + ".sds", "fixme");
                 datasourcesForCurrentWorkspace().put(datasource.getName(), datasource);
 
-            } catch (RepositoryException e) {
-                log.error("Could not add data source" + datasource.getName(), e);
+            } catch (IllegalArgumentException | RepositoryException e) {
+                log.error("Could not add data source: {}", datasource.getName(), e);
             }
         }
         return dsources;

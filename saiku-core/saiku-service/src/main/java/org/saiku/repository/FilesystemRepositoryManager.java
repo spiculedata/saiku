@@ -30,6 +30,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
@@ -328,9 +329,11 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
             // Create new folder. saiku#895 fix: the canWrite check below was
             // previously INVERTED (`if (canWrite) throw`), denying writes to
             // any user who actually had permission and permitting everyone
-            // else. Branch is dead code today (no REST caller reaches it
-            // with file == null), but left in place so a future folder-
-            // create caller doesn't trip the latent footgun.
+            // else. saiku#1906 SEC review corrected the record here: this branch
+            // is NOT dead code (an earlier comment claimed no caller reaches it
+            // with file == null) — it's reachable with a caller-controlled `path`,
+            // and the createFolder() call below now guards against a `../`
+            // segment in `path` escaping the datadir.
             String parent;
             if (path.contains(sep)) {
                 parent = path.substring(0, path.lastIndexOf(sep));
@@ -1004,10 +1007,30 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
      * disk. The new return value is the actual data-dir-relative File so
      * ACLs land where the caller expects (closes the latent bug behind
      * saiku#948).
+     *
+     * <p>saiku#1906 SEC follow-up: this used to build the target via raw string
+     * concatenation ({@code fixPath(getDatadir() + path)}) with no bounds check, so a
+     * {@code ../} segment in {@code path} escaped the datadir. That's reachable with
+     * caller-controlled input via {@link #createUser(String)} (every login / admin
+     * add-user path is {@code "/homes/" + username}) and the {@code saveFile} /
+     * {@code saveInternalFile} null-content branches. Now resolves through the same
+     * {@link #resolveWithinDatadir(String)} guard {@link #createNode(String)} uses,
+     * fail-closed.
      */
     private File createFolder(String path) {
-        String appended = fixPath(getDatadir() + path);
-        File resolved = new File(appended);
+        path = fixPath(path);
+        File resolved;
+        try {
+            resolved = resolveWithinDatadir(path).toFile();
+        } catch (RepositoryException | InvalidPathException e) {
+            // Preserve historical signature (no checked exception) by throwing unchecked.
+            // Path-traversal attempts are programmer / attacker errors, not flow control.
+            // saiku#1906 SEC follow-up (CWE-117): don't echo the raw path into the message --
+            // Paths.get() accepts a newline character on Linux, so a crafted path would be
+            // log-line injection once this surfaces in a REST 500 body or a log.error call
+            // site. The raw value is still available in the cause, for debugging.
+            throw new SaikuServiceException("Path traversal attempt rejected", e);
+        }
         resolved.mkdirs();
         return resolved;
     }
@@ -1078,18 +1101,37 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
         return resolved;
     }
 
+    /**
+     * Resolve {@code filename} strictly inside the datadir and return the (not-yet-created)
+     * {@link File} node, via the same {@link #resolveWithinDatadir(String)} guard the read paths
+     * ({@link #getNode(String)}) already use.
+     *
+     * <p>Historically this concatenated the datadir with the caller-supplied path with no bounds
+     * check at all — unlike the read side — so a {@code ../} sequence (including one arriving via
+     * an unsanitised datasource name written straight into {@code <datadir>/datasources/<name>.sds}
+     * or {@code <name>-csv.json}) escaped the repo root on every write funnelled through here:
+     * {@link #saveInternalFile}, {@link #saveBinaryInternalFile}, {@link #saveDataSource}, and the
+     * {@code saveFile} path (closes saiku#1906, CWE-22). Fails closed: a path that normalises
+     * outside the datadir throws unchecked, mirroring {@link #getNode(String)}.
+     */
     private File createNode(String filename) {
         filename = fixPath(filename);
-        File nodeFile = new File(filename);
-
-        if (nodeFile.isAbsolute() && filename.startsWith(this.getDatadir())) { // Check if it's a full path already
-            log.debug("Creating file:" + filename);
-        } else { // If not, prefix it with the datadir
-            log.debug("Creating file:" + this.getDatadir() + filename);
-            nodeFile = new File(this.getDatadir(), filename);
+        try {
+            File nodeFile = resolveWithinDatadir(filename).toFile();
+            log.debug("Creating file:" + nodeFile);
+            return nodeFile;
+        } catch (RepositoryException | InvalidPathException e) {
+            // Preserve historical signature (no checked exception) by throwing unchecked.
+            // Path-traversal attempts are programmer / attacker errors, not flow control.
+            // InvalidPathException (e.g. a NUL byte or a stray ':' on Windows) means
+            // Paths.get() itself rejected the input — fail closed the same way.
+            // saiku#1906 SEC follow-up (CWE-117): don't echo the raw filename into the
+            // message -- Paths.get() accepts a newline character on Linux, so a crafted
+            // path would be log-line injection once this surfaces in a REST 500 body or a
+            // log.error call site. The raw value is still available in the cause, for
+            // debugging.
+            throw new SaikuServiceException("Path traversal attempt rejected", e);
         }
-
-        return nodeFile;
     }
 
     private HttpSession getSession() {
