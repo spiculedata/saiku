@@ -14,6 +14,7 @@ import java.util.Properties;
 import org.saiku.datasources.connection.ISaikuConnection;
 import org.saiku.datasources.datasource.SaikuDatasource;
 import org.saiku.service.datasource.DatasourceService;
+import org.saiku.service.datasource.JdbcUrlPolicy;
 import org.saiku.service.schema.generate.session.SchemaGenOrchestrator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -81,6 +82,14 @@ public class DatasourceJdbcConnectionProvider implements SchemaGenOrchestrator.C
             throw new SQLException("Saiku datasource '" + dataSourceId + "' location is not a JDBC URL: " + location);
         }
 
+        // saiku#1902: same policy as the SaikuOlapConnection chokepoint. Reject a forbidden URL
+        // before any driver class is touched; surface it as the SQLException this contract speaks.
+        try {
+            JdbcUrlPolicy.validate(jdbcUrl);
+        } catch (IllegalArgumentException policy) {
+            throw new SQLException(policy.getMessage(), policy);
+        }
+
         if (driver != null && !driver.isEmpty()) {
             // JdbcDrivers can be a comma-separated list — try each until one loads.
             for (String candidate : driver.split(",")) {
@@ -89,9 +98,12 @@ public class DatasourceJdbcConnectionProvider implements SchemaGenOrchestrator.C
                     continue;
                 }
                 try {
-                    Class.forName(c);
+                    // Type-checked before initialisation (no static-init gadget via JdbcDrivers=).
+                    JdbcUrlPolicy.loadDriverClass(c);
                 } catch (ClassNotFoundException ex) {
                     LOG.debug("JDBC driver '{}' not found on classpath for '{}': {}", c, dataSourceId, ex.getMessage());
+                } catch (IllegalArgumentException notADriver) {
+                    throw new SQLException(notADriver.getMessage(), notADriver);
                 }
             }
         }
@@ -106,7 +118,7 @@ public class DatasourceJdbcConnectionProvider implements SchemaGenOrchestrator.C
         if (password != null) {
             jdbcProps.setProperty("password", password);
         }
-        return DriverManager.getConnection(jdbcUrl, jdbcProps);
+        return JdbcUrlPolicy.openConnection(jdbcUrl, jdbcProps);
     }
 
     /**

@@ -411,11 +411,14 @@ public class CubeDesignerResource {
         if (password != null && !password.isEmpty()) {
             url += "JdbcPassword=" + password + ";";
         }
+        // saiku#1902: same policy as the SaikuOlapConnection chokepoint — validate the FINAL url
+        // (credentials appended) and only initialise a real java.sql.Driver class.
+        org.saiku.service.datasource.JdbcUrlPolicy.validate(url);
         if (driver != null && !driver.isEmpty()) {
-            Class.forName(driver);
+            org.saiku.service.datasource.JdbcUrlPolicy.loadDriverClass(driver);
         }
 
-        try (java.sql.Connection raw = java.sql.DriverManager.getConnection(url, user, password)) {
+        try (java.sql.Connection raw = org.saiku.service.datasource.JdbcUrlPolicy.openConnection(url, user, password)) {
             org.olap4j.OlapConnection olap = raw.unwrap(org.olap4j.OlapConnection.class);
             try (org.olap4j.OlapStatement st = olap.createStatement()) {
                 st.setQueryTimeout(PREVIEW_TIMEOUT_SECONDS);

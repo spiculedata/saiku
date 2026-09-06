@@ -5,7 +5,6 @@
 package org.saiku.service.ossie;
 
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.ArrayList;
@@ -14,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import org.saiku.datasources.connection.ISaikuConnection;
+import org.saiku.service.datasource.JdbcUrlPolicy;
 import org.saiku.service.olap.OlapDiscoverService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -128,7 +128,7 @@ public class OssieGraphService {
         boolean hasCycle = false;
         long start = System.currentTimeMillis();
 
-        try (Connection c = DriverManager.getConnection(url, user == null ? "" : user, pass == null ? "" : pass)) {
+        try (Connection c = JdbcUrlPolicy.openConnection(url, user == null ? "" : user, pass == null ? "" : pass)) {
             try (PreparedStatement ps = c.prepareStatement(walkSql)) {
                 ps.setString(1, rootId);
                 ps.setInt(2, d);
@@ -184,7 +184,7 @@ public class OssieGraphService {
         ISaikuConnection saikuConn = olapDiscoverService.getConnectionManager().getConnection(connectionName);
         if (saikuConn == null) throw new IllegalStateException("No live connection for '" + connectionName + "'");
         Properties p = saikuConn.getProperties();
-        try (Connection c = DriverManager.getConnection(
+        try (Connection c = JdbcUrlPolicy.openConnection(
                 p.getProperty(ISaikuConnection.URL_KEY),
                 orEmpty(p.getProperty(ISaikuConnection.USERNAME_KEY)),
                 orEmpty(p.getProperty(ISaikuConnection.PASSWORD_KEY)))) {
@@ -260,7 +260,7 @@ public class OssieGraphService {
         if (saikuConn == null) throw new IllegalStateException("No live connection for '" + connectionName + "'");
         Properties p = saikuConn.getProperties();
         Map<String, Object> out = new LinkedHashMap<>();
-        try (Connection c = DriverManager.getConnection(
+        try (Connection c = JdbcUrlPolicy.openConnection(
                         p.getProperty(ISaikuConnection.URL_KEY),
                         orEmpty(p.getProperty(ISaikuConnection.USERNAME_KEY)),
                         orEmpty(p.getProperty(ISaikuConnection.PASSWORD_KEY)));
@@ -330,7 +330,7 @@ public class OssieGraphService {
         if (saikuConn == null) throw new IllegalStateException("No live connection for '" + connectionName + "'");
         Properties p = saikuConn.getProperties();
         long start = System.currentTimeMillis();
-        try (Connection c = DriverManager.getConnection(
+        try (Connection c = JdbcUrlPolicy.openConnection(
                 p.getProperty(ISaikuConnection.URL_KEY),
                 orEmpty(p.getProperty(ISaikuConnection.USERNAME_KEY)),
                 orEmpty(p.getProperty(ISaikuConnection.PASSWORD_KEY)))) {

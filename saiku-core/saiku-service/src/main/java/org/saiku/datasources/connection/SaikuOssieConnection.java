@@ -14,6 +14,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.util.Objects;
 import java.util.Properties;
+import org.saiku.service.datasource.JdbcUrlPolicy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -118,6 +119,11 @@ public class SaikuOssieConnection implements ISaikuConnection {
         // ServiceLoader auto-registration doesn't reliably scan — so the DBCP2 pool inside
         // OssieSchemaFactory can otherwise fail with "Cannot create JDBC driver of class ''".
         // An explicit `driver` property wins; otherwise infer the well-known jdbc:quack driver.
+        // saiku#1902: the warehouse URL is the descriptor-controlled input here. It is validated
+        // BEFORE the driver class is touched and before it is baked into the Calcite model, so an
+        // Ossie datasource is held to the same policy as an OLAP one.
+        JdbcUrlPolicy.validate(warehouseUrl);
+
         String warehouseDriver = props.getProperty(DRIVER_KEY);
         if ((warehouseDriver == null || warehouseDriver.isBlank())
                 && warehouseUrl != null
@@ -126,7 +132,9 @@ public class SaikuOssieConnection implements ISaikuConnection {
         }
         if (warehouseDriver != null && !warehouseDriver.isBlank()) {
             try {
-                Class.forName(warehouseDriver);
+                // Type-checked before initialisation: a descriptor can't name an arbitrary class
+                // just to run its static initialiser.
+                JdbcUrlPolicy.loadDriverClass(warehouseDriver);
             } catch (ClassNotFoundException e) {
                 log.warn("Warehouse JDBC driver '{}' not found on the classpath", warehouseDriver);
             }
@@ -134,7 +142,10 @@ public class SaikuOssieConnection implements ISaikuConnection {
 
         String calciteUrl = buildCalciteConnectString(Path.of(ossieYaml), modelName, warehouseUrl, user, password);
         // The Calcite driver reads the model + operand from the URL — no user/pass params
-        // needed here since we baked the warehouse creds into the operand.
+        // needed here since we baked the warehouse creds into the operand. This URL is assembled
+        // by Saiku around a temp model file it just wrote (jdbc:calcite: is deliberately NOT a
+        // user-facing scheme in JdbcUrlPolicy); the only descriptor-controlled part — the
+        // warehouse URL — was validated above and is JSON-escaped into the operand.
         this.calciteConnection = DriverManager.getConnection(calciteUrl);
         this.initialized = true;
         log.info("Ossie connection '{}' opened against Ossie YAML {}", name, ossieYaml);
@@ -198,25 +209,34 @@ public class SaikuOssieConnection implements ISaikuConnection {
             String warehouseUser,
             String warehousePassword) {
         StringBuilder operand = new StringBuilder();
+        // saiku#1902: every descriptor-controlled value is JSON-escaped. Unescaped, a '"' in the
+        // warehouse URL / user / password / schema could close the operand and append a second
+        // Calcite schema (e.g. a "jdbc" type with an arbitrary jdbcUrl) to the model document.
         operand.append("\"ossieYaml\": \"")
-                .append(Objects.requireNonNull(ossieYaml, "ossieYaml")
-                        .toString()
-                        .replace("\\", "\\\\"))
+                .append(jsonEscape(
+                        Objects.requireNonNull(ossieYaml, "ossieYaml").toString()))
                 .append("\"");
         if (warehouseJdbcUrl != null && !warehouseJdbcUrl.isBlank()) {
-            operand.append(",\"jdbcUrl\": \"").append(warehouseJdbcUrl).append("\"");
+            operand.append(",\"jdbcUrl\": \"")
+                    .append(jsonEscape(warehouseJdbcUrl))
+                    .append("\"");
         }
         if (warehouseUser != null) {
-            operand.append(",\"jdbcUser\": \"").append(warehouseUser).append("\"");
+            operand.append(",\"jdbcUser\": \"")
+                    .append(jsonEscape(warehouseUser))
+                    .append("\"");
         }
         if (warehousePassword != null) {
-            operand.append(",\"jdbcPassword\": \"").append(warehousePassword).append("\"");
+            operand.append(",\"jdbcPassword\": \"")
+                    .append(jsonEscape(warehousePassword))
+                    .append("\"");
         }
+        String schema = jsonEscape(schemaName);
         String modelJson = "{\n"
                 + "  \"version\": \"1.0\",\n"
-                + "  \"defaultSchema\": \"" + schemaName + "\",\n"
+                + "  \"defaultSchema\": \"" + schema + "\",\n"
                 + "  \"schemas\": [{\n"
-                + "    \"name\": \"" + schemaName + "\",\n"
+                + "    \"name\": \"" + schema + "\",\n"
                 + "    \"type\": \"custom\",\n"
                 + "    \"factory\": \"bi.saiku.ossie.sql.internal.OssieSchemaFactory\",\n"
                 + "    \"operand\": {" + operand + "}\n"
@@ -230,5 +250,31 @@ public class SaikuOssieConnection implements ISaikuConnection {
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to stage Calcite model.json", e);
         }
+    }
+
+    /** Minimal JSON string escaping for the hand-built model document. */
+    static String jsonEscape(String s) {
+        if (s == null) {
+            return "";
+        }
+        StringBuilder out = new StringBuilder(s.length() + 8);
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '"' -> out.append("\\\"");
+                case '\\' -> out.append("\\\\");
+                case '\n' -> out.append("\\n");
+                case '\r' -> out.append("\\r");
+                case '\t' -> out.append("\\t");
+                default -> {
+                    if (c < 0x20) {
+                        out.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        out.append(c);
+                    }
+                }
+            }
+        }
+        return out.toString();
     }
 }

@@ -9,7 +9,6 @@ import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.util.Locale;
 import java.util.Properties;
 import java.util.logging.Logger;
@@ -20,6 +19,7 @@ import mondrian.util.ByteString;
 import org.eigenbase.xom.DOMWrapper;
 import org.eigenbase.xom.Parser;
 import org.eigenbase.xom.XOMUtil;
+import org.saiku.service.datasource.JdbcUrlPolicy;
 
 /**
  * Converts a Mondrian&nbsp;3 (legacy) schema XML to a real Mondrian&nbsp;4
@@ -177,7 +177,8 @@ public final class M3ToM4Converter {
                 if (password != null) {
                     props.put("password", password);
                 }
-                this.shared = DriverManager.getConnection(url, props);
+                // saiku#1902: same URL policy as every other DriverManager chokepoint.
+                this.shared = JdbcUrlPolicy.openConnection(url, props);
             } catch (java.sql.SQLException e) {
                 throw new IllegalStateException("could not open warehouse connection for conversion", e);
             }

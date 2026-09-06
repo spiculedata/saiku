@@ -18,11 +18,11 @@ package org.saiku.datasources.connection;
 import static org.saiku.datasources.connection.encrypt.CryptoUtil.decrypt;
 
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.util.Properties;
 import mondrian.rolap.RolapConnection;
 import org.olap4j.OlapConnection;
 import org.olap4j.OlapWrapper;
+import org.saiku.service.datasource.JdbcUrlPolicy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -125,8 +125,15 @@ public class SaikuOlapConnection implements ISaikuConnection {
                     }
                 }
 
-                Class.forName(driver);
-                Connection connection = DriverManager.getConnection(url, username, password);
+                // saiku#1902: this is THE chokepoint — every load path (admin add, .sds descriptor
+                // read at boot / on /discover/refresh, datasource save) funnels through here, so the
+                // policy is applied to the FINAL url, after JdbcUser=/JdbcPassword= were appended
+                // above. Checking earlier would let a ';'-injected username re-point Jdbc= behind
+                // the check. The driver class is only initialised once it is known to be a
+                // java.sql.Driver, so a descriptor can't run an arbitrary static initialiser.
+                JdbcUrlPolicy.validate(url);
+                JdbcUrlPolicy.loadDriverClass(driver);
+                Connection connection = JdbcUrlPolicy.openConnection(url, username, password);
 
                 if (connection != null) {
                     final OlapWrapper wrapper = (OlapWrapper) connection;

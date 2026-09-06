@@ -17,9 +17,11 @@ import org.saiku.web.rest.objects.JdbcUrlValidator;
 /**
  * Property-based tests for the security-critical {@link JdbcUrlValidator}, which blocks the H2
  * "executable JDBC URL" RCE class ({@code INIT=RUNSCRIPT}, {@code CREATE ALIAS/TRIGGER},
- * {@code SHUTDOWN}). Example-based tests check a handful of hand-picked strings; these properties
- * assert the security invariant holds across a generated space of URLs — including nesting and
- * casing an attacker would actually try.
+ * {@code SHUTDOWN}) and — since saiku#1902, by delegating to the service-layer
+ * {@code JdbcUrlPolicy} — the non-H2 driver-gadget families and unknown schemes. Example-based
+ * tests check a handful of hand-picked strings; these properties assert the security invariant
+ * holds across a generated space of URLs — including nesting and casing an attacker would actually
+ * try.
  */
 class JdbcUrlValidatorPropertyTest {
 
@@ -72,5 +74,52 @@ class JdbcUrlValidatorPropertyTest {
         String url = scheme + name;
 
         assertDoesNotThrow(() -> JdbcUrlValidator.validate(url));
+    }
+
+    /**
+     * saiku#1902: driver-gadget connection properties — the class-loading / deserialisation /
+     * local-file families (pgjdbc socketFactory, Connector/J autoDeserialize, ...) — in the
+     * spellings a driver would still honour: mixed case, separator noise, percent-encoding.
+     */
+    private static final List<String> GADGET_PROPERTIES = List.of(
+            "socketFactory=org.springframework.context.support.ClassPathXmlApplicationContext",
+            "SOCKETFACTORY=x.Y",
+            "socket_factory=x.Y",
+            "socket%46actory=x.Y",
+            "sslfactory=x.Y",
+            "autoDeserialize=true",
+            "auto_deserialize=true",
+            "allowLoadLocalInfile=true",
+            "queryInterceptors=x.Y",
+            "loggerFile=/var/www/x.jsp",
+            "accessTokenCallbackClass=x.Y");
+
+    private static final List<String> PROPERTY_SEPARATORS = List.of("?", ";", "&");
+
+    /** A gadget property is refused on EVERY backend, whatever the database name or separator. */
+    @HegelTest
+    void rejectsDriverGadgetPropertiesOnEveryBackend(TestCase tc) {
+        String scheme = tc.draw(sampledFrom(SAFE_SCHEMES), "scheme");
+        String name = tc.draw(fromRegex("[a-z][a-z0-9_]{0,20}"), "name");
+        String separator = tc.draw(sampledFrom(PROPERTY_SEPARATORS), "separator");
+        String gadget = tc.draw(sampledFrom(GADGET_PROPERTIES), "gadget");
+
+        String url = scheme + name + separator + gadget;
+
+        assertThrows(IllegalArgumentException.class, () -> JdbcUrlValidator.validate(url));
+    }
+
+    /**
+     * A JDBC sub-scheme outside the allow-list is refused whatever follows it. The generated
+     * scheme is prefixed {@code zz} so it can never collide with a real, allowed driver.
+     */
+    @HegelTest
+    void rejectsUnknownSchemes(TestCase tc) {
+        String scheme = tc.draw(fromRegex("zz[a-z0-9]{1,8}"), "scheme");
+        String rest = tc.draw(fromRegex("[a-z][a-z0-9_/]{0,20}"), "rest");
+
+        String url = "jdbc:" + scheme + "://" + rest;
+
+        assertThrows(IllegalArgumentException.class, () -> JdbcUrlValidator.validate(url));
     }
 }
