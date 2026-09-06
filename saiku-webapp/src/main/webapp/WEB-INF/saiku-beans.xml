@@ -741,6 +741,8 @@
         <aop:scoped-proxy/>
         <property name="sessionService" ref="sessionService"/>
         <property name="datasourceService" ref="datasourceServiceBean"/>
+        <!-- saiku#1903: admin check for datasource-descriptor (.sds / /datasources) writes. -->
+        <property name="userService" ref="userServiceBean"/>
     </bean>
 
     <!-- Dashboards CRUD (org.saiku.web.rest.resources.dashboards.DashboardResource

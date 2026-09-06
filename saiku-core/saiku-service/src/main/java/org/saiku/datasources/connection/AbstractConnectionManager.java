@@ -28,6 +28,7 @@ import org.saiku.datasources.datasource.SaikuDatasource;
 import org.saiku.olap.util.exception.SaikuOlapException;
 import org.saiku.service.datasource.IDatasourceManager;
 import org.saiku.service.datasource.IDatasourceProcessor;
+import org.saiku.service.datasource.JdbcUrlPolicy;
 import org.saiku.service.user.UserService;
 import org.saiku.service.util.exception.SaikuServiceException;
 import org.slf4j.Logger;
@@ -88,9 +89,11 @@ public abstract class AbstractConnectionManager implements IConnectionManager, S
                     .split(",");
             for (String processor : processors) {
                 try {
-                    @SuppressWarnings("unchecked")
-                    final Class<IDatasourceProcessor> clazz = (Class<IDatasourceProcessor>) Class.forName(processor);
-                    final Constructor<IDatasourceProcessor> ctor = clazz.getConstructor();
+                    // saiku#1902: load without initialising and check the type BEFORE the class
+                    // runs any code, so a mis-configured name can't act as a static-init gadget.
+                    final Class<? extends IDatasourceProcessor> clazz =
+                            JdbcUrlPolicy.loadImplementation(processor.trim(), IDatasourceProcessor.class);
+                    final Constructor<? extends IDatasourceProcessor> ctor = clazz.getConstructor();
                     final IDatasourceProcessor dsProcessor = ctor.newInstance();
                     datasource = dsProcessor.process(datasource);
                 } catch (Exception e) {
@@ -110,9 +113,10 @@ public abstract class AbstractConnectionManager implements IConnectionManager, S
                     .split(",");
             for (String processor : processors) {
                 try {
-                    @SuppressWarnings("unchecked")
-                    final Class<IConnectionProcessor> clazz = (Class<IConnectionProcessor>) Class.forName(processor);
-                    final Constructor<IConnectionProcessor> ctor = clazz.getConstructor();
+                    // saiku#1902: see preProcess — type-check before initialising.
+                    final Class<? extends IConnectionProcessor> clazz =
+                            JdbcUrlPolicy.loadImplementation(processor.trim(), IConnectionProcessor.class);
+                    final Constructor<? extends IConnectionProcessor> ctor = clazz.getConstructor();
                     final IConnectionProcessor conProcessor = ctor.newInstance();
                     return conProcessor.process(con);
                 } catch (Exception e) {

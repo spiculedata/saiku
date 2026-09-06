@@ -377,7 +377,12 @@ class Acl2 {
 
                         break;
                     default:
-                        method = AclMethod.WRITE;
+                        // saiku#1904: PUBLIC (and any un-cased type) used to resolve to WRITE, so
+                        // every authenticated user could overwrite the seeded /datasources tree and
+                        // plant a datasource descriptor. PUBLIC now means world-READABLE; writes
+                        // require an explicit SECURED grant, ownership, or an admin role (which
+                        // short-circuits above).
+                        method = AclMethod.READ;
                         break;
                 }
             } else {

