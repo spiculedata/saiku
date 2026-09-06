@@ -142,7 +142,67 @@ public class FilesystemRepositoryManagerMoveTest {
         assertFalse("nothing must be written outside the datadir", new File(datadir, "escape.saikudash").exists());
     }
 
+    /**
+     * saiku#1907 N1 (#1934): a non-admin move whose destination parent does NOT yet exist must be
+     * gated on the nearest EXISTING ancestor — a non-admin cannot move a file into a brand-new
+     * subfolder of the admin-only /dashboards (or /queries, /datasources) tree. RED pre-fix
+     * (missing parent skipped the ACL check, then mkdirs()'d it).
+     */
+    @Test
+    public void moveFile_nonAdmin_cannot_move_into_new_admin_only_folder() throws Exception {
+        seedSkeleton();
+        File bobHome = bobHomeWithSource();
+
+        try {
+            manager.moveFile("/homes/bob/x.saikudash", "/dashboards/newfolder/x.saikudash", "bob", ROLES_USER);
+            fail("non-admin move into a new admin-only /dashboards subfolder must be denied");
+        } catch (Exception expected) {
+            // SaikuServiceException — denied on the nearest existing ancestor (/dashboards).
+        }
+        assertFalse(
+                "no folder may be created under the admin-only tree by a denied move",
+                new File(datadir, "unknown/dashboards/newfolder").exists());
+        assertTrue("source must survive the denied move", new File(bobHome, "x.saikudash").exists());
+    }
+
+    /**
+     * saiku#1907 N1 (#1934): a non-admin cannot plant a NEW direct child of /homes (another user's
+     * home) via moveFile. RED pre-fix (missing /homes/Alice skipped the check, then mkdirs()'d it —
+     * which, with the old F5 throw, would have locked Alice out on her first login).
+     */
+    @Test
+    public void moveFile_nonAdmin_cannot_create_another_users_home() throws Exception {
+        seedSkeleton();
+        File bobHome = bobHomeWithSource();
+
+        try {
+            manager.moveFile("/homes/bob/x.saikudash", "/homes/Alice/x.saikudash", "bob", ROLES_USER);
+            fail("non-admin must not be able to plant another user's /homes/<name>");
+        } catch (Exception expected) {
+            // SaikuServiceException — nearest-ancestor gate on /homes (READ-only) + foreign-home guard.
+        }
+        assertFalse(
+                "another user's home must not be created by a non-admin move",
+                new File(datadir, "unknown/homes/Alice").exists());
+        assertTrue(new File(bobHome, "x.saikudash").exists());
+    }
+
     // ---- helpers ------------------------------------------------------
+
+    private void seedSkeleton() throws Exception {
+        UserService us = new UserService();
+        us.setAdminRoles(Collections.singletonList("ROLE_ADMIN"));
+        injectUserService(manager, us);
+        manager.start(us); // seeds /homes (SECURED READ), /dashboards, /queries, ... (SECURED admin)
+    }
+
+    private File bobHomeWithSource() throws Exception {
+        File bobHome = new File(datadir, "unknown/homes/bob");
+        assertTrue(bobHome.mkdirs());
+        writeAclJson(bobHome, bobHome.getPath(), "PRIVATE", "bob");
+        Files.write(new File(bobHome, "x.saikudash").toPath(), "X".getBytes(StandardCharsets.UTF_8));
+        return bobHome;
+    }
 
     private File seed(String name, String body) throws Exception {
         File f = new File(adminHomeDir, name);

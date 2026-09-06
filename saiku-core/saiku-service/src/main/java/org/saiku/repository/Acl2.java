@@ -450,12 +450,15 @@ class Acl2 {
         }
         File cur = file.getParentFile();
         while (cur != null) {
+            // saiku#1907 F2 nit: stop AT the /homes container BEFORE reading its own SECURED entry,
+            // so a file on the exact /homes/<user>-with-no-entry seam is treated as PRIVATE-context
+            // (null) and gets stamped, rather than inheriting /homes' SECURED type.
+            if (isHomesDir(cur)) {
+                break;
+            }
             AclEntry e = ownEntry(cur);
             if (e != null) {
                 return e.getType();
-            }
-            if (isHomesDir(cur)) {
-                break;
             }
             cur = cur.getParentFile();
         }
@@ -481,6 +484,46 @@ class Acl2 {
             return lookup(data, dir.getPath());
         } catch (Exception ignored) {
             return null;
+        }
+    }
+
+    /**
+     * saiku#1907 F4: after a home folder is renamed to its canonical name, its {@code acl.json}
+     * keys still point at the OLD absolute path. Rewrite every key that equals or is nested under
+     * {@code oldPrefix} to the {@code newPrefix} so the folder's own entry and any per-file shares
+     * inside keep resolving. Best-effort — a missing/malformed file is left untouched.
+     */
+    static void rekeyAclPaths(@NotNull File dir, @NotNull String oldPrefix, @NotNull String newPrefix) {
+        File aclFile = new File(dir, "acl.json");
+        if (!aclFile.exists()) {
+            return;
+        }
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            TypeReference<Map<String, AclEntry>> ref = new TypeReference<Map<String, AclEntry>>() {};
+            Map<String, AclEntry> data = mapper.readValue(aclFile, ref);
+            if (data == null || data.isEmpty()) {
+                return;
+            }
+            Map<String, AclEntry> rekeyed = new TreeMap<>();
+            boolean changed = false;
+            for (Map.Entry<String, AclEntry> e : data.entrySet()) {
+                String k = e.getKey();
+                String nk = k;
+                if (k.equals(oldPrefix)) {
+                    nk = newPrefix;
+                    changed = true;
+                } else if (k.startsWith(oldPrefix + File.separator) || k.startsWith(oldPrefix + "/")) {
+                    nk = newPrefix + k.substring(oldPrefix.length());
+                    changed = true;
+                }
+                rekeyed.put(nk, e.getValue());
+            }
+            if (changed) {
+                mapper.writeValue(aclFile, rekeyed);
+            }
+        } catch (Exception ignored) {
+            // Best-effort: createUser re-stamps the folder's own entry regardless.
         }
     }
 

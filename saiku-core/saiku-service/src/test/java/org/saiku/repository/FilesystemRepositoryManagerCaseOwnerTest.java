@@ -6,6 +6,7 @@ package org.saiku.repository;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -126,49 +127,85 @@ public class FilesystemRepositoryManagerCaseOwnerTest {
     }
 
     /**
-     * saiku#1907 F4: createUser must REUSE an existing case-variant home rather than create a
-     * divergent canonical duplicate, so a pre-existing /homes/Admin stays the single home for
-     * identity "admin" and its content stays reachable.
+     * saiku#1907 F4: createUser must REUSE a pre-existing case-variant home and RENAME it to the
+     * canonical name, so /homes/<canonical> becomes the single authoritative home (the UI addresses
+     * homes by the canonical identity). Content and ownership survive the rename.
      */
     @Test
-    public void createUser_reuses_existing_case_variant_home() throws Exception {
+    public void createUser_reuses_and_renames_case_variant_home_to_canonical() throws Exception {
         // Two case-variant home dirs can only coexist on a case-sensitive filesystem; on
-        // Windows /homes/admin and /homes/Admin are the same directory (reuse is automatic).
+        // Windows /homes/admin and /homes/Admin are the same directory (rename is a no-op).
         org.junit.Assume.assumeFalse(
                 "requires a case-sensitive filesystem",
                 System.getProperty("os.name", "")
                         .toLowerCase(java.util.Locale.ROOT)
                         .contains("win"));
-        File adminHome = new File(datadir, "unknown/homes/Admin");
-        assertTrue(adminHome.mkdirs());
-        writeFolderAclJson(adminHome, "PRIVATE", "Admin");
+        File variant = new File(datadir, "unknown/homes/Admin");
+        assertTrue(variant.mkdirs());
+        writeFolderAclJson(variant, "PRIVATE", "Admin");
+        Files.write(
+                new File(variant, "note.saikudash").toPath(), "N".getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
         manager.createUser("admin");
 
-        assertTrue("the existing case-variant home must be reused", adminHome.isDirectory());
-        assertFalse(
-                "a divergent canonical duplicate must NOT be created",
-                new File(datadir, "unknown/homes/admin").exists());
+        File canonical = new File(datadir, "unknown/homes/admin");
+        assertTrue("the home must be renamed to the canonical name", canonical.isDirectory());
+        assertFalse("the case-variant directory must be gone after the rename", variant.exists());
+        assertTrue("content must survive the rename", new File(canonical, "note.saikudash").exists());
+        // getAllFiles(/homes/admin) — the UI's canonical home path — must now resolve (not null).
+        assertNotNull(manager.getAllFiles(java.util.Arrays.asList("saikudash"), "admin", ROLES_ADMIN, "/homes/admin"));
+        AclEntry entry = manager.getACL("/homes/admin", "admin", ROLES_ADMIN);
+        assertNotNull("the folder ACL must survive the rename (re-keyed)", entry);
+        assertTrue("ownership preserved", entry.getOwner() != null && "admin".equalsIgnoreCase(entry.getOwner()));
     }
 
     /**
-     * saiku#1907 F5: if a case-variant home is owned by a DIFFERENT principal, createUser must
-     * fail closed rather than conflate the two identities. (Unreachable on the shipped
-     * case-insensitive store; defends a mis-configured case-sensitive external store.)
+     * saiku#1907 N2: a username that canonically ALIASES onto another (entry-less) home must be
+     * rejected — the resolved home's real on-disk name must match the identity. Exercised on a
+     * POSIX FS with a symlink (the portable stand-in for Win32 8.3 short-name / trailing-dot / ADS
+     * aliasing); the same canonical-name guard rejects all of them.
      */
     @Test
-    public void createUser_fails_closed_on_case_variant_home_of_different_principal() throws Exception {
-        File adminHome = new File(datadir, "unknown/homes/Admin");
-        assertTrue(adminHome.mkdirs());
-        // Folder name is a case-variant of "admin" but it is owned by a different principal.
-        writeFolderAclJson(adminHome, "PRIVATE", "mallory");
+    public void createUser_rejects_canonical_name_aliasing() throws Exception {
+        org.junit.Assume.assumeFalse(
+                "symlink creation needs privileges on Windows; 8.3 aliasing is Win-only",
+                System.getProperty("os.name", "")
+                        .toLowerCase(java.util.Locale.ROOT)
+                        .contains("win"));
+        File homes = new File(datadir, "unknown/homes");
+        assertTrue(homes.mkdirs());
+        File real = new File(homes, "realhome");
+        assertTrue(real.mkdirs());
+        java.nio.file.Files.createSymbolicLink(new File(homes, "aliaslink").toPath(), real.toPath());
 
         try {
-            manager.createUser("admin");
-            fail("createUser must fail closed when a case-variant home is owned by a different principal");
+            manager.createUser("aliaslink");
+            fail("createUser must reject a name that canonically aliases onto another home");
         } catch (RuntimeException expected) {
-            // fail-closed (SaikuServiceException)
+            // fail-closed — home name does not match the resolved identity
         }
+    }
+
+    /**
+     * saiku#1907 F5 (redesigned): the folder NAME is the ownership authority. When a namesake home
+     * carries an entry owned by someone ELSE (planted state, or a stale key), createUser RESTORES
+     * ownership to the namesake and self-heals — it does NOT throw (the old throw was silently
+     * swallowed and made bad state permanent). Works on both a case-sensitive FS (rename to
+     * canonical) and a case-insensitive one (same dir).
+     */
+    @Test
+    public void createUser_restores_ownership_of_a_namesake_home_owned_by_someone_else() throws Exception {
+        File adminHome = new File(datadir, "unknown/homes/Admin");
+        assertTrue(adminHome.mkdirs());
+        writeFolderAclJson(adminHome, "PRIVATE", "mallory"); // foreign owner planted
+
+        manager.createUser("admin"); // must NOT throw — restores ownership to the namesake
+
+        AclEntry entry = manager.getACL("/homes/admin", "admin", ROLES_ADMIN);
+        assertNotNull("the home must still have an ACL entry", entry);
+        assertTrue(
+                "ownership must be restored to the namesake 'admin' (was 'mallory')",
+                entry.getOwner() != null && "admin".equalsIgnoreCase(entry.getOwner()));
     }
 
     // ---- helpers ------------------------------------------------------

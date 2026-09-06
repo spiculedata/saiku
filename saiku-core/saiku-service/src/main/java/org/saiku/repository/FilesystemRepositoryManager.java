@@ -212,62 +212,131 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
         // before it is ever used to build a path. Fail closed.
         validateUsernameSegment(u);
 
-        // saiku#1907 F4/F5: reuse an existing case-variant home instead of creating a
-        // divergent canonical duplicate, so a pre-existing mixed-case home (/homes/Admin)
-        // remains the user's single home once identity canonicalises to "admin", and its
-        // content stays reachable. F5 guard: if the case-variant home is owned by a
-        // DIFFERENT principal, fail closed rather than conflate two identities.
+        // saiku#1907 F4: reuse (and rename to canonical) an existing case-variant home instead of
+        // creating a divergent duplicate, so a pre-existing mixed-case home (/homes/Admin) becomes
+        // the user's single canonical home (/homes/admin) and its content stays reachable.
         File homesDir = this.createFolder(sep + "homes");
         File node = resolveHomeFolder(homesDir, u);
 
-        Acl2 acl2 = new Acl2(node);
-        // Non-clobbering: only stamp the PRIVATE owner entry when the folder has none, so a
-        // reused home keeps its existing owner and a user-set SECURED share on the home root
-        // survives a re-login (createUser runs on every login via checkFolders).
-        if (acl2.getEntry(node.getPath()) == null) {
-            acl2.addEntry(node.getPath(), new AclEntry(u, AclType.PRIVATE, null, null));
-            acl2.serialize(node);
+        // saiku#1907 N2: the resolved home's REAL on-disk (canonical) name must match the identity.
+        // Defeats Win32 8.3 short-name / trailing-dot / ADS aliasing (and symlink aliasing) onto an
+        // entry-less namesake home — e.g. createUser("BOBBYV~1") resolving onto /homes/bobbyvonsmith
+        // and stamping owner="BOBBYV~1" (takeover). Entry-less homes are common in a moved/restored
+        // datadir. Fail closed.
+        if (!homeNameMatches(node, u)) {
+            throw new SaikuServiceException("Home folder name does not match the resolved identity");
         }
+
+        // saiku#1907 F5: the folder NAME is the ownership authority (ownsHome already treats it so).
+        Acl2 acl2 = new Acl2(node);
+        AclEntry existing = acl2.getEntry(node.getPath());
+        if (existing != null && Usernames.sameUser(existing.getOwner(), u)) {
+            return; // owner already correct — non-clobbering (preserves user-set shares on the home).
+        }
+        if (existing != null) {
+            // A foreign/stale owner (planted state, or a stale absolute key surfaced by a rename):
+            // RESTORE ownership to the namesake and self-heal. The previous throw was silently
+            // swallowed by SessionResource and made planted bad state permanent, while protecting
+            // nothing (two distinct case-variant external accounts still canonicalise to one
+            // identity). Log WARN so operators see it.
+            log.warn(
+                    "Restoring ownership of home '{}' to '{}' (was '{}') — saiku#1907 F5",
+                    node.getName(),
+                    u,
+                    existing.getOwner());
+        }
+        acl2.addEntry(node.getPath(), new AclEntry(u, AclType.PRIVATE, null, null));
+        acl2.serialize(node);
     }
 
     /**
-     * Resolve the home folder for {@code u}: the exact {@code /homes/<u>} when it exists,
-     * else a case-variant sibling ({@code /homes/Admin} for {@code admin}) reused in place
-     * (saiku#1907 F4), else a freshly created {@code /homes/<u>}. F5: a case-variant home
-     * owned by a different principal is refused fail-closed rather than conflated.
+     * Resolve the home folder for {@code u}: the exact {@code /homes/<u>} when it exists, else a
+     * case-variant sibling ({@code /homes/Admin} for {@code admin}) RENAMED to the canonical name
+     * so {@code /homes/<canonical>} is authoritative for the UI (saiku#1907 F4), else a freshly
+     * created {@code /homes/<u>}.
      */
     private File resolveHomeFolder(File homesDir, String u) {
-        File candidate = new File(homesDir, u);
-        if (!candidate.isDirectory()) {
-            candidate = findCaseVariantHome(homesDir, u);
+        File exact = new File(homesDir, u);
+        if (exact.isDirectory()) {
+            return exact;
         }
-        if (candidate == null) {
+        File variant = findCaseVariantHome(homesDir, u);
+        if (variant == null) {
             return this.createFolder(sep + "homes" + sep + u); // fresh home
         }
-        // An existing home (exact, a case-variant on a case-sensitive FS, or the same dir on a
-        // case-insensitive FS): F5 — it must not belong to a DIFFERENT principal. Fail closed.
-        Acl2 acl2 = new Acl2(candidate);
-        AclEntry owner = acl2.getEntry(candidate.getPath());
-        if (owner != null
-                && owner.getOwner() != null
-                && !owner.getOwner().trim().isEmpty()
-                && !Usernames.sameUser(owner.getOwner(), u)) {
-            throw new SaikuServiceException("Home folder conflict: an existing home is owned by a different principal");
-        }
-        return candidate;
+        log.info("Reusing case-variant home '{}' for identity '{}' (saiku#1907 F4)", variant.getName(), u);
+        return renameHomeToCanonical(variant, new File(homesDir, u));
     }
 
-    /** The first {@code /homes} subfolder whose name is a case-variant of {@code u} (not exact), or null. */
+    /**
+     * The single {@code /homes} subfolder whose name is a case-variant of {@code u} (not the exact
+     * name), or null. Deterministic when several exist: sorted by name, first wins, WARN logged
+     * (saiku#1907 N4).
+     */
     private static File findCaseVariantHome(File homesDir, String u) {
         File[] children = homesDir.listFiles();
-        if (children != null) {
-            for (File c : children) {
-                if (c.isDirectory() && !c.getName().equals(u) && Usernames.sameUser(c.getName(), u)) {
-                    return c;
-                }
+        if (children == null) {
+            return null;
+        }
+        List<File> variants = new ArrayList<>();
+        for (File c : children) {
+            if (c.isDirectory() && !c.getName().equals(u) && Usernames.sameUser(c.getName(), u)) {
+                variants.add(c);
             }
         }
-        return null;
+        if (variants.isEmpty()) {
+            return null;
+        }
+        variants.sort(java.util.Comparator.comparing(File::getName));
+        if (variants.size() > 1) {
+            log.warn(
+                    "Multiple case-variant homes for '{}': {} — using '{}'",
+                    u,
+                    variants,
+                    variants.get(0).getName());
+        }
+        return variants.get(0);
+    }
+
+    /**
+     * saiku#1907 F4: rename a case-variant home to its canonical name so {@code /homes/<canonical>}
+     * is authoritative (the UI addresses a home by the canonical identity, so a left-behind
+     * {@code /homes/Admin} made {@code getAllFiles("/homes/admin")} null and the next save recreate a
+     * duplicate). Guarded and best-effort — on any failure the variant is used in place. On success
+     * the stale absolute-path ACL keys inside are re-keyed to the new path; {@code createUser} then
+     * re-stamps the folder's own entry.
+     */
+    private File renameHomeToCanonical(File variant, File canonical) {
+        try {
+            if (canonical.exists()) {
+                return variant; // canonical already present (race / case-insensitive FS) — use in place
+            }
+            String oldPrefix = canonicalPathString(variant);
+            if (variant.renameTo(canonical)) {
+                log.warn(
+                        "Renamed case-variant home '{}' to canonical '{}' (saiku#1907 F4)",
+                        variant.getName(),
+                        canonical.getName());
+                Acl2.rekeyAclPaths(canonical, oldPrefix, canonicalPathString(canonical));
+                return canonical;
+            }
+            log.warn(
+                    "Could not rename case-variant home '{}' to '{}'; using it in place",
+                    variant.getName(),
+                    canonical.getName());
+        } catch (Exception e) {
+            log.warn("Home rename failed for '{}'; using it in place", variant.getName(), e);
+        }
+        return variant;
+    }
+
+    /** saiku#1907 N2: does the home's REAL on-disk (canonical) leaf name match the identity {@code u}? */
+    private static boolean homeNameMatches(File node, String u) {
+        try {
+            return Usernames.sameUser(node.getCanonicalFile().getName(), u);
+        } catch (Exception e) {
+            return Usernames.sameUser(node.getName(), u);
+        }
     }
 
     /**
@@ -295,7 +364,10 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
                 || u.indexOf('\\') >= 0
                 || u.indexOf(':') >= 0
                 || u.contains("..")
-                || u.charAt(0) == '.') {
+                || u.charAt(0) == '.'
+                // saiku#1907 N4: reject a leading space (Win32 keeps it, but it aliases visually
+                // and is never a legitimate account name); trailing space is caught above.
+                || Character.isWhitespace(u.charAt(0))) {
             throw new SaikuServiceException("Invalid username for home folder");
         }
         // Reject the "home:" folder-name convention as a raw username (it is added by the
@@ -622,15 +694,24 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
             throw new RepositoryException("Cannot move: target already exists (" + target + ")");
         }
         File destParent = dest.getParentFile();
-        if (destParent != null && destParent.exists()) {
-            // Writing the node into its new parent requires write on that parent.
-            Acl2 destAcl = new Acl2(destParent);
+        // saiku#1907 N1 (#1934): require write permission on the nearest EXISTING ancestor of the
+        // destination BEFORE creating any missing directories. The old code only checked canWrite
+        // when destParent already existed, so a move into a not-yet-existing path (e.g.
+        // /dashboards/<new>/x, /queries/..., /datasources/..., or a brand-new /homes/<name>)
+        // skipped the ACL gate entirely and then mkdirs()'d it. A missing parent is NEVER
+        // permission — resolve to the nearest existing ancestor and gate on that.
+        File writeAnchor = (destParent != null && destParent.exists()) ? destParent : nearestExistingAncestor(dest);
+        if (writeAnchor != null) {
+            Acl2 destAcl = new Acl2(writeAnchor);
             destAcl.setAdminRoles(userService.getAdminRoles());
             destAcl.setHomesRoot(homesRoot());
-            if (!destAcl.canWrite(destParent, user, roles)) {
+            if (!destAcl.canWrite(writeAnchor, user, roles)) {
                 throw new SaikuServiceException("You don't have permission to write to " + target);
             }
         }
+        // saiku#1907 N1: never let a non-admin create a NEW direct child of /homes other than
+        // their own canonical home (defence-in-depth beyond the ancestor gate above).
+        refuseForeignHomeChildCreation(dest, user, roles);
         if (destParent != null && !destParent.exists() && !destParent.mkdirs()) {
             throw new RepositoryException("Cannot move: could not create destination folder for " + target);
         }
@@ -1247,6 +1328,60 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
             return getNode(sep + "homes");
         } catch (Exception e) {
             return null;
+        }
+    }
+
+    /** The nearest ancestor of {@code f} that exists on disk, or null. saiku#1907 N1. */
+    private static File nearestExistingAncestor(File f) {
+        File p = f == null ? null : f.getParentFile();
+        while (p != null && !p.exists()) {
+            p = p.getParentFile();
+        }
+        return p;
+    }
+
+    /** Does {@code roles} carry an admin role? Mirrors {@link #requireAdminForDatasourceDescriptor}. */
+    private boolean callerIsAdmin(List<String> roles) {
+        List<String> adminRoles = userService != null ? userService.getAdminRoles() : null;
+        if (adminRoles == null || adminRoles.isEmpty()) {
+            adminRoles = java.util.Collections.singletonList("ROLE_ADMIN");
+        }
+        return roles != null && !java.util.Collections.disjoint(roles, adminRoles);
+    }
+
+    /** Best-effort canonical path string (falls back to a normalised absolute path). */
+    private static String canonicalPathString(File f) {
+        try {
+            return f.getCanonicalPath();
+        } catch (Exception e) {
+            return f.getAbsoluteFile().toPath().normalize().toString();
+        }
+    }
+
+    /**
+     * saiku#1907 N1: a non-admin may create a NEW direct child of the {@code /homes} container only
+     * if it is their OWN canonical home. Any missing node on the path to {@code dest} that would be
+     * a direct child of {@code /homes} is refused fail-closed for a foreign name — closing the
+     * moveFile vector that let an attacker plant another user's {@code /homes/<name>}.
+     */
+    private void refuseForeignHomeChildCreation(File dest, String user, List<String> roles) {
+        if (callerIsAdmin(roles)) {
+            return;
+        }
+        File homes = homesRoot();
+        if (homes == null || dest == null) {
+            return;
+        }
+        String homesCanon = canonicalPathString(homes);
+        File cur = dest;
+        while (cur != null && !cur.exists()) {
+            File parent = cur.getParentFile();
+            if (parent != null
+                    && canonicalPathString(parent).equals(homesCanon)
+                    && !Usernames.sameUser(cur.getName(), user)) {
+                throw new SaikuServiceException("Only an administrator or the owner may create a home folder");
+            }
+            cur = parent;
         }
     }
 

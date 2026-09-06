@@ -37,4 +37,14 @@ public class UsernamesTest {
         assertFalse(Usernames.sameUser("admin", null));
         assertFalse(Usernames.sameUser(null, "admin"));
     }
+
+    @Test
+    public void sameUser_treats_blank_as_no_match() {
+        // saiku#1907 N4: an empty/blank identity is never a match (a blank owner or caller must
+        // not authorise anything).
+        assertFalse(Usernames.sameUser("", ""));
+        assertFalse(Usernames.sameUser("   ", "   "));
+        assertFalse(Usernames.sameUser("", "admin"));
+        assertFalse(Usernames.sameUser("admin", ""));
+    }
 }

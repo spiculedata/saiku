@@ -48,11 +48,13 @@ public final class Usernames {
     }
 
     /**
-     * Case-insensitive identity equality via the single {@link #canonicalize(String)} form.
-     * Two null inputs are NOT equal (an absent identity never matches anything).
+     * Case-insensitive identity equality via the single {@link #canonicalize(String)} form. An
+     * absent OR blank identity never matches anything (saiku#1907 N4): {@code sameUser("","")} and
+     * {@code sameUser(null, x)} are both false, so an empty/blank owner or caller is never treated
+     * as a match.
      */
     public static boolean sameUser(String a, String b) {
         String ca = canonicalize(a);
-        return ca != null && ca.equals(canonicalize(b));
+        return ca != null && !ca.isBlank() && ca.equals(canonicalize(b));
     }
 }
