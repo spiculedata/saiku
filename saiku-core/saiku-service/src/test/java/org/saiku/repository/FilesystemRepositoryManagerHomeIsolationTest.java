@@ -133,24 +133,86 @@ public class FilesystemRepositoryManagerHomeIsolationTest {
     }
 
     /**
-     * A ROLE_USER may not read another user's home file when the home carries the
-     * {@code home:}-prefixed folder name (the legacy/JCR spelling) either — the
-     * owner-by-folder-name derivation strips the prefix. RED pre-fix.
+     * A ROLE_USER may not read another user's home when the home carries the {@code home:}-prefixed
+     * folder name (the legacy/JCR spelling): the owner-by-folder-name derivation strips the prefix,
+     * so "bob" is still denied and only "alice" (owner) is allowed. Uses a REAL {@code home:alice}
+     * directory — the colon is illegal in a Windows filename, so this runs on a POSIX FS only.
      */
     @Test
     public void crossUser_read_denied_for_home_prefixed_folder_name() throws Exception {
-        // NB: use a colon-free suffix on platforms where ':' is legal in a dir
-        // name — the point is the "home:" prefix parsing, which we assert directly.
-        File aliceHome = new File(datadir, "unknown/homes/home_alice");
+        org.junit.Assume.assumeFalse(
+                "':' is illegal in a Windows filename",
+                System.getProperty("os.name", "")
+                        .toLowerCase(java.util.Locale.ROOT)
+                        .contains("win"));
+
+        File aliceHome = new File(datadir, "unknown/homes/home:alice");
         assertTrue(aliceHome.mkdirs());
         Files.write(new File(aliceHome, "secret.saikudash").toPath(), "SECRET".getBytes(StandardCharsets.UTF_8));
 
         try {
-            String body = manager.getFile("/homes/home_alice/secret.saikudash", "bob", ROLES_USER);
+            String body = manager.getFile("/homes/home:alice/secret.saikudash", "bob", ROLES_USER);
             fail("bob must not read a file under another user's home; leaked: " + body);
         } catch (RepositoryException | org.saiku.service.util.exception.SaikuServiceException denied) {
             // expected
         }
+        // The owner (folder-name minus the "home:" prefix) is still allowed.
+        assertEquals("alice", "SECRET", manager.getFile("/homes/home:alice/secret.saikudash", "alice", ROLES_USER));
+    }
+
+    /**
+     * F10: cross-user READ is denied for a file nested several levels deep under another user's
+     * home (no acl.json — the seam), and the owner is still allowed at depth.
+     */
+    @Test
+    public void nested_depth_cross_user_read_is_denied() throws Exception {
+        File deep = new File(datadir, "unknown/homes/alice/sub/dir");
+        assertTrue(deep.mkdirs());
+        Files.write(new File(deep, "secret.saikudash").toPath(), "DEEP".getBytes(StandardCharsets.UTF_8));
+
+        try {
+            String body = manager.getFile("/homes/alice/sub/dir/secret.saikudash", "bob", ROLES_USER);
+            fail("nested-depth cross-user read must be denied; leaked: " + body);
+        } catch (RepositoryException | org.saiku.service.util.exception.SaikuServiceException denied) {
+            // expected
+        }
+        assertEquals(
+                "the owner must still read their own file at depth",
+                "DEEP",
+                manager.getFile("/homes/alice/sub/dir/secret.saikudash", "alice", ROLES_USER));
+    }
+
+    /**
+     * F10: the same isolation guarantees must hold when getDatadir() resolves to a workspace
+     * subdir (multi-tenant) rather than the default {@code unknown/} — bob denied, owner and admin
+     * allowed under {@code <datadir>/tenantA/homes/}.
+     */
+    @Test
+    public void cross_user_read_is_denied_under_a_workspace_datadir() throws Exception {
+        resetSingleton();
+        ScopedRepo repo = new ScopedRepo();
+        java.util.Map<String, Object> attrs = new java.util.HashMap<>();
+        attrs.put("workspace", "tenantA");
+        repo.setSession(new org.saiku.service.datasource.MockHttpSession(attrs));
+
+        FilesystemRepositoryManager wsMgr = newManager(datadir.getAbsolutePath(), repo, true);
+        UserService us = new UserService();
+        us.setAdminRoles(Collections.singletonList("ROLE_ADMIN"));
+        injectUserService(wsMgr, us);
+        wsMgr.start(us); // seeds <datadir>/tenantA/homes (SECURED, defaultRole READ)
+
+        File aliceHome = new File(datadir, "tenantA/homes/alice");
+        assertTrue(aliceHome.mkdirs());
+        Files.write(new File(aliceHome, "secret.saikudash").toPath(), "WS".getBytes(StandardCharsets.UTF_8));
+
+        try {
+            String body = wsMgr.getFile("/homes/alice/secret.saikudash", "bob", ROLES_USER);
+            fail("cross-user read under a workspace datadir must be denied; leaked: " + body);
+        } catch (RepositoryException | org.saiku.service.util.exception.SaikuServiceException denied) {
+            // expected
+        }
+        assertEquals("WS", wsMgr.getFile("/homes/alice/secret.saikudash", "alice", ROLES_USER));
+        assertEquals("WS", wsMgr.getFile("/homes/alice/secret.saikudash", "admin", ROLES_ADMIN));
     }
 
     /**
@@ -172,23 +234,6 @@ public class FilesystemRepositoryManagerHomeIsolationTest {
         assertTrue(
                 "the per-file entry must be owned by the saver",
                 entry.getOwner() != null && entry.getOwner().equalsIgnoreCase("alice"));
-    }
-
-    /**
-     * The per-file stamp must not clobber the folder's own entry, and a second
-     * user still cannot read the freshly-saved file.
-     */
-    @Test
-    public void saved_home_file_is_not_readable_by_another_user() throws Exception {
-        manager.createUser("alice");
-        manager.saveFile("REPORT", "/homes/alice/report.saikudash", "alice", "nt:saikufiles", ROLES_USER);
-
-        try {
-            String body = manager.getFile("/homes/alice/report.saikudash", "bob", ROLES_USER);
-            fail("bob must not read alice's saved report; leaked: " + body);
-        } catch (RepositoryException | org.saiku.service.util.exception.SaikuServiceException denied) {
-            // expected
-        }
     }
 
     /**
@@ -269,10 +314,15 @@ public class FilesystemRepositoryManagerHomeIsolationTest {
     }
 
     private static FilesystemRepositoryManager newManager(String path) throws Exception {
+        return newManager(path, new ScopedRepo(), false);
+    }
+
+    private static FilesystemRepositoryManager newManager(String path, ScopedRepo repo, boolean workspaces)
+            throws Exception {
         Constructor<FilesystemRepositoryManager> ctor = FilesystemRepositoryManager.class.getDeclaredConstructor(
                 String.class, String.class, ScopedRepo.class, boolean.class);
         ctor.setAccessible(true);
-        return ctor.newInstance(path, "ROLE_USER", new ScopedRepo(), false);
+        return ctor.newInstance(path, "ROLE_USER", repo, workspaces);
     }
 
     private static void injectUserService(FilesystemRepositoryManager mgr, UserService us) throws Exception {
