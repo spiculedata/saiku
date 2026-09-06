@@ -379,6 +379,10 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
             // edit/PRIVATE setting is honoured; for a NEW file, fall back to
             // the parent folder (you need folder-write to create a child).
             File target = getNode(path);
+            // saiku#1907: remember whether this is a brand-new file BEFORE we write it,
+            // so we only stamp a per-file PRIVATE ACL on creation and never clobber an
+            // existing per-file entry (e.g. a SECURED share the owner set on it).
+            boolean isNewFile = !target.exists();
             File aclNode = target.exists() ? target : parent;
             Acl2 acl2 = new Acl2(aclNode);
             acl2.setAdminRoles(userService.getAdminRoles());
@@ -409,8 +413,62 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
                 log.error("Failed to write file to {}", path, e);
             }
 
+            // saiku#1907: give every newly-created file under a user's home its own
+            // PRIVATE ACL entry (owner = the saver). Without it a home file has no
+            // per-file entry and access rests entirely on the ancestor home folder's
+            // PRIVATE entry resolving by canonical key — which fails on the datadir /
+            // home-path seam, letting the walk-up reach the permissive /homes default.
+            stampPrivateHomeAclIfNeeded(path, resNode, user, isNewFile);
+
             return resNode;
         }
+    }
+
+    /**
+     * saiku#1907: when a brand-new file is saved under a user's home ({@code /homes/...}),
+     * write a PRIVATE {@link AclEntry} (owner = {@code user}) into its parent folder's
+     * {@code acl.json}, keyed by the file's own path. This makes home files self-describing
+     * for {@link Acl2#getMethods}: it finds the file's own PRIVATE entry directly instead of
+     * relying on the ancestor home-folder entry resolving across a datadir/home-path seam.
+     *
+     * <p>Best-effort and non-clobbering: only stamps a genuinely new file, only under
+     * {@code /homes/}, and only when no per-file entry already exists (so a SECURED share the
+     * owner set on the file is preserved). The {@link Acl2} constructor pre-loads the folder's
+     * existing entries, so {@code serialize} merges rather than overwrites siblings.
+     */
+    private void stampPrivateHomeAclIfNeeded(String path, File resNode, String user, boolean isNewFile) {
+        if (!isNewFile || resNode == null || user == null || user.isEmpty() || !isUnderHome(path)) {
+            return;
+        }
+        try {
+            Acl2 acl2 = new Acl2(resNode);
+            if (userService != null) {
+                acl2.setAdminRoles(userService.getAdminRoles());
+            }
+            if (acl2.getEntry(resNode.getPath()) == null) {
+                acl2.addEntry(resNode.getPath(), new AclEntry(user, AclType.PRIVATE, null, null));
+                acl2.serialize(resNode);
+            }
+        } catch (Exception e) {
+            // Never fail the save because the ACL stamp failed; the getMethods fail-closed
+            // guard (saiku#1907) still protects the file if the entry is absent.
+            log.warn("Could not stamp per-file home ACL for {}", path, e);
+        }
+    }
+
+    /**
+     * Is {@code path} a repository path that lives inside the {@code /homes} tree? Tolerant of
+     * leading separators and Windows back-slashes; used by saiku#1907's per-file home ACL stamp.
+     */
+    static boolean isUnderHome(String path) {
+        if (path == null) {
+            return false;
+        }
+        String p = path.replace('\\', '/');
+        while (p.startsWith("/")) {
+            p = p.substring(1);
+        }
+        return p.equals("homes") || p.startsWith("homes/");
     }
 
     public void removeFile(String path, String user, List<String> roles) throws RepositoryException {

@@ -386,12 +386,24 @@ class Acl2 {
                         break;
                 }
             } else {
-                if (file.getParentFile() == null) {
+                File parentFile = file.getParentFile();
+                if (parentFile == null) {
                     method = AclMethod.NONE;
-                } else if (file.getParentFile().getName().equals("/")) {
+                } else if (isHomesDir(parentFile)) {
+                    // saiku#1907: `file` is a per-user home folder (a direct child of
+                    // /homes) that carries no ACL entry of its own. It must NOT inherit
+                    // the permissive /homes SECURED default (defaultRole -> READ): doing
+                    // so leaks every user's saved queries/dashboards to any ROLE_USER
+                    // whenever the home's own PRIVATE entry fails to resolve (the
+                    // key-normalisation / home-path seam described in the issue). Fail
+                    // closed — only the home's owner (the user the folder is named after)
+                    // may enter. ROLE_ADMIN already short-circuited to GRANT above, so
+                    // admins are unaffected.
+                    method = ownsHome(file.getName(), username) ? AclMethod.GRANT : AclMethod.NONE;
+                } else if (parentFile.getName().equals("/")) {
                     return getAllAcls(rootMethod);
                 } else {
-                    List<AclMethod> parentMethods = getMethods(file.getParentFile(), username, roles);
+                    List<AclMethod> parentMethods = getMethods(parentFile, username, roles);
                     method = AclMethod.max(parentMethods);
                 }
             }
@@ -404,5 +416,34 @@ class Acl2 {
         List<AclMethod> noMethod = new ArrayList<>();
         noMethod.add(AclMethod.NONE);
         return noMethod;
+    }
+
+    /**
+     * Is {@code dir} the {@code /homes} container — the direct parent of every
+     * per-user home folder? Matched by the folder's own name so it holds
+     * regardless of the datadir/workspace prefix ({@code unknown/} vs a workspace)
+     * that varies across call contexts — the seam saiku#1907 closes.
+     */
+    private static boolean isHomesDir(@Nullable File dir) {
+        return dir != null && "homes".equals(dir.getName());
+    }
+
+    /**
+     * Does the home folder {@code folderName} belong to {@code username}? Home
+     * folders are named either {@code <user>} (the filesystem repository) or, in
+     * legacy/JCR-derived paths, {@code home:<user>}; both spellings are accepted.
+     *
+     * <p>Compared case-insensitively (saiku#1907, CWE-178): the account store
+     * matches usernames case-insensitively, so a home owned by {@code admin} must
+     * resolve for a caller principal {@code Admin}. Because the store cannot hold
+     * two accounts differing only in case, this can never conflate two distinct
+     * users.
+     */
+    private static boolean ownsHome(@Nullable String folderName, @Nullable String username) {
+        if (folderName == null || username == null) {
+            return false;
+        }
+        String owner = folderName.startsWith("home:") ? folderName.substring("home:".length()) : folderName;
+        return owner.equalsIgnoreCase(username);
     }
 }
