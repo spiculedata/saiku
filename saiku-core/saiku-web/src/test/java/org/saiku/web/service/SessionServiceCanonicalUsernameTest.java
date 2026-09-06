@@ -67,6 +67,32 @@ public class SessionServiceCanonicalUsernameTest {
                 session.get("principal"));
     }
 
+    /**
+     * saiku#1907 F3: the pass-through {@code principal} is the username AS TYPED, not the store
+     * case. Store spells the account "admin"; the user types "ADMIN" — pass-through must forward
+     * "ADMIN" (so a case-sensitive warehouse authenticates), while the ACL/home identity is "admin".
+     */
+    @Test
+    public void pass_through_principal_is_the_typed_spelling_not_the_store_case() {
+        List<SimpleGrantedAuthority> auths = Collections.singletonList(new SimpleGrantedAuthority("ROLE_USER"));
+        User principal = new User("admin", "", auths); // store's canonical spelling
+        SecurityContextHolder.getContext()
+                .setAuthentication(new UsernamePasswordAuthenticationToken(principal, null, auths));
+
+        HttpServletRequest req = fakeRequest();
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(req));
+
+        SessionService svc = new SessionService();
+        svc.setAuthenticationManager(null);
+        svc.setAuthorisationPredicate(auth -> true);
+        svc.setSessionRepo(new ScopedRepo());
+
+        Map<String, Object> session = svc.login(req, "ADMIN", "s3cret"); // user TYPES "ADMIN"
+
+        assertEquals("ACL/home identity is canonical", "admin", session.get("username"));
+        assertEquals("pass-through principal is the typed spelling", "ADMIN", session.get("principal"));
+    }
+
     // ---- fakes --------------------------------------------------------
 
     private static HttpServletRequest fakeRequest() {

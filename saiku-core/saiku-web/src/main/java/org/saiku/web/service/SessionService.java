@@ -143,9 +143,12 @@ public class SessionService implements ISessionService {
             //    ownership and the /homes/<user> path resolve to ONE value regardless of the
             //    case typed. Previously the RAW submitted string was stored, so "Admin" got a
             //    distinct principal + home from "admin", desynchronising ownership.
-            //  - "principal": the ORIGINAL store spelling, used verbatim for datasource
-            //    pass-through warehouse credentials (F3) — lower-casing it there would break a
-            //    case-sensitive warehouse login (JSmith -> jsmith).
+            //  - "principal": the username AS THE USER TYPED IT (the submitted string, falling back
+            //    to the authenticated principal), used verbatim for datasource pass-through
+            //    warehouse credentials (F3). This is the correct back-compat choice: pass-through
+            //    forwards exactly what the user entered, so a case-sensitive warehouse login
+            //    (JSmith) authenticates — lower-casing it (jsmith) would break it. It intentionally
+            //    matches the pre-fix behaviour (which stored the typed string in "username").
             // Anonymous keeps its exact well-known name (no home/ownership semantics attach).
             String principalSpelling = StringUtils.isNotBlank(username) ? username : authUser;
             String canonicalUser = StringUtils.isNotBlank(authUser) ? authUser : username;
