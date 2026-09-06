@@ -193,6 +193,82 @@ public class FilesystemRepositoryManagerPathTraversalTest {
                 contents == null ? null : (contents.contains("TOP_SECRET") ? contents : null));
     }
 
+    @Test
+    public void saveDataSource_rejects_dotdot_traversal_write() throws Exception {
+        // The actual #1906 sink, end to end. RepositoryDatasourceManager.addDatasource builds
+        // this exact path shape -- separator + "datasources" + separator + <name> + ".sds" --
+        // and hands it straight to saveDataSource. This manager has no knowledge of that
+        // caller's own name allowlist, so createNode() has to be the backstop here: it must
+        // resolve strictly inside the datadir instead of naively concatenating the datadir with
+        // the caller-supplied path.
+        DataSource ds = new DataSource();
+        ds.setName("evil");
+        String traversalPath = "/datasources/../../outside/evil.sds";
+
+        try {
+            manager.saveDataSource(ds, traversalPath, "fixme");
+        } catch (RuntimeException expected) {
+            // Acceptable: the createNode guard fails closed (throws SaikuServiceException, a
+            // RuntimeException) rather than silently writing outside the datadir.
+        }
+
+        // Per resolveWithinDatadir's own arithmetic: base is <datadir>/unknown/, and
+        // "/datasources/../../outside/evil.sds" resolved against it cancels "datasources" then
+        // "unknown", landing back at <datadir> itself before descending into a brand new
+        // "outside" folder -- i.e. <datadir>/outside/evil.sds, a sibling of the "unknown"
+        // workspace directory the repo is actually scoped to. Pre-fix, createNode() built this
+        // same string via `new File(getDatadir(), filename)` with no bounds check, and
+        // FileWriter would have created exactly this file; that sibling must never be created.
+        File escaped = new File(datadir, "outside/evil.sds");
+        if (escaped.exists()) {
+            try {
+                Files.delete(escaped.toPath());
+            } catch (Exception ignored) {
+            }
+            fail("saveDataSource must not write outside the repo root; found: " + escaped.getAbsolutePath());
+        }
+    }
+
+    @Test
+    public void createUser_rejects_dotdot_traversal_in_username() throws Exception {
+        // createFolder() is private; createUser() is the nearest public caller that reaches it
+        // directly with no ACL/session wiring needed -- every login / admin add-user path calls
+        // it with "/homes/" + username, so a username of "../../evil" is exactly the
+        // caller-controlled input createFolder() must guard against.
+        try {
+            manager.createUser("../../evil");
+        } catch (RuntimeException expected) {
+            // Acceptable: createFolder's guard fails closed (throws SaikuServiceException).
+        }
+
+        // Per resolveWithinDatadir's arithmetic: base is <datadir>/unknown/, and
+        // "/homes/../../evil" resolved against it cancels "homes" then "unknown", landing back
+        // at <datadir> itself before descending into a new "evil" folder -- i.e.
+        // <datadir>/evil, a sibling of the "unknown" workspace directory. Pre-fix,
+        // createFolder() built this same string via `fixPath(getDatadir() + path)` with no
+        // bounds check and unconditionally called mkdirs() on it, which would have created
+        // exactly this directory; that sibling must never be created.
+        File escaped = new File(datadir, "evil");
+        if (escaped.exists()) {
+            escaped.delete();
+            fail("createUser must not create a folder outside the repo root; found: " + escaped.getAbsolutePath());
+        }
+    }
+
+    @Test
+    public void createUser_creates_legitimate_home_folder_inside_datadir() throws Exception {
+        // Positive control for the traversal guard above: the guard must not false-positive on
+        // ordinary, non-traversal input -- an ordinary username must still get its home folder.
+        manager.createUser("normaluser");
+
+        File expected = new File(datadir, "unknown/homes/normaluser");
+        if (!expected.isDirectory()) {
+            fail("createUser must create the user's home folder inside the datadir. Expected at "
+                    + expected.getAbsolutePath()
+                    + " but it is missing.");
+        }
+    }
+
     // --- helpers -------------------------------------------------------------
 
     private static FilesystemRepositoryManager newManager(String path) throws Exception {
