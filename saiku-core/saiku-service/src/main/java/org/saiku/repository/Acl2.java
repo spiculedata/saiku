@@ -419,6 +419,56 @@ class Acl2 {
     }
 
     /**
+     * The {@link AclType} of the nearest ancestor folder that carries its own ACL
+     * entry, walking up from {@code file} and stopping at the {@code /homes}
+     * container. Returns {@code null} when no ancestor entry is found before then.
+     *
+     * <p>saiku#1907 F2: the per-file home ACL stamp consults this so it never turns a
+     * file saved inside a SECURED/PUBLIC (shared) folder into a PRIVATE file readable
+     * only by its saver — which would lock the folder owner and every sharee out.
+     */
+    @Nullable
+    AclType nearestAncestorAclType(@Nullable File file) {
+        if (file == null) {
+            return null;
+        }
+        File cur = file.getParentFile();
+        while (cur != null) {
+            AclEntry e = ownEntry(cur);
+            if (e != null) {
+                return e.getType();
+            }
+            if (isHomesDir(cur)) {
+                break;
+            }
+            cur = cur.getParentFile();
+        }
+        return null;
+    }
+
+    /**
+     * The ACL entry a folder holds for <em>itself</em> in its own {@code acl.json}
+     * (keyed by its path), or {@code null}. Reads straight from disk so it is safe to
+     * use while walking an ancestor chain. Best-effort — a missing/malformed file is
+     * treated as "no entry".
+     */
+    @Nullable
+    private static AclEntry ownEntry(@Nullable File dir) {
+        if (dir == null) {
+            return null;
+        }
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            TypeReference<Map<String, AclEntry>> ref = new TypeReference<Map<String, AclEntry>>() {};
+            File home = aclHome(dir);
+            Map<String, AclEntry> data = mapper.readValue(new File(home, "acl.json"), ref);
+            return lookup(data, dir.getPath());
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    /**
      * Is {@code dir} the {@code /homes} container — the direct parent of every
      * per-user home folder? Matched by the folder's own name so it holds
      * regardless of the datadir/workspace prefix ({@code unknown/} vs a workspace)

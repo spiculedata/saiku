@@ -230,10 +230,27 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
      * first-login home creation both reach {@code createUser}).
      */
     private static void validateUsernameSegment(String u) {
-        if (u == null || u.isEmpty()) {
+        if (u == null || u.trim().isEmpty()) {
             throw new SaikuServiceException("Invalid username for home folder");
         }
-        if (u.indexOf('/') >= 0 || u.indexOf('\\') >= 0 || u.contains("..") || u.charAt(0) == '.') {
+        // saiku#1907 F1: Win32 silently strips trailing dots/spaces and treats ':' as a
+        // drive/ADS separator, so a username that normalises to a DIFFERENT on-disk name is
+        // a traversal in disguise — e.g. "alice." lands on disk as "alice" and would let
+        // createUser rewrite alice's acl.json (home takeover + owner lockout). Reject any
+        // username whose Win32-normalised form differs from itself.
+        if (!stripWindowsFilenameTail(u).equals(u)) {
+            throw new SaikuServiceException("Invalid username for home folder");
+        }
+        if (u.indexOf('/') >= 0
+                || u.indexOf('\\') >= 0
+                || u.indexOf(':') >= 0
+                || u.contains("..")
+                || u.charAt(0) == '.') {
+            throw new SaikuServiceException("Invalid username for home folder");
+        }
+        // Reject the "home:" folder-name convention as a raw username (it is added by the
+        // repository layer, never a legitimate account name).
+        if (u.toLowerCase(java.util.Locale.ROOT).startsWith("home:")) {
             throw new SaikuServiceException("Invalid username for home folder");
         }
         for (int i = 0; i < u.length(); i++) {
@@ -467,6 +484,11 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
      * {@code /homes/}, and only when no per-file entry already exists (so a SECURED share the
      * owner set on the file is preserved). The {@link Acl2} constructor pre-loads the folder's
      * existing entries, so {@code serialize} merges rather than overwrites siblings.
+     *
+     * <p>saiku#1907 F2: the stamp is applied ONLY when the file's nearest effective ancestor
+     * ACL is PRIVATE or absent — never inside a SECURED/PUBLIC (shared) folder, where a PRIVATE
+     * per-file entry would lock the folder owner and every sharee out of a file saved into a
+     * space they explicitly share. In a shared folder the file correctly inherits the folder ACL.
      */
     private void stampPrivateHomeAclIfNeeded(String path, File resNode, String user, boolean isNewFile) {
         if (!isNewFile || resNode == null || user == null || user.isEmpty() || !isUnderHome(path)) {
@@ -477,7 +499,9 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
             if (userService != null) {
                 acl2.setAdminRoles(userService.getAdminRoles());
             }
-            if (acl2.getEntry(resNode.getPath()) == null) {
+            AclType ancestorType = acl2.nearestAncestorAclType(resNode);
+            boolean privateContext = (ancestorType == null || ancestorType == AclType.PRIVATE);
+            if (privateContext && acl2.getEntry(resNode.getPath()) == null) {
                 acl2.addEntry(resNode.getPath(), new AclEntry(user, AclType.PRIVATE, null, null));
                 acl2.serialize(resNode);
             }

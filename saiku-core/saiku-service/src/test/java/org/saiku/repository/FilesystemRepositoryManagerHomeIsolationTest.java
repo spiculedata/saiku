@@ -191,6 +191,31 @@ public class FilesystemRepositoryManagerHomeIsolationTest {
         }
     }
 
+    /**
+     * saiku#1907 F2: a NEW file saved into a SECURED shared home subfolder must NOT be
+     * stamped PRIVATE-to-its-saver — it must inherit the shared folder ACL so both the
+     * sharee and the owner can read it. RED if the stamp is unconditional (bob denied).
+     */
+    @Test
+    public void new_file_in_secured_shared_subfolder_is_readable_by_sharee_and_owner() throws Exception {
+        manager.createUser("alice");
+        File team = new File(datadir, "unknown/homes/alice/team");
+        assertTrue(team.mkdirs());
+        // alice shares the "team" folder: SECURED, ROLE_USER READ+WRITE, owner alice.
+        String key = team.getPath().replace("\\", "\\\\").replace("\"", "\\\"");
+        String json = "{\"" + key
+                + "\":{\"owner\":\"alice\",\"type\":\"SECURED\",\"roles\":{\"ROLE_USER\":[\"WRITE\",\"READ\"]},\"users\":null}}";
+        Files.write(new File(team, "acl.json").toPath(), json.getBytes(StandardCharsets.UTF_8));
+
+        manager.saveFile("TEAMDATA", "/homes/alice/team/plan.saikudash", "alice", "nt:saikufiles", ROLES_USER);
+
+        String bobView = manager.getFile("/homes/alice/team/plan.saikudash", "bob", ROLES_USER);
+        assertEquals("a sharee must read a file saved in a SECURED shared folder", "TEAMDATA", bobView);
+
+        String aliceView = manager.getFile("/homes/alice/team/plan.saikudash", "alice", ROLES_USER);
+        assertEquals("the owner must read it too", "TEAMDATA", aliceView);
+    }
+
     // ---- helpers ------------------------------------------------------
 
     private static FilesystemRepositoryManager newManager(String path) throws Exception {

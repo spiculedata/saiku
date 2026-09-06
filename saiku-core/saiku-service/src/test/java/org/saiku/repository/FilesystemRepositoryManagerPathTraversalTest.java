@@ -332,6 +332,49 @@ public class FilesystemRepositoryManagerPathTraversalTest {
                 new File(datadir, "unknown/homes/normal").isDirectory());
     }
 
+    /**
+     * saiku#1907 F1: a trailing-dot username ("alice.") normalises to "alice" on Win32,
+     * so it would rewrite alice's home acl.json (owner takeover + owner lockout). It must
+     * be rejected AND alice's existing acl.json left untouched.
+     */
+    @Test
+    public void createUser_rejects_trailing_dot_username_and_preserves_victim_acl() throws Exception {
+        File aliceHome = new File(datadir, "unknown/homes/alice");
+        if (!aliceHome.mkdirs()) {
+            throw new IllegalStateException("Could not create " + aliceHome);
+        }
+        File aclJson = new File(aliceHome, "acl.json");
+        String original = "{\"" + aliceHome.getPath().replace("\\", "\\\\").replace("\"", "\\\"")
+                + "\":{\"owner\":\"alice\",\"type\":\"PRIVATE\",\"roles\":null,\"users\":null}}";
+        Files.write(aclJson.toPath(), original.getBytes(StandardCharsets.UTF_8));
+
+        try {
+            manager.createUser("alice.");
+            fail("createUser must reject a trailing-dot username (Win32 normalises it to 'alice')");
+        } catch (RuntimeException expected) {
+            // fail-closed
+        }
+
+        String after = new String(Files.readAllBytes(aclJson.toPath()), StandardCharsets.UTF_8);
+        assertEquals("alice's acl.json must be left untouched", original, after);
+    }
+
+    /**
+     * saiku#1907 F1: a colon (Win32 drive/ADS separator), a "home:"-prefixed spelling,
+     * and blank/whitespace usernames must all be rejected fail-closed.
+     */
+    @Test
+    public void createUser_rejects_colon_home_prefix_and_blank_usernames() throws Exception {
+        for (String bad : new String[] {"a:b", "home:alice", "", "   "}) {
+            try {
+                manager.createUser(bad);
+                fail("createUser must reject username: [" + bad + "]");
+            } catch (RuntimeException expected) {
+                // fail-closed
+            }
+        }
+    }
+
     // --- helpers -------------------------------------------------------------
 
     private static FilesystemRepositoryManager newManager(String path) throws Exception {
