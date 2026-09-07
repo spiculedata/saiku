@@ -20,6 +20,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
+import org.saiku.service.util.security.Usernames;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -147,7 +148,7 @@ public class JobStore {
     public List<ScheduledJobFile> listByOwner(String owner) {
         List<ScheduledJobFile> out = new ArrayList<>();
         for (ScheduledJobFile j : listAll()) {
-            if (owner != null && owner.equals(j.getOwnerUsername())) {
+            if (Usernames.sameUser(owner, j.getOwnerUsername())) {
                 out.add(j);
             }
         }

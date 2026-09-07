@@ -26,6 +26,7 @@ import java.util.TreeMap;
 import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.saiku.service.util.security.Usernames;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -68,9 +69,24 @@ class Acl2 {
     @Nullable
     private final File node;
 
+    /**
+     * saiku#1907 F7: canonical path of the real {@code <datadir>/homes} container, when the
+     * caller wires it in. When set, {@link #isHomesDir(File)} anchors the home-isolation guard
+     * to THIS directory instead of matching any folder named {@code "homes"} — so a nested
+     * {@code /homes/alice/homes/} or a {@code /dashboards/homes/} cannot impersonate the
+     * container. Null leaves the name-based fallback (direct {@code Acl2} use / unit tests).
+     */
+    @Nullable
+    private String homesRoot;
+
     public Acl2(File n) {
         this.node = n;
         loadAclHome();
+    }
+
+    /** saiku#1907 F7: anchor the {@code /homes} guard to the real datadir container (see {@link #homesRoot}). */
+    public void setHomesRoot(@Nullable File homesRoot) {
+        this.homesRoot = homesRoot == null ? null : canonicalKey(homesRoot);
     }
 
     /**
@@ -338,7 +354,8 @@ class Acl2 {
             if (entry != null) {
                 switch (entry.getType()) {
                     case PRIVATE:
-                        if (!entry.getOwner().equals(username)) {
+                        // saiku#1907 (CWE-178): case-insensitive owner match — see sameUser().
+                        if (!sameUser(entry.getOwner(), username)) {
                             method = AclMethod.NONE;
                         } else {
                             method = AclMethod.GRANT;
@@ -347,8 +364,7 @@ class Acl2 {
                     case SECURED:
                         List<AclMethod> allMethods = new ArrayList<>();
 
-                        if (StringUtils.isNotBlank(entry.getOwner())
-                                && entry.getOwner().equals(username)) {
+                        if (StringUtils.isNotBlank(entry.getOwner()) && sameUser(entry.getOwner(), username)) {
                             allMethods.add(AclMethod.GRANT);
                         }
 
@@ -386,12 +402,24 @@ class Acl2 {
                         break;
                 }
             } else {
-                if (file.getParentFile() == null) {
+                File parentFile = file.getParentFile();
+                if (parentFile == null) {
                     method = AclMethod.NONE;
-                } else if (file.getParentFile().getName().equals("/")) {
+                } else if (isHomesDir(parentFile)) {
+                    // saiku#1907: `file` is a per-user home folder (a direct child of
+                    // /homes) that carries no ACL entry of its own. It must NOT inherit
+                    // the permissive /homes SECURED default (defaultRole -> READ): doing
+                    // so leaks every user's saved queries/dashboards to any ROLE_USER
+                    // whenever the home's own PRIVATE entry fails to resolve (the
+                    // key-normalisation / home-path seam described in the issue). Fail
+                    // closed — only the home's owner (the user the folder is named after)
+                    // may enter. ROLE_ADMIN already short-circuited to GRANT above, so
+                    // admins are unaffected.
+                    method = ownsHome(file.getName(), username) ? AclMethod.GRANT : AclMethod.NONE;
+                } else if (parentFile.getName().equals("/")) {
                     return getAllAcls(rootMethod);
                 } else {
-                    List<AclMethod> parentMethods = getMethods(file.getParentFile(), username, roles);
+                    List<AclMethod> parentMethods = getMethods(parentFile, username, roles);
                     method = AclMethod.max(parentMethods);
                 }
             }
@@ -404,5 +432,175 @@ class Acl2 {
         List<AclMethod> noMethod = new ArrayList<>();
         noMethod.add(AclMethod.NONE);
         return noMethod;
+    }
+
+    /**
+     * The {@link AclType} of the nearest ancestor folder that carries its own ACL
+     * entry, walking up from {@code file} and stopping at the {@code /homes}
+     * container. Returns {@code null} when no ancestor entry is found before then.
+     *
+     * <p>saiku#1907 F2: the per-file home ACL stamp consults this so it never turns a
+     * file saved inside a SECURED/PUBLIC (shared) folder into a PRIVATE file readable
+     * only by its saver — which would lock the folder owner and every sharee out.
+     */
+    @Nullable
+    AclType nearestAncestorAclType(@Nullable File file) {
+        if (file == null) {
+            return null;
+        }
+        File cur = file.getParentFile();
+        while (cur != null) {
+            // saiku#1907 F2 nit: stop AT the /homes container BEFORE reading its own SECURED entry,
+            // so a file on the exact /homes/<user>-with-no-entry seam is treated as PRIVATE-context
+            // (null) and gets stamped, rather than inheriting /homes' SECURED type.
+            if (isHomesDir(cur)) {
+                break;
+            }
+            AclEntry e = ownEntry(cur);
+            if (e != null) {
+                return e.getType();
+            }
+            cur = cur.getParentFile();
+        }
+        return null;
+    }
+
+    /**
+     * The ACL entry a folder holds for <em>itself</em> in its own {@code acl.json}
+     * (keyed by its path), or {@code null}. Reads straight from disk so it is safe to
+     * use while walking an ancestor chain. Best-effort — a missing/malformed file is
+     * treated as "no entry".
+     */
+    @Nullable
+    private static AclEntry ownEntry(@Nullable File dir) {
+        if (dir == null) {
+            return null;
+        }
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            TypeReference<Map<String, AclEntry>> ref = new TypeReference<Map<String, AclEntry>>() {};
+            File home = aclHome(dir);
+            Map<String, AclEntry> data = mapper.readValue(new File(home, "acl.json"), ref);
+            return lookup(data, dir.getPath());
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    /**
+     * saiku#1907 F4: after a home folder is renamed to its canonical name, its {@code acl.json}
+     * keys still point at the OLD absolute path. Rewrite every key that equals or is nested under
+     * {@code oldPrefix} to the {@code newPrefix} across the WHOLE renamed subtree — the home root's
+     * {@code acl.json} AND every nested {@code sub/acl.json} — so the folder's own entry and any
+     * per-file / subfolder shares survive the one-time rename. Best-effort — a missing/malformed
+     * file is left untouched; {@code createUser} re-stamps the root folder entry regardless.
+     */
+    static void rekeyAclPaths(@NotNull File dir, @NotNull String oldPrefix, @NotNull String newPrefix) {
+        rekeyAclPaths(dir, oldPrefix, newPrefix, 0);
+    }
+
+    private static void rekeyAclPaths(@Nullable File dir, String oldPrefix, String newPrefix, int depth) {
+        // Depth cap + symlink skip guard against a pathological (or malicious) home tree.
+        if (dir == null || depth > 64 || !dir.isDirectory()) {
+            return;
+        }
+        rekeyOneAclFile(new File(dir, "acl.json"), oldPrefix, newPrefix);
+        File[] children = dir.listFiles();
+        if (children == null) {
+            return;
+        }
+        for (File c : children) {
+            try {
+                if (c.isDirectory() && !java.nio.file.Files.isSymbolicLink(c.toPath())) {
+                    rekeyAclPaths(c, oldPrefix, newPrefix, depth + 1);
+                }
+            } catch (Exception ignored) {
+                // Skip an unreadable child; keep re-keying the rest.
+            }
+        }
+    }
+
+    /** Rewrite {@code oldPrefix}-rooted keys to {@code newPrefix} in a single {@code acl.json}. */
+    private static void rekeyOneAclFile(File aclFile, String oldPrefix, String newPrefix) {
+        if (!aclFile.exists()) {
+            return;
+        }
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            TypeReference<Map<String, AclEntry>> ref = new TypeReference<Map<String, AclEntry>>() {};
+            Map<String, AclEntry> data = mapper.readValue(aclFile, ref);
+            if (data == null || data.isEmpty()) {
+                return;
+            }
+            Map<String, AclEntry> rekeyed = new TreeMap<>();
+            boolean changed = false;
+            for (Map.Entry<String, AclEntry> e : data.entrySet()) {
+                String k = e.getKey();
+                String nk = k;
+                if (k.equals(oldPrefix)) {
+                    nk = newPrefix;
+                    changed = true;
+                } else if (k.startsWith(oldPrefix + File.separator) || k.startsWith(oldPrefix + "/")) {
+                    nk = newPrefix + k.substring(oldPrefix.length());
+                    changed = true;
+                }
+                rekeyed.put(nk, e.getValue());
+            }
+            if (changed) {
+                mapper.writeValue(aclFile, rekeyed);
+            }
+        } catch (Exception ignored) {
+            // Best-effort: createUser re-stamps the root folder entry regardless.
+        }
+    }
+
+    /**
+     * Is {@code dir} the {@code /homes} container — the direct parent of every per-user home
+     * folder? When a {@link #homesRoot} has been wired in (saiku#1907 F7), match ONLY that exact
+     * datadir container by canonical path, so a nested {@code /homes/alice/homes/} or a
+     * {@code /dashboards/homes/} cannot impersonate it and abuse the owner-by-name grant. When no
+     * root is wired (direct {@code Acl2} use / unit tests) fall back to matching the folder name,
+     * which still holds regardless of the datadir/workspace prefix ({@code unknown/} vs a workspace).
+     */
+    private boolean isHomesDir(@Nullable File dir) {
+        if (dir == null) {
+            return false;
+        }
+        if (homesRoot != null) {
+            return homesRoot.equals(canonicalKey(dir));
+        }
+        return "homes".equals(dir.getName());
+    }
+
+    /**
+     * Case-insensitive principal/owner comparison (saiku#1907, CWE-178). The
+     * account store matches usernames case-insensitively, so the same account can
+     * present as {@code admin} or {@code Admin}; a case-sensitive {@code equals}
+     * desynchronised ACL ownership from the account, which could both lock the
+     * owner out of their own resources and — with a mixed-case home — leak across
+     * identities. Because the store cannot hold two accounts differing only in
+     * case, an insensitive match never conflates two distinct users.
+     */
+    private static boolean sameUser(@Nullable String a, @Nullable String b) {
+        return Usernames.sameUser(a, b);
+    }
+
+    /**
+     * Does the home folder {@code folderName} belong to {@code username}? Home
+     * folders are named either {@code <user>} (the filesystem repository) or, in
+     * legacy/JCR-derived paths, {@code home:<user>}; both spellings are accepted.
+     *
+     * <p>Compared case-insensitively (saiku#1907, CWE-178): the account store
+     * matches usernames case-insensitively, so a home owned by {@code admin} must
+     * resolve for a caller principal {@code Admin}. Because the store cannot hold
+     * two accounts differing only in case, this can never conflate two distinct
+     * users.
+     */
+    private static boolean ownsHome(@Nullable String folderName, @Nullable String username) {
+        if (folderName == null || username == null) {
+            return false;
+        }
+        String owner = folderName.startsWith("home:") ? folderName.substring("home:".length()) : folderName;
+        return Usernames.sameUser(owner, username);
     }
 }

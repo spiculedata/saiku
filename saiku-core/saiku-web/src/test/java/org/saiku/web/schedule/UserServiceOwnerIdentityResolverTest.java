@@ -65,6 +65,24 @@ public class UserServiceOwnerIdentityResolverTest {
         assertEquals(List.of("ROLE_USER", "ROLE_SALES"), id.currentRoles());
     }
 
+    /**
+     * saiku#1907 F4 (CWE-178): a job owned by a mixed-case account name must still resolve to the
+     * SAME account's current roles — the account store matches usernames case-insensitively, so a
+     * case-sensitive lookup would fail-close a legitimately-owned job (skip + auto-disable). RED
+     * pre-fix (case-sensitive equals never finds "alice" for a lookup of "Alice").
+     */
+    @Test
+    public void presentOwner_resolvesCaseInsensitively() {
+        FakeUserService svc = new FakeUserService();
+        svc.users.add(user("alice"));
+        svc.rolesToReturn = new String[] {"ROLE_USER"};
+
+        OwnerIdentity id = new UserServiceOwnerIdentityResolver(svc).resolve("Alice");
+
+        assertTrue("a case-variant owner name must still resolve present", id.present());
+        assertEquals(List.of("ROLE_USER"), id.currentRoles());
+    }
+
     @Test
     public void disabledOwner_failsClosed() {
         // saiku#1809 PR4: a present-but-DISABLED account (USERS.ENABLED = 0) must resolve absent, so its

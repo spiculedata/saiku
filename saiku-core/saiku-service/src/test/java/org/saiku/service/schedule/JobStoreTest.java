@@ -43,6 +43,18 @@ class JobStoreTest {
     }
 
     @Test
+    void listByOwner_matches_case_insensitively(@TempDir Path home) {
+        // saiku#1907 F4: owner identity is compared case-insensitively, so a job created by
+        // "admin" is manageable/listable by the canonical identity regardless of the case a
+        // pre-existing record was stored under.
+        JobStore s = store(home);
+        createTypical(s, "admin");
+        assertEquals(1, s.listByOwner("Admin").size(), "listByOwner must match owner case-insensitively");
+        assertEquals(1, s.listByOwner("admin").size());
+        assertTrue(s.listByOwner("someoneelse").isEmpty(), "a different owner must not match");
+    }
+
+    @Test
     void create_then_load_roundtrips(@TempDir Path home) {
         JobStore s = store(home);
         ScheduledJobFile j = createTypical(s, "admin");

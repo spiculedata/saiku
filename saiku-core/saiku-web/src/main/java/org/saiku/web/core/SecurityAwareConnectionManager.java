@@ -145,7 +145,15 @@ public class SecurityAwareConnectionManager extends AbstractConnectionManager im
     private SaikuDatasource handlePassThrough(SaikuDatasource datasource) {
 
         Map<String, Object> session = sessionService.getAllSessionObjects();
-        String username = (String) session.get("username");
+        // saiku#1907 F3: pass-through forwards the user's login to the warehouse as its
+        // credentials, so it must use the ORIGINAL store spelling ("principal"), NOT the
+        // canonicalised (lower-cased) ACL/home identity ("username") — a case-sensitive
+        // warehouse account (e.g. JSmith) would otherwise fail to authenticate. Fall back to
+        // "username" for sessions minted before this split (and delegated runAs sessions).
+        String username = (String) session.get("principal");
+        if (username == null) {
+            username = (String) session.get("username");
+        }
 
         if (username != null) {
             String password = (String) session.get("password");

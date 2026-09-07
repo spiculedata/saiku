@@ -158,7 +158,10 @@ public class SessionResource {
             userService.checkFolders();
         } catch (Exception e) {
             // Best-effort: checkFolders must never block session creation (legacy
-            // plugin-mode deployments have no user folders to check).
+            // plugin-mode deployments have no user folders to check). saiku#1907 F5:
+            // log at WARN instead of swallowing silently, so a home-provisioning problem
+            // (e.g. a rename/permission failure) is visible to operators.
+            log.warn("checkFolders failed during session creation", e);
         }
 
         return Response.ok().entity(sess).build();

@@ -127,6 +127,17 @@ public class UserServiceTest {
         assertTrue(us.isEnabled("alice"));
     }
 
+    /**
+     * saiku#1907 F4 (CWE-178): a job owned by an admin-typed mixed-case name must still resolve
+     * its enabled-state (else the scheduler fail-closes and auto-disables a legitimately-owned
+     * job). RED pre-fix (case-sensitive equals denies the case-variant lookup).
+     */
+    @Test
+    public void isEnabled_matchesCaseInsensitively() {
+        UserService us = usersOf(user("alice", true));
+        assertTrue("a case-variant username must still resolve enabled state", us.isEnabled("Alice"));
+    }
+
     @Test
     public void isEnabled_falseForDisabledUser() {
         UserService us = usersOf(user("alice", false));

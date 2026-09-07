@@ -27,6 +27,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.apache.commons.lang3.StringUtils;
 import org.saiku.repository.ScopedRepo;
 import org.saiku.service.ISessionService;
+import org.saiku.service.util.security.Usernames;
 import org.saiku.service.util.security.authorisation.AuthorisationPredicate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -135,10 +136,28 @@ public class SessionService implements ISessionService {
                 log.debug("Creating Session for Anonymous User");
             }
 
-            if (StringUtils.isNotBlank(username)) {
-                session.put("username", username);
-            } else {
-                session.put("username", authUser);
+            // saiku#1907 (CWE-178): the account store matches usernames case-insensitively,
+            // so a case-variant login ("Admin" vs "admin") is the same account. We keep TWO
+            // identities in the session:
+            //  - "username": the CANONICAL ACL/home identity (lower-cased via Usernames), so
+            //    ownership and the /homes/<user> path resolve to ONE value regardless of the
+            //    case typed. Previously the RAW submitted string was stored, so "Admin" got a
+            //    distinct principal + home from "admin", desynchronising ownership.
+            //  - "principal": the username AS THE USER TYPED IT (the submitted string, falling back
+            //    to the authenticated principal), used verbatim for datasource pass-through
+            //    warehouse credentials (F3). This is the correct back-compat choice: pass-through
+            //    forwards exactly what the user entered, so a case-sensitive warehouse login
+            //    (JSmith) authenticates — lower-casing it (jsmith) would break it. It intentionally
+            //    matches the pre-fix behaviour (which stored the typed string in "username").
+            // Anonymous keeps its exact well-known name (no home/ownership semantics attach).
+            String principalSpelling = StringUtils.isNotBlank(username) ? username : authUser;
+            String canonicalUser = StringUtils.isNotBlank(authUser) ? authUser : username;
+            if (canonicalUser != null && !isAnonymous) {
+                canonicalUser = Usernames.canonicalize(canonicalUser);
+            }
+            session.put("username", canonicalUser);
+            if (principalSpelling != null) {
+                session.put("principal", principalSpelling);
             }
             if (StringUtils.isNotBlank(password)) {
                 session.put("password", password);
@@ -280,6 +299,9 @@ public class SessionService implements ISessionService {
             if (principal != null && !sessionHolder.containsKey(principal)) {
                 Map<String, Object> sess = new HashMap<>();
                 sess.put("username", username);
+                // saiku#1907 F3: mirror the login session shape so pass-through (which reads
+                // "principal") still resolves under delegated execution.
+                sess.put("principal", username);
                 sess.put("roles", roles == null ? new ArrayList<>() : new ArrayList<>(roles));
                 sessionHolder.put(principal, sess);
                 addedSession = true;

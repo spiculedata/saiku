@@ -21,6 +21,7 @@ import java.util.Map;
 import org.saiku.repository.AclEntry;
 import org.saiku.service.datasource.DatasourceService;
 import org.saiku.service.user.UserService;
+import org.saiku.service.util.security.Usernames;
 import org.saiku.web.service.SessionService;
 import org.saiku.web.share.ShareToken;
 import org.saiku.web.share.ShareTokenStore;
@@ -172,7 +173,7 @@ public class ShareTokenResource {
         }
         String username = currentUsername();
         List<String> roles = currentRoles();
-        boolean canManage = (username != null && username.equals(t.createdBy))
+        boolean canManage = Usernames.sameUser(username, t.createdBy)
                 || isAdmin(roles)
                 || stillCanGrant(t.dashboardPath, username, roles);
         if (!canManage) {

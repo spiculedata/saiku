@@ -135,6 +135,24 @@ public class EmbedTokenStoreTest {
         assertEquals(3, store.listAll().size());
     }
 
+    /**
+     * saiku#1907 F4 (CWE-178): owner identity is compared case-insensitively — the account store
+     * matches usernames case-insensitively, so a case-sensitive listByOwner would miss a caller's
+     * own tokens whenever their presented case differs from how the token recorded {@code createdBy}.
+     * RED pre-fix (case-sensitive equals excludes the case-variant lookup).
+     */
+    @Test
+    public void listByOwner_matches_case_insensitively() throws Exception {
+        EmbedTokenStore store = newStore();
+        store.create("query", "/a.saiku", "admin", List.of(), 60_000L, null);
+
+        assertEquals(1, store.listByOwner("Admin").size());
+        assertEquals(1, store.listByOwner("admin").size());
+        assertTrue(
+                "a different owner must not match",
+                store.listByOwner("someoneelse").isEmpty());
+    }
+
     @Test
     public void revoke_marks_token_and_persists() throws Exception {
         EmbedTokenStore store = newStore();

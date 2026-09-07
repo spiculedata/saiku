@@ -19,6 +19,17 @@
       | contain example saved queries. The saiku-launcher activates
       | this profile automatically when the SAIKU_DEMO=true env var is
       | set (or via -Dspring.profiles.active=demo). See saiku#897.
+      |
+      | CASE-INSENSITIVE-USERNAME INVARIANT (saiku#1907, CWE-178):
+      | Saiku canonicalises identity to a single lower-cased form for ACL
+      | ownership and the /homes/<user> path (org.saiku.service.util.security.Usernames).
+      | This is CORRECT for the in-memory provider above — Spring Security's
+      | InMemoryUserDetailsManager lower-cases its keys, so admin/Admin/ADMIN
+      | are ONE account and cannot coexist. If you swap in an external provider
+      | (LDAP / OAuth-OIDC / SAML / a JDBC UserDetailsService), it MUST match
+      | usernames case-insensitively too, or two accounts differing only in case
+      | would be conflated onto one ACL identity + home. Configure the external
+      | store case-insensitively (or normalise usernames at the provider) before use.
       +-->
 
   <beans profile="!demo">
