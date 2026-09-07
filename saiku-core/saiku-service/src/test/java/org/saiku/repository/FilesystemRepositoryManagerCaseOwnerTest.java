@@ -172,10 +172,17 @@ public class FilesystemRepositoryManagerCaseOwnerTest {
                 System.getProperty("os.name", "")
                         .toLowerCase(java.util.Locale.ROOT)
                         .contains("win"));
+        // "unknown/homes" is already created by manager.start(us) in setUp() -- mkdirs() on an
+        // existing dir returns false, so this must tolerate "already there", not assert mkdirs()
+        // succeeded (CI caught this: it never ran on Windows, where the Assume above skips it).
         File homes = new File(datadir, "unknown/homes");
-        assertTrue(homes.mkdirs());
+        if (!homes.isDirectory()) {
+            assertTrue(homes.mkdirs());
+        }
         File real = new File(homes, "realhome");
-        assertTrue(real.mkdirs());
+        if (!real.isDirectory()) {
+            assertTrue(real.mkdirs());
+        }
         java.nio.file.Files.createSymbolicLink(new File(homes, "aliaslink").toPath(), real.toPath());
 
         try {
