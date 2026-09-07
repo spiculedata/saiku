@@ -209,6 +209,41 @@ public class FilesystemRepositoryManagerCaseOwnerTest {
     }
 
     /**
+     * saiku#1907 F5: when the home's OWN entry already names an owner that case-matches the
+     * identity ("owner already correct"), createUser must take the NON-CLOBBERING early return and
+     * leave the entry completely untouched — a SECURED share the owner had configured on their home
+     * ROOT must survive exactly as stored (still SECURED, roles intact), not get reset to a fresh
+     * PRIVATE entry. Uses an EXACT folder-name match ({@code /homes/admin}, no case-variant
+     * directory) so only the F5 owner-already-correct branch is exercised, not the F4 rename path —
+     * distinguishing this from {@code createUser_restores_ownership_of_a_namesake_home_owned_by_someone_else}
+     * (foreign owner, must be restored) and from the rename tests above (which only ever assert a
+     * PRIVATE entry survives, so they can't tell a clobber-with-fresh-PRIVATE apart from a true
+     * no-op). RED if F5 rewrites the entry whenever ownership matches instead of returning early.
+     */
+    @Test
+    public void createUser_preserves_legitimately_shared_home_with_case_variant_owner() throws Exception {
+        File adminHome = new File(datadir, "unknown/homes/admin"); // exact name — no rename involved
+        assertTrue(adminHome.mkdirs());
+        String key = adminHome.getPath().replace("\\", "\\\\").replace("\"", "\\\"");
+        String json = "{\"" + key
+                + "\":{\"owner\":\"Admin\",\"type\":\"SECURED\",\"roles\":{\"ROLE_USER\":[\"READ\"]},\"users\":null}}";
+        Files.write(new File(adminHome, "acl.json").toPath(), json.getBytes(StandardCharsets.UTF_8));
+
+        manager.createUser("admin"); // owner "Admin" case-matches "admin" -> must be a non-clobbering no-op
+
+        AclEntry entry = manager.getACL("/homes/admin", "admin", ROLES_ADMIN);
+        assertNotNull("the home's entry must still exist", entry);
+        assertEquals(
+                "a legitimately-shared (SECURED) home entry must NOT be reset to PRIVATE when the "
+                        + "owner already case-matches",
+                AclType.SECURED,
+                entry.getType());
+        assertNotNull("the original share's roles must survive untouched", entry.getRoles());
+        assertTrue(
+                "the ROLE_USER share must survive untouched", entry.getRoles().containsKey("ROLE_USER"));
+    }
+
+    /**
      * saiku#1907 (SEC round-3 polish): a SECURED share in a NESTED subfolder of a mixed-case home
      * must survive the one-time rename-to-canonical — the acl.json re-key recurses over the whole
      * renamed subtree, not just the root. RED before the recursive re-key (the nested share's key

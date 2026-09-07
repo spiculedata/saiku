@@ -187,6 +187,46 @@ public class FilesystemRepositoryManagerMoveTest {
         assertTrue(new File(bobHome, "x.saikudash").exists());
     }
 
+    /**
+     * saiku#1907 N1 positive control: the new nearest-existing-ancestor gate must not overreach —
+     * an ADMIN moving a file into a brand-new subfolder of the admin-only /dashboards tree must
+     * still succeed. Mirrors {@code moveFile_nonAdmin_cannot_move_into_new_admin_only_folder}; the
+     * three admin-only top-level folders (/dashboards, /queries, /datasources) are seeded
+     * identically by {@code start()} (SECURED, admin-only), so this one exemplar exercises the same
+     * write-anchor code path as all three.
+     */
+    @Test
+    public void moveFile_admin_can_move_into_new_admin_only_folder() throws Exception {
+        seedSkeleton();
+        File bobHome = bobHomeWithSource();
+
+        manager.moveFile("/homes/bob/x.saikudash", "/dashboards/newfolder/x.saikudash", "admin", ROLES_ADMIN);
+
+        assertFalse("source must be gone after a successful admin move", new File(bobHome, "x.saikudash").exists());
+        assertTrue(
+                "an admin must still be able to create a new admin-only subfolder via move",
+                new File(datadir, "unknown/dashboards/newfolder/x.saikudash").exists());
+    }
+
+    /**
+     * saiku#1907 N1 positive control: {@code refuseForeignHomeChildCreation} explicitly exempts an
+     * admin, so an ADMIN moving a file to plant a brand-new {@code /homes/<name>} (provisioning /
+     * migration flows may pre-seed another user's home this way) must still succeed. Mirrors
+     * {@code moveFile_nonAdmin_cannot_create_another_users_home}.
+     */
+    @Test
+    public void moveFile_admin_can_create_another_users_home() throws Exception {
+        seedSkeleton();
+        File bobHome = bobHomeWithSource();
+
+        manager.moveFile("/homes/bob/x.saikudash", "/homes/Alice/x.saikudash", "admin", ROLES_ADMIN);
+
+        assertFalse("source must be gone after a successful admin move", new File(bobHome, "x.saikudash").exists());
+        assertTrue(
+                "an admin must still be able to create another user's home via move",
+                new File(datadir, "unknown/homes/Alice/x.saikudash").exists());
+    }
+
     // ---- helpers ------------------------------------------------------
 
     private void seedSkeleton() throws Exception {

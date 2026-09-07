@@ -262,6 +262,46 @@ public class FilesystemRepositoryManagerHomeIsolationTest {
     }
 
     /**
+     * saiku#1907 F2 nit (SEC round-3 polish): a NEW file saved into a home folder that has NO
+     * acl.json anywhere in its ancestor chain up to {@code /homes} (the exact seam
+     * {@code nearestAncestorAclType} documents) must still be stamped PRIVATE — the walk must stop
+     * AT the {@code /homes} container BEFORE reading its own SECURED entry, treating "no ancestor
+     * entry" as PRIVATE-context (null) rather than inheriting {@code /homes}' permissive SECURED
+     * default. RED if that early stop is dropped: the file would inherit SECURED, never get a
+     * per-file PRIVATE stamp, and reopen the cross-user leak this whole fix closes. This is
+     * distinct from {@code saveFile_stamps_a_private_per_file_acl_under_home} above, which exercises
+     * the sibling PRIVATE-ancestor branch (via {@code createUser}), not the absent-ancestor one.
+     */
+    @Test
+    public void new_file_in_entryless_home_is_stamped_private() throws Exception {
+        // alice's home exists but was never touched by createUser — no acl.json anywhere in the
+        // chain up to /homes.
+        File aliceHome = new File(datadir, "unknown/homes/alice");
+        assertTrue(aliceHome.mkdirs());
+
+        manager.saveFile("NEW", "/homes/alice/new.saikudash", "alice", "nt:saikufiles", ROLES_USER);
+
+        AclEntry entry = manager.getACL("/homes/alice/new.saikudash", "alice", ROLES_USER);
+        assertNotNull("a per-file ACL entry must be stamped even with an entry-less ancestor chain", entry);
+        assertEquals(
+                "an absent (entry-less) ancestor chain must still stamp the file PRIVATE, not inherit "
+                        + "/homes' SECURED default",
+                AclType.PRIVATE,
+                entry.getType());
+        assertTrue(
+                "the per-file entry must be owned by the saver",
+                entry.getOwner() != null && entry.getOwner().equalsIgnoreCase("alice"));
+
+        // The stamp actually protects the file: bob must still be denied.
+        try {
+            String body = manager.getFile("/homes/alice/new.saikudash", "bob", ROLES_USER);
+            fail("bob must not read alice's newly-stamped private file; leaked: " + body);
+        } catch (RepositoryException | org.saiku.service.util.exception.SaikuServiceException denied) {
+            // expected
+        }
+    }
+
+    /**
      * saiku#1907 F6: a non-admin catalogue listing must return the owner's own items. The ACL
      * check runs against the ABSOLUTE on-disk file now, so it no longer resolves against the JVM
      * CWD and come back empty on a case-sensitive FS (Linux/CI). RED pre-fix (empty listing).

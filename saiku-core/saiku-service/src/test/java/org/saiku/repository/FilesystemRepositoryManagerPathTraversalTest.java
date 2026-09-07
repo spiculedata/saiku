@@ -360,6 +360,35 @@ public class FilesystemRepositoryManagerPathTraversalTest {
     }
 
     /**
+     * saiku#1907 F1: a trailing-space username ("alice ") normalises to "alice" on Win32 (NTFS
+     * silently drops a trailing space, same as a trailing dot), so it must be rejected too — same
+     * guard ({@code stripWindowsFilenameTail}), same victim-ACL-untouched requirement as the
+     * trailing-dot case above. Distinct from {@code createUser_rejects_colon_home_prefix_and_blank_usernames}'s
+     * all-whitespace ("   ") case, which is caught by the earlier blank check rather than this one.
+     */
+    @Test
+    public void createUser_rejects_trailing_space_username_and_preserves_victim_acl() throws Exception {
+        File aliceHome = new File(datadir, "unknown/homes/alice");
+        if (!aliceHome.mkdirs()) {
+            throw new IllegalStateException("Could not create " + aliceHome);
+        }
+        File aclJson = new File(aliceHome, "acl.json");
+        String original = "{\"" + aliceHome.getPath().replace("\\", "\\\\").replace("\"", "\\\"")
+                + "\":{\"owner\":\"alice\",\"type\":\"PRIVATE\",\"roles\":null,\"users\":null}}";
+        Files.write(aclJson.toPath(), original.getBytes(StandardCharsets.UTF_8));
+
+        try {
+            manager.createUser("alice ");
+            fail("createUser must reject a trailing-space username (Win32 normalises it to 'alice')");
+        } catch (RuntimeException expected) {
+            // fail-closed
+        }
+
+        String after = new String(Files.readAllBytes(aclJson.toPath()), StandardCharsets.UTF_8);
+        assertEquals("alice's acl.json must be left untouched", original, after);
+    }
+
+    /**
      * saiku#1907 F1: a colon (Win32 drive/ADS separator), a "home:"-prefixed spelling,
      * and blank/whitespace usernames must all be rejected fail-closed.
      */

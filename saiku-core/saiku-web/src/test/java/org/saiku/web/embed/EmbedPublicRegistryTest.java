@@ -86,6 +86,24 @@ public class EmbedPublicRegistryTest {
         assertEquals(3, r.listAll().size());
     }
 
+    /**
+     * saiku#1907 F4 (CWE-178): grantor identity is compared case-insensitively — the account store
+     * matches usernames case-insensitively, so a case-sensitive listByOwner would miss a caller's
+     * own grants whenever their presented case differs from how the grant recorded {@code grantedBy}.
+     * RED pre-fix (case-sensitive equals excludes the case-variant lookup).
+     */
+    @Test
+    public void listByOwner_matches_case_insensitively() throws Exception {
+        EmbedPublicRegistry r = new EmbedPublicRegistry(tmp.newFolder("home").getAbsolutePath());
+        r.grant("query", "/a.saiku", "admin", List.of(), null);
+
+        assertEquals(1, r.listByOwner("Admin").size());
+        assertEquals(1, r.listByOwner("admin").size());
+        assertTrue(
+                "a different grantor must not match",
+                r.listByOwner("someoneelse").isEmpty());
+    }
+
     @Test
     public void in_memory_fallback_when_no_home() {
         EmbedPublicRegistry r = new EmbedPublicRegistry((String) null);
