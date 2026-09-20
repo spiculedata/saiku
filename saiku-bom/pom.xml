@@ -212,7 +212,7 @@
             <dependency>
                 <groupId>org.junit.jupiter</groupId>
                 <artifactId>junit-jupiter</artifactId>
-                <version>5.11.3</version>
+                <version>6.1.3</version>
             </dependency>
             <!-- POI 3.17 (2017) is EOL. 5.x line is the maintained successor;
                  5.4.0 is the current release. API surface for HSSF/XSSF
