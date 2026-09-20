@@ -88,6 +88,7 @@
 	"toolbar.export.csv": "CSV",
 	"toolbar.export.pdf": "PDF",
 	"toolbar.drillthrough": "Drill through",
+	"toolbar.cellLink": "Open link",
 	"toolbar.drillAcross": "Drill across",
 	"toolbar.reportTitles": "Report titles",
 	"toolbar.emailMeThis": "Email",

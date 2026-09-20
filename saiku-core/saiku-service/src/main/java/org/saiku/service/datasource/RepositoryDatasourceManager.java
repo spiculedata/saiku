@@ -1215,6 +1215,9 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
         if (file.getOssieYaml() != null) {
             props.put("ossieYaml", file.getOssieYaml());
         }
+        if (file.getCellLinkUrl() != null) {
+            props.put(ISaikuConnection.CELL_LINK_URL_KEY, file.getCellLinkUrl());
+        }
         // schema captures the Ossie model name for OSSIE datasources — same semantic as
         // Mondrian's catalog. Existing load path drops it on the floor.
         if (file.getSchema() != null) {
