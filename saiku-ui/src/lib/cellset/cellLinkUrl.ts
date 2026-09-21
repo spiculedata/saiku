@@ -18,7 +18,10 @@ const UNIQUE_SUFFIX = '.uniqueName';
  * HTTP(S) template. Unmatched placeholders become empty. Returns {@code null}
  * when the template is missing or is not `http:` / `https:` (rejects `javascript:`).
  */
-export function buildCellLinkUrl(template: string | null | undefined, coords: CellLinkCoord[]): string | null {
+export function buildCellLinkUrl(
+	template: string | null | undefined,
+	coords: CellLinkCoord[]
+): string | null {
 	if (template == null) return null;
 	const raw = template.trim();
 	if (!raw) return null;
@@ -52,7 +55,10 @@ export function coordFromHeader(cell: CellEntry): CellLinkCoord {
 	};
 }
 
-export function coordsForIntersection(rowHeaders: CellEntry[], columnHeaders: CellEntry[]): CellLinkCoord[] {
+export function coordsForIntersection(
+	rowHeaders: CellEntry[],
+	columnHeaders: CellEntry[]
+): CellLinkCoord[] {
 	return [...rowHeaders, ...columnHeaders].map(coordFromHeader);
 }
 
@@ -92,7 +98,11 @@ function rowHeaderLookingUp(parsed: ParsedCellset, row: number, col: number): Ce
 }
 
 /** Same as row walk-up, for spanned column parents (Barrio over several measures). */
-function columnHeaderLookingLeft(parsed: ParsedCellset, headerRow: number, dataCol: number): CellEntry {
+function columnHeaderLookingLeft(
+	parsed: ParsedCellset,
+	headerRow: number,
+	dataCol: number
+): CellEntry {
 	const start = parsed.rowHeaderColCount + dataCol;
 	for (let c = start; c >= parsed.rowHeaderColCount; c--) {
 		const cell = parsed.columnHeaderRows[headerRow]?.[c];
@@ -119,7 +129,8 @@ function enrichFromQueryModel(
 ): CellLinkCoord[] {
 	const rowHiers = model.axes.ROWS?.hierarchies ?? [];
 	const colHiers = model.axes.COLUMNS?.hierarchies ?? [];
-	const measuresOnCols = (model.details?.axis ?? 'COLUMNS') === 'COLUMNS' && (model.details?.measures?.length ?? 0) > 0;
+	const measuresOnCols =
+		(model.details?.axis ?? 'COLUMNS') === 'COLUMNS' && (model.details?.measures?.length ?? 0) > 0;
 	const out: CellLinkCoord[] = [];
 	for (let i = 0; i < coords.length; i++) {
 		const coord = coords[i];
@@ -145,9 +156,17 @@ function hasIdentity(coord: CellLinkCoord): boolean {
 	return !!(coord.dimension || coord.hierarchy || coord.level || coord.uniqueName);
 }
 
-function applyHierarchy(coord: CellLinkCoord, hier: ThinHierarchy | undefined, asMeasure: boolean): CellLinkCoord {
+function applyHierarchy(
+	coord: CellLinkCoord,
+	hier: ThinHierarchy | undefined,
+	asMeasure: boolean
+): CellLinkCoord {
 	if (asMeasure) {
-		return { ...coord, dimension: coord.dimension || 'Measures', hierarchy: coord.hierarchy || '[Measures]' };
+		return {
+			...coord,
+			dimension: coord.dimension || 'Measures',
+			hierarchy: coord.hierarchy || '[Measures]'
+		};
 	}
 	if (!hier) return coord;
 	return {

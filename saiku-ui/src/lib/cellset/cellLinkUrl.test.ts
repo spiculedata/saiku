@@ -27,9 +27,9 @@ const ops: CellLinkCoord[] = [
 
 describe('buildCellLinkUrl', () => {
 	it('substitutes dimension captions and encodes them', () => {
-		expect(
-			buildCellLinkUrl('https://erp.ejemplo/ops?barrio={Barrio}&tipo={Tipo}', ops)
-		).toBe('https://erp.ejemplo/ops?barrio=Palermo&tipo=Venta');
+		expect(buildCellLinkUrl('https://erp.ejemplo/ops?barrio={Barrio}&tipo={Tipo}', ops)).toBe(
+			'https://erp.ejemplo/ops?barrio=Palermo&tipo=Venta'
+		);
 	});
 
 	it('substitutes uniqueName when asked', () => {
@@ -115,14 +115,15 @@ describe('coordsAtIntersection', () => {
 		const measure = (value: string): CellEntry => ({
 			value,
 			type: 'COLUMN_HEADER',
-			properties: { dimension: 'Measures', hierarchy: '[Measures]', uniquename: `[Measures].[${value}]` }
+			properties: {
+				dimension: 'Measures',
+				hierarchy: '[Measures]',
+				uniquename: `[Measures].[${value}]`
+			}
 		});
 		const parsed = parseCellset({
 			cellset: [
-				[
-					{ value: '', type: 'ROW_HEADER_HEADER' },
-					measure('Monto')
-				],
+				[{ value: '', type: 'ROW_HEADER_HEADER' }, measure('Monto')],
 				[barrio('Palermo'), { value: '1', type: 'DATA_CELL' }]
 			]
 		});
@@ -195,10 +196,7 @@ describe('coordsAtIntersection', () => {
 	});
 });
 
-function rh(
-	dimension: string,
-	value: string
-): CellEntry {
+function rh(dimension: string, value: string): CellEntry {
 	return {
 		value,
 		type: 'ROW_HEADER',
@@ -238,7 +236,11 @@ function data(v: string): CellEntry {
 /** Nested rows Tipo+Operacion, columns Barrio+Cantidad — the user's Operaciones grid. */
 function deptoAlquilerPalermoCellset() {
 	const barrios = ['Belgrano', 'Caballito', 'Palermo', 'Recoleta'];
-	const headerBarrios: CellEntry[] = [emptyHdr(), emptyHdr(), ...barrios.map((b) => ch('Barrio', b))];
+	const headerBarrios: CellEntry[] = [
+		emptyHdr(),
+		emptyHdr(),
+		...barrios.map((b) => ch('Barrio', b))
+	];
 	const headerMeasures: CellEntry[] = [
 		emptyHdr(),
 		emptyHdr(),
@@ -280,7 +282,11 @@ function twoRowOpsCellset() {
 	const measure = (value: string): CellEntry => ({
 		value,
 		type: 'COLUMN_HEADER',
-		properties: { dimension: 'Measures', hierarchy: '[Measures]', uniquename: `[Measures].[${value}]` }
+		properties: {
+			dimension: 'Measures',
+			hierarchy: '[Measures]',
+			uniquename: `[Measures].[${value}]`
+		}
 	});
 	return parseCellset({
 		cellset: [
@@ -304,7 +310,12 @@ function emptyAxis(location: 'FILTER' | 'COLUMNS' | 'ROWS' | 'PAGES') {
 		sortOrder: null,
 		sortEvaluationLiteral: null,
 		hierarchizeMode: null,
-		hierarchies: [] as { name: string; dimension: string; levels: Record<string, never>; cmembers: Record<string, string> }[],
+		hierarchies: [] as {
+			name: string;
+			dimension: string;
+			levels: Record<string, never>;
+			cmembers: Record<string, string>;
+		}[],
 		nonEmpty: false
 	};
 }

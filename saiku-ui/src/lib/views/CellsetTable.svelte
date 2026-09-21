@@ -930,14 +930,19 @@
 					{/if}
 				</div>
 				<div class="cellset-ctx-menu__item cellset-ctx-menu__item--parent">
-					<button type="button" onclick={() => (menu.sub = menu.sub === 'remove' ? null : 'remove')}>
+					<button
+						type="button"
+						onclick={() => (menu.sub = menu.sub === 'remove' ? null : 'remove')}
+					>
 						{i18n.t('cellset.menu.removeLevel')} ▸
 					</button>
 					{#if menu.sub === 'remove'}
 						<div class="cellset-ctx-menu__sub">
 							{#each menu.levels.filter((l) => l.used) as lvl}
-								<button type="button" class="cellset-ctx-menu__item" onclick={() => removeLevel(lvl)}
-									>{lvl.caption}</button
+								<button
+									type="button"
+									class="cellset-ctx-menu__item"
+									onclick={() => removeLevel(lvl)}>{lvl.caption}</button
 								>
 							{/each}
 							{#if menu.levels.filter((l) => l.used).length === 0}
