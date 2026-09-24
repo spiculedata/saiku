@@ -12,7 +12,9 @@ on:
 
 permissions:
   contents: read
-  packages: write
+  packages: write # push the image AND its attestations to GHCR
+  id-token: write # keyless Sigstore signing for build provenance (saiku#1992)
+  attestations: write # record the SLSA provenance attestation on the repo
 
 env:
   REGISTRY: ghcr.io
@@ -95,6 +97,7 @@ jobs:
             type=sha,prefix=sha-,format=short
 
       - name: Build & push
+        id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
@@ -107,3 +110,19 @@ jobs:
           # the freshly-built JARs).
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # saiku#1990 + #1992: the rolling development image is the primary
+          # image push on `development`, so it carries the same SBOM + SLSA
+          # provenance attestations as the released image. This is where the
+          # container supply-chain wiring is proven ahead of a tagged release.
+          sbom: true
+          provenance: mode=max
+
+      - name: Attest image build provenance
+        # saiku#1992: keyless Sigstore provenance for the rolling image, logged
+        # to Rekor and pushed to GHCR as a referring attestation. subject-digest
+        # is the image index digest emitted by the build step above.
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true

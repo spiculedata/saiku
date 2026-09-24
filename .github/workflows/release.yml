@@ -33,6 +33,7 @@ jobs:
       version: ${{ steps.meta.outputs.version }}
       jar_name: ${{ steps.meta.outputs.jar_name }}
       dist_name: ${{ steps.meta.outputs.dist_name }}
+      sbom_name: ${{ steps.meta.outputs.sbom_name }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -97,6 +98,7 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "jar_name=saiku-${VERSION}.jar" >> "$GITHUB_OUTPUT"
           echo "dist_name=saiku-dist-${VERSION}.zip" >> "$GITHUB_OUTPUT"
+          echo "sbom_name=saiku-sbom-${VERSION}.cdx.json" >> "$GITHUB_OUTPUT"
 
       - name: "mvn verify (fail-fast: spotless + tests)"
         # Defence in depth — branch protection SHOULD have caught any
@@ -155,6 +157,18 @@ jobs:
           chmod +x "$STAGE/run.sh"
           # zip preserves +x so end users on Unix can ./run.sh post-extract.
           zip -r "release-assets/${STAGE}.zip" "$STAGE"
+          # 3) CycloneDX SBOM (saiku#1990). cyclonedx-maven-plugin's
+          #    makeAggregateBom writes ONE aggregate at the reactor top-level.
+          #    The last Maven step in this job is a full-reactor `mvn deploy`,
+          #    so the deterministic location is the root module's target/. Fall
+          #    back to a tree search in case a future reordering moves it.
+          SBOM_SRC="target/saiku-sbom.json"
+          [ -f "$SBOM_SRC" ] || SBOM_SRC="$(find . -name saiku-sbom.json | head -1)"
+          if [ -z "${SBOM_SRC:-}" ] || [ ! -f "$SBOM_SRC" ]; then
+            echo "::error::no CycloneDX SBOM (saiku-sbom.json) was produced by the build"
+            exit 1
+          fi
+          cp "$SBOM_SRC" "release-assets/saiku-sbom-${VERSION}.cdx.json"
           ls -la release-assets/
 
       - name: Upload JAR artifact
@@ -171,13 +185,22 @@ jobs:
           path: release-assets/${{ steps.meta.outputs.dist_name }}
           retention-days: 7
 
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: saiku-sbom
+          path: release-assets/${{ steps.meta.outputs.sbom_name }}
+          retention-days: 7
+
   docker:
     name: Build & push Docker image
     runs-on: ubuntu-latest
     needs: jar
     permissions:
       contents: read # checkout only
-      packages: write # push the image to GHCR
+      packages: write # push the image AND its attestations to GHCR
+      id-token: write # keyless Sigstore signing for build provenance (saiku#1992)
+      attestations: write # record the SLSA provenance attestation on the repo
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -222,6 +245,7 @@ jobs:
             type=raw,value=latest
 
       - name: Build & push
+        id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
@@ -231,6 +255,26 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # saiku#1990 + #1992: BuildKit attaches an SBOM + max-detail SLSA
+          # provenance attestation manifest to the pushed image index. This
+          # answers "what's in the image?" and "how was it built?" at the OCI
+          # layer. The verifiable, Rekor-logged provenance is added separately
+          # below via actions/attest-build-provenance.
+          sbom: true
+          provenance: mode=max
+
+      - name: Attest image build provenance
+        # saiku#1992: keyless Sigstore provenance for the image, logged to Rekor
+        # and pushed to GHCR as a referring attestation, so consumers can run
+        #   gh attestation verify oci://ghcr.io/spiculedata/saiku:<v> --repo spiculedata/saiku
+        #   cosign verify-attestation --type slsaprovenance ...
+        # against the exact digest we published. subject-digest is the
+        # multi-arch index digest emitted by the build step above.
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
 
   release:
     name: Publish GitHub release
@@ -239,9 +283,12 @@ jobs:
     needs: [jar, docker]
     permissions:
       contents: write # create the GitHub release + upload assets
+      id-token: write # keyless Sigstore signing for JAR + dist provenance (saiku#1992)
+      attestations: write # record the SLSA provenance attestations on the repo
     steps:
-      # Pull both artifacts the jar job uploaded — the bare versioned JAR
-      # and the runnable saiku-dist zip. Both get attached to the release.
+      # Pull the three artifacts the jar job uploaded — the bare versioned JAR,
+      # the runnable saiku-dist zip, and the CycloneDX SBOM. All get attached
+      # to the release.
       - name: Download saiku-jar
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -252,8 +299,43 @@ jobs:
         with:
           name: saiku-dist
           path: release-assets
+      - name: Download saiku-sbom
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: saiku-sbom
+          path: release-assets
       - name: Confirm release assets staged
         run: ls -la release-assets/
+
+      - name: Attest JAR + dist + SBOM build provenance
+        # saiku#1992: keyless Sigstore provenance for the file assets, logged to
+        # Rekor and recorded against this repo, so a consumer can run
+        #   gh attestation verify saiku-<v>.jar --repo spiculedata/saiku
+        # and prove the bytes came out of THIS workflow. Attestation is by
+        # content digest, so attesting the same bytes the release publishes
+        # (downloaded from the jar job) is equivalent to attesting at build time.
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            release-assets/${{ needs.jar.outputs.jar_name }}
+            release-assets/${{ needs.jar.outputs.dist_name }}
+            release-assets/${{ needs.jar.outputs.sbom_name }}
+
+      - name: Generate SHA256SUMS
+        # saiku#1992 / saiku#1919 (18b): a plain checksums manifest over every
+        # published asset. Useful on its own (offline integrity check) and as
+        # the low-tech complement to the Sigstore attestations above. Computed
+        # with basenames so `sha256sum -c SHA256SUMS` works from the download
+        # dir. SHA256SUMS itself is deliberately NOT listed inside itself.
+        working-directory: release-assets
+        run: |
+          set -euo pipefail
+          sha256sum \
+            "${{ needs.jar.outputs.jar_name }}" \
+            "${{ needs.jar.outputs.dist_name }}" \
+            "${{ needs.jar.outputs.sbom_name }}" \
+            > SHA256SUMS
+          cat SHA256SUMS
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
@@ -263,6 +345,8 @@ jobs:
           files: |
             release-assets/${{ needs.jar.outputs.jar_name }}
             release-assets/${{ needs.jar.outputs.dist_name }}
+            release-assets/${{ needs.jar.outputs.sbom_name }}
+            release-assets/SHA256SUMS
           name: Saiku ${{ needs.jar.outputs.version }}
           body: |
             ## Saiku ${{ needs.jar.outputs.version }}
@@ -275,6 +359,12 @@ jobs:
               wire the launcher into their own startup script. `java -jar saiku-*.jar serve`.
 
             Docker image (multi-arch): `ghcr.io/${{ github.repository }}:${{ needs.jar.outputs.version }}`
+
+            #### Supply-chain
+
+            - `${{ needs.jar.outputs.sbom_name }}` — CycloneDX SBOM covering the shaded launcher's dependency set.
+            - `SHA256SUMS` — checksums for every asset above.
+            - Each asset (JAR, dist zip, SBOM) and the container image carry a **Sigstore-signed SLSA build provenance** attestation (Rekor-logged). Verify with `gh attestation verify` / `cosign`. See [docs/releasing.md](https://github.com/${{ github.repository }}/blob/main/docs/releasing.md#verifying-release-artifacts).
 
             ### Auto-generated changelog
           # generate_release_notes appends GitHub's auto-generated "What's
@@ -305,6 +395,7 @@ jobs:
     needs: [jar]
     permissions:
       contents: read # checkout only; publish auth is NPM_TOKEN, not GITHUB_TOKEN
+      id-token: write # npm --provenance mints an OIDC token for Sigstore (saiku#1992)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up Node 24
@@ -356,7 +447,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           cd saiku-ui/embed-npm
-          npm publish --access public || \
+          npm publish --access public --provenance || \
             echo "::warning::npm publish (base) skipped (likely already-published or missing NPM_TOKEN)"
       - name: npm publish React SDK
         # Publishes @concepttocloud/saiku-embed-react (saiku#1432) with a
@@ -366,7 +457,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           cd saiku-ui/embed-react-npm
-          npm publish --access public || \
+          npm publish --access public --provenance || \
             echo "::warning::npm publish (react) skipped (likely already-published or missing NPM_TOKEN)"
 
   docs-changelog:
