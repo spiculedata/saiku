@@ -282,6 +282,14 @@
                          release job publishes; `find -name saiku-sbom.json` then
                          resolves unambiguously. -->
                     <outputReactorProjects>false</outputReactorProjects>
+                    <!-- Do NOT attach the BOM as a Maven artifact. The file is
+                         still written to target/ (that's all the release job
+                         needs), but attaching would make `mvn deploy` push an
+                         UNSIGNED *-cyclonedx.json to GH Packages alongside the
+                         module jars. The SBOM we stand behind is the release
+                         asset — signed by attest-build-provenance — not an
+                         unattested copy in the package registry (SEC N5). -->
+                    <skipAttach>true</skipAttach>
                 </configuration>
             </plugin>
 
