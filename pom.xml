@@ -44,6 +44,10 @@
         <!-- bi.saiku.ossie:ossie-core — external Ossie/OSI parser library
              (spiculedata/ossie). Track its releases and bump here. -->
         <ossie.version>0.1.0</ossie.version>
+        <!-- CycloneDX SBOM plugin (saiku#1990). Pinned so a plugin auto-update
+             can't silently change the SBOM shape / schema version under us.
+             Bumped by the maven dependabot group like every other plugin. -->
+        <cyclonedx-maven-plugin.version>2.9.1</cyclonedx-maven-plugin.version>
     </properties>
     <repositories>
         <!-- In-tree Maven file-repo for vendored deps that aren't reachable on
@@ -234,6 +238,58 @@
                 <configuration>
                     <source>1.6</source>
                     <target>1.6</target>
+                </configuration>
+            </plugin>
+
+            <!-- saiku#1990: CycloneDX SBOM. `makeAggregateBom` is an aggregator
+                 goal — declared here in the reactor root it runs ONCE at the end
+                 of the build (not per-module) and walks every module in the
+                 current reactor, so the emitted SBOM reflects the flattened
+                 dependency set that the shaded saiku-launcher fat JAR actually
+                 ships. Bound to `package` so `mvn package` (and the release
+                 job's `mvn -pl saiku-launcher -am package`) produce it without
+                 an extra invocation. Output: target/saiku-sbom.json (root
+                 module target/) in CycloneDX 1.6 JSON. Test scope is excluded —
+                 the SBOM describes what ships, not the build/test harness. -->
+            <plugin>
+                <groupId>org.cyclonedx</groupId>
+                <artifactId>cyclonedx-maven-plugin</artifactId>
+                <version>${cyclonedx-maven-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>make-aggregate-sbom</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>makeAggregateBom</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <projectType>application</projectType>
+                    <schemaVersion>1.6</schemaVersion>
+                    <outputFormat>json</outputFormat>
+                    <outputName>saiku-sbom</outputName>
+                    <includeBomSerialNumber>true</includeBomSerialNumber>
+                    <includeCompileScope>true</includeCompileScope>
+                    <includeProvidedScope>true</includeProvidedScope>
+                    <includeRuntimeScope>true</includeRuntimeScope>
+                    <includeSystemScope>true</includeSystemScope>
+                    <includeTestScope>false</includeTestScope>
+                    <includeLicenseText>false</includeLicenseText>
+                    <!-- Emit ONLY the single aggregate BOM at the top of the
+                         reactor, not a per-module BOM in every target/. One
+                         deterministic file (target/saiku-sbom.json) is what the
+                         release job publishes; `find -name saiku-sbom.json` then
+                         resolves unambiguously. -->
+                    <outputReactorProjects>false</outputReactorProjects>
+                    <!-- Do NOT attach the BOM as a Maven artifact. The file is
+                         still written to target/ (that's all the release job
+                         needs), but attaching would make `mvn deploy` push an
+                         UNSIGNED *-cyclonedx.json to GH Packages alongside the
+                         module jars. The SBOM we stand behind is the release
+                         asset — signed by attest-build-provenance — not an
+                         unattested copy in the package registry (SEC N5). -->
+                    <skipAttach>true</skipAttach>
                 </configuration>
             </plugin>
 
