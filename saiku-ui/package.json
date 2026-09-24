@@ -70,7 +70,7 @@
 	},
 	"dependencies": {
 		"@concepttocloud/saiku-design-system": "*",
-		"@lucide/svelte": "^1.43.0",
+		"@lucide/svelte": "^1.47.0",
 		"@xyflow/svelte": "^1.6.6",
 		"apache-arrow": "^21.2.0",
 		"bits-ui": "^2.19.2",
@@ -82,9 +82,9 @@
 		"html-to-image": "^1.11.13",
 		"jspdf": "^4.2.1",
 		"monaco-editor": "^0.56.0",
-		"tailwind-merge": "^3.6.0",
+		"tailwind-merge": "^3.7.0",
 		"tailwind-variants": "^3.3.1",
-		"yaml": "^2.9.0"
+		"yaml": "^2.9.1"
 	},
 	"overrides": {
 		"dompurify": "^3.4.0",
