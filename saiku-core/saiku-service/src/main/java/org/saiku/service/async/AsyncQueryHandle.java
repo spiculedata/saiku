@@ -10,6 +10,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 import org.olap4j.CellSet;
 import org.saiku.olap.query2.ThinQuery;
+import org.saiku.service.olap.ThinQueryService;
 
 /**
  * Handle for an asynchronous query submission. Tracks lifecycle state and
@@ -48,6 +49,18 @@ public class AsyncQueryHandle {
      */
     private volatile String owner;
 
+    /**
+     * The concrete {@link ThinQueryService} instance this query executes against, resolved on the
+     * submitting request thread (where the Spring 'session' scope is active). Stashing it here lets
+     * the off-thread cancel path close the underlying OLAP statement via the same concrete session
+     * bean instead of resolving a session-scoped proxy on a pool thread with no active session scope
+     * — which would throw "Scope 'session' is not active for the current thread" and silently no-op
+     * the statement cancel. {@code null} for handles created outside {@code submit()} (e.g. tests
+     * that {@code register()} a handle directly), in which case the service falls back to its own
+     * reference.
+     */
+    private volatile ThinQueryService resolvedThinQueryService;
+
     public AsyncQueryHandle(String id, ThinQuery query) {
         this(id, query, null);
     }
@@ -70,6 +83,14 @@ public class AsyncQueryHandle {
 
     public void setOwner(String owner) {
         this.owner = owner;
+    }
+
+    public ThinQueryService getResolvedThinQueryService() {
+        return resolvedThinQueryService;
+    }
+
+    public void setResolvedThinQueryService(ThinQueryService resolvedThinQueryService) {
+        this.resolvedThinQueryService = resolvedThinQueryService;
     }
 
     /**
