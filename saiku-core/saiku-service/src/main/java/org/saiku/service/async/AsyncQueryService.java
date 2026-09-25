@@ -139,22 +139,36 @@ public class AsyncQueryService {
     /**
      * Submit a query for async execution. Returns immediately with a handle
      * whose status is {@code PENDING} until the worker picks it up.
+     *
+     * <p>saiku#1968 (CWE-863) fail-closed: this overload captures the caller's Spring
+     * {@link RequestAttributes} itself and delegates to {@link #submit(ThinQuery, RequestAttributes)},
+     * so the worker ALWAYS binds request attributes when the caller has any. That keeps
+     * {@code SecurityAwareConnectionManager}'s "genuinely context-free caller" start-up carve-out
+     * (which exempts {@code principal == null && RequestContextHolder.getRequestAttributes() == null}
+     * from the deny) from ever engaging on an async path invoked from a live request: a non-admin
+     * with no cube role is then DENIED, not silently granted Mondrian root. (When invoked with no
+     * bound request at all — a genuinely context-free caller, of which there are no async ones today —
+     * both attrs and principal are null and the start-up exemption applies exactly as #1968 intends.)
      */
     public AsyncQueryHandle submit(final ThinQuery query) {
-        return submit(query, null);
+        return submit(query, RequestContextHolder.getRequestAttributes());
     }
 
     /**
      * Submit a query for async execution, propagating the caller's Spring
-     * {@link RequestAttributes} to the worker thread. This is required when
-     * {@link #thinQueryService} is a session-scoped bean (as in the default
-     * webapp wiring): the executor thread has no HTTP request/session, so
-     * resolving the scoped proxy without propagation throws
-     * "Scope 'session' is not active for the current thread".
+     * {@link RequestAttributes} to the worker thread and executing against the
+     * concrete session-scoped {@link ThinQueryService} target resolved on the
+     * submitting request thread (see {@link #resolveThinQueryTarget()}).
      *
-     * <p>TODO: if the submitting HTTP request finishes and its session is
-     * invalidated before the worker runs, the scoped proxy will still fail.
-     * We rely on the client polling, which keeps the session alive.
+     * <p>{@link #thinQueryService} is a session-scoped bean in the default webapp wiring, and the
+     * executor runs on a pool thread with no active Spring 'session' scope. Resolving the scoped
+     * proxy off-thread — even with the caller's {@link RequestAttributes} propagated — is unreliable
+     * once the submitting HTTP request has completed (we return 202 immediately and the container
+     * recycles the request), throwing "Scope 'session' is not active for the current thread". So we
+     * bind the already-resolved concrete instance for the worker to use; the propagated
+     * {@link RequestAttributes} remain as a harmless fallback for any request/session lookup the
+     * query path might still make. The {@link SecurityContext} propagation below is what keeps role
+     * resolution correct on the worker (saiku#1968).
      */
     public AsyncQueryHandle submit(final ThinQuery query, final RequestAttributes requestAttributes) {
         if (thinQueryService == null) {
@@ -191,6 +205,10 @@ public class AsyncQueryService {
         // worker. Role resolution is unaffected: it reads the propagated SecurityContext at
         // execute() time via userService (SecurityContextHolder), so #1968's guarantee is intact.
         final ThinQueryService resolvedThinQueryService = resolveThinQueryTarget();
+        // Stash the resolved concrete instance so the off-thread cancel path can close the OLAP
+        // statement against the same session bean rather than re-resolving a session-scoped proxy on
+        // a pool thread with no active session scope (which would throw and silently no-op).
+        handle.setResolvedThinQueryService(resolvedThinQueryService);
 
         final CompletableFuture<CellSet> fut;
         try {
@@ -388,8 +406,13 @@ public class AsyncQueryService {
         if (fut != null) {
             fut.cancel(true);
         }
-        // Best-effort: close the underlying OLAP statement off-thread.
-        final ThinQueryService tqs = this.thinQueryService;
+        // Best-effort: close the underlying OLAP statement off-thread. Prefer the concrete instance
+        // resolved for this handle at submit time (on the request thread, session scope active) so
+        // the cancel runs against the same session bean; fall back to our own reference for handles
+        // created outside submit() (e.g. register()). Using the proxy here would re-resolve a
+        // session-scoped bean on the cancelExecutor thread — no active session scope — and throw.
+        final ThinQueryService tqs =
+                h.getResolvedThinQueryService() != null ? h.getResolvedThinQueryService() : this.thinQueryService;
         if (tqs != null && h.getQuery() != null && h.getQuery().getName() != null) {
             cancelExecutor.execute(() -> {
                 try {
