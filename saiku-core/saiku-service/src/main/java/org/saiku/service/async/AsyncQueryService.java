@@ -93,6 +93,33 @@ public class AsyncQueryService {
         return thinQueryService;
     }
 
+    /**
+     * Resolve the concrete {@link ThinQueryService} instance behind {@link #thinQueryService},
+     * unwrapping a Spring scoped proxy when present. Called on the request thread (where the
+     * 'session' scope is active) so the worker can invoke the concrete session bean directly
+     * instead of resolving a session-scoped proxy off-thread — see {@link #submit(ThinQuery,
+     * RequestAttributes)}.
+     *
+     * <p>When {@link #thinQueryService} is a plain instance (standalone tests, or non-session
+     * wiring) it is returned unchanged. If proxy unwrapping fails for any reason we fall back to the
+     * proxy so behaviour is never worse than before this fix (the worker then still attempts
+     * resolution via the propagated {@link RequestAttributes}).
+     */
+    private ThinQueryService resolveThinQueryTarget() {
+        ThinQueryService tqs = this.thinQueryService;
+        if (tqs instanceof org.springframework.aop.framework.Advised advised) {
+            try {
+                Object target = advised.getTargetSource().getTarget();
+                if (target instanceof ThinQueryService concrete) {
+                    return concrete;
+                }
+            } catch (Exception e) {
+                log.debug("Could not pre-resolve ThinQueryService target on request thread: {}", e.toString());
+            }
+        }
+        return tqs;
+    }
+
     private static ThreadPoolExecutor defaultExecutor() {
         ThreadPoolExecutor tpe = new ThreadPoolExecutor(
                 4, 16, 60L, TimeUnit.SECONDS, new LinkedBlockingQueue<>(200), namedDaemon("saiku-async-query"));
@@ -149,6 +176,22 @@ public class AsyncQueryService {
         // is required — there is no DelegatingSecurityContextExecutor in the wiring.)
         final SecurityContext capturedSecurityContext = SecurityContextHolder.getContext();
 
+        // Resolve the concrete session-scoped ThinQueryService target on THIS (request) thread,
+        // where the Spring 'session' scope is genuinely active, and hand that concrete instance to
+        // the worker. In the default webapp wiring thinQueryService is a session-scoped CGLIB
+        // scoped-proxy; the worker runs on a pooled executor thread with NO active session scope.
+        // Propagating the caller's RequestAttributes (below) is not enough to resolve the proxy
+        // off-thread: the ServletRequestAttributes is bound to the *submitting HTTP request*, and
+        // once that request completes (we return 202 immediately) the servlet container recycles it,
+        // so a later session lookup through it throws "Scope 'session' is not active for the current
+        // thread" and the async query ends FAILED instead of DONE. Binding the already-resolved
+        // instance here means the worker never touches the session scope. ThinQueryService's own
+        // collaborators (olapDiscoverService, queryCache, userService, queryCoalescer,
+        // ossieQueryService) are all singletons, so execute() resolves nothing session-scoped on the
+        // worker. Role resolution is unaffected: it reads the propagated SecurityContext at
+        // execute() time via userService (SecurityContextHolder), so #1968's guarantee is intact.
+        final ThinQueryService resolvedThinQueryService = resolveThinQueryTarget();
+
         final CompletableFuture<CellSet> fut;
         try {
             fut = CompletableFuture.supplyAsync(
@@ -161,10 +204,12 @@ public class AsyncQueryService {
                         try {
                             handle.compareAndSetStatus(
                                     AsyncQueryHandle.Status.PENDING, AsyncQueryHandle.Status.RUNNING);
-                            thinQueryService.execute(query);
+                            resolvedThinQueryService.execute(query);
                             // ThinQueryService.execute stashes the CellSet into its
                             // per-query context keyed by the query name; fetch it.
-                            return thinQueryService.getContext(query.getName()).getOlapResult();
+                            return resolvedThinQueryService
+                                    .getContext(query.getName())
+                                    .getOlapResult();
                         } finally {
                             SecurityContextHolder.clearContext();
                             if (requestAttributes != null) {
