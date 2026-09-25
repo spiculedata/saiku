@@ -16,6 +16,16 @@ const METADATA_KEY = 'saiku.cellset';
 interface CellsetMetadata {
 	rowHeaderColCount: number;
 	columnHeaderRows: string[][];
+	/** Parallel to columnHeaderRows — dimension / uniqueName per column member. */
+	columnHeaderMembers?: Array<
+		Array<{
+			caption?: string;
+			uniqueName?: string;
+			dimension?: string;
+			hierarchy?: string;
+			level?: string;
+		}>
+	>;
 	runtimeMs?: number;
 	width?: number;
 	height?: number;
@@ -38,6 +48,9 @@ function readMetadata(schemaMetadata: Map<string, string> | undefined): CellsetM
 	return {
 		rowHeaderColCount: parsed.rowHeaderColCount,
 		columnHeaderRows: parsed.columnHeaderRows.map((r) => (Array.isArray(r) ? r.map(String) : [])),
+		columnHeaderMembers: Array.isArray(parsed.columnHeaderMembers)
+			? parsed.columnHeaderMembers
+			: undefined,
 		runtimeMs: parsed.runtimeMs,
 		width: parsed.width,
 		height: parsed.height,
@@ -65,6 +78,7 @@ export async function parseArrowExecute(buffer: ArrayBuffer): Promise<QueryResul
 	const rowHeaderColCount = meta.rowHeaderColCount;
 	const height = meta.height ?? table.numRows;
 	const columnHeaderRows = meta.columnHeaderRows;
+	const columnHeaderMembers = meta.columnHeaderMembers;
 
 	// Discover data column count by sniffing c{j}_raw fields.
 	const dataColCount = (() => {
@@ -119,15 +133,30 @@ export async function parseArrowExecute(buffer: ArrayBuffer): Promise<QueryResul
 
 	// Build column-header rows. Each header row has rowHeaderColCount empty
 	// "ROW_HEADER_HEADER" cells on the left followed by dataColCount
-	// COLUMN_HEADER cells. The server only stores the column header captions.
-	for (const headerRow of columnHeaderRows) {
+	// COLUMN_HEADER cells. Captions come from columnHeaderRows; dimension /
+	// uniqueName ride in optional columnHeaderMembers (needed for cell links).
+	for (let hr = 0; hr < columnHeaderRows.length; hr++) {
+		const headerRow = columnHeaderRows[hr];
 		const row: CellEntry[] = [];
 		for (let r = 0; r < rowHeaderColCount; r++) {
 			row.push({ value: '', type: 'ROW_HEADER_HEADER' });
 		}
 		for (let c = 0; c < dataColCount; c++) {
 			const caption = c < headerRow.length ? (headerRow[c] ?? '') : '';
-			row.push({ value: caption, type: 'COLUMN_HEADER' });
+			const mem = columnHeaderMembers?.[hr]?.[c];
+			const properties: Record<string, string> | undefined = mem
+				? {
+						uniquename: mem.uniqueName ?? '',
+						dimension: mem.dimension ?? '',
+						hierarchy: mem.hierarchy ?? '',
+						level: mem.level ?? ''
+					}
+				: undefined;
+			row.push(
+				properties
+					? { value: caption, type: 'COLUMN_HEADER', properties }
+					: { value: caption, type: 'COLUMN_HEADER' }
+			);
 		}
 		// Pad if server header row was unexpectedly short.
 		while (row.length < totalWidth) row.push({ value: '', type: 'COLUMN_HEADER' });
