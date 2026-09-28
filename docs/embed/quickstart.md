@@ -11,7 +11,22 @@ content every fresh install ships with.
 
 ## 1. Install (30 seconds)
 
-Add one script tag — the bundle is served by your Saiku server itself:
+Add one script tag — the bundle is served by your Saiku server itself. For
+just a chart, the narrower `<saiku-chart>` tag (issue #1103) is a smaller
+download than the full `<saiku-embed>` bundle:
+
+```html
+<script src="https://YOUR-SAIKU.example.com/ui/saiku-chart.js"></script>
+```
+
+Embedding a whole dashboard instead? Use `<saiku-dashboard>`:
+
+```html
+<script src="https://YOUR-SAIKU.example.com/ui/saiku-dashboard.js"></script>
+```
+
+Or, for everything — table/matrix/kpi rendering, App Builder apps, the AI
+ask widget — `<saiku-embed>`:
 
 ```html
 <script src="https://YOUR-SAIKU.example.com/ui/saiku-embed.js"></script>
@@ -24,19 +39,25 @@ npm install @concepttocloud/saiku-embed
 ```
 
 ```ts
-import "@concepttocloud/saiku-embed"; // registers the <saiku-embed> tag globally
+import "@concepttocloud/saiku-embed"; // registers <saiku-embed>
+import "@concepttocloud/saiku-embed/chart"; // registers <saiku-chart>
+import "@concepttocloud/saiku-embed/dashboard"; // registers <saiku-dashboard>
 ```
 
-It's a real Custom Element (not an iframe): the same tag works in vanilla
-HTML, React, Vue, and Svelte, and its internals are CSS-isolated in a shadow
-root.
+Each is a real Custom Element (not an iframe): the same tags work in vanilla
+HTML, React, Vue, and Svelte, and their internals are CSS-isolated in a
+shadow root. The rest of this quickstart uses `<saiku-embed render="chart">`
+for the copy-paste snippets since it also covers table/matrix/kpi — swap in
+`<saiku-chart>` (dropping `render`/`kind`) if that's all you need; the
+attributes that carry over (`server`, `token`, `path`, `mode`, `height`,
+`filter`, `theme`) are identical.
 
 > **Subresource integrity:** the script is first-party — served by your own
 > Saiku server, not a third-party CDN — and its content changes with every
 > Saiku upgrade, so this page can't pin an `integrity="sha384-…"` hash for
 > you. If your policy requires SRI on all external scripts, either compute
 > the hash for your deployed version (`openssl dgst -sha384 -binary
-> saiku-embed.js | openssl base64 -A`) and re-pin it on each upgrade, or use
+saiku-embed.js | openssl base64 -A`) and re-pin it on each upgrade, or use
 > the npm route below — your bundler + lockfile then provide the integrity
 > guarantee.
 
@@ -78,9 +99,11 @@ request.
 ```
 
 That's it — the query executes server-side under the token's scope and the
-chart renders. Swap `render` for `table`, `matrix`, or `kpi`, or `mode` for
-`bar` / `pie`. Dashboards embed the same way with `kind="dashboard"` and a
-`.saikudash` path; a plain-English AI ask box is `kind="ai"` with a cube ref
+chart renders. (Equivalently: `<saiku-chart server="..." token="tx-..."
+path="homes/admin/FoodMartTrend.saiku" mode="line" height="400px">`.) Swap
+`render` for `table`, `matrix`, or `kpi`, or `mode` for `bar` / `pie`.
+Dashboards embed the same way with `kind="dashboard"` and a `.saikudash`
+path (or the dedicated `<saiku-dashboard>` tag); a plain-English AI ask box is `kind="ai"` with a cube ref
 path (see the [README](../../saiku-ui/src/embed/README.md#use) for every
 shape).
 
@@ -122,7 +145,7 @@ saiku-embed {
 - **Cross-origin is the normal case, not a special one.** The component
   fetches with `credentials: "omit"` — the token is the only auth carrier, so
   no cookie/CORS-credential complications. Just make sure the Saiku origin is
-  reachable from the *viewer's browser* (not merely from your server).
+  reachable from the _viewer's browser_ (not merely from your server).
 - **Web component, not an iframe.** There's no `X-Frame-Options` /
   `frame-ancestors` dance and host CSS can't bleed in (shadow root). If you
   specifically need iframe-style process isolation, wrap the tag in your own

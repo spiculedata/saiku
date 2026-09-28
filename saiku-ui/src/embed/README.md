@@ -5,9 +5,29 @@ tag works in React, Vue, Svelte, and vanilla HTML — it's a real
 [Custom Element](https://developer.mozilla.org/docs/Web/API/Web_components),
 so the host page doesn't have to know anything about Saiku internals.
 
+Three tags ship from this package:
+
+| Tag                 | Use it for                                                                                                                                                     | Bundle               |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| `<saiku-chart>`     | A single chart (issue #1103)                                                                                                                                   | `saiku-chart.js`     |
+| `<saiku-dashboard>` | A whole saved dashboard (issue #1103)                                                                                                                          | `saiku-dashboard.js` |
+| `<saiku-embed>`     | Everything above, plus table/matrix/kpi rendering, App Builder apps (`kind="app"`), and the AI ask widget (`kind="ai"`) via one `kind`/`render` attribute pair | `saiku-embed.js`     |
+
+Each is a separate, self-contained bundle — load only the tag(s) you use so a
+page that only embeds a chart doesn't ship the dashboard-grid / AI-ask code
+too. All three speak the same wire protocol, share the same
+`--saiku-embed-*` CSS variable vocabulary (see "Styling" below), and can be
+mixed freely on one page. `<saiku-chart>` and `<saiku-dashboard>` are
+narrower views over exactly the same `kind=query`/`kind=dashboard` paths
+`<saiku-embed>` has always supported — nothing here is a breaking change to
+existing `<saiku-embed>` usage.
+
 ## Install
 
 ```html
+<!-- pick the tag(s) you need -->
+<script src="https://YOUR-SAIKU.example.com/ui/saiku-chart.js"></script>
+<script src="https://YOUR-SAIKU.example.com/ui/saiku-dashboard.js"></script>
 <script src="https://YOUR-SAIKU.example.com/ui/saiku-embed.js"></script>
 ```
 
@@ -18,11 +38,13 @@ npm install @concepttocloud/saiku-embed
 ```
 
 ```ts
-import '@concepttocloud/saiku-embed';
+import '@concepttocloud/saiku-embed'; // registers <saiku-embed>
+import '@concepttocloud/saiku-embed/chart'; // registers <saiku-chart>
+import '@concepttocloud/saiku-embed/dashboard'; // registers <saiku-dashboard>
 ```
 
-The import has the side effect of registering the `saiku-embed` tag
-globally — no further setup.
+Each import has the side effect of registering its tag globally — no
+further setup. Import only the subpath(s) you use.
 
 ## Use
 
@@ -194,7 +216,69 @@ If the resource is marked publicly embeddable on the server
 <saiku-embed server="..." path="shared/public-chart.saiku" render="chart"></saiku-embed>
 ```
 
-## Attributes
+## `<saiku-chart>` and `<saiku-dashboard>` (issue #1103)
+
+Purpose-built alternatives to `<saiku-embed render="chart">` and
+`<saiku-embed kind="dashboard">` — same fetch, same rendering, same
+security model, smaller bundle, no `kind`/`render` attribute pair to get
+right.
+
+### A single chart
+
+```html
+<saiku-chart
+	server="https://YOUR-SAIKU.example.com"
+	token="..."
+	path="homes/admin/Examples/Sales.saiku"
+	mode="bar"
+	height="500px"
+></saiku-chart>
+```
+
+| Attribute | Default      | Notes                                                                   |
+| --------- | ------------ | ----------------------------------------------------------------------- |
+| `server`  | _(optional)_ | Origin of the Saiku launcher. Leave empty for same-origin.              |
+| `path`    | _(required)_ | Saved query path (`.saiku`).                                            |
+| `token`   | _(none)_     | Embed token from `POST /saiku/api/embed/tokens`. Omit for public reads. |
+| `mode`    | `bar`        | `bar`, `line`, or `pie`.                                                |
+| `height`  | `400px`      | CSS height of the rendered surface.                                     |
+| `filter`  | _(none)_     | JSON array of slicer overrides applied at embed time.                   |
+| `theme`   | _(light)_    | `light`, `dark`, or `auto` (follow `prefers-color-scheme`).             |
+
+Events: `saiku:load` (`{ kind: "chart", rows }`), `saiku:error`
+(`{ message }`) — same shape as `<saiku-embed>`'s chart path.
+
+### A whole dashboard
+
+```html
+<saiku-dashboard
+	server="..."
+	token="..."
+	path="homes/admin/exec.saikudash"
+	height="700px"
+></saiku-dashboard>
+```
+
+| Attribute | Default      | Notes                                                                   |
+| --------- | ------------ | ----------------------------------------------------------------------- |
+| `server`  | _(optional)_ | Origin of the Saiku launcher. Leave empty for same-origin.              |
+| `path`    | _(required)_ | Saved dashboard path (`.saikudash`).                                    |
+| `token`   | _(none)_     | Embed token from `POST /saiku/api/embed/tokens`. Omit for public reads. |
+| `height`  | `400px`      | CSS height of the rendered surface.                                     |
+| `theme`   | _(light)_    | `light`, `dark`, or `auto` (follow `prefers-color-scheme`).             |
+
+No outbound `CustomEvent`s yet — `<saiku-embed kind="dashboard">` doesn't
+emit any either; per-tile interaction (filter tiles) is internal to the
+dashboard grid today.
+
+Anonymous public dashboards work the same way as query embeds — mark the
+resource publicly embeddable server-side (see "Public grants" below) and
+omit `token`.
+
+## `<saiku-embed>` attributes
+
+(`<saiku-chart>` and `<saiku-dashboard>` have their own, narrower attribute
+tables above.)
 
 | Attribute | Default      | Notes                                                                                                                                                                                                        |
 | --------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -386,9 +470,27 @@ An embed with none of these set renders exactly as before (ECharts defaults).
 
 ## Bundle size
 
-Around **213 KB gzipped** at the time of writing — Svelte 5 custom
-element runtime + ECharts (core + bar / line / pie + four common
-components, modular tree-shaken) + the embed renderers.
+Gzipped, at the time of writing:
+
+| Bundle               | Size    |
+| -------------------- | ------- |
+| `saiku-chart.js`     | ~207 KB |
+| `saiku-dashboard.js` | ~272 KB |
+| `saiku-embed.js`     | ~279 KB |
+
+All three share the same Svelte 5 custom element runtime + ECharts (core +
+bar / line / pie + four common components, modular tree-shaken) base.
+`saiku-chart.js` drops the dashboard grid, App Builder, table, matrix, kpi,
+and AI-ask code `saiku-embed.js` also carries, so it's meaningfully
+smaller. `saiku-dashboard.js` still pulls in most of that renderer set
+(the dashboard grid dispatches to chart / kpi / filter / text / custom-tile
+renderers — see EmbedGrid.svelte), so the saving there is modest; its value
+is a narrower, purpose-named tag rather than a smaller download.
+
+Pick whichever tag(s) a given page actually uses — they load independently
+and don't share a runtime at the script-tag level (each `<script src>` is a
+fully self-contained IIFE, per the "single self-contained file" design in
+`vite.config.embed.ts`).
 
 ## Limitations
 
