@@ -46,6 +46,21 @@ All notable changes to Saiku are documented here. This project follows
   `securityContext: { runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001 }` on
   the pod so the mounted volume is group-owned by the runtime user.
 
+### Added
+
+- **SQL workbench (phase 1, saiku#1107).** A new `/ui/sql-workbench` route lets a
+  user holding the new `ROLE_SQL_EXEC` role (admins get it too) run read-only SQL
+  directly against a datasource's underlying JDBC connection — the row-level
+  companion to the MDX/cube layer, useful for data-quality probes and ad-hoc
+  rollups Mondrian can't express. Monaco-backed editor, paginated result grid,
+  CSV export. Enforced `SELECT`/`WITH`/`SHOW`/`EXPLAIN`/`DESCRIBE`-only at the
+  statement level (`ReadOnlySqlGuard`), with `Connection.setReadOnly(true)` and
+  `executeQuery()` as further layers; every run is written to an append-only
+  audit log at `${saiku.home}/logs/sql-workbench-audit.jsonl`, readable by an
+  admin at `GET /rest/saiku/admin/sql-workbench-audit`. Cube-aware autocomplete
+  (phase 2) and a per-datasource read/write toggle (phase 3) are tracked as
+  follow-ups on the issue.
+
 ## 4.8.0 — 2026-09-15
 
 Minor release, and a **security release** — nine hardening fixes close an
