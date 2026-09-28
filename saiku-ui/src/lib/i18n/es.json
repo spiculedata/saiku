@@ -88,6 +88,7 @@
 	"modal.open.empty": "Aún no hay consultas guardadas.",
 	"modal.open.loading": "Cargando repositorio…",
 	"admin.tabs.users": "Usuarios",
+	"admin.tabs.roles": "Roles",
 	"admin.tabs.datasources": "Fuentes de datos",
 	"admin.tabs.schemas": "Esquemas",
 	"admin.tabs.logs": "Registros",

@@ -169,6 +169,40 @@ public class SecurityAwareConnectionManagerFailClosedTest {
         assertEquals("non-admin scoped to the mapped Mondrian role", "salesrole", con.role.get());
     }
 
+    /**
+     * saiku#779: a mapping to a Mondrian role the schema doesn't declare (a typo, or a role renamed
+     * in the schema) makes setRoleName throw. applySecurity used to log that and return the
+     * connection with no role applied — Mondrian root, full access. It must deny instead.
+     */
+    @Test
+    public void springlookup_nonAdmin_mappedToUndeclaredRole_denied() {
+        authenticateAs("bob", "ROLE_USER");
+        RoleCapturingConnection con = olapConnection("salesrole");
+        SaikuDatasource ds = springlookup("ROLE_USER=Typo");
+
+        try {
+            manager().applySecurity(con.saiku, ds);
+            fail("a role that can't be applied must deny, not fall through to Mondrian root");
+        } catch (SaikuAccessDeniedException expected) {
+            assertFalse("no role was applied", con.roleWasSet.get());
+        }
+    }
+
+    /** Same for an admin: a resolved role that can't be applied is a misconfiguration, not root. */
+    @Test
+    public void springlookup_admin_mappedToUndeclaredRole_denied() {
+        authenticateAs("root", ADMIN_ROLE);
+        RoleCapturingConnection con = olapConnection("salesrole");
+        SaikuDatasource ds = springlookup(ADMIN_ROLE + "=Typo");
+
+        try {
+            manager().applySecurity(con.saiku, ds);
+            fail("a role that can't be applied must deny, even for an admin");
+        } catch (SaikuAccessDeniedException expected) {
+            assertFalse("no role was applied", con.roleWasSet.get());
+        }
+    }
+
     // ---- fail-closed-on-ambiguity ---------------------------------------------------------------
 
     /** No UserService injected -> admin cannot be proven -> DENY (never default-to-full). */
@@ -299,6 +333,10 @@ public class SecurityAwareConnectionManagerFailClosedTest {
                     case "getAvailableRoleNames":
                         return availableRoles;
                     case "setRoleName":
+                        // Like Mondrian: a role the schema doesn't declare is rejected.
+                        if (args != null && args[0] != null && !availableRoles.contains(args[0])) {
+                            throw new IllegalArgumentException("Unknown role '" + args[0] + "'");
+                        }
                         roleWasSet.set(true);
                         role.set(args == null ? null : (String) args[0]);
                         return null;

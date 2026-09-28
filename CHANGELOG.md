@@ -46,6 +46,16 @@ All notable changes to Saiku are documented here. This project follows
   `securityContext: { runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001 }` on
   the pod so the mounted volume is group-owned by the runtime user.
 
+### Added
+
+- **Role management for Mondrian role-based security** (saiku#779). A new
+  **Roles** admin tab and `/rest/saiku/admin/roles` API show which Spring role
+  grants which Mondrian role on which datasource, and who holds it. You can
+  preview what a user, or an arbitrary set of roles, gets on every datasource
+  ("test as"). The preview runs the same resolution code as enforcement,
+  including the saiku#1968 fail-closed rule. Grants on `lookup`-mode
+  datasources can be edited in place. See `docs/ROLE-SECURITY.md`.
+
 ## 4.8.0 — 2026-09-15
 
 Minor release, and a **security release** — nine hardening fixes close an

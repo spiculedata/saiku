@@ -32,6 +32,7 @@ import org.saiku.olap.util.exception.SaikuOlapException;
 import org.saiku.service.ISessionService;
 import org.saiku.service.user.UserService;
 import org.saiku.service.util.exception.SaikuAccessDeniedException;
+import org.saiku.service.util.security.MondrianRolePolicy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
@@ -228,56 +229,40 @@ public class SecurityAwareConnectionManager extends AbstractConnectionManager im
             throw new IllegalArgumentException("Cannot apply Security to NULL connection object");
         }
 
-        if (isDatasourceSecurity(datasource, ISaikuConnection.SECURITY_TYPE_SPRING2MONDRIAN_VALUE)) {
-            List<String> springRoles = getSpringRoles();
-            List<String> conRoles = getConnectionRoles(con);
-            String roleName = null;
-
-            for (String sprRole : springRoles) {
-                if (conRoles.contains(sprRole)) {
-                    if (roleName == null) {
-                        roleName = sprRole;
-                    } else {
-                        roleName += "," + sprRole;
-                    }
-                }
-            }
+        // saiku#779: resolution lives in MondrianRolePolicy so the admin role preview
+        // (/saiku/admin/roles/preview) runs exactly the code enforced here.
+        MondrianRolePolicy.Mode mode = MondrianRolePolicy.modeOf(datasource);
+        if (mode == MondrianRolePolicy.Mode.ONE2ONE || mode == MondrianRolePolicy.Mode.LOOKUP) {
+            List<String> resolved = MondrianRolePolicy.resolveMondrianRoles(
+                    mode,
+                    getSpringRoles(),
+                    mode == MondrianRolePolicy.Mode.ONE2ONE ? getConnectionRoles(con) : null,
+                    MondrianRolePolicy.mappingOf(datasource));
+            String roleName = resolved.isEmpty() ? null : String.join(",", resolved);
 
             if (roleName == null) {
-                // saiku#1968 (CWE-863): no Spring authority intersected the cube's roles. Deny a
-                // non-admin instead of falling through to setRoleName(null) = Mondrian root.
+                // saiku#1968 (CWE-863): no Spring authority intersected the cube's roles (one2one)
+                // or mapped to a Mondrian role (lookup). Deny a non-admin instead of falling
+                // through to setRoleName(null) = Mondrian root.
                 enforceRoleResolvedOrAdmin(datasource);
             }
 
             if (setRole(con, roleName, datasource)) {
                 return con;
             }
-
-        } else if (isDatasourceSecurity(datasource, ISaikuConnection.SECURITY_TYPE_SPRINGLOOKUPMONDRIAN_VALUE)) {
-            Map<String, List<String>> mapping = getRoleMapping(datasource);
-            List<String> springRoles = getSpringRoles();
-            String roleName = null;
-            for (String sprRole : springRoles) {
-                if (mapping.containsKey(sprRole)) {
-                    List<String> roles = mapping.get(sprRole);
-                    for (String role : roles) {
-                        if (roleName == null) {
-                            roleName = role;
-                        } else {
-                            roleName += "," + role;
-                        }
-                    }
-                }
-            }
-
-            if (roleName == null) {
-                // saiku#1968 (CWE-863): no authority mapped to a Mondrian role. Deny a non-admin
-                // instead of falling through to setRoleName(null) = Mondrian root.
-                enforceRoleResolvedOrAdmin(datasource);
-            }
-
-            if (setRole(con, roleName, datasource)) {
-                return con;
+            if (roleName != null && con.getConnection() instanceof OlapConnection) {
+                // saiku#779: the role resolved but couldn't be applied — Mondrian rejects a role
+                // its schema doesn't declare (a mapping typo, or a role renamed in the schema).
+                // The connection still carries no role, i.e. Mondrian root, so deny rather than
+                // hand out full access. Applies to admins too: this is a misconfiguration.
+                String ds = datasource == null ? "?" : datasource.getName();
+                log.warn(
+                        "saiku#779: denying connection on datasource \"{}\" — resolved Mondrian role(s) "
+                                + "\"{}\" could not be applied (not declared in the schema?) (fail-closed).",
+                        ds,
+                        roleName);
+                throw new SaikuAccessDeniedException(
+                        "Access denied: your role on datasource \"" + ds + "\" is misconfigured.");
             }
         }
 
@@ -403,26 +388,6 @@ public class SecurityAwareConnectionManager extends AbstractConnectionManager im
             }
         }
         return new ArrayList<>();
-    }
-
-    private Map<String, List<String>> getRoleMapping(SaikuDatasource datasource) {
-        Map<String, List<String>> result = new HashMap<>();
-        if (datasource.getProperties().containsKey(ISaikuConnection.SECURITY_LOOKUP_KEY)) {
-            String mappings = datasource.getProperties().getProperty(ISaikuConnection.SECURITY_LOOKUP_KEY);
-            if (mappings != null) {
-                String[] maps = mappings.split(";");
-                for (String map : maps) {
-                    String[] m = map.split("=");
-                    if (m.length == 2) {
-                        if (!result.containsKey(m[0])) {
-                            result.put(m[0], new ArrayList<String>());
-                        }
-                        result.get(m[0]).add(m[1]);
-                    }
-                }
-            }
-        }
-        return result;
     }
 
     private ISaikuConnection connect(String name, SaikuDatasource datasource) {
