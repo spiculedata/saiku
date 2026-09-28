@@ -609,6 +609,43 @@
 		);
 	}
 
+	// --- Hierarchy-aware drill down/up (saiku#776) ---
+	// "Expanded" is derived from the data itself rather than tracked separately: a row is
+	// expanded when the very next row's member (in the same row-header column) sits one level
+	// deeper, i.e. its children are already displayed nested beneath it.
+	function isExpanded(r: number, cIdx: number): boolean {
+		const cur = parsed.bodyRows[r]?.[cIdx];
+		const next = parsed.bodyRows[r + 1]?.[cIdx];
+		if (!cur || !next) return false;
+		return depthOf(next) > depthOf(cur);
+	}
+
+	let drilling = $state<Set<number>>(new Set());
+
+	async function toggleDrill(e: MouseEvent, r: number, cIdx: number) {
+		e.preventDefault();
+		e.stopPropagation();
+		if (drilling.has(r)) return;
+		const expanded = isExpanded(r, cIdx);
+		drilling = new Set(drilling).add(r);
+		try {
+			if (expanded) {
+				await queryStore.drillUp(r);
+			} else {
+				await queryStore.drillDown(r);
+			}
+		} catch (err) {
+			toasts.danger(
+				i18n.t(expanded ? 'toast.drillUpFailed' : 'toast.drillDownFailed'),
+				err instanceof Error ? err.message : String(err)
+			);
+		} finally {
+			const next = new Set(drilling);
+			next.delete(r);
+			drilling = next;
+		}
+	}
+
 	function onDocumentClick(e: MouseEvent) {
 		if (!menu.open) return;
 		const target = e.target as Node | null;
@@ -694,13 +731,22 @@
 								<th class="row_null" role="rowheader" aria-colindex={cIdx + 1}></th>
 							{:else}
 								{@const d = depthOf(c)}
+								{@const expanded = isExpanded(r, cIdx)}
 								<th
 									class={d > 0 ? 'row row--nested' : 'row'}
 									role="rowheader"
 									aria-colindex={cIdx + 1}
 									style={d > 0 ? `padding-left: calc(12px + ${d}em);` : ''}
 									title={c.value}
-									oncontextmenu={(e) => openMenu(e, c, 'ROWS')}>{c.value}</th
+									oncontextmenu={(e) => openMenu(e, c, 'ROWS')}
+									>{#if cIdx === rowCells.length - 1}<button
+											type="button"
+											class="row-drill-caret"
+											class:row-drill-caret--expanded={expanded}
+											disabled={drilling.has(r)}
+											aria-label={i18n.t(expanded ? 'cellset.drillUp' : 'cellset.drillDown')}
+											onclick={(e) => toggleDrill(e, r, cIdx)}>▸</button
+										>{/if}{c.value}</th
 								>
 							{/if}
 						{/each}
@@ -934,6 +980,30 @@
 	}
 	.cellset tbody th.row:hover {
 		background: hsl(var(--bg-subtle));
+	}
+	.row-drill-caret {
+		display: inline-block;
+		width: 1em;
+		margin-right: 0.35em;
+		border: none;
+		background: transparent;
+		padding: 0;
+		font-size: 0.7em;
+		line-height: 1;
+		color: hsl(var(--fg-muted));
+		cursor: pointer;
+		transform: rotate(0deg);
+		transition: transform 0.1s ease-in-out;
+	}
+	.row-drill-caret:hover {
+		color: hsl(var(--fg));
+	}
+	.row-drill-caret:disabled {
+		cursor: wait;
+		opacity: 0.5;
+	}
+	.row-drill-caret--expanded {
+		transform: rotate(90deg);
 	}
 	.cellset tbody th.row_null {
 		background: hsl(var(--bg-muted));

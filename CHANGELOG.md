@@ -137,6 +137,12 @@ Two changes are visible behaviour changes for API clients — see **Breaking**.
 
 ### Added
 
+- **Hierarchy-aware drill down / drill up on the pivot grid.** Clicking the caret
+  on a row header now injects that member's children as nested rows directly
+  beneath it — `GET /rest/saiku/api/query/{name}/drill/{rowIndex}` — instead of
+  the old "zoom in" behaviour of replacing the whole level. Clicking again
+  (`GET .../drillup/{rowIndex}`) collapses just that member's children, leaving
+  any other independently drilled-down rows expanded. (saiku#776)
 - **Cube Designer — query preview.** "Try a query" now runs against the schema
   you are editing, before it is saved. The proposed XML is held in memory and the
   connection reuses the datasource's own JDBC settings, so the preview hits the
