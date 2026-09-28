@@ -13,6 +13,7 @@ import java.io.OutputStream;
 import java.nio.channels.Channels;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -44,6 +45,7 @@ import org.olap4j.metadata.Hierarchy;
 import org.olap4j.metadata.Level;
 import org.olap4j.metadata.Member;
 import org.saiku.olap.query2.ThinQuery;
+import org.saiku.olap.util.formatter.CellPropertyExtractor;
 
 /**
  * Serialises an Olap4j {@link CellSet} into an Apache Arrow IPC stream (one
@@ -52,28 +54,53 @@ import org.saiku.olap.query2.ThinQuery;
  * <ul>
  *   <li>Schema metadata key {@code saiku.cellset} holds a JSON blob with
  *       {@code rowHeaderColCount}, {@code columnHeaderRows}, {@code runtimeMs},
- *       {@code width}, {@code height}, {@code mdx}, {@code queryName}.</li>
+ *       {@code width}, {@code height}, {@code mdx}, {@code queryName},
+ *       and (saiku#828) {@code cellPropertyColumns} — a sparse map of
+ *       data-column index to the cell-property column suffixes present for
+ *       that column.</li>
  *   <li>Row-header columns {@code r{i}_value}, {@code r{i}_uniqueName},
  *       {@code r{i}_dimension}, {@code r{i}_hierarchy}, {@code r{i}_level} —
  *       all dictionary-encoded strings.</li>
  *   <li>Data columns {@code c{j}_raw} (Float64 nullable; null for empty
  *       cells) and {@code c{j}_fmt} (dictionary-encoded string, blank where
  *       the rendered value equals the raw).</li>
+ *   <li>(saiku#828) Optional per-measure cell-property columns —
+ *       {@code c{j}_fmt_string}, {@code c{j}_fore_color}, {@code c{j}_back_color},
+ *       {@code c{j}_font_flags}, {@code c{j}_action_type}, {@code c{j}_error} —
+ *       dictionary-encoded strings sourced from {@link CellPropertyExtractor}.
+ *       A column is added for measure {@code j} only when at least one cell in
+ *       that column has the property populated, keeping the payload lean for
+ *       cubes that don't define cell-level metadata.</li>
  * </ul>
  */
 public final class ArrowCellsetWriter {
 
     private static final String METADATA_KEY = "saiku.cellset";
 
+    /**
+     * Optional cell-property columns surfaced per data measure (saiku#828).
+     * Left entry is the {@link CellPropertyExtractor} map key; right entry is
+     * the Arrow column-name suffix appended to {@code c{j}_}.
+     */
+    private static final String[][] CELL_PROPERTY_COLUMNS = {
+        {"formatString", "fmt_string"},
+        {"foreColor", "fore_color"},
+        {"backColor", "back_color"},
+        {"fontFlags", "font_flags"},
+        {"actionType", "action_type"},
+        {"error", "error"},
+    };
+
     public void write(CellSet cellSet, ThinQuery query, OutputStream out) throws IOException {
         CellsetShape shape = CellsetShape.of(cellSet);
+        CellDataMatrix data = CellDataMatrix.of(cellSet, shape);
         long started = System.currentTimeMillis();
 
         try (BufferAllocator allocator = new RootAllocator()) {
             AtomicLong dictIdSeq = new AtomicLong(1L);
             Map<String, Long> dictIds = new LinkedHashMap<>();
-            List<Field> fields = buildFields(shape, dictIdSeq, dictIds);
-            Schema schema = new Schema(fields, buildMetadata(shape, query, started));
+            List<Field> fields = buildFields(shape, data, dictIdSeq, dictIds);
+            Schema schema = new Schema(fields, buildMetadata(shape, data, query, started));
 
             try (VectorSchemaRoot root = VectorSchemaRoot.create(schema, allocator);
                     DictionaryProvider.MapDictionaryProvider provider =
@@ -91,7 +118,7 @@ public final class ArrowCellsetWriter {
                 }
 
                 try {
-                    fillRoot(root, cellSet, shape, dicts);
+                    fillRoot(root, shape, data, dicts);
 
                     // finalise dictionary vectors and register with provider
                     for (DictBuilder db : dicts.values()) {
@@ -117,7 +144,8 @@ public final class ArrowCellsetWriter {
 
     // ---- schema ----------------------------------------------------------
 
-    private static List<Field> buildFields(CellsetShape shape, AtomicLong dictIdSeq, Map<String, Long> dictIds) {
+    private static List<Field> buildFields(
+            CellsetShape shape, CellDataMatrix data, AtomicLong dictIdSeq, Map<String, Long> dictIds) {
         List<Field> fields = new ArrayList<>();
 
         String[] rowSuffixes = {"_value", "_uniqueName", "_dimension", "_hierarchy", "_level"};
@@ -133,6 +161,13 @@ public final class ArrowCellsetWriter {
                     FieldType.nullable(new ArrowType.FloatingPoint(FloatingPointPrecision.DOUBLE)),
                     null));
             fields.add(dictStringField("c" + j + "_fmt", dictIdSeq, dictIds));
+
+            for (int p = 0; p < CELL_PROPERTY_COLUMNS.length; p++) {
+                if (data.propertyPresent[j][p]) {
+                    String name = "c" + j + "_" + CELL_PROPERTY_COLUMNS[p][1];
+                    fields.add(dictStringField(name, dictIdSeq, dictIds));
+                }
+            }
         }
         return fields;
     }
@@ -146,7 +181,8 @@ public final class ArrowCellsetWriter {
         return new Field(name, ft, null);
     }
 
-    private static Map<String, String> buildMetadata(CellsetShape shape, ThinQuery query, long started) {
+    private static Map<String, String> buildMetadata(
+            CellsetShape shape, CellDataMatrix data, ThinQuery query, long started) {
         Map<String, Object> blob = new LinkedHashMap<>();
         blob.put("rowHeaderColCount", shape.rowHeaderColCount);
         blob.put("columnHeaderRows", shape.columnHeaderRows);
@@ -155,6 +191,23 @@ public final class ArrowCellsetWriter {
         blob.put("height", shape.rowCount);
         blob.put("mdx", query != null ? query.getMdx() : null);
         blob.put("queryName", query != null ? query.getName() : null);
+
+        Map<String, List<String>> cellPropertyColumns = new LinkedHashMap<>();
+        for (int j = 0; j < data.dataColCount; j++) {
+            List<String> suffixes = new ArrayList<>();
+            for (int p = 0; p < CELL_PROPERTY_COLUMNS.length; p++) {
+                if (data.propertyPresent[j][p]) {
+                    suffixes.add(CELL_PROPERTY_COLUMNS[p][1]);
+                }
+            }
+            if (!suffixes.isEmpty()) {
+                cellPropertyColumns.put(String.valueOf(j), suffixes);
+            }
+        }
+        if (!cellPropertyColumns.isEmpty()) {
+            blob.put("cellPropertyColumns", cellPropertyColumns);
+        }
+
         try {
             String json = new ObjectMapper().writeValueAsString(blob);
             Map<String, String> md = new LinkedHashMap<>();
@@ -168,7 +221,7 @@ public final class ArrowCellsetWriter {
     // ---- body ------------------------------------------------------------
 
     private static void fillRoot(
-            VectorSchemaRoot root, CellSet cellSet, CellsetShape shape, Map<String, DictBuilder> dicts) {
+            VectorSchemaRoot root, CellsetShape shape, CellDataMatrix data, Map<String, DictBuilder> dicts) {
         int rowCount = shape.rowCount;
         root.setRowCount(rowCount);
 
@@ -228,35 +281,28 @@ public final class ArrowCellsetWriter {
             raw.allocateNew(rowCount);
 
             for (int row = 0; row < rowCount; row++) {
-                Cell cell = cellSet.getCell(java.util.Arrays.asList(cIdx, row));
-                boolean hasValue = false;
-                double rawVal = 0d;
-                String fmt = "";
-                if (cell != null && !cell.isEmpty() && !cell.isNull()) {
-                    Object v = cell.getValue();
-                    if (v instanceof Number) {
-                        rawVal = ((Number) v).doubleValue();
-                        hasValue = true;
-                    }
-                    String rendered = cell.getFormattedValue();
-                    if (rendered != null) {
-                        if (!hasValue) {
-                            fmt = rendered;
-                        } else if (!rendered.equals(String.valueOf(rawVal))
-                                && !rendered.equals(Double.toString(rawVal))) {
-                            fmt = rendered;
-                        }
-                    }
-                }
-                if (hasValue) {
-                    raw.setSafe(row, rawVal);
+                if (data.hasValue[cIdx][row]) {
+                    raw.setSafe(row, data.rawVal[cIdx][row]);
                 } else {
                     raw.setNull(row);
                 }
-                fmtIdx.setSafe(row, fmtDict.intern(fmt));
+                fmtIdx.setSafe(row, fmtDict.intern(data.fmt[cIdx][row]));
             }
             raw.setValueCount(rowCount);
             fmtIdx.setValueCount(rowCount);
+
+            for (int p = 0; p < CELL_PROPERTY_COLUMNS.length; p++) {
+                if (!data.propertyPresent[cIdx][p]) continue;
+                String propKey = CELL_PROPERTY_COLUMNS[p][0];
+                String colName = "c" + cIdx + "_" + CELL_PROPERTY_COLUMNS[p][1];
+                IntVector propIdx = getIdxVec(root, colName);
+                DictBuilder propDict = dicts.get(colName);
+                for (int row = 0; row < rowCount; row++) {
+                    String value = data.properties[cIdx][row].getOrDefault(propKey, "");
+                    propIdx.setSafe(row, propDict.intern(value));
+                }
+                propIdx.setValueCount(rowCount);
+            }
         }
     }
 
@@ -384,6 +430,91 @@ public final class ArrowCellsetWriter {
             }
 
             return new CellsetShape(rowHeaderDepth, dataColCount, rowCount, colHeaderRows, rowPositions);
+        }
+    }
+
+    /**
+     * Pre-extracted per-cell data for every (dataColumn, row) coordinate —
+     * raw numeric value, rendered format string, and (saiku#828) the
+     * olap4j {@code StandardCellProperty} map from {@link CellPropertyExtractor}.
+     * Computed once up-front so that (a) the Arrow schema can decide which
+     * optional cell-property columns to add before any vectors are
+     * allocated, and (b) {@link #fillRoot} never re-touches the olap4j
+     * {@link Cell} API.
+     */
+    static final class CellDataMatrix {
+        final int dataColCount;
+        final int rowCount;
+        final boolean[][] hasValue;
+        final double[][] rawVal;
+        final String[][] fmt;
+        final Map<String, String>[][] properties;
+        /** [dataColumn][propertyIndex into {@link #CELL_PROPERTY_COLUMNS}]. */
+        final boolean[][] propertyPresent;
+
+        private CellDataMatrix(
+                int dataColCount,
+                int rowCount,
+                boolean[][] hasValue,
+                double[][] rawVal,
+                String[][] fmt,
+                Map<String, String>[][] properties,
+                boolean[][] propertyPresent) {
+            this.dataColCount = dataColCount;
+            this.rowCount = rowCount;
+            this.hasValue = hasValue;
+            this.rawVal = rawVal;
+            this.fmt = fmt;
+            this.properties = properties;
+            this.propertyPresent = propertyPresent;
+        }
+
+        @SuppressWarnings("unchecked")
+        static CellDataMatrix of(CellSet cellSet, CellsetShape shape) {
+            int dataColCount = shape.dataColCount;
+            int rowCount = shape.rowCount;
+            boolean[][] hasValue = new boolean[dataColCount][rowCount];
+            double[][] rawVal = new double[dataColCount][rowCount];
+            String[][] fmt = new String[dataColCount][rowCount];
+            Map<String, String>[][] properties = new Map[dataColCount][rowCount];
+            boolean[][] propertyPresent = new boolean[dataColCount][CELL_PROPERTY_COLUMNS.length];
+
+            for (int col = 0; col < dataColCount; col++) {
+                for (int row = 0; row < rowCount; row++) {
+                    Cell cell = cellSet.getCell(Arrays.asList(col, row));
+                    boolean has = false;
+                    double v = 0d;
+                    String rendered = "";
+                    if (cell != null && !cell.isEmpty() && !cell.isNull()) {
+                        Object val = cell.getValue();
+                        if (val instanceof Number) {
+                            v = ((Number) val).doubleValue();
+                            has = true;
+                        }
+                        String rv = cell.getFormattedValue();
+                        if (rv != null) {
+                            if (!has) {
+                                rendered = rv;
+                            } else if (!rv.equals(String.valueOf(v)) && !rv.equals(Double.toString(v))) {
+                                rendered = rv;
+                            }
+                        }
+                    }
+                    hasValue[col][row] = has;
+                    rawVal[col][row] = v;
+                    fmt[col][row] = rendered;
+
+                    Map<String, String> props = CellPropertyExtractor.extract(cell);
+                    properties[col][row] = props;
+                    for (int p = 0; p < CELL_PROPERTY_COLUMNS.length; p++) {
+                        String propVal = props.get(CELL_PROPERTY_COLUMNS[p][0]);
+                        if (propVal != null && !propVal.isEmpty()) {
+                            propertyPresent[col][p] = true;
+                        }
+                    }
+                }
+            }
+            return new CellDataMatrix(dataColCount, rowCount, hasValue, rawVal, fmt, properties, propertyPresent);
         }
     }
 }
