@@ -419,6 +419,15 @@ public class Database {
                 + "  ROLE VARCHAR(45) NOT NULL,\n"
                 + "  PRIMARY KEY (user_role_id));");
 
+        // saiku#1438 (SCIM): the core User schema carries name.givenName / name.familyName /
+        // displayName, and both Okta and Entra send them on every create and update. Without
+        // columns they would be accepted and thrown away, so the user directory would show a
+        // bare username for every provisioned person. Additive, idempotent, nullable — an
+        // existing H2 file upgrades in place and a NULL reads back as "not set".
+        statement.execute("ALTER TABLE USERS ADD COLUMN IF NOT EXISTS GIVEN_NAME VARCHAR(100);");
+        statement.execute("ALTER TABLE USERS ADD COLUMN IF NOT EXISTS FAMILY_NAME VARCHAR(100);");
+        statement.execute("ALTER TABLE USERS ADD COLUMN IF NOT EXISTS DISPLAY_NAME VARCHAR(255);");
+
         ResultSet result = statement.executeQuery("select count(*) as c from LOG where log = 'insert users'");
         result.next();
         if (result.getInt("c") == 0) {

@@ -134,6 +134,17 @@ overlays, auto-refresh, PDF/PNG export and read-only share links. See the
 walkthrough, and [`saiku-ui/src/embed/README.md`](saiku-ui/src/embed/README.md)
 to embed a dashboard in your own app via the `<saiku-embed>` web component.
 
+## User provisioning (SCIM 2.0)
+
+Saiku speaks the SCIM 2.0 core profile, so Okta, Microsoft Entra ID or
+OneLogin can own the user lifecycle: an admin mints one bearer token per
+connector, and create / update / deactivate / group-assignment all flow into
+the Saiku user directory without anyone touching the admin console. SCIM
+handles lifecycle; OIDC/SAML handles authentication — a provisioned account has
+no usable local password. See
+[`docs/SCIM-PROVISIONING.md`](docs/SCIM-PROVISIONING.md) for the connector
+walkthrough, the attribute mapping and its limits.
+
 ## Observability
 
 Saiku ships **opt-in OpenTelemetry instrumentation** via the OTel Java

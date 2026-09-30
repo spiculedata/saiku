@@ -5,6 +5,40 @@ All notable changes to Saiku are documented here. This project follows
 
 ## Unreleased
 
+### Added
+
+- **SCIM 2.0 provisioning endpoint for enterprise IdPs** (saiku#1438). Saiku now
+  speaks the SCIM 2.0 core profile (RFC 7643 schema, RFC 7644 protocol) at
+  `/rest/scim/v2`, so Okta, Microsoft Entra ID or OneLogin can own the user
+  lifecycle end to end — create, update, deactivate, reactivate, delete (a soft
+  `active=false`), and group membership — without anyone touching the admin
+  console. `GET/POST/PUT/PATCH/DELETE` on `/Users` and `/Groups`, plus the
+  `ServiceProviderConfig` / `ResourceTypes` / `Schemas` discovery pass both
+  connectors validate before their first create.
+
+  SCIM is kept **isolated** from the Saiku session/Basic surface: it runs on its
+  own Spring Security chain, authenticates only `Authorization: Bearer <token>`,
+  and the principal it establishes carries a single authority no other URL rule
+  grants. Tokens are minted per connector at
+  `POST /rest/saiku/admin/scim/tokens` (admin-only) and stored under
+  `${saiku.home}/scim-tokens/` as a SHA-256 of the secret — the plaintext is
+  shown once and is never persisted, so a leaked home directory yields no usable
+  credential. Revocation takes effect on the connector's next request; SCIM calls
+  are stateless and mint no HTTP session. Each token is rate limited to 100
+  requests/minute (`saiku.scim.rate-limit.per-minute`) and every call is
+  audit-logged with its token label, IdP and operation.
+
+  Mapping: `userName` ⇄ `USERS.USERNAME` (canonicalised, so the IdP's casing
+  can't split one person across two ACL identities), `emails[primary]` ⇄
+  `USERS.EMAIL`, `active` ⇄ `USERS.ENABLED`, `name.*`/`displayName` ⇄ new
+  nullable `GIVEN_NAME`/`FAMILY_NAME`/`DISPLAY_NAME` columns (added by an
+  idempotent `ALTER` at boot), and a group's `displayName` is the role granted to
+  its members. `externalId` and `enterprise:2.0:User` are accepted and dropped —
+  Saiku has no column for them, and refusing a filter on one is more honest than
+  a silent wrong answer. See
+  [`docs/SCIM-PROVISIONING.md`](docs/SCIM-PROVISIONING.md) for the connector
+  walkthrough, the mapping limits and troubleshooting.
+
 ### Security
 
 - **The SPA ships a default CSP and `frame-ancestors` (CWE-693 / CWE-1021,
