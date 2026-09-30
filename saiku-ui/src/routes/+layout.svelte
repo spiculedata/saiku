@@ -10,7 +10,15 @@
 	import { presentation } from '$lib/stores/presentation.svelte';
 	import ToastStack from '$lib/components/ToastStack.svelte';
 	import UpgradeBanner from '$lib/components/UpgradeBanner.svelte';
-	import { LogOut, Shield, Table2, LayoutDashboard, AppWindow, UserRound } from '@lucide/svelte';
+	import {
+		LogOut,
+		Shield,
+		Table2,
+		LayoutDashboard,
+		AppWindow,
+		UserRound,
+		Braces
+	} from '@lucide/svelte';
 	import SessionExpiredBanner from '$lib/components/SessionExpiredBanner.svelte';
 	import { i18n } from '$lib/stores/i18n.svelte';
 	import { installAuthInterceptor, onAuthFailure } from '$lib/api/http';
@@ -62,6 +70,16 @@
 			label: i18n.t('topbar.apps', 'Apps'),
 			icon: AppWindow,
 			active: page.url.pathname.startsWith(`${base}/apps`)
+		},
+		// saiku#1106: MDX workbench — promoted out of the toolbar's MDXModal
+		// into its own route. Always present, same posture as Dashboards/Apps
+		// (no role gate — any authenticated user who can already open the MDX
+		// modal from the workspace toolbar can reach this).
+		{
+			href: `${base}/workbench`,
+			label: i18n.t('topbar.workbench', 'MDX Workbench'),
+			icon: Braces,
+			active: page.url.pathname.startsWith(`${base}/workbench`)
 		},
 		...(session.isAdmin
 			? [

@@ -225,6 +225,20 @@
 	}
 
 	async function onShowMdx() {
+		// saiku#1106 phase 2: feed the modal's Monaco instance the active cube's
+		// schema so [Measures]./[Dim]. autocomplete works here too, not just in
+		// the dedicated /workbench route. Best-effort — a metadata fetch failure
+		// just leaves autocomplete at keyword-only, same as before this landed.
+		const cube = query.current?.cube ?? selection.cube;
+		if (cube && session.current) {
+			try {
+				const { setMdxCompletionContext } = await import('$lib/monaco/mdx-lang');
+				const md = await datasources.metadata(session.current.username, cube);
+				setMdxCompletionContext({ measures: md.measures, dimensions: md.dimensions });
+			} catch {
+				// Autocomplete degrades gracefully without schema context.
+			}
+		}
 		const local = query.current?.mdx ?? query.result?.query?.mdx ?? '';
 		// Prefer fresh MDX from the server — it reflects whatever the engine
 		// generated for the latest run. Falls back to whatever the client
