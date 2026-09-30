@@ -636,16 +636,9 @@
 		// absolute row = headerRowCount + row ; absolute col = rowHeaderColCount + col
 		const absRow = parsed.headerRowCount + row;
 		const absCol = parsed.rowHeaderColCount + col;
-		const template = cellLinkTemplate();
-		if (!template) {
-			wrapperEl?.dispatchEvent(
-				new CustomEvent('saiku-drillthrough', {
-					bubbles: true,
-					detail: { row: absRow, col: absCol, clientX: e.clientX, clientY: e.clientY }
-				})
-			);
-			return;
-		}
+		// Always open the menu. It used to jump straight to drillthrough when the cube declared no
+		// cell-link template, which left the "Explain this number" entry (#1118) with nowhere to
+		// live on those cubes — the entry is now simply hidden when there is no link to open.
 		menu = {
 			open: true,
 			kind: 'data',
@@ -668,6 +661,16 @@
 			dataAbsRow: absRow,
 			dataAbsCol: absCol
 		};
+	}
+
+	async function openExplain(event: MouseEvent, row: number, col: number) {
+		// row/col are the same data coordinates the drillthrough event carries: the server
+		// addresses cells the same way, so nothing is offset between the two surfaces.
+		event.preventDefault();
+		event.stopPropagation();
+		const detail = { row, col };
+		closeMenu();
+		wrapperEl?.dispatchEvent(new CustomEvent('saiku-explain', { bubbles: true, detail }));
 	}
 
 	function drillFromDataMenu() {
@@ -958,8 +961,17 @@
 			<button type="button" class="cellset-ctx-menu__item" onclick={drillFromDataMenu}
 				>{i18n.t('toolbar.drillthrough')}</button
 			>
-			<button type="button" class="cellset-ctx-menu__item" onclick={openCellLink}
-				>{i18n.t('toolbar.cellLink')}</button
+			{#if cellLinkTemplate()}
+				<button type="button" class="cellset-ctx-menu__item" onclick={openCellLink}
+					>{i18n.t('toolbar.cellLink')}</button
+				>
+			{/if}
+			<div class="cellset-ctx-menu__sep"></div>
+			<button
+				type="button"
+				class="cellset-ctx-menu__item"
+				onclick={(e) => openExplain(e, menu.dataRow ?? 0, menu.dataCol ?? 0)}
+				>{i18n.t('cellset.menu.explainThisNumber')}</button
 			>
 		{:else}
 			<div

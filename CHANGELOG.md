@@ -86,6 +86,25 @@ All notable changes to Saiku are documented here. This project follows
   PII-flagged level before they reach the prompt. 503s with a clear message
   when no LLM upstream is configured.
 
+- **"Explain this number" — right-click any cell, get the story (saiku#1118).**
+  New `POST /saiku/api/ai/explain` takes `{queryName, position:{row,column}}` and
+  answers from the cellset already cached for that session query, so opening the
+  panel never re-runs the user's query. It returns the cell's value and caption
+  path, the parent MDX, a **cell MDX** (the single-cell query that actually
+  computes this number) and, best-effort, the SQL the planner emitted for it,
+  plus structured **drivers** (share of column total, share of row total, rank in
+  column, change vs the previous sibling column, largest in row) and a
+  **narrative**. The narrative is written by the configured LLM provider when one
+  is configured — reached through the same ask service, egress policy and audit
+  trail as `/ai/ask`, and grounded on the computed drivers rather than the raw
+  cellset — and falls back to a deterministic summary built from those drivers
+  when no provider is set or the provider degrades; `narrativeSource` always says
+  which. Missing pieces (no SQL captured, no provider) are reported as absent
+  fields with a `notes` line, never as plausible-looking placeholders. In the
+  workspace, right-clicking a grid cell or a chart data point opens a docked side
+  panel: the number, the story, the drivers, and the MDX/SQL one click away.
+  Documented in [`docs/AI-QUERY-API.md`](./docs/AI-QUERY-API.md).
+
 - **`ai.provider=ollama` — local/self-hosted model support for the AI ask layer
   and schema-generation enrichment.** Both now accept `ollama` as a first-class
   provider value alongside `anthropic`/`openai`: it talks to a local Ollama
