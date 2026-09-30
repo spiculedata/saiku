@@ -848,6 +848,8 @@ public class Query2Resource {
      * @summary Drill through
      * @param queryName The query name
      * @param maxrows The max rows returned
+     * @param firstRowset Optional warehouse-side FIRST_ROWSET bound (saiku#822); wins over maxrows
+     *     when both are supplied, whole-result drills only (see {@link ThinQueryService#drillthrough(String, int, Integer, String)}).
      * @param position The position
      * @param returns The returned dimensions and levels
      * @return A query result set.
@@ -863,6 +865,7 @@ public class Query2Resource {
     public Response drillthrough(
             @PathParam("queryname") String queryName,
             @QueryParam("maxrows") @DefaultValue("100") Integer maxrows,
+            @QueryParam("firstRowset") Integer firstRowset,
             @QueryParam("position") String position,
             @QueryParam("returns") String returns,
             @Context HttpHeaders headers) {
@@ -875,7 +878,7 @@ public class Query2Resource {
             Long start = (new Date()).getTime();
             DrillThroughResult dtr = null;
             if (position == null) {
-                rs = thinQueryService.drillthrough(queryName, maxrows, returns);
+                rs = thinQueryService.drillthrough(queryName, maxrows, firstRowset, returns);
             } else {
                 String[] positions = position.split(":");
                 List<Integer> cellPosition = new ArrayList<>();
@@ -910,6 +913,35 @@ public class Query2Resource {
             // before the response body is written, so it is safe to close the
             // ResultSet here for both JSON and Arrow branches.
             JdbcCleanup.closeQuietly(rs);
+        }
+    }
+
+    /**
+     * Discover the drillthrough column list for a query (saiku#822 — Query2
+     * parity with the AI Query API's {@code /ai/query/{queryId}/drillthrough/columns}).
+     * Delegates to {@link ThinQueryService#drillthroughColumns(String)} (shipped
+     * in saiku#819) and returns the same {@code {queryId, columns:[{name,type}]}}
+     * envelope so saiku-ui can share one client-side shape across both surfaces.
+     * @summary Discover drillthrough columns
+     * @param queryName The query name
+     * @return { queryId, columns: [ { name, type } ] }
+     */
+    @GET
+    @Produces({"application/json"})
+    @Path("/{queryname}/drillthrough/columns")
+    public Response drillthroughColumns(@PathParam("queryname") String queryName) {
+        if (log.isDebugEnabled()) {
+            log.debug("TRACK\t" + "\t/query/" + queryName + "/drillthrough/columns\tGET");
+        }
+        try {
+            List<Map<String, String>> cols = thinQueryService.drillthroughColumns(queryName);
+            Map<String, Object> body = new java.util.LinkedHashMap<>();
+            body.put("queryId", queryName);
+            body.put("columns", cols);
+            return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
+        } catch (Exception e) {
+            log.error("Cannot discover drillthrough columns (" + queryName + ")", e);
+            return queryFailure(e);
         }
     }
 
