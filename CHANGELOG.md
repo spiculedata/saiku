@@ -5,6 +5,17 @@ All notable changes to Saiku are documented here. This project follows
 
 ## Unreleased
 
+### Added
+
+- **`POST /ai/describe-query` — AI-suggested tile titles and descriptions**
+  (Tier-1, schema-only; saiku#909). Given a query's structure — selected
+  measures, row/column axes, slicer — but no data values, suggests a short
+  title and one-line description for the dashboard tile it will render as.
+  Gated at the `schema-only` policy tier (the least-trusted, default tier);
+  respects saiku#902 PII annotations by redacting member captions on any
+  PII-flagged level before they reach the prompt. 503s with a clear message
+  when no LLM upstream is configured.
+
 ### Security
 
 - **The SPA ships a default CSP and `frame-ancestors` (CWE-693 / CWE-1021,
