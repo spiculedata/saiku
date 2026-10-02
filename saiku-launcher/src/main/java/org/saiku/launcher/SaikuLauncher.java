@@ -169,15 +169,39 @@ public class SaikuLauncher implements Callable<Integer> {
             }
             System.out.println("Saiku home: " + saikuHome);
 
-            stageSeedAssets(dataDir);
+            // saiku#1953: the demo fixtures below (FoodMart/Bank schemas + H2 data,
+            // the foodmart datasource descriptor, the TPC-DS and Flights Ossie
+            // datasources) are staged behind an explicit gate instead of running on
+            // every boot. SAIKU_DEMO=false used to be ignored here, so a production
+            // deployment following the README's "drop SAIKU_DEMO=true" advice still
+            // came up with four demo datasources and no supported way to opt out.
+            // The gate follows demo mode by default; SAIKU_SEED / -Dsaiku.seed is the
+            // escape hatch in both directions (fixtures without demo accounts, or
+            // demo accounts against the operator's own cubes). See shouldStageSeedFixtures.
+            boolean seedFixtures = shouldStageSeedFixtures(
+                    isDemoModeRequested(), System.getenv("SAIKU_SEED"), System.getProperty("saiku.seed"));
+            // saiku#1953: publish the RESOLVED decision so the webapp's sample loaders
+            // (Database.loadFoodmart / loadBank / loadEarthquakes, which register the
+            // demo datasources independently of the launcher) honour the same gate.
+            System.setProperty("saiku.seed", Boolean.toString(seedFixtures));
+            if (seedFixtures) {
+                stageSeedAssets(dataDir);
+                stageDefaultDatasource(saikuHome);
+                // #1394 demos: TPC-DS + Flights Ossie datasources with H2 fixtures.
+                // Auto-provisioned on first boot so a fresh demo container has three
+                // Ossie datasources ready to poke at via /ai/ossie/models. Idempotent —
+                // stageResource + stageOssieDemoDatasource both no-op when the target
+                // exists, so operator edits survive container restarts.
+                stageOssieDemoDatasources(saikuHome);
+            } else {
+                System.out.println("Demo fixtures not staged: FoodMart/Bank/TPC-DS/Flights are"
+                        + " demo content and seeding now follows demo mode (saiku#1953). Set"
+                        + " SAIKU_SEED=true to install them without demo mode, or SAIKU_DEMO=true"
+                        + " for the bundled demo.");
+            }
+            // The branding sample is a commented CSS template, not a fixture or a
+            // datasource — it carries no data and is inert, so it stays unconditional.
             stageBrandingSample(brandingDir);
-            stageDefaultDatasource(saikuHome);
-            // #1394 demos: TPC-DS + Flights Ossie datasources with H2 fixtures.
-            // Auto-provisioned on first boot so a fresh container has three Ossie
-            // datasources ready to poke at via /ai/ossie/models. Idempotent —
-            // stageResource + stageOssieDemoDatasource both no-op when the target
-            // exists, so operator edits survive container restarts.
-            stageOssieDemoDatasources(saikuHome);
             // saiku#1245: in demo mode, also stage a "Welcome" dashboard
             // under /dashboards/ so a fresh demo container has something
             // ready-to-look-at at first login instead of an empty list.
@@ -585,6 +609,42 @@ public class SaikuLauncher implements Callable<Integer> {
                 if ("demo".equalsIgnoreCase(p.trim())) return true;
             }
             return false;
+        }
+
+        /**
+         * saiku#1953 — decide whether the demo fixtures (FoodMart + Bank schemas and
+         * H2 data, the {@code foodmart} datasource descriptor, the TPC-DS + Flights
+         * Ossie datasources) are staged into a fresh saiku-home.
+         *
+         * <p>Default: seeding follows demo mode. {@code SAIKU_DEMO=true} keeps seeding
+         * (the documented quickstart path), and a deployment with {@code SAIKU_DEMO}
+         * unset or {@code false} comes up with an empty datasource list — which is what
+         * the README already tells operators to do for a real deployment.
+         *
+         * <p>{@code SAIKU_SEED} (env) and {@code -Dsaiku.seed} (system property) are the
+         * escape hatch in both directions, and both are strictly independent of demo mode:
+         * {@code SAIKU_SEED=true} alone installs the fixtures without the demo accounts,
+         * and {@code SAIKU_DEMO=true SAIKU_SEED=false} runs the demo login against the
+         * operator's own cubes. Precedence: {@code -Dsaiku.seed} > {@code SAIKU_SEED} >
+         * demo mode. Empty / whitespace values count as unset, matching
+         * {@link #resolveDemoAiPolicyDefault}.
+         *
+         * <p>Nothing is ever deleted by turning seeding off — every staging step is
+         * seed-if-absent, so an existing home keeps whatever it already has.
+         *
+         * @param demoMode whether demo mode is active (from {@link #isDemoModeRequested()})
+         * @param envValue current value of the {@code SAIKU_SEED} env var (may be null)
+         * @param propValue current value of the {@code saiku.seed} system property (may be null)
+         * @return true when the demo fixtures should be staged
+         */
+        static boolean shouldStageSeedFixtures(boolean demoMode, String envValue, String propValue) {
+            if (propValue != null && !propValue.isBlank()) {
+                return Boolean.parseBoolean(propValue.trim());
+            }
+            if (envValue != null && !envValue.isBlank()) {
+                return Boolean.parseBoolean(envValue.trim());
+            }
+            return demoMode;
         }
 
         /** True when demo mode is currently in effect (post-bootstrap), which
