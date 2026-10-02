@@ -592,25 +592,37 @@ public class AiOssieResource {
                     "Too many AI ask requests — limit is " + askRateLimiter.getMaxCalls() + " per "
                             + (askRateLimiter.getWindowMs() / 1000) + "s. Please retry shortly.");
         }
+        // #1398 — optional history: [{role, content}] for multi-turn conversations.
+        // saiku#1918 (17c, CWE-74): `role` is a closed enum, not free text. It used to be forwarded
+        // to the provider verbatim, and on an OpenAI-compatible endpoint a role:"system" turn IS a
+        // system prompt — appended after this service's own guardrails, so the client got the last
+        // word on the model's instructions. Refused here, alongside the other shape guards and
+        // BEFORE any model or warehouse work, so the caller gets a real 400 listing the legal
+        // values. OssieAiAskService.ChatTurn#wireRole() is the second line of defence for every
+        // other caller.
+        List<org.saiku.service.ossie.ai.OssieAiAskService.ChatTurn> history = new ArrayList<>();
+        Object rawHistory = body.get("history");
+        if (rawHistory instanceof List<?> hlist) {
+            for (int hi = 0; hi < hlist.size(); hi++) {
+                if (hlist.get(hi) instanceof Map<?, ?> hmap) {
+                    String role = strOr(hmap.get("role"));
+                    String content = strOr(hmap.get("content"));
+                    if (role == null || content == null) continue;
+                    if (!isAllowedOssieRole(role)) {
+                        return badRequest(
+                                "history",
+                                "history[" + hi + "].role must be 'user' or 'assistant'; got '" + role + "'.",
+                                List.of("user", "assistant"));
+                    }
+                    history.add(new org.saiku.service.ossie.ai.OssieAiAskService.ChatTurn(role, content));
+                }
+            }
+        }
         try {
             OssieModelDto semantic = ossieDiscoverService.getModel(connection);
             if (modelName == null || modelName.isBlank()) modelName = semantic.getName();
             OssieAiSchema schema = projector.project(connection, semantic, openWarehouseConnection(connection));
 
-            // #1398 — accept optional history: [{role, content}] for multi-turn conversations.
-            List<org.saiku.service.ossie.ai.OssieAiAskService.ChatTurn> history = new ArrayList<>();
-            Object rawHistory = body.get("history");
-            if (rawHistory instanceof List<?> hlist) {
-                for (Object h : hlist) {
-                    if (h instanceof Map<?, ?> hmap) {
-                        String role = strOr(hmap.get("role"));
-                        String content = strOr(hmap.get("content"));
-                        if (role != null && content != null) {
-                            history.add(new org.saiku.service.ossie.ai.OssieAiAskService.ChatTurn(role, content));
-                        }
-                    }
-                }
-            }
             org.saiku.service.ossie.ai.OssieAiAskService.AskResult ar =
                     askService.ask(question, schema, connection, modelName, history);
             if (ar.error() != null) {
@@ -646,6 +658,18 @@ public class AiOssieResource {
         if (v == null) return null;
         String s = v.toString();
         return s.isBlank() ? null : s;
+    }
+
+    /**
+     * saiku#1918 (17c): the closed set of conversation roles the ask surface accepts. Case- and
+     * whitespace-insensitive so a chat UI that sends {@code "User"} still works; anything else is
+     * refused rather than coerced, so the caller learns their history shape is wrong instead of
+     * silently having one of their turns reinterpreted.
+     */
+    private static boolean isAllowedOssieRole(String role) {
+        if (role == null) return false;
+        String r = role.trim();
+        return "user".equalsIgnoreCase(r) || "assistant".equalsIgnoreCase(r);
     }
 
     // -------------------------------------------------------------------

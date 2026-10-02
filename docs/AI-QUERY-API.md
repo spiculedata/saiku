@@ -1093,6 +1093,22 @@ Both routes feed the same typed fields on `AiSchema.Measure` /
 `AiSchema.Level` and the same alias maps, so the API surface is identical
 regardless of where the metadata came from.
 
+### `saiku.semantic.pii` is a refusal, not a hint
+
+One annotation in that namespace changes what the server will *do*. A
+measure or level annotated `saiku.semantic.pii=true` is redacted on
+`/ai/schema` **and refused on every axis a request can name it on** —
+`measures[]`, `rows[]`, `columns[]`, `filters[]` — plus `GET
+/ai/members/search` and drillthrough `returns=`. An agent that hits one
+gets a `400 VALIDATION_ERROR` telling it to aggregate over a parent level
+instead.
+
+The filter case is the one that surprises people: filtering a cube to one
+customer and reading the row header returns that customer's caption, so
+any axis position that can carry a member caption is a PII egress path.
+Full contract, including the digest-level redaction on chained asks:
+[`docs/schema-annotations.md`](schema-annotations.md#saikusemanticpii--the-pii-contract).
+
 ### XML annotation example
 
 ```xml
@@ -1190,6 +1206,21 @@ A correctly-grounded agent never sees MDX, never invents names, and gets
 self-correcting validation feedback when it misses.
 
 ---
+
+## Cost control on the ask layer
+
+Every `POST /ai/ask*` endpoint is capped twice over. A per-minute **call**
+limiter bounds request frequency, and a daily **cost budget**
+(`saiku.ai.budget.*`) bounds the money, charged from the token usage the
+provider reports on each turn — per authenticated principal and per
+instance. A chained ask (`/ai/ask/chain/stream`) is charged per provider
+round-trip, not per HTTP request, because it is up to `maxSteps` calls
+each re-sending the cube schema; concurrent chains are additionally
+capped so a burst can't pin a request thread per chain until the chain
+deadline. Both rate limiting and the budget key on the principal, never
+on `(user, IP)`. Over-budget calls return `429` with a `degraded`
+AskResponse. Tuning reference:
+[`docs/operator-hardening.md`](operator-hardening.md#ai-ask-cost-budget-saiku-aibudget).
 
 ## Natural-language ask layer — `POST /ai/ask`
 
