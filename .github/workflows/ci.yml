@@ -169,6 +169,31 @@ jobs:
       # build's fault, not a type/test failure. (saiku#1551)
       - name: Production build
         run: npm run build
+      # saiku#2000: `npm run build` ends with `npm run sbom`, so the UI
+      # CycloneDX SBOM the release publishes is produced right here. Assert
+      # it's a real, populated CycloneDX 1.6 document rather than trusting
+      # the tool's exit code alone — an empty or truncated SBOM is worse than
+      # none, because a scanner treats it as "scanned, nothing found".
+      - name: Verify UI SBOM is well-formed
+        run: |
+          set -euo pipefail
+          SBOM=sbom/saiku-ui-sbom.cdx.json
+          if [ ! -s "$SBOM" ]; then
+            echo "::error::$SBOM missing or empty — the release would ship an unusable UI SBOM"
+            exit 1
+          fi
+          node -e '
+            const fs = require("fs");
+            const bom = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            if (bom.bomFormat !== "CycloneDX") throw new Error("not a CycloneDX document");
+            if (bom.specVersion !== "1.6") throw new Error("specVersion is " + bom.specVersion);
+            const names = (bom.components || []).map((c) => c.name);
+            if (names.length < 20) throw new Error("only " + names.length + " components");
+            for (const must of ["monaco-editor", "echarts", "apache-arrow", "saiku-design-system"]) {
+              if (!names.includes(must)) throw new Error("expected component missing: " + must);
+            }
+            console.log("UI SBOM OK: " + names.length + " components");
+          ' "$SBOM"
       # Mocked-backend Playwright suite (saiku#2009). Reuses the build above:
       # with CI set, playwright.config.ts's webServer only runs `vite preview`.
       # Live specs (*.live.spec.ts) stay excluded — they need a running launcher.

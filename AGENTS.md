@@ -39,6 +39,7 @@ npm test                                      # vitest
 npm run lint                                  # ESLint flat config (token-only rule)
 npm run storybook                             # Storybook 10.4 design-system catalogue
 npm run build                                 # static build → saiku-ui/dist
+npm run sbom                                  # CycloneDX 1.6 JSON for the npm tree → saiku-ui/sbom/ (saiku#2000; also the last step of `npm run build`)
 ```
 
 The UI is **Tailwind v4 + design-system primitives + Storybook**. ESLint bans raw tone classes (`bg-emerald-*`, `text-red-*`, `bg-amber-*`, `rose`, `orange`) outside `src/lib/design-system/` — token utilities only.

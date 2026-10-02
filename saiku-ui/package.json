@@ -14,7 +14,9 @@
 		"build:embed": "vite build --config vite.config.embed.ts",
 		"build:embed-npm": "node scripts/stage-embed-npm.mjs",
 		"build:embed-react-npm": "node scripts/stage-embed-react-npm.mjs",
-		"build": "npm run build:app && npm run build:embed && npm run build:embed-npm && npm run build:embed-react-npm",
+		"//sbom": "saiku#2000: CycloneDX SBOM for the npm/UI half of what we ship. The Maven SBOM (saiku#1990) only sees the Java tree; this covers everything bundled into the war overlay (monaco, echarts, apache-arrow, …) plus the design-system workspace. `--omit dev` mirrors the Maven SBOM's test-scope exclusion — the SBOM describes what ships, not the build/test harness. Output is CycloneDX 1.6 JSON, written OUTSIDE dist/ so vite's emptyOutDir can't wipe it and it never ends up as a served /ui/ asset.",
+		"sbom": "cyclonedx-npm --output-file sbom/saiku-ui-sbom.cdx.json --output-format JSON --spec-version 1.6 --omit dev --mc-type application",
+		"build": "npm run build:app && npm run build:embed && npm run build:embed-npm && npm run build:embed-react-npm && npm run sbom",
 		"preview": "vite preview",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && npm run check:embed-react",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
@@ -36,6 +38,7 @@
 	"devDependencies": {
 		"@antithesishq/bombadil": "^0.7.7",
 		"@chromatic-com/storybook": "^5.3.1",
+		"@cyclonedx/cyclonedx-npm": "^6.0.1",
 		"@eslint/compat": "^2.1.1",
 		"@eslint/js": "^10.0.1",
 		"@playwright/test": "^1.63.0",
