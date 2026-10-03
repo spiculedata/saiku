@@ -2467,7 +2467,13 @@ public class AiQueryResource {
         return buildResponse(tq, cds, startedAt, "records");
     }
 
-    private AiQueryResponse buildResponse(ThinQuery tq, CellDataSet cds, long startedAt, String format) {
+    /**
+     * saiku#1435 — public so the embed Creator Mode surface
+     * ({@code EmbedAuthoringResource}) formats its preview with the exact same
+     * envelope every other query surface returns, instead of a second
+     * records/matrix serialiser that would drift from this one.
+     */
+    public AiQueryResponse buildResponse(ThinQuery tq, CellDataSet cds, long startedAt, String format) {
         return buildResponse(
                 tq, cds, startedAt, format, java.util.Collections.emptyList(), java.util.Collections.emptyList());
     }

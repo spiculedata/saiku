@@ -65,6 +65,15 @@ public class EmbedToken {
     /** Optional human label shown in the owner's embed list. */
     public String label;
 
+    /** saiku#1435 — the tenant this token authors for. Set ONLY for
+     *  {@code resourceKind == "authoring"}: it derives the sole folder the
+     *  token-bearer may create objects in
+     *  ({@code /homes/<createdBy>/embed-guest-<tenantId>}, see
+     *  {@link EmbedAuthoringScope}). Null for every read-only kind, and a
+     *  tenantId that fails {@link EmbedAuthoringScope#isValidTenantId} makes
+     *  the token unusable rather than widening the scope. */
+    public String tenantId;
+
     /** Redaction posture for the read path (saiku-cloud#940 + saiku#902).
      *  {@link RedactionPolicy#TENANT_DEFAULT} (default) defers to the
      *  tenant's configured redaction tier; {@link RedactionPolicy#FORCE_ON}
