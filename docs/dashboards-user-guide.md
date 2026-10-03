@@ -110,8 +110,20 @@ below. All are optional — a fresh tile renders with sensible defaults.
 threshold bands) and inline **sparklines** (a tiny trend chart in a column).
 
 **KPI tiles** show one big number plus a comparison badge: **vs last year**, **vs
-prior period**, or **vs a target** — with a clear "no prior data" state when the
-comparison can't be computed.
+prior period**, **period to date**, or **vs a target** — with a clear "no prior
+data" state when the comparison can't be computed.
+
+**Period to date** is for a period that is still filling up. A KPI comparing the
+current week against the whole of last week is measuring the calendar, not the
+business — FoodMart's weekly series ends on a two-day stub week 52, so the
+unadjusted delta reads about −84%. This mode compares the newest period *so far*
+against the **same portion** of the period before it (week 52's first two days
+against week 51's first two days). The number on the tile is still the real
+period-to-date total, so nothing is hidden; only the baseline is truncated. The
+offset comes from the time hierarchy's next level down (e.g. Week → Day), never
+from the values. On a hierarchy with nothing finer below the level, the tile
+falls back to showing the value marked **partial** with the comparison withheld,
+rather than measuring a part-period against a whole one.
 
 ---
 
