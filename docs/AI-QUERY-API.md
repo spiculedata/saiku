@@ -1633,8 +1633,12 @@ falls through as a raw ask.
   scrape the routing.
 - `GET /rest/saiku/api/ai/spaces?errors=true` — same, plus parse
   errors.
-- `GET /rest/saiku/api/ai/spaces/{id}` — full record (for the admin
-  UI when editing a persona).
+- `GET /rest/saiku/api/ai/spaces/{id}` — the **same compact summary**
+  as the catalogue entry (saiku#1920). The full record
+  (`systemPrompt`, `cubeAllowlist`, `skillAllowlist`, `sourcePath`)
+  needs `?full=true` **and** admin; anyone else gets `403`.
+- `GET /rest/saiku/api/ai/spaces/{id}?full=true` — full record. Admin
+  only, for the admin UI when editing a persona.
 - `POST /rest/saiku/api/ai/spaces/{id}/ask` — space-scoped ask. Body
   shape mirrors `/ai/ask` but `cube` is optional.
 - `POST /rest/saiku/api/ai/spaces/{id}/ask/stream` — SSE streaming

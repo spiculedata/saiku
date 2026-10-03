@@ -1,0 +1,74 @@
+# saiku#1920 — dependency + secret scanning that SECURITY.md actually describes.
+#
+# The document used to claim "Snyk on every push", "OWASP Dependency-Check on
+# release builds" and "commit hooks reject common credential patterns" while
+# none of those existed. Rather than delete the claims we made them true, and
+# corrected the document for the parts that are still opt-in.
+#
+# Two independent jobs, both running on the cheap `pull_request`/push lane and
+# both pinned to commit SHAs:
+#
+#   dependency-review — GitHub's own advisory diff. Reads the OSV/GitHub
+#     advisory database through the API, so there is no NVD API key and no
+#     multi-minute NVD download on every push. Fails a PR that ADDS a
+#     dependency with a known vulnerability, which is the moment a reviewer
+#     can actually do something about it.
+#
+#   gitleaks — scans the full history of the branch for committed secrets.
+#     `fetch-depth: 0` is load-bearing: gitleaks only finds a secret in commits
+#     it can see, and a shallow clone hides anything older than the depth.
+#
+# OWASP Dependency-Check (`mvn -P security verify`) is deliberately NOT here:
+# it downloads the full NVD feed and takes ~10 minutes, which is the wrong
+# trade on every push. It stays the opt-in release gate documented in
+# SECURITY.md, and release-prep.yml is where an operator runs it.
+
+name: security-scan
+
+on:
+  push:
+    branches: [development, "phase-*"]
+  pull_request:
+  schedule:
+    # Weekly, so a newly-published advisory against a dependency already merged
+    # still surfaces. 04:17 UTC Monday.
+    - cron: "17 4 * * 1"
+
+concurrency:
+  group: security-scan-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-review:
+    name: dependency review
+    # Advisory diffing only makes sense against a base — the first push to a
+    # brand-new branch has no meaningful merge base, and the scheduled run
+    # compares a ref against itself (always empty, hence a no-op success).
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write # required to annotate the PR with the findings
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/dependency-review-action@4081bf99e2866ebe428fc0477b69eb4fcda7220a # v4.4.0
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure
+
+  gitleaks:
+    name: gitleaks (committed secrets)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history — gitleaks can only find a secret in commits it can see.
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
+        env:
+          # Never let the scanner print a detected secret into the job log.
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
+          GITLEAKS_NOTIFY_USER_LIST: ""

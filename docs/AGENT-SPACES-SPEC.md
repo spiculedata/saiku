@@ -99,8 +99,11 @@ Parse failures surface via `GET /rest/saiku/api/ai/spaces?errors=true`:
   `cubeAllowlist` are omitted so an embed can't scrape the routing.
 - `GET  /rest/saiku/api/ai/spaces?errors=true` — same, plus parse
   errors.
-- `GET  /rest/saiku/api/ai/spaces/{id}` — full record. Used by the
-  admin UI when editing a persona.
+- `GET  /rest/saiku/api/ai/spaces/{id}` — the same compact
+  summary as the catalogue entry (saiku#1920). The full record needs
+  `?full=true` **and** admin; anyone else gets `403`.
+- `GET  /rest/saiku/api/ai/spaces/{id}?full=true` — full record.
+  Admin only, for the admin UI when authoring a persona.
 - `POST /rest/saiku/api/ai/spaces/{id}/ask` — space-scoped ask. Body
   shape mirrors `/ai/ask` but `cube` is optional (falls back to the
   space default). A cube ref outside the allowlist returns `403`; an

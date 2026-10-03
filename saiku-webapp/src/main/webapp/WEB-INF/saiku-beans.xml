@@ -498,6 +498,9 @@
              dashboard reference-tile binding. -->
         <property name="datasourceService" ref="datasourceServiceBean"/>
         <property name="sessionService" ref="sessionService"/>
+        <!-- saiku#1920: gates ?full=true on /ai/spaces/{id} so the persona + cube
+             allowlist stay admin-only; non-admins get the redacted summary shape. -->
+        <property name="userService" ref="userServiceBean"/>
         <!-- Raw olap4j connection for Mondrian write-back (what-if) scenarios. -->
         <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
         <!-- Phase 2: natural-language ask layer. Off by default (provider=noop) —
@@ -859,6 +862,10 @@
     <bean id="shareTokenAuthFilter"
           class="org.saiku.web.security.share.ShareTokenAuthFilter">
         <constructor-arg ref="shareTokenStore"/>
+        <!-- saiku#1920: re-resolve the share owner's live identity on every read, so a
+             disabled/demoted owner stops the guest read immediately. Same fail-closed
+             resolver the scheduler uses. -->
+        <constructor-arg ref="ownerIdentityResolver"/>
     </bean>
 
     <bean id="shareTokenResource"
@@ -915,6 +922,10 @@
           class="org.saiku.web.security.embed.EmbedAuthFilter">
         <constructor-arg ref="embedTokenStore"/>
         <constructor-arg ref="embedPublicRegistry"/>
+        <!-- saiku#1920: the owner-role snapshot on an embed token / public grant / embed
+             JWT is an assertion captured at mint time. Re-resolve the owner's CURRENT
+             identity on every read and fail closed when it no longer resolves. -->
+        <constructor-arg ref="ownerIdentityResolver"/>
     </bean>
 
     <!-- saiku-cloud#940 mint-time PII gate. Resolves a resource's bound cubes
