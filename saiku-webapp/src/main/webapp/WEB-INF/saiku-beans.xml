@@ -422,6 +422,12 @@
         <property name="thinQueryService" ref="thinQueryBean"/>
         <property name="repository" ref="repository2bean"/>
         <property name="asyncQueryService" ref="asyncQueryServiceBean"/>
+        <!-- saiku#837: reuse the AI query surface's cube-metadata service so
+             drillthrough returns= on the Query2 workspace path resolves bare
+             captions to qualified MDX the same way AiQueryResource does
+             (saiku#782). Defined below, but Spring resolves bean refs by id
+             regardless of declaration order. -->
+        <property name="cubeMetadataService" ref="aiCubeMetadataServiceBean"/>
     </bean>
 
     <!-- ====================================================================
