@@ -73,9 +73,21 @@
     </security:http>
     <security:http pattern="/rest/saiku/info/ui-settings" security="none">
     </security:http>
+    <security:http pattern="/repository" security="none">
+    </security:http>
     <security:http pattern="/repository/**" security="none">
     </security:http>
+    <!-- saiku#1949: the BARE "/ui" (no trailing slash) needs its own permit for the same reason
+         "/embed-demo" and "/aqvira-demo" do below — a human typing http://host:8080/ui is the
+         single most hand-typed URL in the product, and without this the terminal catch-all in
+         the secured chain below would answer it 401 instead of letting the container issue its
+         directory redirect to /ui/. Same for the bare /images and /repository directories, whose
+         "/**"-suffixed chains cover only the trailing-slash shape. -->
+    <security:http pattern="/ui" security="none">
+    </security:http>
     <security:http pattern="/ui/**" security="none">
+    </security:http>
+    <security:http pattern="/images" security="none">
     </security:http>
     <!-- Static showcase SPA (saiku-ui/static/showcase/) — public, same-origin so its
          fetches to /rest/saiku/api/* ride the visitor's own auth session (or the
@@ -230,6 +242,37 @@
       <security:intercept-url pattern="/rest/**" access="isFullyAuthenticated()" />
       <security:intercept-url pattern="/json/**" access="isFullyAuthenticated()" />
       <security:intercept-url pattern="/WEB-INF/classes/legacy-schema" access="isAnonymous()" />
+      <!-- saiku#1949: favicon probes. A browser on the root landing page (/, which index.jsp
+           meta-refreshes to /ui/) requests /favicon.ico at the site root. There is no such file
+           (the SPA's icons are served from /ui/), so this 404s — but with the terminal
+           catch-all below an unmatched /favicon.ico would instead 401, which reads as an
+           auth problem in the browser console. Explicitly permit the two conventional
+           favicon names so the catch-all stays invisible to a plain browser. -->
+      <security:intercept-url pattern="/favicon.ico" access="permitAll" />
+      <security:intercept-url pattern="/favicon.svg" access="permitAll" />
+      <!-- saiku#1949: TERMINAL CATCH-ALL — fail closed, not open.
+           Without a last rule, the XML namespace's RequestMatcherDelegatingAuthorizationManager
+           returns a NULL decision for a request matching no intercept-url, and Spring Security
+           treats a null decision as GRANTED. Every URL not explicitly listed above was therefore
+           anonymous BY OMISSION — a standing footgun: any servlet path or handler added later
+           (that isn't claimed by a security="none" chain above) is reachable with no
+           credentials, which is exactly how /xmla was anonymous before saiku#1905.
+
+           This rule must stay LAST: every intentional anonymous surface above
+           (/serverdocs/**, /rest/saiku/session*, /rest/saiku/info**, /rest/saiku/demo/gate/**,
+           the one-click mail unsubscribe/consent-confirm, the share/embed guest read prefixes,
+           /WEB-INF/classes/legacy-schema, the favicon probes) is matched BEFORE it, and the
+           security="none" chains at the top of this file claim their own paths ahead of this
+           chain entirely, so the static SPA (/ui and /ui/**), the public demo pages
+           (/embed-demo**, /aqvira-demo**), /repository and /images, /index.jsp, /style.css and the
+           dedicated /xmla/** chain are all unaffected.
+
+           isFullyAuthenticated() (not hasRole('ADMIN')) — this is a plain "you must be logged
+           in" gate, matching the /rest/** rule; authorization beyond that stays with each
+           resource's own annotations. 401 (anonymous) / 403 (authenticated but unprivileged)
+           is the fail-closed answer for anything not deliberately opened above. Terminal
+           catch-all regression guard: saiku-launcher .../it/TerminalCatchAllIT. -->
+      <security:intercept-url pattern="/**" access="isFullyAuthenticated()" />
       <security:logout logout-url="/logout"/>
       <!-- HTTP Basic re-enabled (saiku#878) so the native MCP endpoint
            and any other stateless agent / DXT-shim client can authenticate
