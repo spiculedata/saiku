@@ -26,6 +26,7 @@ jobs:
       java: ${{ steps.filter.outputs.java }}
       ui: ${{ steps.filter.outputs.ui }}
       docs: ${{ steps.filter.outputs.docs }}
+      sheets: ${{ steps.filter.outputs.sheets }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
@@ -60,6 +61,10 @@ jobs:
               - 'docs/**'
               - 'README.md'
               - 'CLAUDE.md'
+            # Google Sheets add-on (spiculedata/saiku#1436). Pure-logic unit
+            # tests under `node --test`; no npm install needed (no deps).
+            sheets:
+              - 'integrations/google-sheets/**'
 
   build:
     name: build (JDK 22, ubuntu-latest)
@@ -184,6 +189,24 @@ jobs:
           path: saiku-ui/test-results/
           retention-days: 7
 
+  # Google Sheets add-on (spiculedata/saiku#1436). The add-on's request-shaping
+  # and write-planning logic is deliberately Apps-Script-free so it can be
+  # tested with the built-in Node test runner — no package.json, no install
+  # step, nothing to lock.
+  sheets:
+    name: sheets (add-on unit tests)
+    needs: changes
+    if: needs.changes.outputs.sheets == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+      - name: Add-on unit tests
+        run: node --test integrations/google-sheets/test/*.test.js
+
   dist:
     name: bundle (saiku-dist zip)
     needs: changes
@@ -260,7 +283,7 @@ jobs:
   # success/skipped — so a real build failure still blocks the merge.
   ci:
     name: ci
-    needs: [changes, build, ui, dist]
+    needs: [changes, build, ui, sheets, dist]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -272,6 +295,7 @@ jobs:
             "changes=${{ needs.changes.result }}" \
             "build=${{ needs.build.result }}" \
             "ui=${{ needs.ui.result }}" \
+            "sheets=${{ needs.sheets.result }}" \
             "dist=${{ needs.dist.result }}"; do
             name="${entry%%=*}"
             result="${entry#*=}"

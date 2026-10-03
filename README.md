@@ -134,6 +134,15 @@ overlays, auto-refresh, PDF/PNG export and read-only share links. See the
 walkthrough, and [`saiku-ui/src/embed/README.md`](saiku-ui/src/embed/README.md)
 to embed a dashboard in your own app via the `<saiku-embed>` web component.
 
+## Google Sheets add-on
+
+A first-party Sheets add-on (`integrations/google-sheets/`, spiculedata/saiku#1436)
+queries the semantic layer from a spreadsheet sidebar — cube picker, measure
+and dimension shelves, *Insert as table*, and a *Refresh* that rewrites the
+same block in place so your formatting survives. It talks to the same typed
+`/saiku/api/ai/*` surface as the MCP server and the Excel add-in. See
+[`docs/sheets.md`](docs/sheets.md).
+
 ## Observability
 
 Saiku ships **opt-in OpenTelemetry instrumentation** via the OTel Java
