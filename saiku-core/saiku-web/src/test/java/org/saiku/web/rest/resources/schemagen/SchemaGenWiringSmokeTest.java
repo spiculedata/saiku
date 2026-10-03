@@ -19,9 +19,11 @@ import org.saiku.service.schema.generate.enrich.provider.LlmProviderFactory;
 import org.saiku.service.schema.generate.enrich.provider.NoopProvider;
 import org.saiku.service.schema.generate.infer.SchemaInferrer;
 import org.saiku.service.schema.generate.introspect.JdbcIntrospector;
+import org.saiku.service.schema.generate.quickstart.QuickstartIngestService;
 import org.saiku.service.schema.generate.session.SchemaGenOrchestrator;
 import org.saiku.service.schema.generate.session.SchemaGenSessionStore;
 import org.saiku.service.schema.generate.writer.MondrianSchemaWriter;
+import org.saiku.web.rest.resources.quickstart.QuickstartResource;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
 
 /**
@@ -84,6 +86,13 @@ public class SchemaGenWiringSmokeTest {
                     DatasourceJdbcConnectionProvider.extractKey(
                             "jdbc:mondrian:Jdbc=jdbc:h2:mem:test;Catalog=mondrian://x;JdbcDrivers=org.h2.Driver",
                             "JdbcDrivers"));
+
+            // saiku#1117: the quickstart CSV-upload beans sit right beside these in production
+            // wiring — assert they resolve too so a constructor-arg/property drift there fails
+            // this same fast smoke test instead of only showing up at webapp boot.
+            assertNotNull(ctx.getBean("quickstartIngestService", QuickstartIngestService.class));
+            assertNotNull(ctx.getBean("quickstartResource", QuickstartResource.class));
+
             assertTrue(true);
         }
     }

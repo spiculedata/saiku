@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	buildLaunchUrl,
 	findCubeByRef,
 	parseStarterCubeRef,
 	pickStarterLevelDrop,
@@ -7,6 +8,21 @@ import {
 	pickStarterMeasureAndLevel
 } from './starterCube';
 import type { SaikuConnection, SaikuDimension, SaikuLevel, SaikuMeasure } from './discover';
+
+describe('buildLaunchUrl()', () => {
+	it('builds a /ui/ URL carrying all 4 starterCube* params, round-trippable by parseStarterCubeRef', () => {
+		const url = buildLaunchUrl({ connection: 'unknown_sales', schema: 'Sales', cube: 'Orders' });
+
+		expect(url.startsWith('/ui/?')).toBe(true);
+		const parsed = parseStarterCubeRef(new URLSearchParams(url.slice('/ui/?'.length)));
+		expect(parsed).toEqual({
+			connection: 'unknown_sales',
+			catalog: 'Sales',
+			schema: 'Sales',
+			name: 'Orders'
+		});
+	});
+});
 
 describe('parseStarterCubeRef()', () => {
 	it('returns null when no params present', () => {
