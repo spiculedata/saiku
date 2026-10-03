@@ -8,6 +8,7 @@
 	import { i18n } from '$lib/stores/i18n.svelte';
 	import CubePicker from '$lib/views/CubePicker.svelte';
 	import DimensionList from '$lib/views/DimensionList.svelte';
+	import SetsPanel from '$lib/views/SetsPanel.svelte';
 	import OssieSchemaTree from '$lib/views/OssieSchemaTree.svelte';
 	import OssieQueryCanvas from '$lib/views/OssieQueryCanvas.svelte';
 	import WorkspaceToolbar from '$lib/views/WorkspaceToolbar.svelte';
@@ -442,6 +443,7 @@
 					<OssieSchemaTree username={session.username} />
 				{:else}
 					<DimensionList username={session.username} />
+					<SetsPanel />
 				{/if}
 			</div>
 			<div class="workspace__sidebar-footer">

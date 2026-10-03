@@ -7,6 +7,7 @@ import {
 	type QueryResult,
 	type ThinHierarchy,
 	type ThinMeasure,
+	type ThinNamedSet,
 	type ThinQuery
 } from '$lib/api/query';
 import type { SaikuCube } from '$lib/api/discover';
@@ -554,6 +555,30 @@ class QueryStore {
 		this.captureForUndo();
 		const details = this.current.queryModel.details;
 		details.measures = details.measures.filter((m) => m.uniqueName !== uniqueName);
+		this.markDirty();
+	}
+
+	/** Add or replace a named set on the query model, matched by name (case-sensitive,
+	 *  same key the backend `ThinNamedSet` DTO uses). Mirrors the calculated-measure
+	 *  upsert pattern in DimensionList's onCalculatedSave — replace-by-name rather than
+	 *  append, so re-saving an edited set doesn't leave a stale duplicate entry. Named
+	 *  sets ride along in queryModel.namedSets and are submitted with the rest of the
+	 *  query on every run (saiku#826) — no separate REST call. */
+	upsertNamedSet(set: ThinNamedSet): void {
+		if (!this.current?.queryModel) return;
+		this.captureForUndo();
+		const model = this.current.queryModel;
+		const next = (model.namedSets ?? []).filter((s) => s.name !== set.name);
+		next.push(set);
+		model.namedSets = next;
+		this.markDirty();
+	}
+
+	removeNamedSet(name: string): void {
+		if (!this.current?.queryModel) return;
+		this.captureForUndo();
+		const model = this.current.queryModel;
+		model.namedSets = (model.namedSets ?? []).filter((s) => s.name !== name);
 		this.markDirty();
 	}
 
