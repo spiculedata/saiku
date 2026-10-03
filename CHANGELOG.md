@@ -23,6 +23,28 @@ All notable changes to Saiku are documented here. This project follows
 
 ### Security
 
+- **Per-endpoint rate limiters are no longer silently disabled by request-scoped
+  instance state (CWE-837 / CWE-307, saiku#1913).** `AiRateLimiter` kept its
+  fixed-window buckets in an *instance* field, but every consumer held one as
+  `new AiRateLimiter(...)` inside a `scope="request"` resource — a fresh, EMPTY
+  bucket map per HTTP request, so `tryAcquire` always saw count = 1 and returned
+  true. The caps on the public one-click unsubscribe / consent-confirm
+  endpoints, admin mail send / invite / test-send, self-send email, job run-now,
+  and the two AI ask endpoints never tripped. `AiRateLimiter.shared(name)`
+  (plus `sharedFromProperty(name, prop, default)`) now keys the bucket store by
+  name, and `saiku-beans.xml` declares those as singleton beans
+  (`mailUnsubscribeRateLimiter`, `mailConsentRateLimiter`,
+  `mailConsentAddressRateLimiter`, `mailTestSendRateLimiter`,
+  `mailInviteRateLimiter`, `mailSendRateLimiter`, `mailEmailRateLimiter`,
+  `aiQueryAskRateLimiter`, `aiOssieAskRateLimiter`, `jobRunNowRateLimiter`)
+  injected into the request-scoped resources, so one request's spend counts
+  against the next. The bare constructors keep private per-instance storage
+  (what unit tests want), and the shared store is bounded at 50,000 distinct
+  keys per limiter so an attacker-shaped key space (client IP) can't grow it
+  without limit. No configuration change is required; the existing
+  `saiku.*.ratelimit.maxPerMinute` properties still tune each endpoint, and
+  `AiRateLimiterWiringTest` fails if a limiter is ever left unwired.
+
 - **The SPA ships a default CSP and `frame-ancestors` (CWE-693 / CWE-1021,
   saiku#1917).** `SecurityHeadersFilter` emitted *no* framing headers unless
   `-Dsaiku.security.frameAncestors` was set, and a full CSP only under
