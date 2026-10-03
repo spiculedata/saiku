@@ -28,7 +28,9 @@ import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStreamWriter;
 import java.io.UnsupportedEncodingException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
@@ -800,7 +802,7 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
             throw new RepositoryException();
         }
 
-        Path resolved = resolveWithinDatadir(s);
+        Path resolved = resolveWithinDatadirChecked(s);
         byte[] encoded = new byte[0];
         try {
             encoded = Files.readAllBytes(resolved);
@@ -818,7 +820,7 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
 
     public String getInternalFile(String s) throws RepositoryException {
         byte[] encoded = new byte[0];
-        Path resolved = resolveWithinDatadir(s);
+        Path resolved = resolveWithinDatadirChecked(s);
         try {
             encoded = Files.readAllBytes(resolved);
         } catch (IOException e) {
@@ -833,7 +835,7 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
     }
 
     public InputStream getBinaryInternalFile(String s) throws RepositoryException {
-        Path path = resolveWithinDatadir(s);
+        Path path = resolveWithinDatadirChecked(s);
         try {
             byte[] f = Files.readAllBytes(path);
             return new ByteArrayInputStream(f);
@@ -1112,12 +1114,16 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
         int pos = path.lastIndexOf(sep);
         // File n = getFolder(path.substring(0, pos));
         File f = this.createNode(path);
-        try {
-            FileWriter fileWriter = new FileWriter(f);
-
-            fileWriter.write(baos.toString());
+        // saiku#1933: pin the charset explicitly. This used to be `baos.toString()` (decoding
+        // the JAXB bytes with the platform default) plus `new FileWriter(f)` (encoding them
+        // back with the platform default again) -- two implicit default-charset round trips.
+        // Harmless on the shipped JRE 21 (UTF-8 default since JEP 400), but on a host launched
+        // with e.g. -Dfile.encoding=ISO-8859-1 or a Cp1252 default locale, an accented
+        // datasource name in the .sds descriptor would be re-encoded into mojibake and the
+        // name read back on the next load would not match the file it was stored under.
+        try (OutputStreamWriter fileWriter = new OutputStreamWriter(new FileOutputStream(f), StandardCharsets.UTF_8)) {
+            fileWriter.write(baos.toString(StandardCharsets.UTF_8));
             fileWriter.flush();
-            fileWriter.close();
         } catch (IOException e) {
             log.error("Failed to save datasource file", e);
         }
@@ -1310,8 +1316,16 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
         File file;
         try {
             file = resolveWithinDatadir(folder).toFile();
-        } catch (RepositoryException e) {
-            log.warn("Refusing to delete path that escapes datadir: {}", folder);
+        } catch (RepositoryException | InvalidPathException e) {
+            // saiku#1933: InvalidPathException (NUL byte, a stray ':' on Windows) means
+            // Paths.get() itself rejected the input -- fail closed exactly as createNode() does,
+            // rather than letting a raw InvalidPathException surface as a REST 500.
+            // saiku#1933 (CWE-117): the message is constant -- Paths.get() accepts a newline
+            // character on Linux, so embedding the raw path here would be log-line injection
+            // once this lands in a log line. The raw value is logged at DEBUG only, and stays
+            // available on the exception's cause for debugging.
+            log.warn("Refusing to delete a path that escapes the datadir", e);
+            log.debug("Refused delete of path: {}", folder);
             return;
         }
         file.delete();
@@ -1393,10 +1407,20 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
         path = fixPath(path);
         try {
             return resolveWithinDatadir(path).toFile();
-        } catch (RepositoryException e) {
+        } catch (RepositoryException | InvalidPathException e) {
             // Preserve historical signature (no checked exception) by throwing unchecked.
             // Path-traversal attempts are programmer / attacker errors, not flow control.
-            throw new SaikuServiceException("Path traversal attempt rejected: " + path, e);
+            // saiku#1933: catch InvalidPathException alongside RepositoryException so getNode
+            // matches createNode/createFolder. An illegal character (NUL, or ':' on Windows) in
+            // a caller-supplied path makes Paths.get() itself throw; letting that escape raw
+            // surfaces as an opaque 500 rather than the same fail-closed rejection every other
+            // path-traversal attempt gets.
+            // saiku#1933 (CWE-117): don't echo the raw path into the message -- Paths.get()
+            // accepts a newline character on Linux, so a crafted path would be log-line
+            // injection once this surfaces in a REST 500 body or a log.error call site. Same
+            // treatment as createNode(); the raw value is still available on the cause.
+            log.debug("Rejecting path: {}", path);
+            throw new SaikuServiceException("Path traversal attempt rejected", e);
         }
     }
 
@@ -1430,9 +1454,38 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
             resolved = base.resolve(stripped).normalize();
         }
         if (!resolved.startsWith(base)) {
-            throw new RepositoryException("Path traversal attempt rejected: " + userPath);
+            // saiku#1933 (CWE-117): the message is deliberately constant. This message reaches
+            // a REST response body and several log.error call sites, and Paths.get() accepts a
+            // newline character on Linux -- so embedding the raw caller path here lets an
+            // attacker forge log lines. The raw value is logged at DEBUG and carried on the
+            // exception's cause (message/cause) for debugging.
+            log.debug("Rejecting path that escapes the datadir: {}", userPath);
+            throw new RepositoryException("Path traversal attempt rejected");
         }
         return resolved;
+    }
+
+    /**
+     * {@link #resolveWithinDatadir(String)} with its unchecked escape hatch closed (saiku#1933).
+     *
+     * <p>{@code resolveWithinDatadir} calls {@code Paths.get()}, which throws
+     * {@link InvalidPathException} — unchecked — for input the platform refuses outright: a NUL
+     * byte on any OS, or a {@code ':'} inside a segment on Windows. The read entry points that
+     * call it directly declare {@link RepositoryException}, so a raw {@code InvalidPathException}
+     * escaping them reaches a REST caller as an opaque 500 instead of the clean rejection every
+     * other bad path gets. {@code createNode}/{@code createFolder}/{@code getNode}/{@code delete}
+     * do the same against the unchecked {@link SaikuServiceException}.
+     *
+     * <p>The message is constant for the same CWE-117 reason as the traversal rejection: a
+     * rejected path is caller input, and the raw value is available on the cause.
+     */
+    private Path resolveWithinDatadirChecked(String userPath) throws RepositoryException {
+        try {
+            return resolveWithinDatadir(userPath);
+        } catch (InvalidPathException e) {
+            log.debug("Rejecting a path the platform refused to parse", e);
+            throw new RepositoryException("Illegal path", e);
+        }
     }
 
     /**

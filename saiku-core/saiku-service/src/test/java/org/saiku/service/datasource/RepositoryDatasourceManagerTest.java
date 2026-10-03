@@ -6,6 +6,7 @@ package org.saiku.service.datasource;
 
 import static org.junit.Assert.*;
 
+import java.text.Normalizer;
 import java.util.*;
 import org.junit.*;
 import org.saiku.datasources.connection.ISaikuConnection;
@@ -272,6 +273,69 @@ public class RepositoryDatasourceManagerTest {
         assertNotNull(
                 "an accented, parenthesised datasource name must be accepted by the allowlist and written to disk",
                 rManager.getDataSource("/datasources/Ventes Été (EU).sds"));
+    }
+
+    @Test
+    public void testAddDatasourceNormalizesNfdNameToNfc() throws Exception {
+        // saiku#1933: an accented name pasted in decomposed (NFD) form -- what macOS puts on the
+        // clipboard, and what a naive UTF-8 round trip preserves -- used to be rejected outright
+        // by DATASOURCE_NAME_PATTERN, which allows Unicode letters (\p{L}) but not the combining
+        // marks (\p{M}) an NFD spelling carries. Prove both halves: the NFD name is accepted, and
+        // it is persisted under its NFC spelling so later lookups (which carry the composed form
+        // the admin typed, or that came back out of the UI) resolve to the same file.
+        MockConnectionManager cManager = new MockConnectionManager();
+        MockRepositoryManager rManager = new MockRepositoryManager();
+
+        Map<String, Object> session = new HashMap<>();
+        session.put(RepositoryDatasourceManager.ORBIS_WORKSPACE_DIR, "workspace");
+
+        rdManager.setConnectionManager(cManager);
+        rdManager.setRepositoryManager(rManager);
+        rdManager.setType(CLASSPATH);
+        rdManager.setWorkspaces("true");
+        rdManager.setSessionRegistry(createScopedRepo(session));
+        rdManager.setDatadir("c:\\temp\\repo");
+
+        // "Ventes Été" as typed; the NFD spelling macOS hands over is the same string with each
+        // "é" decomposed into "e" + U+0301 COMBINING ACUTE ACCENT.
+        String nfcName = "Ventes Été";
+        String nfdName = Normalizer.normalize(nfcName, Normalizer.Form.NFD);
+        assertNotEquals("test precondition: the NFD spelling must differ from the NFC one", nfcName, nfdName);
+
+        SaikuDatasource ds = new SaikuDatasource() {
+            @Override
+            public Type getType() {
+                return Type.OLAP;
+            }
+
+            @Override
+            public String getName() {
+                return nfdName;
+            }
+
+            @Override
+            public Properties getProperties() {
+                Properties props = new Properties();
+                props.setProperty("driver", "mondrian.olap4j.MondrianOlap4jDriver");
+                props.setProperty("location", "jdbc:mondrian:Jdbc=jdbc:h2:mem:test;Catalog=mondrian://x.xml;");
+                props.setProperty("username", "bruno");
+                props.setProperty("password", "bruno");
+                props.setProperty("id", "b5ef4927-63e3-4d9c-b7dc-905fff8841f8");
+                props.setProperty("security.enabled", "false");
+                props.setProperty("type", "OLAP");
+
+                return props;
+            }
+        };
+
+        rdManager.addDatasource(ds);
+
+        assertNotNull(
+                "an NFD (decomposed) accented datasource name must be accepted, not rejected by the allowlist",
+                rManager.getDataSource("/datasources/" + nfcName + ".sds"));
+        assertNull(
+                "the datasource must be stored under its NFC spelling, not the NFD one that was submitted",
+                rManager.getDataSource("/datasources/" + nfdName + ".sds"));
     }
 
     @Test
