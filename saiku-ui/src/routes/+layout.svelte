@@ -10,7 +10,15 @@
 	import { presentation } from '$lib/stores/presentation.svelte';
 	import ToastStack from '$lib/components/ToastStack.svelte';
 	import UpgradeBanner from '$lib/components/UpgradeBanner.svelte';
-	import { LogOut, Shield, Table2, LayoutDashboard, AppWindow, UserRound } from '@lucide/svelte';
+	import {
+		LogOut,
+		Shield,
+		Table2,
+		LayoutDashboard,
+		AppWindow,
+		FileText,
+		UserRound
+	} from '@lucide/svelte';
 	import SessionExpiredBanner from '$lib/components/SessionExpiredBanner.svelte';
 	import { i18n } from '$lib/stores/i18n.svelte';
 	import { installAuthInterceptor, onAuthFailure } from '$lib/api/http';
@@ -63,6 +71,12 @@
 			icon: AppWindow,
 			active: page.url.pathname.startsWith(`${base}/apps`)
 		},
+		{
+			href: `${base}/notebooks`,
+			label: i18n.t('topbar.notebooks', 'Notebooks'),
+			icon: FileText,
+			active: page.url.pathname.startsWith(`${base}/notebooks`)
+		},
 		...(session.isAdmin
 			? [
 					{
@@ -76,8 +90,12 @@
 	]);
 
 	// #941 share viewer: the public /share route renders a dashboard for an
-	// account-free guest — no app chrome (topbar / upgrade banner), no session.
-	const isShare = $derived(page.url.pathname.startsWith(`${base}/share`));
+	// account-free guest — no app chrome (topbar / upgrade banner), no
+	// session. #1108 adds the notebook counterpart at /notebooks/share.
+	const isShare = $derived(
+		page.url.pathname.startsWith(`${base}/share`) ||
+			page.url.pathname.startsWith(`${base}/notebooks/share`)
+	);
 
 	// Chrome-hide: `?chrome=none` renders a page full-bleed with no Saiku topbar
 	// (or upgrade banner) — for embedding an App Builder app in an iframe / kiosk
