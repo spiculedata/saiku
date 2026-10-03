@@ -1261,6 +1261,26 @@
         <constructor-arg ref="mailSender"/>
         <constructor-arg ref="mailConfig"/>
         <constructor-arg ref="mailLinkBuilder"/>
+        <!-- saiku#1119: per-user opt-out. Resolved against the job OWNER's own
+             /saiku/api/preferences document (key "dashboardDigestOptOut") before
+             the first query, so an opted-out user is never read, narrated or mailed. -->
+        <constructor-arg ref="repositoryDsManager"/>
+        <!-- saiku#1119: the LLM narrator. Falls back to the deterministic template
+             whenever the provider is unconfigured, the egress guard withholds
+             aggregates, or anything degrades. -->
+        <constructor-arg ref="digestNarrator"/>
+    </bean>
+
+    <!-- saiku#1119: insight digests — the agent-authored "here's what changed" half of a
+         DASHBOARD_DIGEST. The narrator is handed the STRUCTURED deltas the digest already
+         computed (never a model-authored query) and the INSIGHT tool is forced, so the model
+         can only describe figures the server read. The dedicated LLM-egress guard decides
+         whether those aggregates may leave the box at all; an unwired/denying guard means the
+         provider is never called and the template bullets are used instead. -->
+    <bean id="digestNarrator" class="org.saiku.service.schedule.digest.NlAskDigestNarrator">
+        <constructor-arg ref="aiAskProviderBean"/>
+        <constructor-arg ref="aiCubeMetadataServiceBean"/>
+        <constructor-arg ref="aiLlmEgressGuard"/>
     </bean>
 
     <!-- The live engine. init-method="start" starts the ticker at boot; destroy-method="shutdown"
