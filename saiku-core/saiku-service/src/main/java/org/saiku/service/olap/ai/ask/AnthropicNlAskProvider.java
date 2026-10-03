@@ -339,6 +339,147 @@ public final class AnthropicNlAskProvider extends AbstractNlAskProvider {
         return parseToolResponse(body, model);
     }
 
+    // ---------- streaming (saiku#1484) ----------
+
+    @Override
+    StreamDecoder streamDecoder() {
+        return new AnthropicStreamDecoder();
+    }
+
+    /**
+     * Folds the Messages API's event stream back into a buffered {@code /v1/messages} body.
+     *
+     * <p>Anthropic streams a tool call as {@code content_block_start} (which names the tool and its
+     * {@code tool_use} id) followed by a run of {@code input_json_delta} events carrying fragments
+     * of the tool's JSON input, bracketed by {@code content_block_stop}. The fragments concatenate
+     * to the exact {@code input} the buffered call would have returned, so the reconstructed body
+     * feeds {@link #parseToolResponse} unchanged.
+     *
+     * <p>Blocks are keyed by {@code index} and may interleave, so each keeps its own buffer and its
+     * own {@link ProseDeltaScanner} — that is what lets the prose of an insight stream out while a
+     * second block (e.g. a trailing text block) is still being assembled.
+     */
+    static final class AnthropicStreamDecoder extends AbstractNlAskProvider.StreamDecoder {
+
+        /** One in-flight {@code content_block}. */
+        private static final class Block {
+            final String type;
+            String id;
+            String name;
+            String seedInput = "{}";
+            final StringBuilder text = new StringBuilder();
+            final ProseDeltaScanner scanner = new ProseDeltaScanner();
+            boolean prose;
+
+            Block(String type) {
+                this.type = type;
+            }
+
+            boolean isToolUse() {
+                return "tool_use".equals(type);
+            }
+
+            ObjectNode toJson() throws IOException {
+                ObjectNode node = MAPPER.createObjectNode();
+                node.put("type", type);
+                if (isToolUse()) {
+                    node.put("id", id);
+                    node.put("name", name);
+                    String raw = scanner.raw();
+                    node.set("input", raw.isEmpty() ? MAPPER.readTree(seedInput) : MAPPER.readTree(raw));
+                } else {
+                    node.put("text", text.toString());
+                }
+                return node;
+            }
+        }
+
+        private final java.util.Map<Integer, Block> blocks = new java.util.LinkedHashMap<>();
+        private String model = "";
+        private int inputTokens = -1;
+        private int outputTokens = -1;
+        private String stopReason;
+
+        @Override
+        void accept(JsonNode event, NlAskStreamListener listener) throws IOException {
+            if (event.has("error") || "error".equals(event.path("type").asText())) {
+                // A mid-stream failure (overload, expired mid-generation) arrives as an event, not a
+                // status code — surface it as a degradation rather than a confusing parse error.
+                String message = event.path("error").path("message").asText("provider stream error");
+                throw StreamAbort.of(message, model);
+            }
+            String type = event.path("type").asText();
+            switch (type) {
+                case "message_start" -> {
+                    JsonNode message = event.path("message");
+                    if (message.hasNonNull("model")) {
+                        model = message.path("model").asText();
+                        listener.onModel(model);
+                    }
+                    inputTokens = message.path("usage").path("input_tokens").asInt(-1);
+                }
+                case "content_block_start" -> {
+                    JsonNode contentBlock = event.path("content_block");
+                    Block block = new Block(contentBlock.path("type").asText("text"));
+                    block.id = contentBlock.path("id").asText(null);
+                    block.name = contentBlock.path("name").asText(null);
+                    if (contentBlock.has("input") && !contentBlock.path("input").isNull()) {
+                        block.seedInput = contentBlock.path("input").toString();
+                    }
+                    if (block.isToolUse()) {
+                        if (block.name != null) {
+                            listener.onToolSelected(block.name);
+                        }
+                        // Only prose tools stream; a query's half-built JSON is not user-facing.
+                        block.prose = isProseTool(block.name);
+                    }
+                    blocks.put(event.path("index").asInt(blocks.size()), block);
+                }
+                case "content_block_delta" -> {
+                    Block block = blocks.get(event.path("index").asInt(-1));
+                    if (block == null) {
+                        return;
+                    }
+                    JsonNode delta = event.path("delta");
+                    String deltaType = delta.path("type").asText();
+                    if ("input_json_delta".equals(deltaType)) {
+                        // Always buffer (the assembled block needs the whole input JSON); only prose
+                        // tools hand the decoded text to the listener as it arrives.
+                        String prose =
+                                block.scanner.accept(delta.path("partial_json").asText(""));
+                        if (block.prose && !prose.isEmpty()) {
+                            listener.onDelta(prose);
+                        }
+                    } else if ("text_delta".equals(deltaType)) {
+                        block.text.append(delta.path("text").asText(""));
+                    }
+                }
+                case "message_delta" -> {
+                    outputTokens = event.path("usage").path("output_tokens").asInt(outputTokens);
+                    stopReason = event.path("delta").path("stop_reason").asText(stopReason);
+                }
+                default -> {
+                    // ping / content_block_stop / message_stop carry nothing to accumulate.
+                }
+            }
+        }
+
+        @Override
+        String assembledBody() throws IOException {
+            ObjectNode root = MAPPER.createObjectNode();
+            root.put("model", model);
+            root.put("stop_reason", stopReason);
+            ArrayNode content = root.putArray("content");
+            for (Block block : blocks.values()) {
+                content.add(block.toJson());
+            }
+            ObjectNode usage = root.putObject("usage");
+            usage.put("input_tokens", inputTokens);
+            usage.put("output_tokens", outputTokens);
+            return MAPPER.writeValueAsString(root);
+        }
+    }
+
     /**
      * Parse an Anthropic Messages API response body into an {@link NlAskResponse}. Visible for
      * testing — this is the deserialisation contract.

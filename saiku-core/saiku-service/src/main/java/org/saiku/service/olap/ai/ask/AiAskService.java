@@ -349,7 +349,29 @@ public class AiAskService {
             String cellsetDigest,
             NlAskRequest.ForceTool forceTool,
             AiQueryRequest currentQuery) {
-        return askInternal(ref, question, history, cellsetDigest, forceTool, currentQuery, null);
+        return askInternal(ref, question, history, cellsetDigest, forceTool, currentQuery, null, null);
+    }
+
+    /**
+     * True per-token streaming variant of {@link #ask(AiCubeRef, String, List, String,
+     * NlAskRequest.ForceTool, AiQueryRequest)} (saiku#1484): the model's prose reaches
+     * {@code listener} while it is being written, and the returned {@link AskOutcome} is the same
+     * one the buffered call produces. Pass {@code null} for {@code listener} to get the buffered
+     * behaviour.
+     *
+     * <p>Every guard the buffered path applies — schema load, egress strip of the digest /
+     * currentQuery / history, slash-command expansion, space scoping — is applied identically here,
+     * because it is the same method with a sink attached.
+     */
+    public AskOutcome askStreaming(
+            AiCubeRef ref,
+            String question,
+            List<NlAskMessage> history,
+            String cellsetDigest,
+            NlAskRequest.ForceTool forceTool,
+            AiQueryRequest currentQuery,
+            NlAskStreamListener listener) {
+        return askInternal(ref, question, history, cellsetDigest, forceTool, currentQuery, null, listener);
     }
 
     /**
@@ -371,6 +393,24 @@ public class AiAskService {
             String cellsetDigest,
             NlAskRequest.ForceTool forceTool,
             AiQueryRequest currentQuery) {
+        return askInSpace(spaceId, ref, question, history, cellsetDigest, forceTool, currentQuery, null);
+    }
+
+    /**
+     * Space-scoped ask with the model's prose streamed to {@code listener} as it is written
+     * (saiku#1484). Twin of {@link #askInSpace} — same allowlist enforcement, same pre-LLM scope
+     * decision, same post-LLM re-check of the cube the model actually emitted; the only difference
+     * is that the provider call streams.
+     */
+    public AskOutcome askInSpaceStreaming(
+            String spaceId,
+            AiCubeRef ref,
+            String question,
+            List<NlAskMessage> history,
+            String cellsetDigest,
+            NlAskRequest.ForceTool forceTool,
+            AiQueryRequest currentQuery,
+            NlAskStreamListener listener) {
         if (spaces == null) {
             return AskOutcome.degraded(
                     "agent spaces are not configured on this instance", null, SpaceAccess.SPACES_NOT_CONFIGURED);
@@ -396,7 +436,7 @@ public class AiAskService {
                     null,
                     SpaceAccess.FORBIDDEN);
         }
-        return askInternal(effectiveRef, question, history, cellsetDigest, forceTool, currentQuery, space);
+        return askInternal(effectiveRef, question, history, cellsetDigest, forceTool, currentQuery, space, listener);
     }
 
     /**
@@ -596,6 +636,23 @@ public class AiAskService {
             String cellsetDigest,
             NlAskRequest.ForceTool forceTool,
             AiQueryRequest currentQuery) {
+        return askChained(ref, question, history, cellsetDigest, forceTool, currentQuery, null);
+    }
+
+    /**
+     * Streaming variant of {@link #askChained} (saiku#1484): each step's prose reaches
+     * {@code listener} as the model writes it, tagged by {@link NlAskStreamListener#onStepStart(int)}
+     * so a multi-step consumer can tell the steps apart. The returned {@link AskChain} is the chain
+     * the buffered call would have produced.
+     */
+    public AskChain askChained(
+            AiCubeRef ref,
+            String question,
+            List<NlAskMessage> history,
+            String cellsetDigest,
+            NlAskRequest.ForceTool forceTool,
+            AiQueryRequest currentQuery,
+            NlAskStreamListener listener) {
 
         if (ref == null) {
             return new AskChain(List.of(AskOutcome.degraded("cube ref required", null)), false);
@@ -676,6 +733,11 @@ public class AiAskService {
         String lastModel = null; // most recent provider model, for a clean degraded return on deadline
 
         for (int i = 0; i < cap; i++) {
+            // Streaming consumers (the chained SSE endpoint) need to know which step the following
+            // events belong to before the first token of it lands. No-op for a null listener.
+            if (listener != null) {
+                listener.onStepStart(i);
+            }
             // F3: stop the loop cleanly if the whole chain has blown its wall-clock budget. Checked
             // before each provider round-trip (and thus after the previous turn's paced-retry waits).
             // Mirrors the egress-denied early exit: append a degraded step and break — NEVER throw,
@@ -711,7 +773,7 @@ public class AiAskService {
             // OPT-3: a rate-limited turn (HTTP 429) is paced + retried in place — the SAME request,
             // since a rate limit isn't the model's fault — up to a bounded retry count. A non-429
             // degrade never enters that loop. Shared with buildDashboard (see askWithPacedRetry).
-            NlAskResponse resp = askWithPacedRetry(req);
+            NlAskResponse resp = askWithPacedRetry(req, listener);
             lastModel = resp.model(); // remember for a clean deadline degrade on a later iteration
 
             if (resp.degraded()) {
@@ -773,7 +835,19 @@ public class AiAskService {
      * behaviour rather than duplicating the loop.
      */
     private NlAskResponse askWithPacedRetry(NlAskRequest req) {
-        NlAskResponse resp = provider.ask(req);
+        return askWithPacedRetry(req, null);
+    }
+
+    /**
+     * Provider call with the paced 429 / transient-tool-error retry loop, optionally streaming the
+     * model's prose to {@code listener} (saiku#1484).
+     *
+     * <p>Retrying a stream is safe precisely because a rate limit is decided before any content
+     * arrives: the HTTP status is known when the response headers do, so a re-ask starts from
+     * zero deltas and the client never sees a token twice.
+     */
+    private NlAskResponse askWithPacedRetry(NlAskRequest req, NlAskStreamListener listener) {
+        NlAskResponse resp = listener == null ? provider.ask(req) : provider.askStreaming(req, listener);
         int rlRetries = 0;
         while (resp.degraded() && resp.retryAfterMs() >= 0 && rlRetries < rateLimitRetries()) {
             long wait = resp.retryAfterMs() > 0 ? resp.retryAfterMs() : DEFAULT_RATE_LIMIT_WAIT_MS;
@@ -786,7 +860,7 @@ public class AiAskService {
             }
             rlRetries++;
             log.info("AI ask: LLM rate-limited, waited {}ms, retry {}/{}", wait, rlRetries, rateLimitRetries());
-            resp = provider.ask(req);
+            resp = listener == null ? provider.ask(req) : provider.askStreaming(req, listener);
         }
         return resp;
     }
@@ -1057,7 +1131,8 @@ public class AiAskService {
             String cellsetDigest,
             NlAskRequest.ForceTool forceTool,
             AiQueryRequest currentQuery,
-            AgentSpace space) {
+            AgentSpace space,
+            NlAskStreamListener listener) {
         if (ref == null) {
             return AskOutcome.degraded("cube ref required", null);
         }
@@ -1173,7 +1248,9 @@ public class AiAskService {
                 skillsFragment,
                 spaceSystemPrompt,
                 List.of());
-        NlAskResponse resp = provider.ask(req);
+        // A null listener is the buffered path, byte for byte the call this method made before
+        // streaming existed (every provider's askStreaming short-circuits to ask in that case).
+        NlAskResponse resp = provider.askStreaming(req, listener);
 
         if (resp.degraded()) {
             return AskOutcome.degraded(resp.reason(), resp.model());

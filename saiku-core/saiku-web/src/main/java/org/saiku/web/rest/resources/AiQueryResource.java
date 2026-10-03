@@ -1134,13 +1134,16 @@ public class AiQueryResource {
      * data: {"degraded":false,"model":"...","insight":{...}}
      * }</pre>
      *
-     * <p><strong>Streaming semantics (v1).</strong> The underlying provider call is still
-     * synchronous — the LLM's tool-use response is emitted whole. The endpoint then chunks any
-     * prose fields (insight markdown, view-change reason) into word-sized deltas so the client
-     * gets a progressive render experience. True per-token streaming from the LLM provider is a
-     * follow-up (both Anthropic and OpenAI expose streaming APIs, but their tool-use streaming
-     * payloads are non-trivial to accumulate at the AbstractNlAskProvider seam). The wire shape
-     * is stable; a future PR that plugs in real LLM streaming won't require client changes.
+     * <p><strong>Streaming semantics (v2, saiku#1484).</strong> The provider call itself is a real
+     * stream: the {@code model} event lands with the provider's first event, the {@code intent}
+     * event as soon as the model commits to a tool, and the {@code chunk} events carry the model's
+     * prose <em>as it is written</em> — Anthropic's {@code input_json_delta} and OpenAI's
+     * {@code tool_calls[].function.arguments} are decoded on the fly, so first-token latency is the
+     * provider's rather than ours. A provider without a streaming transport (or one that answers a
+     * streaming request with a buffered body) degrades to the previous behaviour: the finished
+     * response replayed word by word, so the wire shape and the client contract are unchanged either
+     * way. QUERY intent still emits no chunks — a half-built JSON query is not something a user
+     * should watch being typed.
      *
      * <p>Rate limiter + size cap + policy gate + auth are identical to {@link
      * #ask(AiAskApi.AskRequest)} — the streaming variant isn't a bypass surface.
@@ -1156,13 +1159,14 @@ public class AiQueryResource {
         }
         org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool force = parseForceTool(body.getForceTool());
         return streamAsk(
-                () -> askService.ask(
+                sse -> askService.askStreaming(
                         body.getCube(),
                         body.getQuestion(),
                         body.historyAsMessages(),
                         body.getCellsetDigest(),
                         force,
-                        body.getCurrentQuery()),
+                        body.getCurrentQuery(),
+                        new SseTokenStream(sse)),
                 "AI ask (streaming)");
     }
 
@@ -1196,14 +1200,15 @@ public class AiQueryResource {
         }
         org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool force = parseForceTool(body.getForceTool());
         return streamAsk(
-                () -> askService.askInSpace(
+                sse -> askService.askInSpaceStreaming(
                         spaceId,
                         body.getCube(),
                         body.getQuestion(),
                         body.historyAsMessages(),
                         body.getCellsetDigest(),
                         force,
-                        body.getCurrentQuery()),
+                        body.getCurrentQuery(),
+                        new SseTokenStream(sse)),
                 "AI ask-in-space (streaming)");
     }
 
@@ -1229,13 +1234,14 @@ public class AiQueryResource {
         }
         org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool force = parseForceTool(body.getForceTool());
         return streamChain(
-                () -> askService.askChained(
+                sse -> askService.askChained(
                         body.getCube(),
                         body.getQuestion(),
                         body.historyAsMessages(),
                         body.getCellsetDigest(),
                         force,
-                        body.getCurrentQuery()),
+                        body.getCurrentQuery(),
+                        new SseTokenStream(sse)),
                 "AI ask (chained, streaming)");
     }
 
@@ -1276,10 +1282,23 @@ public class AiQueryResource {
      * <p>Package-visible for unit testing. Called by both {@link #askStream} and {@link
      * #askInSpaceStream}; the two endpoints differ only in which {@code AiAskService} entry
      * point they invoke.
+     *
+     * <p>When {@code live} is non-null it describes what the provider already streamed while the
+     * turn was running (saiku#1484) — the {@code model} / {@code intent} events were written by
+     * {@link SseTokenStream} as the events arrived, and the prose has already been delivered as
+     * {@code chunk} events, so this method emits only the terminal envelope. With a null {@code
+     * live} (the unit-test seam) nothing has been streamed yet, so the synthetic word-chunk replay
+     * runs exactly as it always did.
      */
     void streamOutcomeAsSse(AiAskService.AskOutcome outcome, SseWriter sse) throws java.io.IOException {
+        streamOutcomeAsSse(outcome, sse, null);
+    }
+
+    void streamOutcomeAsSse(AiAskService.AskOutcome outcome, SseWriter sse, SseTokenStream live)
+            throws java.io.IOException {
+        boolean streamed = live != null;
         // model event — always fired first so the client can show which backend answered.
-        if (outcome.model() != null) {
+        if (outcome.model() != null && !(streamed && live.modelEmitted)) {
             sse.event("model", MAPPER.writeValueAsString(java.util.Map.of("model", outcome.model())));
         }
 
@@ -1297,10 +1316,12 @@ public class AiQueryResource {
             return;
         }
 
-        sse.event(
-                "intent",
-                MAPPER.writeValueAsString(java.util.Map.of(
-                        "kind", outcome.kind() == null ? "" : outcome.kind().name())));
+        if (!(streamed && live.intentEmitted)) {
+            sse.event(
+                    "intent",
+                    MAPPER.writeValueAsString(java.util.Map.of(
+                            "kind", outcome.kind() == null ? "" : outcome.kind().name())));
+        }
 
         AiAskApi.AskResponse out = new AiAskApi.AskResponse();
         out.setDegraded(false);
@@ -1309,7 +1330,7 @@ public class AiQueryResource {
         if (outcome.kind() == AiAskService.AskOutcome.Kind.INSIGHT) {
             out.setInsight(outcome.insight());
             String markdown = outcome.insight() == null ? "" : outcome.insight().getMarkdown();
-            if (markdown != null && !markdown.isEmpty()) {
+            if (!streamed && markdown != null && !markdown.isEmpty()) {
                 emitChunks(sse, markdown);
             }
             sse.event("final", MAPPER.writeValueAsString(out));
@@ -1320,7 +1341,7 @@ public class AiQueryResource {
             out.setViewChange(outcome.viewChange());
             String reason =
                     outcome.viewChange() == null ? null : outcome.viewChange().getReason();
-            if (reason != null && !reason.isEmpty()) {
+            if (!streamed && reason != null && !reason.isEmpty()) {
                 emitChunks(sse, reason);
             }
             sse.event("final", MAPPER.writeValueAsString(out));
@@ -1341,7 +1362,7 @@ public class AiQueryResource {
             out.setEmailDraft(outcome.emailDraft());
             String summary =
                     outcome.emailDraft() == null ? "" : outcome.emailDraft().getSummary();
-            if (summary != null && !summary.isEmpty()) {
+            if (!streamed && summary != null && !summary.isEmpty()) {
                 emitChunks(sse, summary);
             }
             sse.event("final", MAPPER.writeValueAsString(out));
@@ -1385,6 +1406,11 @@ public class AiQueryResource {
      * <p>Package-visible for unit testing (mirrors {@link #streamOutcomeAsSse}'s test seam).
      */
     void streamChainAsSse(AiAskService.AskChain chain, SseWriter sse) throws java.io.IOException {
+        streamChainAsSse(chain, sse, null);
+    }
+
+    void streamChainAsSse(AiAskService.AskChain chain, SseWriter sse, SseTokenStream live) throws java.io.IOException {
+        boolean streamed = live != null;
         List<AiAskService.AskOutcome> steps = chain.steps();
 
         // model event once — the first step that carries a model id, fired before any step content.
@@ -1393,7 +1419,7 @@ public class AiQueryResource {
                 .filter(java.util.Objects::nonNull)
                 .findFirst()
                 .orElse(null);
-        if (model != null) {
+        if (model != null && !(streamed && live.modelEmitted)) {
             sse.event("model", MAPPER.writeValueAsString(java.util.Map.of("model", model)));
         }
 
@@ -1417,10 +1443,12 @@ public class AiQueryResource {
                 continue;
             }
 
-            sse.event(
-                    "intent",
-                    MAPPER.writeValueAsString(java.util.Map.of(
-                            "kind", step.kind() == null ? "" : step.kind().name(), "index", i)));
+            if (!(streamed && live.intentStreamedFor(i))) {
+                sse.event(
+                        "intent",
+                        MAPPER.writeValueAsString(java.util.Map.of(
+                                "kind", step.kind() == null ? "" : step.kind().name(), "index", i)));
+            }
 
             AiAskApi.AskResponse out = new AiAskApi.AskResponse();
             out.setDegraded(false);
@@ -1429,14 +1457,14 @@ public class AiQueryResource {
             if (step.kind() == AiAskService.AskOutcome.Kind.INSIGHT) {
                 out.setInsight(step.insight());
                 String markdown = step.insight() == null ? "" : step.insight().getMarkdown();
-                if (markdown != null && !markdown.isEmpty()) {
+                if (!streamed && markdown != null && !markdown.isEmpty()) {
                     emitChunks(sse, markdown);
                 }
             } else if (step.kind() == AiAskService.AskOutcome.Kind.VIEW_CHANGE) {
                 out.setViewChange(step.viewChange());
                 String reason =
                         step.viewChange() == null ? null : step.viewChange().getReason();
-                if (reason != null && !reason.isEmpty()) {
+                if (!streamed && reason != null && !reason.isEmpty()) {
                     emitChunks(sse, reason);
                 }
             } else if (step.kind() == AiAskService.AskOutcome.Kind.EMAIL_DRAFT) {
@@ -1451,7 +1479,7 @@ public class AiQueryResource {
                 out.setEmailDraft(step.emailDraft());
                 String summary =
                         step.emailDraft() == null ? "" : step.emailDraft().getSummary();
-                if (summary != null && !summary.isEmpty()) {
+                if (!streamed && summary != null && !summary.isEmpty()) {
                     emitChunks(sse, summary);
                 }
             } else if (step.kind() == AiAskService.AskOutcome.Kind.QUERY) {
@@ -1525,6 +1553,83 @@ public class AiQueryResource {
         }
         b.append('"');
         return b.toString();
+    }
+
+    /**
+     * Bridges the provider's live token stream (saiku#1484) onto the SSE wire.
+     *
+     * <p>The three callbacks map one-to-one onto the documented event sequence: the model id becomes
+     * {@code model}, the tool the model committed to becomes {@code intent} (its name translated to
+     * the {@link AiAskService.AskOutcome.Kind} a client knows), and every piece of prose becomes a
+     * {@code chunk} carrying the existing {@code {"delta":"…"}} shape. Nothing about the wire format
+     * changes — only <em>when</em> the events arrive.
+     *
+     * <p>Each callback is idempotent per turn: the model event fires once even though every streamed
+     * chunk carries the model id, and a tool is only announced the first time it is named. For the
+     * chained endpoint the events are tagged with the step index the service reported through
+     * {@link #onStepStart(int)}, so a multi-step turn renders the same way the buffered
+     * {@code intent}/{@code index} events did.
+     *
+     * <p>A write failure (the client hung up) propagates as {@link java.io.IOException} to the
+     * provider, which degrades the turn rather than throwing — the stream then simply stops.
+     */
+    static final class SseTokenStream implements org.saiku.service.olap.ai.ask.NlAskStreamListener {
+
+        private final SseWriter sse;
+        private final java.util.Set<Integer> intentSteps = new java.util.HashSet<>();
+        private boolean modelEmitted;
+        private boolean intentEmitted;
+        private int currentStep;
+        private boolean multiStep;
+
+        SseTokenStream(SseWriter sse) {
+            this.sse = sse;
+        }
+
+        @Override
+        public void onModel(String model) throws java.io.IOException {
+            if (modelEmitted || model == null || model.isBlank()) {
+                return;
+            }
+            modelEmitted = true;
+            sse.event("model", "{\"model\":" + jsonString(model) + "}");
+        }
+
+        @Override
+        public void onToolSelected(String toolName) throws java.io.IOException {
+            org.saiku.service.olap.ai.ask.NlAskResponse.Kind kind =
+                    org.saiku.service.olap.ai.ask.NlAskStreamListener.kindForTool(toolName);
+            if (kind == null || intentSteps.contains(currentStep)) {
+                // Refusals and unknown tools have no streamed intent — the terminal error event
+                // carries them instead.
+                return;
+            }
+            intentSteps.add(currentStep);
+            intentEmitted = true;
+            // The chained endpoint's intent events carry a step index; the single-turn ones don't
+            // (one step, no index needed) — matching each endpoint's documented shape exactly.
+            String index = multiStep ? ",\"index\":" + currentStep : "";
+            sse.event("intent", "{\"kind\":" + jsonString(kind.name()) + index + "}");
+        }
+
+        @Override
+        public void onDelta(String delta) throws java.io.IOException {
+            if (delta == null || delta.isEmpty()) {
+                return;
+            }
+            sse.event("chunk", "{\"delta\":" + jsonString(delta) + "}");
+        }
+
+        @Override
+        public void onStepStart(int index) {
+            currentStep = index;
+            multiStep = true;
+        }
+
+        /** Whether {@code intent} for step {@code index} was already streamed live (chained only). */
+        boolean intentStreamedFor(int index) {
+            return intentSteps.contains(index);
+        }
     }
 
     /**
@@ -3355,10 +3460,10 @@ public class AiQueryResource {
 
     /**
      * Shared SSE runner for the streaming ask endpoints (saiku#1460). Builds the WHATWG SSE stream,
-     * invokes {@code outcomeSupplier} to produce the outcome (the only thing that differs between
-     * {@link #askStream} and {@link #askInSpaceStream}), and pipes it through {@link
-     * #streamOutcomeAsSse}. Centralises the failure handling so both endpoints get identical,
-     * correct behaviour:
+     * invokes {@code ask} with the token stream attached so the provider's model / intent / chunk
+     * events reach the client as they happen (saiku#1484), and pipes the resulting outcome through
+     * {@link #streamOutcomeAsSse} for the terminal envelope. Centralises the failure handling so
+     * both endpoints get identical, correct behaviour:
      *
      * <ul>
      *   <li>{@link com.fasterxml.jackson.core.JsonProcessingException} (a serialisation failure of
@@ -3369,13 +3474,16 @@ public class AiQueryResource {
      *       {@code final} event, matching the documented wire contract (saiku#1456).
      * </ul>
      */
-    private Response streamAsk(java.util.function.Supplier<AiAskService.AskOutcome> outcomeSupplier, String logLabel) {
+    private Response streamAsk(java.util.function.Function<SseWriter, AiAskService.AskOutcome> ask, String logLabel) {
         jakarta.ws.rs.core.StreamingOutput stream = outputStream -> {
             java.io.Writer writer =
                     new java.io.OutputStreamWriter(outputStream, java.nio.charset.StandardCharsets.UTF_8);
             SseWriter sse = new SseWriter(writer);
             try {
-                streamOutcomeAsSse(outcomeSupplier.get(), sse);
+                // The token stream writes model / intent / chunk events as the provider emits them;
+                // the outcome is only known once the turn is over, and carries the terminal
+                // envelope (final, or error + a degraded final).
+                streamOutcomeAsSse(ask.apply(sse), sse, new SseTokenStream(sse));
             } catch (com.fasterxml.jackson.core.JsonProcessingException jpe) {
                 // Serialising the outcome failed — the client is still connected. Surface an error
                 // (NOT the disconnect branch below, which JsonProcessingException would fall into
@@ -3406,13 +3514,13 @@ public class AiQueryResource {
      * runtime failure emits the terminal error/final pair so a client keying completion on {@code
      * final} never hangs.
      */
-    private Response streamChain(java.util.function.Supplier<AiAskService.AskChain> chainSupplier, String logLabel) {
+    private Response streamChain(java.util.function.Function<SseWriter, AiAskService.AskChain> ask, String logLabel) {
         jakarta.ws.rs.core.StreamingOutput stream = outputStream -> {
             java.io.Writer writer =
                     new java.io.OutputStreamWriter(outputStream, java.nio.charset.StandardCharsets.UTF_8);
             SseWriter sse = new SseWriter(writer);
             try {
-                streamChainAsSse(chainSupplier.get(), sse);
+                streamChainAsSse(ask.apply(sse), sse, new SseTokenStream(sse));
             } catch (com.fasterxml.jackson.core.JsonProcessingException jpe) {
                 log.warn("{}: failed to serialise SSE payload", logLabel, jpe);
                 emitStreamError(sse);
