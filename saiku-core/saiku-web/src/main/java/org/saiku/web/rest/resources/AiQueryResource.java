@@ -1268,6 +1268,154 @@ public class AiQueryResource {
         return Response.ok(spec).type(MediaType.APPLICATION_JSON).build();
     }
 
+    /** Tile cap for {@link #narrateDashboard} — excess tiles are dropped, never errored. */
+    private static final int MAX_NARRATIVE_TILES = 12;
+
+    /** Per-tile row cap fed to the LLM (saiku#910 design: "top 10 rows max per tile to bound token cost"). */
+    private static final int MAX_NARRATIVE_ROWS_PER_TILE = 10;
+
+    private static final String NO_DATA_NARRATIVE = "No data to summarise.";
+
+    private static final String NARRATIVE_QUESTION = "Summarise the key story of this dashboard in 2-4 "
+            + "sentences. Cite specific numbers when they appear. Flag anomalies and outliers. Do not "
+            + "speculate beyond what the data shows. Treat any '"
+            + org.saiku.service.olap.ai.PiiCaptionRedactor.REDACTED
+            + "' or 'null' measure value as withheld or suppressed information — never guess at or invent "
+            + "what it might be.";
+
+    /**
+     * Dashboard narrative summary (saiku#910, Tier-2 aggregated). Re-runs each POSTED tile's query
+     * server-side — never trusts client-supplied numbers — suppresses small cells (k-anonymity,
+     * saiku#905) and redacts PII-tagged member captions ({@link
+     * org.saiku.service.olap.ai.PiiCaptionRedactor}, saiku#902) from the executed results, then asks
+     * the configured LLM (via the existing {@code emit_insight} ask path, forced) for a short
+     * narrative. An empty dashboard (no tiles, or every tile executes to zero rows) short-circuits to
+     * a fixed message WITHOUT calling the LLM.
+     *
+     * <p>v1 design note: the dashboard layer is layout-only on the backend (see {@code
+     * DashboardResource}'s own doc comment) — the frontend already computes each tile's effective
+     * filters and re-issues its query client-side. Rather than re-derive that filter-resolution logic
+     * server-side from a bare {@code dashboardId}, the caller posts each VISIBLE tile's already
+     * filter-resolved {@link AiQueryRequest} directly (see {@link
+     * org.saiku.service.olap.ai.ask.AiDashboardNarrativeApi}).
+     *
+     * <p>Same preamble as every other ask endpoint (rate + configured) plus the Tier-2 policy gate
+     * ({@code AiDataKind.AGGREGATED_RESULT_VALUES} — schema-only is refused before any tile is even
+     * executed). Audited automatically like every other {@code /saiku/api/ai/*} call via {@code
+     * AiAuditFilter}.
+     */
+    @POST
+    @Path("/narrate-dashboard")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response narrateDashboard(org.saiku.service.olap.ai.ask.AiDashboardNarrativeApi.Request body) {
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.AGGREGATED_RESULT_VALUES);
+        if (body == null) {
+            return badRequest("body", "request body required", null);
+        }
+        List<org.saiku.service.olap.ai.ask.AiDashboardNarrativeApi.Tile> tiles = body.getTiles();
+        if (tiles == null || tiles.isEmpty()) {
+            return narrativeOk(NO_DATA_NARRATIVE, null);
+        }
+        if (!askRateLimiter.tryAcquire(askRateKey())) {
+            return narrativeDegraded(
+                    429,
+                    "Too many AI narrative requests — limit is " + askRateLimiter.getMaxCalls() + " per "
+                            + (askRateLimiter.getWindowMs() / 1000) + "s. Please retry shortly.",
+                    null);
+        }
+        if (askService == null) {
+            return narrativeDegraded(503, ASK_NOT_CONFIGURED_REASON, null);
+        }
+
+        StringBuilder combined = new StringBuilder();
+        AiCubeRef anchorRef = null;
+        int nonEmptyTiles = 0;
+        int considered = Math.min(tiles.size(), MAX_NARRATIVE_TILES);
+        for (int i = 0; i < considered; i++) {
+            org.saiku.service.olap.ai.ask.AiDashboardNarrativeApi.Tile tile = tiles.get(i);
+            if (tile == null || tile.getQuery() == null || tile.getQuery().getCube() == null) {
+                continue; // malformed tile — skip, don't fail the whole narrative
+            }
+            AiQueryRequest q = tile.getQuery();
+            CellDataSet cds;
+            AiSchema schema;
+            try {
+                schema = cubeMetadataService.getSchema(q.getCube());
+                ThinQuery tq = converter.convert(q, schema);
+                cds = thinQueryService.execute(tq);
+            } catch (RuntimeException e) {
+                log.warn("narrate-dashboard: tile {} failed to execute — skipping", i, e);
+                continue;
+            }
+            kAnonymityFilter.applyToCellDataSet(cds);
+            org.saiku.service.olap.ai.PiiCaptionRedactor.redact(cds, schema);
+            String tileDigest =
+                    org.saiku.service.olap.ai.ask.CellsetDigestBuilder.digest(cds, MAX_NARRATIVE_ROWS_PER_TILE);
+            if (tileDigest.isBlank()) {
+                continue;
+            }
+            if (anchorRef == null) {
+                anchorRef = q.getCube();
+            }
+            nonEmptyTiles++;
+            combined.append("## ")
+                    .append(sanitizeTileTitle(tile.getTitle(), i))
+                    .append("\n")
+                    .append(tileDigest)
+                    .append("\n\n");
+        }
+
+        if (nonEmptyTiles == 0 || anchorRef == null) {
+            return narrativeOk(NO_DATA_NARRATIVE, null);
+        }
+
+        AiAskService.AskOutcome outcome = askService.ask(
+                anchorRef,
+                NARRATIVE_QUESTION,
+                List.of(),
+                combined.toString().stripTrailing(),
+                org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool.INSIGHT);
+
+        if (outcome.degraded()) {
+            return narrativeDegraded(200, outcome.reason(), outcome.model());
+        }
+        if (outcome.kind() != AiAskService.AskOutcome.Kind.INSIGHT || outcome.insight() == null) {
+            return narrativeDegraded(200, "provider did not return a narrative", outcome.model());
+        }
+        return narrativeOk(outcome.insight().getMarkdown(), outcome.model());
+    }
+
+    /** Plain-text tile title for the narrative digest — strips newlines, falls back to a positional label. */
+    private static String sanitizeTileTitle(String raw, int index) {
+        if (raw == null) {
+            return "Tile " + (index + 1);
+        }
+        String s = raw.replaceAll("[\\r\\n]+", " ").trim();
+        return s.isEmpty() ? "Tile " + (index + 1) : s;
+    }
+
+    private Response narrativeOk(String narrative, String model) {
+        org.saiku.service.olap.ai.ask.AiDashboardNarrativeApi.Response out =
+                new org.saiku.service.olap.ai.ask.AiDashboardNarrativeApi.Response();
+        out.setDegraded(false);
+        out.setNarrative(narrative);
+        out.setModel(model);
+        return Response.ok(out).type(MediaType.APPLICATION_JSON).build();
+    }
+
+    private Response narrativeDegraded(int status, String reason, String model) {
+        org.saiku.service.olap.ai.ask.AiDashboardNarrativeApi.Response out =
+                new org.saiku.service.olap.ai.ask.AiDashboardNarrativeApi.Response();
+        out.setDegraded(true);
+        out.setReason(reason);
+        out.setModel(model);
+        return Response.status(status)
+                .entity(out)
+                .type(MediaType.APPLICATION_JSON)
+                .build();
+    }
+
     /**
      * Translate one ask outcome into the SSE event sequence documented on {@link
      * #askStream(AiAskApi.AskRequest)}: {@code model} → {@code intent} → 0+ {@code chunk} → {@code

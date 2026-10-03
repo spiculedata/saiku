@@ -887,6 +887,54 @@ appends these as a dashed continuation with a shaded confidence band.
 
 ---
 
+## Dashboard narrative summary — `POST /ai/narrate-dashboard` (saiku#910)
+
+Tier-2 (aggregated) feature: a 2-4 sentence plain-English summary of a
+dashboard's current state — "Sales up 15% YoY, growth concentrated in
+West region." Requires `ai.policy` to be `aggregated` or `full`;
+`schema-only` refuses with a 403 before any tile is even executed.
+
+The dashboard layer is layout-only on the backend (see
+`DashboardResource`) — the frontend already computes each visible
+tile's effective filters and re-issues its query client-side. This
+endpoint follows the same shape: the caller posts each VISIBLE tile's
+already filter-resolved query, and the server re-executes it itself
+(so k-anonymity suppression and PII redaction apply to freshly-run
+data, never client-supplied numbers) before narrating the result.
+
+```jsonc
+{
+  "dashboardTitle": "Sales Overview",
+  "tiles": [
+    { "title": "Sales by Region", "query": { /* a normal /query request body */ } },
+    { "title": "Top Products", "query": { /* ... */ } }
+  ]
+}
+```
+
+Response:
+
+```jsonc
+{ "degraded": false, "model": "claude-...", "narrative": "Sales are up 15% year over year, led by the West region..." }
+```
+
+- An empty `tiles` list, or every tile executing to zero rows, returns
+  `{"narrative": "No data to summarise."}` **without calling the LLM**
+  — no tokens spent describing nothing.
+- A malformed tile (missing `query`/`cube`) is skipped, not fatal —
+  the narrative covers whatever tiles executed successfully.
+- Up to 12 tiles and the first 10 rows per tile are sent to the model,
+  bounding token cost.
+- Small cells are suppressed (k-anonymity, saiku#905) the same way
+  `/ai/query` suppresses them. Member captions drawn from a
+  `saiku.semantic.pii=true` level are redacted to `[REDACTED]` before
+  the digest reaches the LLM (saiku#902) — the measure **value** is
+  kept, only the caption is withheld.
+- Same rate limit + not-configured (503) behaviour as `/ai/ask`.
+- Audited automatically like every other `/saiku/api/ai/*` call.
+
+---
+
 ## Request body — every option
 
 ```jsonc
