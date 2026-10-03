@@ -411,3 +411,20 @@ export const adminStats = {
 		return text ? (JSON.parse(text) as MondrianStats) : null;
 	}
 };
+
+/**
+ * saiku#1120 Phase 1 — measure/dimension/hierarchy/level lineage. `kind` mirrors the server's
+ * `LineageDependent#kind` string, and `lastModified` is a Phase-1 proxy (filesystem mtime, `0`
+ * when unknown — schema-level calculated members don't carry a per-member timestamp).
+ */
+export interface LineageDependent {
+	kind: 'dashboard' | 'saved-query' | 'calc-measure';
+	name: string;
+	path: string;
+	lastModified: number;
+}
+
+export const adminLineage = {
+	find: (uniqueName: string) =>
+		get<LineageDependent[]>(`/lineage?measure=${encodeURIComponent(uniqueName)}`)
+};

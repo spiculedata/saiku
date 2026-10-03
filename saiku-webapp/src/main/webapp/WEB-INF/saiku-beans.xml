@@ -120,6 +120,16 @@
         <property name="logExtractor" ref="logwriterbean"/>
     </bean>
 
+    <!-- saiku#1120: measure/dimension/hierarchy/level lineage — GET /saiku/admin/lineage?measure=...
+         scans saved queries, dashboards and schema calculated members for a reference. -->
+    <bean id="measureLineageServiceBean" class="org.saiku.web.rest.resources.lineage.MeasureLineageService">
+        <property name="datasourceService" ref="datasourceServiceBean"/>
+    </bean>
+    <bean id="lineageResourceBean" class="org.saiku.web.rest.resources.lineage.LineageResource">
+        <property name="lineageService" ref="measureLineageServiceBean"/>
+        <property name="userService" ref="userServiceBean"/>
+    </bean>
+
     <bean id="olapDiscoverServiceBean" class="org.saiku.service.olap.OlapDiscoverService">
         <property name="datasourceService" ref="datasourceServiceBean"/>
     </bean>

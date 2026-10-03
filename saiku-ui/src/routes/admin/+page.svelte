@@ -69,6 +69,9 @@
 			<button type="button" role="tab" class:active={tab === 'api'} onclick={() => (tab = 'api')}
 				>API access</button
 			>
+			<!-- saiku#1120: a dedicated route (/admin/lineage), not a tab component — it's a
+			     search tool, not a scoped-resource panel like the others. -->
+			<a href="/admin/lineage" role="tab">Lineage</a>
 		</div>
 		<section class="flex-1 overflow-auto p-6">
 			{#if tab === 'users'}
@@ -105,12 +108,14 @@
 		background: hsl(var(--bg-muted));
 		border-bottom: 1px solid hsl(var(--border));
 	}
-	.admin__tabs button {
+	.admin__tabs button,
+	.admin__tabs a {
 		padding: var(--space-2) var(--space-3);
 		background: transparent;
 		border: 0;
 		color: hsl(var(--fg-muted));
 		font: inherit;
+		text-decoration: none;
 		cursor: pointer;
 		border-bottom: 2px solid transparent;
 	}
