@@ -108,6 +108,24 @@ See [`docs/AI-QUERY-API.md`](docs/AI-QUERY-API.md) and
 contract and the `saiku.semantic.*` annotation namespace cubes use to
 describe themselves to agents.
 
+## Semantic model diff
+
+Reviewing a schema change before it lands:
+
+```bash
+# What does this edit break?
+saiku model diff --from-git origin/development --from-git HEAD \
+  --before saiku-launcher/src/main/resources/seed/FoodMart4.xml \
+  --after   saiku-launcher/src/main/resources/seed/FoodMart4.xml \
+  --repository ./saiku-home/repository/data
+```
+
+Diffs two models (Mondrian XML or Apache Ossie YAML), detects renames as renames,
+and lists every saved query, dashboard and app still pointing at a member the change
+removes — as Markdown, JSON, or `POST /rest/saiku/api/admin/model/diff`. On a pull
+request that touches a model, the `model-diff` workflow posts the same report as a
+sticky comment. See [`docs/MODEL-DIFF.md`](docs/MODEL-DIFF.md).
+
 ## Agent Skills & Spaces
 
 Admins can extend the AI surface without code:

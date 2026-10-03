@@ -1130,6 +1130,18 @@
         <property name="aiService" ref="cubeDesignerAiService"/>
     </bean>
 
+    <!-- Semantic-model diff + broken-reference validator (saiku#1434). Exposes
+         POST /saiku/api/admin/model/diff. Every path in a request body is resolved
+         inside repositoryRoot — the resource refuses anything that escapes it, so
+         pointing this at <saiku-home>/repository/data cannot be turned into an
+         arbitrary-file-read. The same service backs `saiku model diff` in the
+         launcher, so CLI and CI output are byte-identical. -->
+    <bean id="modelDiffResource"
+          class="org.saiku.web.rest.resources.model.ModelDiffResource">
+        <constructor-arg type="java.lang.String" value="${saiku.home:./saiku-home}/repository/data"/>
+        <property name="userService" ref="userServiceBean"/>
+    </bean>
+
     <!-- ====================================================================
          #1809 PR4: periodic-send job scheduler — WIRED LIVE.
 
