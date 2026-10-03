@@ -27,6 +27,7 @@ import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.session.DefaultSessionCache;
 import org.eclipse.jetty.session.FileSessionDataStore;
+import org.saiku.service.security.SecretFileStore;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
@@ -298,8 +299,19 @@ public class SaikuLauncher implements Callable<Integer> {
             // XHR returns 401, which the saiku-ui surfaces as the
             // "Session ended" modal. Max-inactive bumped to 7 days so an
             // idle browser tab doesn't get prompted to re-login every hour.
-            File sessionsDir = saikuHome.resolve("sessions").toFile();
+            Path sessionsDirPath = saikuHome.resolve("sessions");
+            File sessionsDir = sessionsDirPath.toFile();
             sessionsDir.mkdirs();
+            // The session store holds serialised JSESSIONID + Spring SecurityContext entries —
+            // a session file is a bearer credential. Restrict the directory to the owner (0700 /
+            // owner-only ACL) so a co-tenant on the host cannot lift a session and hijack an
+            // authenticated user (#1919 18c, CWE-732).
+            try {
+                SecretFileStore.restrictDirectory(sessionsDirPath);
+            } catch (IOException e) {
+                System.err.println("WARNING: could not restrict the session store directory " + sessionsDirPath
+                        + " to the owner: " + e.getMessage());
+            }
             FileSessionDataStore sessionStore = new FileSessionDataStore();
             sessionStore.setStoreDir(sessionsDir);
             DefaultSessionCache sessionCache = new DefaultSessionCache(sessionHandler);
