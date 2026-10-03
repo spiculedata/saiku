@@ -58,6 +58,7 @@ import org.saiku.service.async.AsyncQueryHandle;
 import org.saiku.service.async.AsyncQueryService;
 import org.saiku.service.olap.ThinQueryService;
 import org.saiku.service.olap.drillthrough.DrillThroughResult;
+import org.saiku.service.util.exception.SaikuAccessDeniedException;
 import org.saiku.service.util.exception.SaikuServiceException;
 import org.saiku.web.export.JSConverter;
 import org.saiku.web.export.PdfReport;
@@ -260,6 +261,12 @@ public class Query2Resource {
             // text-plain content-type dance.
             String body = "{\"sql\":" + jacksonJsonString(sql) + "}";
             return Response.ok(body).type("application/json").build();
+        } catch (SaikuAccessDeniedException e) {
+            // saiku#1393 — the shelf state names a field/metric the caller's roles deny.
+            return Response.status(Response.Status.FORBIDDEN)
+                    .entity("{\"error\":" + jacksonJsonString(e.getMessage()) + "}")
+                    .type("application/json")
+                    .build();
         } catch (Exception e) {
             log.error("Cannot preview Ossie SQL", e);
             String msg = e.getMessage() == null ? "internal error" : e.getMessage();
@@ -341,6 +348,13 @@ public class Query2Resource {
                 qr.setQuery(tq);
             }
             return Response.ok(qr).type(MediaType.APPLICATION_JSON).build();
+        } catch (SaikuAccessDeniedException e) {
+            // saiku#1393 — the shelf state names a field/metric the caller's roles deny.
+            log.warn("Ossie query denied ({}): {}", tq, e.getMessage());
+            return Response.status(Response.Status.FORBIDDEN)
+                    .entity(new QueryResult(e.getMessage()))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
         } catch (Exception e) {
             log.error("Cannot execute query (" + tq + ")", e);
             return queryFailure(e);

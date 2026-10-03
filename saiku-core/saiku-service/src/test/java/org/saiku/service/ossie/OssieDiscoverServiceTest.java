@@ -342,6 +342,42 @@ public class OssieDiscoverServiceTest {
         }
     }
 
+    @Test
+    public void rowPredicatesProjectOntoDatasets() throws Exception {
+        Path wkYaml = Files.createTempFile("ossie-wk-rp-", ".yaml");
+        Files.writeString(
+                wkYaml,
+                "version: 0.2.0.dev0\n"
+                        + "semantic_model:\n"
+                        + "- name: T\n"
+                        + "  datasets:\n"
+                        + "  - name: geography\n"
+                        + "    source: s.geo\n"
+                        + "    fields: []\n"
+                        + "    custom_extensions:\n"
+                        + "    - vendor_name: SAIKU\n"
+                        + "      data: '{\"roles\":{\"row_predicates\":["
+                        + "{\"role\":\"ROLE_APAC\",\"expression\":\"REGION IN (''APAC'',''Japan'')\"}]}}'\n"
+                        + "  - name: no_predicates\n"
+                        + "    source: s.other\n"
+                        + "    fields: []\n");
+        try {
+            datasourceManager.put(
+                    "T", ossieDatasource("T", propsOf(ISaikuConnection.OSSIE_YAML_KEY, wkYaml.toString())));
+            OssieModelDto dto = service.getModel("T");
+
+            OssieModelDto.Dataset geography = dto.getDatasets().get(0);
+            assertEquals(1, geography.getRowPredicates().size());
+            assertEquals("ROLE_APAC", geography.getRowPredicates().get(0).getRole());
+            assertEquals("REGION IN ('APAC','Japan')", geography.getRowPredicates().get(0).getExpression());
+
+            OssieModelDto.Dataset noPredicates = dto.getDatasets().get(1);
+            assertTrue("dataset without the extension has no row predicates", noPredicates.getRowPredicates().isEmpty());
+        } finally {
+            Files.deleteIfExists(wkYaml);
+        }
+    }
+
     private static SaikuDatasource ossieDatasource(String name, Properties props) {
         return new SaikuDatasource(name, SaikuDatasource.Type.OSSIE, props);
     }

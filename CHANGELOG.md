@@ -113,6 +113,22 @@ All notable changes to Saiku are documented here. This project follows
   `securityContext: { runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001 }` on
   the pod so the mounted volume is group-owned by the runtime user.
 
+### Added
+
+- **Role-based security for Ossie models** (saiku#1393) — the first slice of
+  Mondrian-`<Role>` parity for the semantic-YAML query path. A `saiku.roles`
+  `custom_extensions` block on a field or metric (`allow`/`deny`, matched
+  against the caller's existing Spring Security authorities) is now enforced,
+  not just parsed: denied fields/metrics disappear from the workbench schema
+  browser and the AI schema response, and a shelf state that references one
+  anyway gets a `403`-mapped `SaikuAccessDeniedException` instead of a 500. The
+  same block on a **dataset** (`row_predicates`) injects an extra role-scoped
+  `WHERE` conjunction for `/query/execute` and `/query/preview-sql`, OR-ed
+  across every role a multi-role caller holds. See
+  [`docs/ossie-yaml.md`](docs/ossie-yaml.md) for the YAML shape and current
+  scope — column masking, dataset-level HIDE, and a top-level named-role block
+  are follow-up phases.
+
 ## 4.8.0 — 2026-09-15
 
 Minor release, and a **security release** — nine hardening fixes close an
