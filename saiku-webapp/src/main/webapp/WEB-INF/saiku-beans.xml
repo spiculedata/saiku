@@ -665,6 +665,10 @@
              before it is digested and fed back to the model — parity with the masking every other
              egress path (records/matrix via AiQueryResource) already applies. -->
         <property name="kAnonymityFilter" ref="kAnonymityFilter"/>
+        <!-- Outbound MCP tool catalogue (saiku#1425) — admin-enabled external tools the chained-ask
+             loop offers alongside the built-in emit_* tools. Optional: null when no servers are
+             registered means the loop simply never advertises any mcp__* tool. -->
+        <property name="mcpOutbound" ref="mcpOutboundToolCatalogBean"/>
     </bean>
 
     <!-- Skill catalogue (saiku#1426). Markdown files with YAML frontmatter under
@@ -688,6 +692,32 @@
          Writes JSON personas through the registry (which rescans on write). Admin-gated. -->
     <bean id="agentSpaceAdminResource" class="org.saiku.web.rest.resources.AgentSpaceAdminResource">
         <property name="registry" ref="agentSpaceRegistryBean"/>
+    </bean>
+
+    <!-- ====================================================================
+         Outbound MCP (saiku#1425) — admin-registered external MCP servers DimSum can call
+         mid-conversation. JSON registrations under saiku-home/mcp-servers/*.json, same scan/CRUD
+         model as Agent Spaces. Off by default: a server contributes NOTHING to the ask layer until
+         an admin explicitly enables individual tools (see McpOutboundServer / docs/MCP-OUTBOUND.md).
+         ==================================================================== -->
+    <bean id="mcpOutboundServerRegistryBean"
+          class="org.saiku.service.mcp.outbound.McpOutboundServerRegistry">
+        <constructor-arg type="java.lang.String" value="${saiku.home:./saiku-home}/mcp-servers"/>
+    </bean>
+
+    <bean id="mcpOutboundClientBean" class="org.saiku.service.mcp.outbound.McpOutboundClient"/>
+
+    <bean id="mcpOutboundToolCatalogBean" class="org.saiku.service.mcp.outbound.McpOutboundToolCatalog">
+        <constructor-arg ref="mcpOutboundServerRegistryBean"/>
+        <constructor-arg ref="mcpOutboundClientBean"/>
+    </bean>
+
+    <!-- Admin CRUD (GET/PUT/DELETE /saiku/admin/mcp-servers, GET .../{id}/tools for live
+         discovery). Admin-gated, same posture as agentSpaceAdminResource. -->
+    <bean id="mcpOutboundAdminResource" class="org.saiku.web.rest.resources.McpOutboundAdminResource">
+        <property name="registry" ref="mcpOutboundServerRegistryBean"/>
+        <property name="client" ref="mcpOutboundClientBean"/>
+        <property name="catalog" ref="mcpOutboundToolCatalogBean"/>
     </bean>
 
     <!-- ====================================================================

@@ -1458,6 +1458,19 @@ public class AiQueryResource {
                 // NO executeQueryIntoResponse — the chained loop already executed this query
                 // server-side; the client hydrates the workspace from `request` and re-renders.
                 out.setRequest(step.request());
+            } else if (step.kind() == AiAskService.AskOutcome.Kind.MCP_TOOL_CALL) {
+                // saiku#1425: the tool + arguments + result the loop already dispatched — a
+                // transparency step, like QUERY's `request`. Never terminal by itself; the chain
+                // keeps going (or a later step is `final`).
+                AiAskService.McpToolCallSummary call = step.mcpToolCall();
+                if (call != null) {
+                    AiAskApi.McpToolCallDto dto = new AiAskApi.McpToolCallDto();
+                    dto.setQualifiedName(call.qualifiedName());
+                    dto.setArgumentsJson(call.argumentsJson());
+                    dto.setResultDigest(call.resultDigest());
+                    dto.setError(call.error());
+                    out.setMcpToolCall(dto);
+                }
             }
 
             sse.event(eventName, MAPPER.writeValueAsString(out));
