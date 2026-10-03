@@ -183,6 +183,27 @@
 		);
 	}
 
+	// saiku#1118: right-click a data point → "Explain this number". Same coordinate
+	// translation as the click path above, so a chart point and its grid cell explain
+	// the same number. The panel is opened by QueryCanvas, which listens for the
+	// `saiku-explain` event exactly as it does for `saiku-drillthrough`.
+	function handleChartContextMenu(params: { dataIndex?: number; seriesIndex?: number }) {
+		if (!host) return;
+		const target = chartDrillTarget(
+			parseCellset(result),
+			params.dataIndex ?? -1,
+			params.seriesIndex ?? 0,
+			currentDisplayIndices(result, options)
+		);
+		if (!target) return; // background / axis click → no-op
+		host.dispatchEvent(
+			new CustomEvent('saiku-explain', {
+				bubbles: true,
+				detail: { row: target.row, col: target.col }
+			})
+		);
+	}
+
 	// #1090: accessible data-table mirror of the chart for screen readers. The
 	// canvas is aria-hidden (invisible to AT anyway); this exposes the same data.
 	let a11y = $derived(chartSummary(type, options.title ?? '', projectResult(result, options)));
@@ -239,6 +260,10 @@
 			// #1086: click a data point → drill via the existing drillthrough flow.
 			chart.on('click', (params) =>
 				handleChartClick(params as { dataIndex?: number; seriesIndex?: number })
+			);
+			// saiku#1118: right-click a data point → explain that cell.
+			chart.on('contextmenu', (params) =>
+				handleChartContextMenu(params as { dataIndex?: number; seriesIndex?: number })
 			);
 			render();
 			// Re-render (not just resize) so the aspect-aware small-multiple radius

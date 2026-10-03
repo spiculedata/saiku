@@ -16,6 +16,7 @@
 	 *  drop targets the way users from the Backbone-era UI expect. */
 	type ZoneId = AxisLocation | 'MEASURES';
 	import CellsetTable from '$lib/views/CellsetTable.svelte';
+	import CellExplainPanel from '$lib/views/CellExplainPanel.svelte';
 	import ChartView from '$lib/views/ChartView.svelte';
 	import StatsView from '$lib/views/StatsView.svelte';
 	import { CHART_TYPES } from '$lib/views/chartTypes';
@@ -151,6 +152,11 @@
 	let drillResultOpen = $state(false);
 	let drillResult = $state<QueryResult | null>(null);
 	let drillPosition = $state<string | null>(null);
+
+	/** saiku#1118 — the cell the "Explain this number" panel is explaining, or null when
+	 *  the panel is closed. Coordinates are the plain data row/column CellsetTable
+	 *  right-clicked; the server addresses cells the same way. */
+	let explainTarget = $state<{ row: number; col: number } | null>(null);
 
 	// --- Context menu state + downstream modals ---
 	interface MenuCtx {
@@ -1028,6 +1034,14 @@
 		};
 		el.addEventListener('saiku-drillthrough', drillHandler);
 
+		// saiku#1118: right-click "Explain this number" on a cell.
+		const explainHandler = (ev: Event) => {
+			const ce = ev as CustomEvent<{ row: number; col: number }>;
+			if (!ce.detail) return;
+			explainTarget = { row: ce.detail.row, col: ce.detail.col };
+		};
+		el.addEventListener('saiku-explain', explainHandler);
+
 		const openDrillFromToolbar = () => {
 			drillPosition = null;
 			drillModalOpen = true;
@@ -1037,6 +1051,7 @@
 		return () => {
 			el.removeEventListener('saiku-filter-level', handler);
 			el.removeEventListener('saiku-drillthrough', drillHandler);
+			el.removeEventListener('saiku-explain', explainHandler);
 			window.removeEventListener('saiku-open-drillthrough', openDrillFromToolbar);
 		};
 	});
@@ -1493,42 +1508,51 @@
 						</button>
 					</div>
 				{/if}
-				<div class="result-host" bind:this={resultHostEl}>
-					{#if query.running && !query.result}
-						<p class="m-0 text-sm text-fg-subtle">{i18n.t('canvas.running')}</p>
-					{:else if query.error}
-						<div class="callout callout--danger" role="alert">
-							<p class="callout__text">{query.error}</p>
-							{#if query.errorDetail}
-								<details class="callout__details">
-									<summary>{i18n.t('canvas.error.showDetails')}</summary>
-									<pre class="callout__detail-text">{query.errorDetail}</pre>
-								</details>
+				<div class="result-row">
+					<div class="result-host" bind:this={resultHostEl}>
+						{#if query.running && !query.result}
+							<p class="m-0 text-sm text-fg-subtle">{i18n.t('canvas.running')}</p>
+						{:else if query.error}
+							<div class="callout callout--danger" role="alert">
+								<p class="callout__text">{query.error}</p>
+								{#if query.errorDetail}
+									<details class="callout__details">
+										<summary>{i18n.t('canvas.error.showDetails')}</summary>
+										<pre class="callout__detail-text">{query.errorDetail}</pre>
+									</details>
+								{/if}
+							</div>
+						{:else if query.result}
+							{#if query.viewMode === 'chart'}
+								<ChartView
+									result={query.result}
+									type={query.chartType}
+									options={query.chartOptions}
+								/>
+							{:else if query.viewMode === 'stats'}
+								<StatsView result={query.result} />
+							{:else if query.viewMode === 'sparkline'}
+								<CellsetTable result={query.result} spark="line" />
+							{:else if query.viewMode === 'sparkbar'}
+								<CellsetTable result={query.result} spark="bar" />
+							{:else}
+								<CellsetTable result={query.result} />
 							{/if}
-						</div>
-					{:else if query.result}
-						{#if query.viewMode === 'chart'}
-							<ChartView
-								result={query.result}
-								type={query.chartType}
-								options={query.chartOptions}
-							/>
-						{:else if query.viewMode === 'stats'}
-							<StatsView result={query.result} />
-						{:else if query.viewMode === 'sparkline'}
-							<CellsetTable result={query.result} spark="line" />
-						{:else if query.viewMode === 'sparkbar'}
-							<CellsetTable result={query.result} spark="bar" />
 						{:else}
-							<CellsetTable result={query.result} />
+							<EmptyState
+								icon={Sparkles}
+								title="Build a query"
+								description={i18n.t('canvas.buildPrompt')}
+							/>
 						{/if}
-					{:else}
-						<EmptyState
-							icon={Sparkles}
-							title="Build a query"
-							description={i18n.t('canvas.buildPrompt')}
-						/>
-					{/if}
+					</div>
+					<CellExplainPanel
+						open={explainTarget !== null}
+						queryName={query.current?.name ?? ''}
+						row={explainTarget?.row ?? 0}
+						column={explainTarget?.col ?? 0}
+						onClose={() => (explainTarget = null)}
+					/>
 				</div>
 			</div>
 		</div>
@@ -2039,6 +2063,14 @@
 		display: flex;
 		flex-direction: column;
 		overflow: hidden;
+	}
+	/* saiku#1118: the explain panel docks to the right of the result rather than
+	   over it, so the cell it explains stays visible while you read it. */
+	.result-row {
+		flex: 1;
+		min-height: 0;
+		display: flex;
+		align-items: stretch;
 	}
 	.result-host :global(.runtime) {
 		flex: 0 0 auto;
