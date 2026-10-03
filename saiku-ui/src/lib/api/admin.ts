@@ -212,6 +212,22 @@ export const adminSchemas = {
 	list: () => get<AdminSchema[]>('/schema'),
 	get: (id: string) => get<AdminSchema>(`/schema/${encodeURIComponent(id)}`),
 	/**
+	 * Fetch a saved schema's raw XML body.
+	 *
+	 * `AdminResource.getSavedSchema` (`GET /admin/schema/{id}`) sends the file bytes as
+	 * `application/octet-stream` with a `content-disposition: attachment` header, not JSON —
+	 * so this reads the body as text rather than going through the JSON-only {@link get}
+	 * helper above (which would fail `res.json()` on a non-JSON body; that helper has no
+	 * caller today, which is how the mismatch went unnoticed).
+	 */
+	getContent: async (name: string): Promise<string> => {
+		const res = await fetch(`${BASE}/schema/${encodeURIComponent(name)}`, {
+			credentials: 'include'
+		});
+		if (!res.ok) throw new Error(`schema content -> ${res.status}`);
+		return res.text();
+	},
+	/**
 	 * saiku#1655: `AdminResource.uploadSchema` (`POST /admin/schema/{id}`) is
 	 * `@Consumes("multipart/form-data")` and reads `@FormDataParam("file")` (an InputStream —
 	 * the schema XML bytes) plus `@FormDataParam("name")`. The previous urlencoded
