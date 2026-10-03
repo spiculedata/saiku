@@ -608,6 +608,49 @@
         <property name="evalsDir" value="${saiku.home:./saiku-home}/evals"/>
     </bean>
 
+    <!-- saiku#1477 (Phase 2b): in-server cron that keeps the eval store populated.
+
+         OFF BY DEFAULT. Nothing is scheduled unless the deployment sets
+         saiku.ai.eval.schedule.cron to a Spring cron expression, e.g.
+
+           saiku.ai.eval.schedule.cron = 0 30 3 * * *      # 03:30 daily
+           # or, from the JVM: -Dsaiku.ai.eval.schedule.cron="0 */6 * * * *"
+
+         An unset (blank) expression logs one INFO line at boot and starts no
+         thread; an unparseable one logs one ERROR and likewise stays inert, so a
+         typo in saiku-beans.properties can never fail the boot. Each fire builds
+         a LiveEvalAskAdapter + ScheduledEvalRunner on the spot and calls
+         runScheduled(), so an inert scheduler constructs no ask adapter and
+         touches no datasource. Self-rescheduling (next fire computed AFTER the
+         sweep) means a sweep that overruns its interval never overlaps itself.
+
+         Cost note: every fire is a real LLM sweep over every *.eval.yaml, so this
+         stays opt-in — the out-of-process `saiku eval` CLI (saiku#1478) remains
+         the CI-facing path.
+
+         evalThinQueryServiceBean is a dedicated SINGLETON ThinQueryService rather
+         than thinQueryBean because the cron thread has no HTTP request and
+         therefore no active 'session' scope to resolve the scoped proxy against
+         (resolving it off-thread throws). Its collaborators are all singletons;
+         only the cron thread ever touches this instance. -->
+    <bean id="evalThinQueryServiceBean" class="org.saiku.service.olap.ThinQueryService">
+        <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
+        <property name="queryCache" ref="saikuQueryCacheBean"/>
+        <property name="userService" ref="userServiceBean"/>
+        <property name="queryCoalescer" ref="queryCoalescerBean"/>
+        <property name="ossieQueryService" ref="ossieQueryServiceBean"/>
+    </bean>
+
+    <bean id="evalScheduler" class="org.saiku.service.olap.ai.eval.EvalCronScheduler"
+          factory-method="forCron" init-method="start" destroy-method="stop">
+        <constructor-arg value="${saiku.ai.eval.schedule.cron:}"/>
+        <constructor-arg value="${saiku.home:./saiku-home}/evals"/>
+        <constructor-arg ref="aiAskServiceBean"/>
+        <constructor-arg ref="aiCubeMetadataServiceBean"/>
+        <constructor-arg ref="evalThinQueryServiceBean"/>
+        <constructor-arg ref="evalResultStoreBean"/>
+    </bean>
+
     <!-- ====================================================================
          Natural-language ask layer (POST /saiku/api/ai/ask).
 
