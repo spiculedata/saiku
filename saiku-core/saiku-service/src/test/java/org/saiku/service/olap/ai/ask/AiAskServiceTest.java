@@ -1693,6 +1693,29 @@ public class AiAskServiceTest {
                 spec.tiles().get(2).chartType());
     }
 
+    /**
+     * Issue #1481 — the tile chartType allowlist was a five-id MVP set, so every other palette type
+     * (treemap, sunburst, waterfall, radar, heatmap, map, the stacked variants, bubble) was silently
+     * downgraded to "bar" here even though the dashboard tile renderer draws all of them. Each id in
+     * the canonical catalog must now survive assembly untouched.
+     */
+    @Test
+    public void buildDashboardKeepsEveryCatalogChartType() {
+        String template =
+                "{\"title\":\"Catalog\",\"tiles\":[{\"title\":\"t\",\"type\":\"chart\",\"chartType\":\"%s\",\"query\":%s}]}";
+        for (String id : AiViewChangeCatalog.CHART_TYPE_IDS) {
+            String payload = String.format(template, id, VALID_TILE_QUERY);
+            AiAskService svc = new AiAskService(
+                    fixedSchemaService(salesSchemaWithMeasure()), stub(NlAskResponse.okDashboard(payload, "m", 0, 0)));
+
+            DashboardSpec spec = svc.buildDashboard(CUBE, "catalog", List.of(), null);
+
+            assertFalse("degraded for chartType " + id, spec.degraded());
+            assertEquals(
+                    "chartType " + id + " must not be coerced", id, spec.tiles().get(0).chartType());
+        }
+    }
+
     @Test
     public void buildDashboardDegradesWhenProviderDegrades() {
         AiAskService svc = new AiAskService(

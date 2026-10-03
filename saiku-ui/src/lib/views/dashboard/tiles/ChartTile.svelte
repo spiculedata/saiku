@@ -43,11 +43,11 @@
 		inferRowAxesFromReference,
 		type RowAxisRef
 	} from '$lib/dashboard/filterSuggestions';
-	import {
-		buildChartOption,
-		isSupportedChartKind,
-		projectForChart
-	} from '$lib/dashboard/chartOptions';
+	import { buildChartOption, projectForChart } from '$lib/dashboard/chartOptions';
+	// #1481 — resolve the tile's stored chartType to a kind the renderer draws.
+	// Every palette type renders (the shared #1076 builder), so an unrecognised
+	// or legacy spelling maps to an equivalent instead of blanking the tile.
+	import { resolveChartKind } from '$lib/dashboard/chartKind';
 	// #1085: brush cross-filter — the pure ECharts `brush` config + the set of
 	// chart kinds that support an x-range brush.
 	import { brushOption, BRUSHABLE_CHART_TYPES } from '$lib/charts/build';
@@ -133,7 +133,14 @@
 		q.retry();
 	}
 	let schema = $state<SchemaLike | null>(null);
-	let unsupported = $state(false);
+
+	/* --- #1481: the ONE chart kind this tile draws ------------------------
+	 * Resolved once from tile.chartType so feature gating, small multiples, the
+	 * a11y mirror and the option builder all agree — previously each read the raw
+	 * string with its own `?? 'bar'`, so a legacy spelling could gate one way and
+	 * render another. `resolveChartKind` never returns an unsupported kind, which
+	 * is why there is no "not yet supported" overlay any more. */
+	let chartKind = $derived(resolveChartKind(tile.chartType));
 
 	/* --- issue #907: anomaly detection ------------------------------------
 	 * When the tile opts in (tile.anomaly.enabled) AND the chart kind is a
@@ -146,7 +153,7 @@
 	const ANOMALY_KINDS = new Set(['line', 'bar', 'area']);
 	let anomalyEnabled = $derived(
 		!!tile.anomaly?.enabled &&
-			ANOMALY_KINDS.has(tile.chartType ?? '') &&
+			ANOMALY_KINDS.has(chartKind) &&
 			tile.query?.kind === 'inline' &&
 			!sharedResponse
 	);
@@ -159,7 +166,7 @@
 	 * (one endpoint per pass) — documented limitation. */
 	let forecastEnabled = $derived(
 		!!tile.forecast?.enabled &&
-			ANOMALY_KINDS.has(tile.chartType ?? '') &&
+			ANOMALY_KINDS.has(chartKind) &&
 			tile.query?.kind === 'inline' &&
 			!sharedResponse
 	);
@@ -171,7 +178,7 @@
 	 * Disabled in the share viewer (read-only snapshot, no filter bus). */
 	let brushEnabled = $derived(
 		!!tile.brushCrossFilter?.enabled &&
-			BRUSHABLE_CHART_TYPES.has(tile.chartType ?? '') &&
+			BRUSHABLE_CHART_TYPES.has(chartKind) &&
 			!sharedResponse &&
 			// No emit callback (e.g. read-only view) → don't enter brush mode at all,
 			// so the cursor/UX isn't changed for a brush that can't do anything.
@@ -216,7 +223,7 @@
 	// Radial charts get a ring-shaped loading skeleton; everything else bars.
 	const RADIAL_KINDS = new Set(['pie', 'donut', 'sunburst']);
 	let loadingVariant: 'chart' | 'radial' = $derived(
-		RADIAL_KINDS.has(tile.chartType ?? '') ? 'radial' : 'chart'
+		RADIAL_KINDS.has(chartKind) ? 'radial' : 'chart'
 	);
 
 	// Issue #1053: single-measure kinds (pie/donut/treemap/sunburst) with >1
@@ -224,9 +231,10 @@
 	// grows to N rows and the tile scrolls, so each chart stays full-size rather
 	// than shrinking as more measures are added.
 	let smallMultipleRows = $derived.by(() => {
-		const kind = tile.chartType ?? 'bar';
 		const measureCount = response?.metadata?.columns?.length ?? 0;
-		return isSingleMeasureKind(kind) && measureCount > 1 ? smallMultipleRowCount(measureCount) : 1;
+		return isSingleMeasureKind(chartKind) && measureCount > 1
+			? smallMultipleRowCount(measureCount)
+			: 1;
 	});
 
 	// #1090: accessible data-table mirror for screen readers (the canvas is
@@ -238,11 +246,7 @@
 		// saiku#1797: the SAME projection the canvas draws (rollups dropped, sorted,
 		// trimmed) — a screen-reader table that lists rows the chart doesn't show is
 		// worse than no table.
-		return chartSummary(
-			tile.chartType ?? 'bar',
-			tile.title ?? '',
-			projectForChart(r, tile.chartOptions)
-		);
+		return chartSummary(chartKind, tile.title ?? '', projectForChart(r, tile.chartOptions));
 	});
 
 	// saiku#1758: how much of a map tile's data actually landed on the basemap.
@@ -252,7 +256,7 @@
 	// and read as a genuine result. Recomputed when the map finishes registering
 	// (mapReadyTick), since the feature list is empty until then.
 	let geoNotice = $derived.by(() => {
-		if ((tile.chartType ?? 'bar') !== 'map') return null;
+		if (chartKind !== 'map') return null;
 		void mapReadyTick;
 		const r = response;
 		if (!r || r.status !== 'SUCCESS') return null;
@@ -411,7 +415,7 @@
 
 	$effect(() => {
 		const r = response;
-		const kind = tile.chartType ?? 'bar';
+		const kind = chartKind;
 		void r;
 		// Re-render when the per-tile chart options change (editor save) (#1077).
 		void tile.chartOptions;
@@ -430,12 +434,7 @@
 		// the chart on the old palette until something else forced a render.
 		void appThemeSignature?.();
 		if (!chart) return;
-		unsupported = !isSupportedChartKind(kind);
 		if (!r || r.status !== 'SUCCESS') {
-			chart.clear();
-			return;
-		}
-		if (unsupported) {
 			chart.clear();
 			return;
 		}
@@ -818,10 +817,6 @@
 			<div class="overlay solid"><TileLoading variant={loadingVariant} /></div>
 		{:else if error}
 			<div class="overlay solid"><TileError message={error} onRetry={retry} /></div>
-		{:else if unsupported}
-			<div class="overlay">
-				Chart type <code>{tile.chartType}</code> not yet supported in dashboards.
-			</div>
 		{:else if isEmpty}
 			<div class="overlay solid">
 				<TileEmpty

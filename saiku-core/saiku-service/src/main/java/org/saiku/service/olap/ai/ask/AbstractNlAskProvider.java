@@ -72,9 +72,17 @@ abstract class AbstractNlAskProvider implements NlAskProvider {
      */
     protected static final String DASHBOARD_TOOL_NAME = "emit_dashboard";
 
-    /** Chart-subtype allowlist advertised for a dashboard tile's {@code chartType} (MVP set). */
+    /**
+     * Chart-subtype allowlist advertised for a dashboard tile's {@code chartType}. Issue #1481:
+     * this used to be a five-type "MVP set" (bar/line/pie/area/scatter) while the tile renderer
+     * has drawn every palette type since the shared #1076 option builder landed — so eleven
+     * chart types were unreachable as an AI-built dashboard tile while being fully renderable by
+     * hand. It is now the canonical catalog, taken straight from {@link AiViewChangeCatalog} so
+     * the dashboard tool and the view-change tool cannot drift, and the UI palette remains the
+     * single source of truth behind that catalog.
+     */
     protected static final java.util.List<String> DASHBOARD_CHART_TYPES =
-            java.util.List.of("bar", "line", "pie", "area", "scatter");
+            AiViewChangeCatalog.CHART_TYPE_IDS.stream().sorted().toList();
 
     /** Prefix on the degraded reason when the model refuses an off-topic question. */
     protected static final String REFUSAL_REASON_PREFIX = "OFF_TOPIC: ";
@@ -333,7 +341,17 @@ abstract class AbstractNlAskProvider implements NlAskProvider {
         for (String id : DASHBOARD_CHART_TYPES) {
             chartEnum.add(id);
         }
-        chartType.put("description", "Chart subtype. Only meaningful when type='chart'; omit otherwise.");
+        // The per-id hints are appended here (not just to the view-change tool description): without
+        // them the model sees sixteen ids with no guidance and defaults to the first one. This is the
+        // same catalog text the view-change tool gets, so both tools reason identically (#1481).
+        chartType.put(
+                "description",
+                "Chart subtype. Only meaningful when type='chart'; omit otherwise. Pick the one that fits "
+                        + "the query's shape — e.g. line/area for a time dimension, bar/stackedBar for categorical "
+                        + "comparison, pie/donut/treemap for part-to-whole over few categories, heatmap for two "
+                        + "categorical dims, scatter/bubble for two or three measures, waterfall for sequential "
+                        + "+/- contributions, map for a geographic dimension. Full catalog:\n"
+                        + chartTypeCatalogText());
 
         // The tile query IS an AiQueryRequest — reference the same schema emit_query advertises so
         // the tile-query contract and the single-query contract can never drift.
