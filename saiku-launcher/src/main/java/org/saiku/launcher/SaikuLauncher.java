@@ -944,6 +944,17 @@ public class SaikuLauncher implements Callable<Integer> {
             stageResource(
                     "/seed/agent-spaces/foodmart-finance-ops.json", spacesDir.resolve("foodmart-finance-ops.json"));
 
+            // Seed the certified-query catalogue (saiku#1430) with Finance's approved monthly
+            // store-sales definition. On a fresh demo the DimSum widget can then answer "what was
+            // monthly revenue" from the approval rather than re-deriving it — and the response is
+            // attributable (source: certified). Idempotent, like every other seed here: an
+            // operator's own certified/ directory is never overwritten.
+            Path certifiedDir = saikuHome.resolve("certified");
+            Files.createDirectories(certifiedDir);
+            stageResource(
+                    "/seed/certified/monthly-store-sales-by-country.json",
+                    certifiedDir.resolve("monthly-store-sales-by-country.json"));
+
             // Seed the tile plugin catalogue (App Builder Phase 2, saiku#1441) with a working
             // example: a self-contained bar-chart tile that renders a record set under the host's
             // strict CSP (inline JS/CSS only, no remote refs). Admin-installed plugins land under

@@ -505,6 +505,9 @@
              saiku.ai.ask.provider is set to 'anthropic' or 'openai' and the
              matching API key env var is supplied. See aiAskServiceBean below. -->
         <property name="askService" ref="aiAskServiceBean"/>
+        <!-- saiku#1430: certified-query catalogue backing GET /ai/certified and
+             POST /ai/certified/{id}/run (verbatim execution + source/certifiedId attribution). -->
+        <property name="certifiedQueries" ref="certifiedQueryRegistryBean"/>
         <!-- NL email-draft slice, Task 3: same mailSender bean emailResource uses for its
              health check (above), so /ai/ask's EMAIL_DRAFT outcome refuses honestly
              ("Email isn't set up on this server.") whenever mail delivery isn't configured,
@@ -654,6 +657,10 @@
         <constructor-arg ref="aiAskProviderBean"/>
         <property name="skills" ref="agentSkillRegistryBean"/>
         <property name="spaces" ref="agentSpaceRegistryBean"/>
+        <!-- saiku#1430: certified query catalogue. When an ask's intent overlaps a certified
+             matchIntent, the ask service short-circuits to that query and runs it verbatim
+             instead of asking the model to re-derive it. -->
+        <property name="certifiedQueries" ref="certifiedQueryRegistryBean"/>
         <!-- LLM-egress gate: strips the cellset digest from the prompt when
              SAIKU_AI_LLM_EGRESS / ai.llm.egress doesn't permit cell data egress. -->
         <property name="egressGuard" ref="aiLlmEgressGuard"/>
@@ -688,6 +695,15 @@
          Writes JSON personas through the registry (which rescans on write). Admin-gated. -->
     <bean id="agentSpaceAdminResource" class="org.saiku.web.rest.resources.AgentSpaceAdminResource">
         <property name="registry" ref="agentSpaceRegistryBean"/>
+    </bean>
+
+    <!-- Certified-query catalogue (saiku#1430). JSON entries under saiku-home/certified/ pair an
+         admin-approved ThinQuery with the intent phrasings that should route to it. Exposed at
+         GET /saiku/api/ai/certified and executed verbatim by POST /saiku/api/ai/certified/{id}/run;
+         the ask layer prefers a certified answer over re-deriving when the intent matches. -->
+    <bean id="certifiedQueryRegistryBean"
+          class="org.saiku.service.olap.ai.ask.CertifiedQueryRegistry">
+        <constructor-arg type="java.lang.String" value="${saiku.home:./saiku-home}/certified"/>
     </bean>
 
     <!-- ====================================================================

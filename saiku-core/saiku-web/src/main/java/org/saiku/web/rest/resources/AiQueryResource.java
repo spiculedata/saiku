@@ -91,6 +91,17 @@ public class AiQueryResource {
     }
 
     /**
+     * saiku#1430 — certified-query catalogue backing {@code GET /ai/certified} and {@code POST
+     * /ai/certified/{id}/run}. Held as {@code null} when unwired; every certified endpoint then
+     * answers with an empty catalogue rather than 500, mirroring the skills / spaces posture.
+     */
+    private org.saiku.service.olap.ai.ask.CertifiedQueryRegistry certifiedQueries;
+
+    public void setCertifiedQueries(org.saiku.service.olap.ai.ask.CertifiedQueryRegistry registry) {
+        this.certifiedQueries = registry;
+    }
+
+    /**
      * Task 3 (NL email-draft slice): mail-configured gate for the {@code EMAIL_DRAFT} ask outcome.
      * Wired to the same {@code mailSender} bean {@link org.saiku.web.email.EmailResource} uses for
      * its own health check — held as {@code null} when no Spring wiring supplies one, in which
@@ -1030,6 +1041,169 @@ public class AiQueryResource {
                 .build();
     }
 
+    /* ------------------------------------------------------------------
+     * Certified query catalogue (saiku#1430)
+     *
+     * Admin-approved saved queries under saiku-home/certified/*.json that the
+     * agent runs VERBATIM instead of re-deriving. See docs/CERTIFIED-QUERIES-SPEC.md.
+     * ------------------------------------------------------------------ */
+
+    /**
+     * The certified catalogue. Summaries only — id, description, intent phrasings — so an embed can
+     * discover "there is an approved answer for this" without scraping the approved MDX and running
+     * it itself. Pass {@code ?errors=true} to include parse failures so an operator can fix a
+     * mistyped entry without reading server logs.
+     */
+    @GET
+    @Path("/certified")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response listCertified(@QueryParam("errors") @DefaultValue("false") boolean includeErrors) {
+        if (certifiedQueries == null) {
+            return Response.ok(java.util.Map.of("certified", List.of()))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+        java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
+        List<Object> out = new ArrayList<>();
+        for (var q : certifiedQueries.list()) {
+            out.add(q.asSummary());
+        }
+        body.put("certified", out);
+        if (includeErrors) {
+            body.put("errors", certifiedQueries.errors());
+        }
+        return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
+    }
+
+    /**
+     * One certified query in full, including the {@link ThinQuery} body — the "show me what would
+     * actually run" view for an operator reviewing an approval.
+     */
+    @GET
+    @Path("/certified/{id}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getCertified(@PathParam("id") String id) {
+        if (certifiedQueries == null) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity(java.util.Map.of("error", "certified query not found"))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+        return certifiedQueries
+                .get(id)
+                .<Response>map(q -> {
+                    java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
+                    body.put("id", q.id());
+                    body.put("description", q.description());
+                    body.put("matchIntent", q.matchIntent());
+                    body.put("query", MAPPER.valueToTree(q.query()));
+                    return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
+                })
+                .orElseGet(() -> Response.status(Response.Status.NOT_FOUND)
+                        .entity(java.util.Map.of("error", "certified query '" + id + "' not found"))
+                        .type(MediaType.APPLICATION_JSON)
+                        .build());
+    }
+
+    /** Force-refresh the catalogue and report the counts, mirroring {@code /skills/refresh}. */
+    @POST
+    @Path("/certified/refresh")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response refreshCertified() {
+        if (certifiedQueries == null) {
+            return Response.ok(java.util.Map.of("certified", 0, "errors", 0))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+        certifiedQueries.forceRefresh();
+        return Response.ok(java.util.Map.of(
+                        "certified", certifiedQueries.list().size(),
+                        "errors", certifiedQueries.errors().size()))
+                .type(MediaType.APPLICATION_JSON)
+                .build();
+    }
+
+    /**
+     * Execute a certified query verbatim and return the standard {@link AiQueryResponse} shape, so
+     * a caller gets the same records/matrix payload {@code /ai/query} returns plus the provenance
+     * fields ({@code source: "certified"}, {@code certifiedId}) that make the approval auditable.
+     *
+     * <p>No body, no filters, no overrides: the whole value of this endpoint is that the query
+     * cannot be edited in flight. Runtime filters belong on {@code /ai/query/saved} for queries
+     * that live in the JCR repository.
+     */
+    @POST
+    @Path("/certified/{id}/run")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response runCertified(
+            @PathParam("id") String id, @QueryParam("format") @DefaultValue("records") String format) {
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.AGGREGATED_RESULT_VALUES);
+        if (certifiedQueries == null) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity(java.util.Map.of("error", "certified query '" + id + "' not found"))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+        var maybe = certifiedQueries.get(id);
+        if (maybe.isEmpty()) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity(java.util.Map.of("error", "certified query '" + id + "' not found"))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+        AiQueryResponse resp = executeCertified(maybe.get(), format);
+        return Response.ok(resp).type(MediaType.APPLICATION_JSON).build();
+    }
+
+    /**
+     * Run one certified query and shape the response, shared by {@code /certified/{id}/run} and the
+     * ask layer's certified short-circuit so the two can never disagree on attribution.
+     *
+     * <p>The parsed {@link ThinQuery} is used as-is. The one permitted mutation is the same
+     * null / slash-bearing name fix-up {@code /query/saved} applies (a name with a slash would
+     * otherwise be rejected by Jetty's strict URI handling downstream) — the query itself is never
+     * touched, which is what "verbatim" has to mean for an approval to be worth anything.
+     */
+    private AiQueryResponse executeCertified(org.saiku.service.olap.ai.ask.CertifiedQuery certified, String format) {
+        long start = System.currentTimeMillis();
+        ThinQuery tq = certified.query();
+        if (tq.getName() == null || tq.getName().isBlank() || tq.getName().contains("/")) {
+            tq.setName(java.util.UUID.randomUUID().toString());
+        }
+        CellDataSet cds;
+        try {
+            cds = thinQueryService.execute(tq);
+        } catch (RuntimeException e) {
+            log.error("certified query '{}' execution failed", certified.id(), e);
+            AiQueryResponse err = new AiQueryResponse();
+            err.setQueryId(certified.id());
+            err.setStatus(AiQueryResponse.Status.EXECUTION_ERROR);
+            err.setError("execute failed");
+            err.setRuntimeMs(System.currentTimeMillis() - start);
+            err.setSource("certified");
+            err.setCertifiedId(certified.id());
+            return err;
+        }
+        AiQueryResponse resp = buildResponse(tq, cds, start, format);
+        resp.setSource("certified");
+        resp.setCertifiedId(certified.id());
+        return resp;
+    }
+
+    /**
+     * Fold a certified run into the ask envelope. The {@code request} field stays null by design —
+     * there is no model-authored query, and hydrating the canvas builder from one would invite an
+     * edit that silently de-certifies the numbers.
+     */
+    private void executeCertifiedIntoResponse(
+            AiAskApi.AskResponse out, org.saiku.service.olap.ai.ask.CertifiedQuery certified) {
+        AiQueryResponse resp = executeCertified(certified, "records");
+        out.setResponse(resp);
+        if (resp != null && resp.getMetadata() != null) {
+            out.setGeneratedMdx(resp.getMetadata().getGeneratedMdx());
+        }
+    }
+
     /**
      * Space-scoped ask: same envelope as {@link #ask}, but the persona referenced by {@code
      * spaceId} pins the cube allowlist, filters the skill catalogue, and injects the system
@@ -1344,6 +1518,15 @@ public class AiQueryResource {
             if (summary != null && !summary.isEmpty()) {
                 emitChunks(sse, summary);
             }
+            sse.event("final", MAPPER.writeValueAsString(out));
+            return;
+        }
+
+        // saiku#1430 — CERTIFIED intent, same shape as the sync path: no prose to stream, the
+        // approved result IS the artefact. Shares executeCertifiedIntoResponse so streaming and
+        // non-streaming can never disagree on attribution.
+        if (outcome.kind() == AiAskService.AskOutcome.Kind.CERTIFIED) {
+            executeCertifiedIntoResponse(out, outcome.certifiedQuery());
             sse.event("final", MAPPER.writeValueAsString(out));
             return;
         }
@@ -3261,6 +3444,14 @@ public class AiQueryResource {
                 return Response.ok(out).type(MediaType.APPLICATION_JSON).build();
             }
             out.setEmailDraft(outcome.emailDraft());
+            return Response.ok(out).type(MediaType.APPLICATION_JSON).build();
+        }
+
+        // saiku#1430 — CERTIFIED intent: the ask matched an admin-approved query, which runs
+        // verbatim. Same records payload as QUERY, plus source/certifiedId so the caller can audit
+        // that the number came from an approval rather than from a generation.
+        if (outcome.kind() == AiAskService.AskOutcome.Kind.CERTIFIED) {
+            executeCertifiedIntoResponse(out, outcome.certifiedQuery());
             return Response.ok(out).type(MediaType.APPLICATION_JSON).build();
         }
 

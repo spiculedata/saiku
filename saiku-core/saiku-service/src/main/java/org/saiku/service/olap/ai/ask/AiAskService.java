@@ -66,6 +66,14 @@ public class AiAskService {
     private AgentSpaceRegistry spaces;
 
     /**
+     * Certified-query catalogue (saiku#1430). Optional, injected via setter so the classic ask path
+     * keeps working on instances with no certified directory. When wired, an ask whose intent
+     * overlaps a certified {@code matchIntent} short-circuits to that query — executed verbatim,
+     * never re-derived by the model. See {@link #certifiedMatch} for the exact routing conditions.
+     */
+    private CertifiedQueryRegistry certifiedQueries;
+
+    /**
      * Dedicated LLM-egress guard (Option A). Answers "may cell data leave the box to a third-party
      * LLM vendor?" — resolved from {@code SAIKU_AI_LLM_EGRESS} / {@code ai.llm.egress}, SEPARATE
      * from the data-return {@link AiPolicyGuard} on {@code SAIKU_AI_POLICY}. Injected via setter so
@@ -130,6 +138,16 @@ public class AiAskService {
     /** Agent-space catalogue, or {@code null} if the operator hasn't configured one. */
     public AgentSpaceRegistry spaces() {
         return spaces;
+    }
+
+    /** Spring setter — wired to {@code certifiedQueryRegistryBean} in {@code saiku-beans.xml}. */
+    public void setCertifiedQueries(CertifiedQueryRegistry certifiedQueries) {
+        this.certifiedQueries = certifiedQueries;
+    }
+
+    /** Certified-query catalogue used by this service, if wired. */
+    public CertifiedQueryRegistry certifiedQueries() {
+        return certifiedQueries;
     }
 
     /** Spring setter — wired to {@code aiLlmEgressGuard} in {@code saiku-beans.xml}. */
@@ -248,7 +266,8 @@ public class AiAskService {
      * Result of an {@link #ask(AiCubeRef, String, List)} call.
      *
      * <p>Exactly one of {@code request} / {@code insight} / {@code viewChange} / {@code
-     * emailDraft} is non-null on success (matched to {@link #kind()}); all are null on degraded.
+     * emailDraft} / {@code certifiedQuery} is non-null on success (matched to {@link #kind()});
+     * all are null on degraded.
      */
     public record AskOutcome(
             Kind kind,
@@ -259,13 +278,35 @@ public class AiAskService {
             AiViewChange viewChange,
             AiEmailDraft emailDraft,
             String model,
-            SpaceAccess denial) {
+            SpaceAccess denial,
+            CertifiedQuery certifiedQuery) {
+
+        /** Back-compatible 9-component form (no certified query). */
+        public AskOutcome(
+                Kind kind,
+                boolean degraded,
+                String reason,
+                AiQueryRequest request,
+                AiInsight insight,
+                AiViewChange viewChange,
+                AiEmailDraft emailDraft,
+                String model,
+                SpaceAccess denial) {
+            this(kind, degraded, reason, request, insight, viewChange, emailDraft, model, denial, null);
+        }
 
         public enum Kind {
             QUERY,
             INSIGHT,
             VIEW_CHANGE,
-            EMAIL_DRAFT
+            EMAIL_DRAFT,
+            /**
+             * saiku#1430 — the ask matched a certified {@code matchIntent}, so the admin-approved
+             * query is executed verbatim instead of being re-derived by the model. Carries no
+             * {@code request}: there is no model-authored {@link AiQueryRequest} to convert, because
+             * the model was never asked. {@link #certifiedQuery()} is the authority.
+             */
+            CERTIFIED
         }
 
         public static AskOutcome ok(AiQueryRequest request, String model) {
@@ -282,6 +323,14 @@ public class AiAskService {
 
         public static AskOutcome okEmailDraft(AiEmailDraft emailDraft, String model) {
             return new AskOutcome(Kind.EMAIL_DRAFT, false, null, null, null, null, emailDraft, model, SpaceAccess.OK);
+        }
+
+        /**
+         * Certified-run outcome (saiku#1430). {@code model} is null: no LLM was consulted, which is
+         * the whole point — a certified answer is a fixed artefact, not a generation.
+         */
+        public static AskOutcome okCertified(CertifiedQuery certified) {
+            return new AskOutcome(Kind.CERTIFIED, false, null, null, null, null, null, null, SpaceAccess.OK, certified);
         }
 
         /** Provider-side degrade (transport/parse/refusal) — carries no space-scope denial. */
@@ -1065,6 +1114,15 @@ public class AiAskService {
             return AskOutcome.degraded("question must be non-blank", null);
         }
 
+        // saiku#1430 — certified short-circuit, BEFORE the schema load and before the provider is
+        // called. When the question is a data ask that overlaps a certified matchIntent, the
+        // admin-approved query wins outright: the model is never asked, so there is nothing for it
+        // to re-derive differently. See certifiedMatch() for the routing conditions.
+        AskOutcome certified = certifiedMatch(ref, question, cellsetDigest, forceTool);
+        if (certified != null) {
+            return certified;
+        }
+
         AiSchema schema;
         try {
             schema = metadataService.getSchema(ref);
@@ -1258,6 +1316,55 @@ public class AiAskService {
             // to the caller (#1282-class info-leak hardening). Kind is a safe enum.
             return AskOutcome.degraded("provider emitted invalid JSON for " + resp.kind(), resp.model());
         }
+    }
+
+    /**
+     * saiku#1430 — resolve the ask to a certified query, or return {@code null} to let the model
+     * handle it.
+     *
+     * <p>Short-circuits BEFORE the provider round-trip, not by prompting harder. A prompt
+     * instruction ("prefer the certified answer") is a request the model can weigh against its own
+     * judgement; a pre-LLM routing decision is a guarantee. The CFO's certified revenue number is
+     * either what comes back, or the ask wasn't a certified ask.
+     *
+     * <p>Deliberately narrow — certified routing fires only for a genuine data ask:
+     *
+     * <ul>
+     *   <li>No cellset digest on screen. A digest means the user is asking a follow-up about data
+     *       already rendered ("why did June drop?"); substituting a fresh certified query there
+     *       would answer a question nobody asked. {@code INSIGHT} / {@code VIEW_CHANGE} follow-ups
+     *       reach the model as usual.
+     *   <li>No explicit intent override that isn't {@code QUERY} — an operator who picked a mode in
+     *       the drawer has said what they want.
+     *   <li>The ask is against the same cube the certified query was approved for.
+     * </ul>
+     *
+     * <p>Returns {@code null} (rather than a degraded outcome) when nothing matches, so a
+     * non-certified ask takes the ordinary path with no behavioural difference.
+     */
+    private AskOutcome certifiedMatch(
+            AiCubeRef ref, String question, String cellsetDigest, NlAskRequest.ForceTool forceTool) {
+        if (certifiedQueries == null) {
+            return null;
+        }
+        if (cellsetDigest != null && !cellsetDigest.isBlank()) {
+            return null; // follow-up about data already on screen, not a data request
+        }
+        if (question.startsWith("/")) {
+            return null; // an explicit /skill invocation outranks a certified match
+        }
+        NlAskRequest.ForceTool ft = forceTool == null ? NlAskRequest.ForceTool.AUTO : forceTool;
+        if (ft != NlAskRequest.ForceTool.AUTO && ft != NlAskRequest.ForceTool.QUERY) {
+            return null; // the caller explicitly asked for insight / view change / dashboard
+        }
+        String cubeName = ref == null ? null : ref.getCubeName();
+        return certifiedQueries
+                .match(question, cubeName)
+                .<AskOutcome>map(cq -> {
+                    log.info("certified query '{}' matched the ask — executing verbatim (no model call)", cq.id());
+                    return AskOutcome.okCertified(cq);
+                })
+                .orElse(null);
     }
 
     /**
