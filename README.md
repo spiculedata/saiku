@@ -108,6 +108,13 @@ See [`docs/AI-QUERY-API.md`](docs/AI-QUERY-API.md) and
 contract and the `saiku.semantic.*` annotation namespace cubes use to
 describe themselves to agents.
 
+## Semantic model generation
+
+Point Saiku at a warehouse and it will build a starting Ossie semantic
+model — cubes, dimensions, measures, joins — plus a rationale document
+explaining every decision. See
+[`docs/OSSIE-MODEL-GENERATION.md`](docs/OSSIE-MODEL-GENERATION.md).
+
 ## Agent Skills & Spaces
 
 Admins can extend the AI surface without code:

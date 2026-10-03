@@ -12,6 +12,10 @@ import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
+import org.saiku.service.ossie.generate.GeneratedModelStore;
+import org.saiku.service.ossie.generate.OssieGenerationJob;
+import org.saiku.service.ossie.generate.OssieGenerationJobStore;
+import org.saiku.service.ossie.generate.OssieModelGenerationService;
 import org.saiku.service.schema.generate.apply.OpApplier;
 import org.saiku.service.schema.generate.enrich.LlmEnricher;
 import org.saiku.service.schema.generate.enrich.provider.LlmProvider;
@@ -31,6 +35,29 @@ import org.springframework.context.support.ClassPathXmlApplicationContext;
  * property-name drift between Java types and XML surfaces here before it reaches production.
  */
 public class SchemaGenWiringSmokeTest {
+
+    /** saiku#1439 — the one-click Ossie generation graph wires and shares its singletons. */
+    @Test
+    public void contextLoadsWithOssieGenerationBeans() {
+        try (ClassPathXmlApplicationContext ctx = new ClassPathXmlApplicationContext("schemagen-wiring-test.xml")) {
+            assertNotNull(ctx.getBean("ossieGenerationJobStore", OssieGenerationJobStore.class));
+            assertNotNull(ctx.getBean("generatedModelStore", GeneratedModelStore.class));
+            OssieModelGenerationService service =
+                    ctx.getBean("ossieModelGenerationService", OssieModelGenerationService.class);
+            assertNotNull(service);
+            assertNotNull(ctx.getBean("ossieGenerateResource", OssieGenerateResource.class));
+
+            // The service and the REST resource must share ONE job store. If they didn't, a job id
+            // handed back by POST would 404 on the follow-up GET — the exact failure this test
+            // exists to prevent, and one no compile step would catch.
+            OssieGenerationJobStore storeFromServiceGraph =
+                    ctx.getBean("ossieGenerationJobStore", OssieGenerationJobStore.class);
+            OssieGenerationJob created = storeFromServiceGraph.create("ds-1", "warehouse");
+            assertNotNull(
+                    "a job published into the shared store must be retrievable",
+                    storeFromServiceGraph.get(created.id()));
+        }
+    }
 
     @Test
     public void contextLoadsWithSchemaGenBeans() {
