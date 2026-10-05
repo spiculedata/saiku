@@ -360,9 +360,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: shellcheck
-        run: shellcheck -x -P SCRIPTDIR deploy/demo/saiku-demo-deploy.sh deploy/demo/tests/run.sh deploy/demo/tests/shims/*
+        run: shellcheck -x -P SCRIPTDIR deploy/demo/saiku-demo-deploy.sh deploy/demo/saiku-demo-reset.sh deploy/demo/tests/run.sh deploy/demo/tests/reset-test.sh deploy/demo/tests/shims/*
       - name: Run deploy script tests
         run: bash deploy/demo/tests/run.sh
+      - name: Run nightly reset script tests
+        run: bash deploy/demo/tests/reset-test.sh
 
   dist:
     name: bundle (saiku-dist zip)
