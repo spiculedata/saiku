@@ -58,6 +58,7 @@ import org.saiku.service.async.AsyncQueryHandle;
 import org.saiku.service.async.AsyncQueryService;
 import org.saiku.service.olap.ThinQueryService;
 import org.saiku.service.olap.drillthrough.DrillThroughResult;
+import org.saiku.service.util.exception.SaikuAccessDeniedException;
 import org.saiku.service.util.exception.SaikuServiceException;
 import org.saiku.web.export.JSConverter;
 import org.saiku.web.export.PdfReport;
@@ -361,14 +362,50 @@ public class Query2Resource {
      * anywhere in the cause chain means the request named something that could not be resolved — an
      * unknown connection, cube, or member — which the caller can fix, so 400. Anything else is ours
      * and reports 500.
+     *
+     * <p>saiku#1973: a {@link SaikuAccessDeniedException} anywhere in the chain is neither — the
+     * caller is authenticated but not authorised for this datasource (the #1968 fail-closed denial)
+     * — so it reports <b>403</b> with a fixed message. The denial message names the datasource, and
+     * the whole point of the denial path is that the caller learns nothing from it.
      */
     private Response queryFailure(Exception e) {
+        if (isAccessDenied(e)) {
+            return accessDenied();
+        }
         String error = ExceptionUtils.getRootCauseMessage(e);
         Status status = isClientError(e) ? Status.BAD_REQUEST : Status.INTERNAL_SERVER_ERROR;
         return Response.status(status)
                 .entity(new QueryResult(error))
                 .type(MediaType.APPLICATION_JSON)
                 .build();
+    }
+
+    /**
+     * saiku#1973 — the uniform access-denied response: 403 with a fixed, information-free message.
+     *
+     * <p>Shared by {@link #queryFailure(Exception)} and the async submit path so a denial reads the
+     * same whichever door the caller came through — the issue this closes was specifically about
+     * that door-to-door inconsistency.
+     */
+    private static Response accessDenied() {
+        return Response.status(Status.FORBIDDEN)
+                .entity(new QueryResult("Access denied"))
+                .type(MediaType.APPLICATION_JSON)
+                .build();
+    }
+
+    /**
+     * True when a {@link SaikuAccessDeniedException} is anywhere in the cause chain — the saiku#1968
+     * fail-closed datasource denial. By exception TYPE only; the message is never inspected, since
+     * the message is precisely what must not reach the caller.
+     */
+    private static boolean isAccessDenied(Throwable t) {
+        for (Throwable c = t; c != null; c = c.getCause() == c ? null : c.getCause()) {
+            if (c instanceof SaikuAccessDeniedException) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -490,6 +527,11 @@ public class Query2Resource {
                     .build();
         } catch (Exception e) {
             log.error("Cannot submit async query", e);
+            // saiku#1973 — a denied datasource is a 403 with a generic body, not a 500 that
+            // echoes the root cause message (which names the datasource).
+            if (isAccessDenied(e)) {
+                return accessDenied();
+            }
             return Response.serverError()
                     .entity(ExceptionUtils.getRootCauseMessage(e))
                     .build();
@@ -942,6 +984,10 @@ public class Query2Resource {
             return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
         } catch (Exception e) {
             log.error("Cannot discover drillthrough columns (" + queryName + ")", e);
+            // saiku#1973 — same uniform 403 as every other denial path.
+            if (isAccessDenied(e)) {
+                return accessDenied();
+            }
             // Unlike queryFailure(e), never echo the root cause: the underlying failure can be
             // a JDBC/olap4j exception whose message embeds the datasource URL, including
             // embedded credentials (e.g. "jdbc:postgresql://host/db?user=x&password=y"). The

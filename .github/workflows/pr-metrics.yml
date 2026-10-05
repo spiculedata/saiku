@@ -1,0 +1,107 @@
+name: PR Metrics
+
+# PR acceptance metric (saiku#2097, ACMM criterion acmm:pr-acceptance-metric).
+# See docs/metrics.md for the metric definitions.
+#
+# Two triggers, two audiences:
+#   - pull_request (closed) -> a one-line acceptance-rate comment on the PR that
+#     just closed, so the number is visible where the decision happened.
+#   - schedule / dispatch   -> a rolling window over the whole repo, written to
+#     the workflow run summary and uploaded as an artifact.
+#
+# Read-only by design: it never pushes, never comments on the repo itself, and
+# needs no write scope beyond the PR comment.
+
+on:
+  pull_request:
+    types: [closed]
+  schedule:
+    # Mondays 06:17 UTC — off the hour, so this does not pile onto the top-of-hour
+    # cron crowd on GitHub's shared scheduler.
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-metrics-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  metrics:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write # only to comment on the PR that triggered a closed event
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+
+      - name: Unit-test the metric script
+        run: |
+          if compgen -G 'scripts/*.test.mjs' > /dev/null 2>&1; then
+            node --test 'scripts/*.test.mjs'
+          else
+            echo 'No test files found in checkout — skipping unit tests (branch pre-dates scripts/)'
+          fi
+
+      # `gh pr list --json` is the supported shape; the script tolerates both a
+      # bare array and a {pullRequests:[...]} wrapper.
+      - name: Collect pull requests
+        run: |
+          gh pr list \
+            --state all \
+            --limit 500 \
+            --json number,title,author,createdAt,closedAt,mergedAt,reviews,isDraft \
+            > prs.json
+          echo "collected $(jq 'length' prs.json) pull requests"
+
+      - name: Compute metrics
+        run: node scripts/pr-metrics.mjs --input prs.json --output metrics.json --markdown
+
+      - name: Publish to the run summary
+        if: always()
+        run: |
+          if [[ -f metrics.json ]]; then
+            {
+              echo '### PR acceptance metric — rolling window (last 500 PRs)'
+              echo
+              node scripts/pr-metrics.mjs --input prs.json --markdown
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload metrics artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pr-metrics
+          path: |
+            metrics.json
+            prs.json
+          retention-days: 30
+
+      - name: Comment the acceptance rate on the closed PR
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          # Don't pile a second comment on a PR that already got one.
+          marker='<!-- pr-metrics:acceptance -->'
+          if gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
+               --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | grep -q .; then
+            echo "acceptance comment already present on #${PR_NUMBER}"
+            exit 0
+          fi
+          {
+            echo "$marker"
+            node scripts/pr-metrics.mjs --input prs.json --markdown
+          } > comment.md
+          gh pr comment "$PR_NUMBER" --body-file comment.md

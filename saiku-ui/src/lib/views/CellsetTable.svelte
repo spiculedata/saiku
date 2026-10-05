@@ -2,6 +2,8 @@
 	import type { CellEntry, QueryResult } from '$lib/api/query';
 	import { parseCellset, rowHeaderDisplay } from '$lib/views/cellsetUtils';
 	import { parseFormattedCell } from '$lib/cellset/cellFormat';
+	import { roundCellDisplay } from '$lib/cellset/decimalFormat';
+	import { decimalPlaces } from '$lib/stores/decimalPlaces.svelte';
 	import { query as queryStore } from '$lib/stores/query.svelte';
 	import { datasources } from '$lib/stores/datasources.svelte';
 	import { selection } from '$lib/stores/selection.svelte';
@@ -784,6 +786,11 @@
 						{/each}
 						{#each parsed.dataRows[r] as dc, cIdx}
 							{@const fmt = parseFormattedCell(dc.value)}
+							<!-- saiku#1988: display-only decimals. The cell's
+							     underlying value, the tooltip and every
+							     copy/drillthrough/export path keep the raw
+							     server formatting. -->
+							{@const shown = roundCellDisplay(fmt.display, decimalPlaces.decimals)}
 							{@const num = isNumeric(fmt.display)}
 							{@const selected = isSelected(r, cIdx)}
 							{@const hasFocus = isFocused(r, cIdx)}
@@ -799,7 +806,7 @@
 								style={fmt.color ? `color: ${fmt.color}` : undefined}
 								onmousedown={(e) => onCellMouseDown(e, r, cIdx)}
 								onmouseenter={() => onCellMouseEnter(r, cIdx)}
-								oncontextmenu={(e) => onDataCellContextMenu(e, r, cIdx)}>{fmt.display}</td
+								oncontextmenu={(e) => onDataCellContextMenu(e, r, cIdx)}>{shown}</td
 							>
 						{/each}
 						{#if spark !== 'none'}

@@ -15,6 +15,27 @@ on:
 permissions:
   contents: read
 
+env:
+  # Commit of anthropics/claude-code that provides the `claude-code-plugins`
+  # marketplace (and the `code-review` plugin) this workflow installs.
+  #
+  # Why a SHA and not a version tag: the action's `plugin_marketplaces` input
+  # accepts only a git URL ending in `.git` or a local path — it rejects the
+  # CLI's own `owner/repo@ref` / `url#ref` forms — so a bare URL clones that
+  # remote's HEAD at run time and any change there lands in our CI without a
+  # reviewable diff (saiku#1994). SHA-pinning `uses:` alone (#1919) did not
+  # close that hole, because the code the pinned action pulls in at run time
+  # was still mutable.
+  #
+  # We therefore fetch the marketplace ourselves at this commit and pass the
+  # action a local path (a git-backed local folder, which the CLI supports as a
+  # marketplace source), so every third-party input in this job is pinned and
+  # reviewable.
+  #
+  # To bump:
+  #   git ls-remote https://github.com/anthropics/claude-code.git refs/heads/main
+  CLAUDE_CODE_PLUGINS_SHA: 52c76441cae91f6891e4712306bffb057ff6fec5
+
 jobs:
   claude-review:
     # Bot-authored PRs (Dependabot et al) can't run this: the action refuses
@@ -29,18 +50,42 @@ jobs:
       issues: read
       id-token: write
 
+    env:
+      # Absolute path (the action only treats ./ ../ or / -prefixed entries as
+      # local paths) where the pinned marketplace is checked out below.
+      MARKETPLACE_DIR: ${{ runner.temp }}/claude-code-plugins
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
 
+      # Materialise the plugin marketplace at the pinned commit above, so the
+      # `code-review` plugin comes from a reviewed SHA rather than whatever
+      # anthropics/claude-code's HEAD happens to be when the job runs. The
+      # marketplace manifest check makes a bad/renamed SHA fail closed instead
+      # of silently installing nothing.
+      - name: Fetch pinned plugin marketplace
+        env:
+          MARKETPLACE_SHA: ${{ env.CLAUDE_CODE_PLUGINS_SHA }}
+        run: |
+          set -euo pipefail
+          git init -q "$MARKETPLACE_DIR"
+          git -C "$MARKETPLACE_DIR" remote add origin https://github.com/anthropics/claude-code.git
+          git -C "$MARKETPLACE_DIR" fetch -q --depth 1 origin "$MARKETPLACE_SHA"
+          git -C "$MARKETPLACE_DIR" checkout -q FETCH_HEAD
+          test -f "$MARKETPLACE_DIR/.claude-plugin/marketplace.json" \
+            || { echo "::error::anthropics/claude-code@$MARKETPLACE_SHA has no .claude-plugin/marketplace.json — bump CLAUDE_CODE_PLUGINS_SHA to a commit that does"; exit 1; }
+          echo "anthropics/claude-code@$MARKETPLACE_SHA ($(git -C "$MARKETPLACE_DIR" rev-parse HEAD)) -> $MARKETPLACE_DIR"
+
       - name: Run Claude Code Review
         id: claude-review
         uses: anthropics/claude-code-action@9171db3e57d6a3140a37ddc2ba92788584e0ead6 # v1.0.234
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
+          # Local path to the marketplace checked out at the pinned SHA above.
+          plugin_marketplaces: ${{ env.MARKETPLACE_DIR }}
           plugins: 'code-review@claude-code-plugins'
           prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
