@@ -473,9 +473,10 @@ nbdist/
 !/lib/repo/**
 
 # Claude Code session worktrees / scratch (never commit) — except the shared,
-# reviewed agent assets: project settings (the PreToolUse guard + permission
-# policy), project skills, the corrections log and the session summary (see
-# AGENTS.md).
+# reviewed agent assets: project settings (the PreToolUse guard + layered
+# permission policy), project skills, the corrections log and the session summary
+# (see AGENTS.md). `.claude/settings.local.json` stays ignored: it is a personal,
+# un-reviewed override.
 .claude/*
 !.claude/settings.json
 !.claude/skills/

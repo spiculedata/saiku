@@ -43,10 +43,13 @@
       "Bash(node --version:*)",
       "Bash(java -version:*)",
       "Bash(gh pr diff:*)",
-      "Bash(gh pr create:*)",
       "Bash(gh run view:*)",
       "Bash(gh run list:*)",
-      "Bash(gh api:*)"
+      "Bash(gh api:*)",
+      "Bash(git branch --list:*)",
+      "Bash(npx svelte-kit sync)",
+      "Bash(gh repo view:*)",
+      "Bash(mvn --version)"
     ],
     "ask": [
       "Bash(git push:*)",
@@ -63,7 +66,18 @@
       "Bash(gh pr edit:*)",
       "Bash(gh issue comment:*)",
       "Bash(docker:*)",
-      "Bash(pkill:*)"
+      "Bash(pkill:*)",
+      "Bash(gh workflow:*)",
+      "Bash(gh pr create:*)",
+      "Bash(gh pr ready:*)",
+      "Bash(curl:*)",
+      "Bash(wget:*)",
+      "Bash(mvn jgitflow:*)",
+      "Edit(.github/workflows/**)",
+      "Edit(.github/PULL_REQUEST_TEMPLATE.md)",
+      "Edit(pom.xml)",
+      "Edit(**/pom.xml)",
+      "Edit(.mvn/**)"
     ],
     "deny": [
       "Bash(git push --force:*)",
@@ -90,7 +104,24 @@
       "Edit(./.claude/settings.json)",
       "Write(./.claude/settings.json)",
       "Edit(./.claude/settings.local.json)",
-      "Write(./.claude/settings.local.json)"
+      "Write(./.claude/settings.local.json)",
+      "Bash(rm -rf:*)",
+      "Bash(rm -fr:*)",
+      "Bash(git clean -fd:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(chmod 777:*)",
+      "Bash(sudo:*)",
+      "Bash(npm publish:*)",
+      "Bash(docker push:*)",
+      "Bash(gh pr merge --admin:*)",
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(~/.aws/**)",
+      "Read(~/.npmrc)",
+      "Read(**/*.pem)",
+      "Read(**/*.key)",
+      "Read(**/*.p12)",
+      "Read(**/id_rsa*)"
     ]
   },
   "hooks": {
