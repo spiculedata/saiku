@@ -26,6 +26,7 @@ VM credential (no deploy key, no tailnet node, no `scw` token).
 | `saiku-demo-deploy.service` | `/etc/systemd/system/` |
 | `saiku-demo-deploy.timer` | `/etc/systemd/system/` |
 | `saiku-demo-deploy.env.example` | `/etc/saiku-demo-deploy.env` (0600, optional) |
+| `saiku-demo-reset.sh` | `/usr/local/sbin/saiku-demo-reset.sh` (0755, root); replaces the old nightly `saiku-reset` (see *Nightly reset*) |
 | `tests/` | not installed; run `bash deploy/demo/tests/run.sh` (CI does) |
 
 ## What the script does
@@ -130,6 +131,32 @@ curl -sS -o /dev/null -w '%{http_code}\n' -X POST -H 'Content-Type: application/
   --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"check","version":"1"}}}' \
   https://demo.saiku.bi/rest/saiku/api/mcp      # expect 401
 ```
+
+## Nightly reset
+
+demo.saiku.bi wipes its home every night (00:00 America/New_York, `/etc/cron.d/saiku-reset`). The
+original `/usr/local/bin/saiku-reset` did that by pulling and running `:development` itself, which
+bypasses the green-only gate and recreates the container behind this timer's back. Replace it
+with `saiku-demo-reset.sh`: it takes the same lock as the deploy script, stops the existing
+`saiku-demo` container, empties and re-owns `/opt/saiku/home` (uid/gid 10001), and starts the
+**same container** again, so the demo keeps running the green image with the deploy script's
+exact flags. It never pulls. If there is no `saiku-demo` container, or it will not start, it
+hands over to `saiku-demo-deploy.sh`, which deploys the current green image.
+
+Install after step 1 (the cron entry itself stays as it is; only the script it calls changes).
+Keep the old script until the new one has run once:
+
+```bash
+scw instance server ssh $ID command='set -e; cd /tmp; curl -fsSL -o saiku-demo-reset.sh '"$RAW"'/saiku-demo-reset.sh; sha256sum saiku-demo-reset.sh'
+# compare with: git show $REF:deploy/demo/saiku-demo-reset.sh | shasum -a 256
+scw instance server ssh $ID command='set -e; install -m 0755 -o root -g root /tmp/saiku-demo-reset.sh /usr/local/sbin/saiku-demo-reset.sh; cp -a /usr/local/bin/saiku-reset /usr/local/bin/saiku-reset.pre-green; sed -i "s#/usr/local/bin/saiku-reset #/usr/local/sbin/saiku-demo-reset.sh #" /etc/cron.d/saiku-reset; cat /etc/cron.d/saiku-reset'
+# run it once by hand and check the demo came back on an empty home:
+scw instance server ssh $ID command='/usr/local/sbin/saiku-demo-reset.sh; docker ps --filter name=saiku-demo --format "{{.Names}} {{.Status}}"'
+```
+
+The old script also passed `-e SAIKU_SECURITY_ACKNOWLEDGED=true`. Nothing in the launcher reads
+that name (only `-Dsaiku.security.acknowledged` suppresses the startup banner), so the
+deploy script does not set it; the only effect is the banner in the container log.
 
 ## Day to day
 
