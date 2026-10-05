@@ -197,7 +197,7 @@ test_candidate_health_failure_leaves_live_untouched() {
 
 test_candidate_smoke_contract_violations() {
   local mode
-  for mode in anon200 nosession auth401; do
+  for mode in anon200 badcreds200 nosession auth401; do
     setup "cand_$mode"
     set_green "$ID_B"; make_running saiku-demo "$ID_A"; bad_cand "$ID_B" "$mode"
     run_deploy
@@ -205,6 +205,15 @@ test_candidate_smoke_contract_violations() {
     assert_eq "$(count_calls '^docker stop')" 0 "$mode: live untouched"
     assert_contains "$OUT" "smoke:" "$mode: smoke error logged"
   done
+}
+
+test_anonymous_401_is_accepted_as_well_as_403() {
+  # An anonymous request may be refused by the CSRF filter (403) or by authentication (401).
+  setup anon401
+  set_green "$ID_B"; make_running saiku-demo "$ID_A"; bad_cand "$ID_B" anon401
+  run_deploy
+  assert_eq "$RC" 0 "anonymous 401 passes the smoke contract"
+  assert_contains "$OUT" "smoke contract passed" "logged"
 }
 
 test_real_swap_failure_rolls_back() {

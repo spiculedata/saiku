@@ -32,12 +32,20 @@ for c in "$FAKE"/containers/*; do
 done
 [[ -n "$mode" ]] || exit 7
 if ((head)); then [[ "$mode" == down ]] && exit 22; exit 0; fi
-code=401
+# Real app behaviour (checked against demo.saiku.bi): an anonymous POST to /rest/** is not CSRF-exempt,
+# so the CSRF filter answers 403 before authentication; a wrong Authorization header is 401.
+code=403
+[[ "$mode" == anon401 ]] && code=401
 if ((auth)); then
-  code=200
-  [[ "$mode" == auth401 ]] && code=401
-  if [[ -n "$hdr" && "$mode" != nosession && "$code" == 200 ]]; then printf 'HTTP/1.1 200 OK\r\nMcp-Session-Id: fake-session\r\n\r\n' >"$hdr"; fi
-  [[ -n "$hdr" && "$mode" == nosession ]] && printf 'HTTP/1.1 200 OK\r\n\r\n' >"$hdr"
+  if [[ "$stdin" == *:not-* ]]; then # the smoke test's deliberately wrong password
+    code=401
+    [[ "$mode" == badcreds200 ]] && code=200
+  else
+    code=200
+    [[ "$mode" == auth401 ]] && code=401
+    if [[ -n "$hdr" && "$mode" != nosession && "$code" == 200 ]]; then printf 'HTTP/1.1 200 OK\r\nMcp-Session-Id: fake-session\r\n\r\n' >"$hdr"; fi
+    [[ -n "$hdr" && "$mode" == nosession ]] && printf 'HTTP/1.1 200 OK\r\n\r\n' >"$hdr"
+  fi
 else
   [[ "$mode" == anon200 ]] && code=200
 fi
