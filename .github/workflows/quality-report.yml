@@ -26,7 +26,8 @@ on:
   workflow_dispatch:
 
 # Read-only. Nothing here writes to the repo — no comments, no issues, no
-# labels, no releases.
+# labels, no releases. (The `defects` job adds read-only issue / pull-request
+# scopes at job level for the escaped-defect section.)
 permissions:
   contents: read
 
@@ -208,10 +209,91 @@ jobs:
           path: quality-ui.md
           retention-days: 30
 
+  defects:
+    name: escaped defects
+    # Bugs filed against code that had already merged (docs/quality.md). Read-only:
+    # it lists issues and PRs and writes nothing back. Every step that talks to the
+    # API is continue-on-error, and a failed read produces NO fragment, so the
+    # dashboard omits the section rather than printing a clean week.
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      issues: read
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      WEEKS: "8"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+      # Bounded to issues updated in the last 120 days. The file only appears when
+      # the whole read succeeded, so a truncated payload is never rendered.
+      - name: Fetch recent issues
+        continue-on-error: true
+        run: |
+          since="$(date -u -d '120 days ago' +%Y-%m-%dT%H:%M:%SZ)"
+          gh api --paginate "repos/${GH_REPO}/issues?state=all&since=${since}&per_page=100" \
+            | jq -s '{issues: (add // [] | map(select(has("pull_request") | not)))}' > issues.tmp
+          mv issues.tmp issues.json
+          echo "collected $(jq '.issues | length' issues.json) issues"
+      # Only bugs that claim to have escaped can be counted, so only their PR
+      # references are resolved. Not-a-PR numbers 404 and are simply skipped.
+      - name: Fetch the merge state of referenced PRs
+        continue-on-error: true
+        run: |
+          : > pr-state.ndjson
+          for n in $(node .github/scripts/escaped-defects.mjs refs --issues issues.json); do
+            if state="$(gh api "repos/${GH_REPO}/pulls/${n}" --jq '{html_url, merged_at}' 2>/dev/null)"; then
+              jq -n --arg n "$n" --argjson v "$state" '{($n): $v}' >> pr-state.ndjson
+            fi
+          done
+          jq -s 'add // {}' pr-state.ndjson > pull-requests.json
+          echo "resolved $(jq 'length' pull-requests.json) pull requests"
+      # Denominator. `merged:>=` is cumulative and search has no two-sided range,
+      # so the script differences consecutive boundaries; a failed query is `skip`
+      # and leaves the weeks it touches as n/a.
+      - name: Count PRs merged per week
+        continue-on-error: true
+        run: |
+          : > merged-totals.txt
+          while read -r key date; do
+            total="$(gh api -X GET search/issues -f "q=repo:${GH_REPO} is:pr is:merged merged:>=${date}" \
+              --jq '.total_count' 2>/dev/null || echo skip)"
+            echo "${key} ${total}" >> merged-totals.txt
+            sleep 2 # search is rate-limited to 30 requests a minute
+          done < <(node .github/scripts/escaped-defects.mjs boundaries --weeks "${WEEKS}")
+          node .github/scripts/escaped-defects.mjs merged-counts --totals merged-totals.txt > merged-counts.json
+          echo "merged per week: $(cat merged-counts.json)"
+      # Exits 3 and writes nothing when there is no issues payload.
+      - name: Render escaped-defect section
+        continue-on-error: true
+        run: |
+          node .github/scripts/escaped-defects.mjs render \
+            --issues issues.json \
+            --pull-requests pull-requests.json \
+            --merged-counts merged-counts.json \
+            --weeks "${WEEKS}" \
+            --out quality-escaped-defects.md
+          cat quality-escaped-defects.md
+      - name: Upload escaped-defect fragment
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: quality-escaped-defects
+          path: quality-escaped-defects.md
+          if-no-files-found: ignore
+          retention-days: 30
+
   report:
     name: quality dashboard
     # always(): the dashboard is exactly what you want when a lane is red.
-    needs: [java, ui]
+    needs: [java, ui, defects]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -247,6 +329,12 @@ jobs:
                 echo
               fi
             done
+            # Optional section: when the issues read failed there is no fragment
+            # and the section is omitted. Absence must never read as a clean week.
+            if [ -f fragments/quality-escaped-defects.md ]; then
+              cat fragments/quality-escaped-defects.md
+              echo
+            fi
           } > "$REPORT"
           cat "$REPORT"
           # The summary is the dashboard: it renders on the run page itself, so

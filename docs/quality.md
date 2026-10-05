@@ -41,7 +41,8 @@ consumes. The per-PR verdict belongs to `ci.yml`, which is where the merge gate
 lives.
 
 The workflow is **read-only** — `permissions: contents: read`, no comments, no
-labels, no issues, no releases.
+labels, no issues, no releases. (Its escaped-defect job adds `issues: read`,
+`pull-requests: read` and `actions: read` at job level; see below.)
 
 ## Reading the report
 
@@ -87,6 +88,81 @@ and would make a red *build* indistinguishable from a red *quality signal*.
 
 The UI half has no standalone script — it reads vitest's JSON report, which only
 the workflow produces.
+
+## Escaped defects: does a green merge mean the code is right?
+
+Every row above answers "is a check at or above its floor?". None answers
+"when CI said yes, was it right?". The number that answers that is the **escaped
+defect**: a bug filed against code that had already merged. A gate that is always
+green and still lets bugs through is decoration, not a gate. (Ported from
+saiku-cloud, where it landed as #1421.)
+
+It is its own section of the weekly job summary: per week, the count, the number
+of PRs merged that week, the rate (defects per merged PR), links to each issue
+and the merged PR it escaped from, and a trend line (latest week against the
+average of the earlier weeks). **Target: 0 per week.** Like the rest of this
+page it is a report, never a gate.
+
+### What counts
+
+An issue is counted only when **all three** hold (`.github/scripts/escaped-defects.mjs`):
+
+1. **It is a bug** — labelled `Type: Bug` (the bug template's label) or `bug`.
+2. **It claims it escaped** — it carries the `escaped-defect` label, has the bug
+   template's optional **Regressed by PR** field filled in, or says "escaped" in
+   the body.
+3. **It names a PR that merged**, and merged no later than the issue was filed
+   (`#N`, `owner/repo#N` or a `/pull/N` URL). A PR merged after the report is the
+   fix, not the cause; an open PR is not an escape.
+
+The "claims it" and "merged" conditions are deliberate. Counting **every issue
+that cites a merged PR** was tried in saiku-cloud and rejected: most issues cite a
+merged design or feature PR ("part of #1368"), and that rule reported 43 escapes in
+a week where about 2 were real. A bare `#N` is not evidence. Saiku is stricter
+than the original in one way: the `escaped-defect` label alone is not enough,
+because a label can be applied for a PR that is still open.
+
+### How it is computed
+
+- `escaped-defect-label.yml` applies (and, if the field is cleared, removes) the
+  `escaped-defect` label when a bug's **Regressed by PR** field is filled in. It
+  creates or edits the label on demand, so deleting the label cannot break it. It
+  uses the same `label` mode of the script the dashboard uses, so the two cannot
+  disagree. The issue body only ever reaches the script through an environment
+  variable and a file.
+- The `defects` job of `quality-report.yml` (read-only: `actions`, `contents`,
+  `issues`, `pull-requests` all `read`) lists issues updated in the last 120 days,
+  resolves the merge state of the PRs the escape-claiming bugs name, and renders
+  the section. Every API step is `continue-on-error`.
+- **The denominator** (PRs merged per week) comes from GitHub search. Search has no
+  two-sided `merged:` range (a one-sided query silently returns the total from
+  that date to now), so the job asks for the *cumulative* count `merged:>=<Monday>`
+  at each week boundary and the script differences consecutive boundaries. A
+  failed query leaves the two weeks it touches as `n/a` rather than inventing a
+  number.
+- **A failed read omits the section.** If the issues could not be read there is no
+  fragment, and the summary has no escaped-defect section at all. It never prints
+  a zero: a missing section means "not measured", not "clean week".
+
+### What it does not measure
+
+- **Defects nobody filed an issue for.** A bug found, fixed and merged without an
+  issue never appears. That includes most Hive and maintainer fixes that go
+  straight to a PR.
+- **Bugs that do not say so.** An issue that never claims it escaped (no label, no
+  field, no "escaped") is not counted even if it is a regression. The field is
+  optional, so the number is a floor on the truth, not the truth.
+- **Anything older than the window.** Only issues updated in the last 120 days are
+  read, only the newest 100 PR references are resolved, and the report shows 8
+  weeks.
+- **Severity.** One typo regression and one data-loss bug are both a 1.
+- **Quality of the PR.** An escape is attributed to the PR the reporter names; the
+  reporter can be wrong.
+
+It also says nothing about code still in review: a bug filed against an open PR is
+correctly *not* counted, because the gate has not failed yet. A week that goes up
+is not automatically bad (the pipeline may be finding more real problems); read
+the links, not just the number.
 
 ## Moving a signal
 

@@ -74,6 +74,15 @@ body:
       placeholder: |
         - GET /rest/saiku/api/... must answer 200 with ...
         - Why today's code fails it (the wrong status, the missing field, the stack trace)
+  - type: input
+    id: regressed_by
+    attributes:
+      label: Regressed by PR
+      description: >-
+        Optional. If you know this worked before and which merged pull request broke it, give its
+        number (e.g. #2100). It feeds the escaped-defect metric on the quality dashboard
+        (docs/quality.md); leave it empty if you do not know.
+      placeholder: "#2100"
   - type: textarea
     id: logs
     attributes:
