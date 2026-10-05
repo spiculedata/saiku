@@ -32,6 +32,26 @@ and verifies `development-green` resolves to the same digest afterwards.
 commit reachable from `development`/`main` whose `sha-<short>` image still exists. This
 is the rollback lever.
 
+## Nightly reset
+
+The demo VM used to have a nightly cron (`/etc/cron.d/saiku-reset` running
+`/usr/local/bin/saiku-reset`) that removed the `saiku-demo` container, wiped `/opt/saiku/home`,
+then pulled and ran `ghcr.io/spiculedata/saiku:development`. That conflicts with the green-only
+gate above: it puts the demo on an image CI has not passed, recreates the container without
+taking the deploy timer's lock, and the timer then swaps back to `:development-green`, a second
+restart.
+
+`deploy/demo/saiku-demo-reset.sh` replaces it. It takes the deploy script's lock (so it waits for
+an in-flight deploy), stops the existing `saiku-demo` container, empties and re-owns the home,
+and starts the same container again, so the demo keeps the green image and the deploy script's
+exact flags. It never pulls. If there is no `saiku-demo` container, or it will not start, it
+hands over to `saiku-demo-deploy.sh`, which treats nothing-running as a deploy of the current
+green image. It refuses a home path that is not absolute, has `.` or `..` components, or is
+shallower than two levels, because it runs `rm -rf` on it.
+
+Installing it (swapping the cron over, keeping the old script as `saiku-reset.pre-green`) is a
+manual owner step: see [deploy/demo/README.md](../deploy/demo/README.md#nightly-reset).
+
 ## Security model
 
 | Party | Can | Cannot |
