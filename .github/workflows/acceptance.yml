@@ -13,12 +13,14 @@ name: acceptance
 #
 # SECURITY. `pull_request` (never `pull_request_target`), read-only token. The
 # runner executes the PR's own spec files, which is the point, so this job holds
-# nothing but the acceptance account: SAIKU_ACCEPTANCE_USER / _PASSWORD are
-# repository SECRETS (variables are not masked in logs), only the base URL is a
-# variable. GitHub passes secrets to same-repository PRs only, so a fork PR runs
-# with no credentials and its login-dependent specs record `not-run`. Use a
-# low-privilege account on a disposable or demo instance, never a production admin:
-# a same-repo PR author can read what the job can. The spec commands run with an
+# nothing but the acceptance account. The target is the PUBLIC demo (demo.saiku.bi),
+# whose login is public (admin/admin), so SAIKU_ACCEPTANCE_USER / _PASSWORD default to
+# it and a fork PR can run login-dependent specs too. To aim acceptance at a PRIVATE
+# instance, set them as repository SECRETS (they override the default, are masked in
+# logs and are withheld from fork PRs, whose login-dependent specs then fail rather
+# than leak); NEVER as repository variables, which are not masked. Only the base URL
+# is a variable. Use a low-privilege account on a disposable or demo instance, never a
+# production admin: a same-repo PR author can read what the job can. The spec commands run with an
 # allow-listed environment and api specs may only talk to the base URL's origin
 # (see the header of .github/scripts/acceptance-runner.mjs).
 
@@ -54,8 +56,11 @@ jobs:
       - name: Run the specs
         env:
           ACCEPTANCE_BASE_URL: ${{ vars.ACCEPTANCE_BASE_URL }}
-          SAIKU_ACCEPTANCE_USER: ${{ secrets.SAIKU_ACCEPTANCE_USER }}
-          SAIKU_ACCEPTANCE_PASSWORD: ${{ secrets.SAIKU_ACCEPTANCE_PASSWORD }}
+          # Default to the PUBLIC demo login (demo.saiku.bi runs SAIKU_DEMO=true with admin/admin, the
+          # same pair the deploy smoke test uses), so there is nothing to keep secret and fork PRs
+          # can run login-dependent specs. A repository SECRET overrides it for a private target.
+          SAIKU_ACCEPTANCE_USER: ${{ secrets.SAIKU_ACCEPTANCE_USER || 'admin' }}
+          SAIKU_ACCEPTANCE_PASSWORD: ${{ secrets.SAIKU_ACCEPTANCE_PASSWORD || 'admin' }}
         run: |
           if [ -z "${ACCEPTANCE_BASE_URL:-}" ]; then
             echo "::notice::ACCEPTANCE_BASE_URL is not configured; the specs are recorded as not-run."

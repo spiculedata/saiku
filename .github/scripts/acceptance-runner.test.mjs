@@ -709,7 +709,7 @@ test('an api spec does not receive GITHUB_TOKEN via env (defense in depth)', asy
 
 // ------------------------------------------------------- workflow trust guards
 
-test('acceptance.yml stays on pull_request and keeps credentials in secrets, not variables', async () => {
+test('acceptance.yml stays on pull_request; credentials come from secrets (default: the public demo login), never variables', async () => {
   const text = readFileSync(join(repoRoot, '.github', 'workflows', 'acceptance.yml'), 'utf8');
   const code = text.split('\n').filter((l) => !l.trim().startsWith('#')).join('\n');
   assert.match(code, /^on:\n {2}pull_request:/m, 'acceptance.yml must trigger on pull_request');
@@ -717,8 +717,10 @@ test('acceptance.yml stays on pull_request and keeps credentials in secrets, not
   assert.doesNotMatch(code, /workflow_run/, 'a workflow_run copy would run PR specs with default-branch secrets');
   // a credential is never a repository variable: variables are unmasked in logs
   assert.doesNotMatch(code, /vars\.SAIKU_ACCEPTANCE_(USER|PASSWORD|API_KEY|TOKEN|SECRET)/);
-  assert.match(code, /secrets\.SAIKU_ACCEPTANCE_USER/);
-  assert.match(code, /secrets\.SAIKU_ACCEPTANCE_PASSWORD/);
+  // secrets stay the only override; the fallback is the PUBLIC demo login and nothing else, so a
+  // private target's real credential can never be hard-coded here by accident
+  assert.match(code, /secrets\.SAIKU_ACCEPTANCE_USER \|\| 'admin'/);
+  assert.match(code, /secrets\.SAIKU_ACCEPTANCE_PASSWORD \|\| 'admin'/);
   assert.match(code, /vars\.ACCEPTANCE_BASE_URL/);
   // no write scopes, no checkout of anything but the default merge ref, no token handed to the specs
   assert.match(code, /permissions:\n {2}contents: read\n/);

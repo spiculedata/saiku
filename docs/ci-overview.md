@@ -185,7 +185,7 @@ Names only; never put a value in the repo or in a PR.
 | `DOCS_SITE_PAT` | `release` (`docs-changelog`) | PAT with `repo` on `spiculedata/saiku-cloud` to open the changelog PR | owner | the job logs a warning and skips the docs PR; the release does not fail |
 | `PREVIEW_SSH_PRIVATE_KEY` | `preview-env`, `preview-command`, `preview-reaper` | SSH key authorised on the preview box only | owner | with `PREVIEW_SSH_TARGET` set, the host-access step fails; with it empty the workflows skip first |
 | `TAILSCALE_OAUTH_CLIENT_ID`, `TAILSCALE_OAUTH_SECRET` | same three | OAuth client owning `tag:ci`, to put the runner on the tailnet | owner | as above |
-| `SAIKU_ACCEPTANCE_USER`, `SAIKU_ACCEPTANCE_PASSWORD` | `acceptance` | low-privilege account on the acceptance target | owner | optional; specs needing `session` / `basic` auth are recorded `not-run`, the run stays green. Must be a secret, not a variable (variables are unmasked) |
+| `SAIKU_ACCEPTANCE_USER`, `SAIKU_ACCEPTANCE_PASSWORD` | `acceptance` | override of the acceptance login | owner | optional. They default to the public demo login (`admin` / `admin`), so login-dependent specs run without them, fork PRs included. Set them only to aim acceptance at a private instance: as secrets (they override the default and are withheld from forks), never as variables (unmasked) |
 | `NVD_API_KEY` | `nightly-compliance` (OWASP profile, same as `mvn -P security verify`) | NVD feed API key | owner | optional; the job warns and the NVD download may be rate-limited or time out |
 
 **Variables**:
