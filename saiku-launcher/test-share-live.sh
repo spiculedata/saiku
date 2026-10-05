@@ -64,3 +64,5 @@ echo "== cleanup =="
 areq DELETE "/rest/saiku/api/dashboards/$DASH" >/dev/null 2>&1
 
 echo ""; echo "RESULT: $PASS passed, $FAIL failed"; exit $FAIL
+
+# preview-environment proof (throwaway, do not merge)
