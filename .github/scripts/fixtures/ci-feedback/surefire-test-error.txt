@@ -1,0 +1,82 @@
+2026-10-05T00:07:28.3048188Z ##[group]Run mvn -B -ntp -DskipITs=false verify
+2026-10-05T00:07:28.3048626Z [36;1mmvn -B -ntp -DskipITs=false verify[0m
+2026-10-05T00:07:28.3113822Z shell: /usr/bin/bash -e {0}
+2026-10-05T00:07:28.3114101Z env:
+2026-10-05T00:07:28.3114449Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/22.0.2-9/x64
+2026-10-05T00:07:28.3115001Z   JAVA_HOME_22_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/22.0.2-9/x64
+2026-10-05T00:07:28.3115411Z   MAVEN_ARGS: -ntp
+2026-10-05T00:07:28.3115651Z ##[endgroup]
+2026-10-05T00:07:30.6424350Z [WARNING] Some problems were encountered while building the effective model for org.saikuanalytics:saiku-proptest:jar:4.8.0
+2026-10-05T00:07:30.6446951Z [WARNING] 'build.plugins.plugin.version' for org.apache.maven.plugins:maven-deploy-plugin is missing. @ line 105, column 15
+2026-10-05T00:07:30.6448047Z [WARNING] 
+2026-10-05T00:07:30.6449003Z [WARNING] It is highly recommended to fix these problems because they threaten the stability of your build.
+2026-10-05T00:07:30.6449969Z [WARNING] 
+2026-10-05T00:07:30.6450820Z [WARNING] For this reason, future Maven versions might no longer support building such malformed projects.
+2026-10-05T00:07:30.6451738Z [WARNING] 
+2026-10-05T00:07:30.6501628Z [INFO] ------------------------------------------------------------------------
+2026-10-05T00:08:02.5468457Z Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
+2026-10-05T00:08:02.8404827Z [ERROR] Tests run: 8, Failures: 0, Errors: 2, Skipped: 0, Time elapsed: 0.549 s <<< FAILURE! -- in org.saiku.datasources.connection.SaikuOlapConnectionLocationTest
+2026-10-05T00:08:02.8470519Z [ERROR] org.saiku.datasources.connection.SaikuOlapConnectionLocationTest.xmlaLocationStillGetsThePropertyTerminator -- Time elapsed: 0.065 s <<< ERROR!
+2026-10-05T00:08:02.8510309Z java.lang.RuntimeException: org.olap4j.OlapException: This connection encountered an exception while executing a query.
+2026-10-05T00:08:02.8528711Z 	at org.olap4j.driver.xmla.DeferredNamedListImpl.getList(DeferredNamedListImpl.java:96)
+2026-10-05T00:08:02.8605437Z 	at org.olap4j.driver.xmla.DeferredNamedListImpl.size(DeferredNamedListImpl.java:116)
+2026-10-05T00:08:02.8667050Z 	at org.olap4j.driver.xmla.XmlaOlap4jConnection.getOlapDatabase(XmlaOlap4jConnection.java:451)
+2026-10-05T00:08:02.8696859Z 	at org.olap4j.driver.xmla.XmlaOlap4jConnection.getOlapCatalogs(XmlaOlap4jConnection.java:527)
+2026-10-05T00:08:02.8698261Z 	at org.saiku.datasources.connection.SaikuOlapConnection.connect(SaikuOlapConnection.java:218)
+2026-10-05T00:08:02.8699608Z 	at org.saiku.datasources.connection.SaikuOlapConnection.connect(SaikuOlapConnection.java:110)
+2026-10-05T00:08:02.8701555Z 	at org.saiku.datasources.connection.SaikuOlapConnectionLocationTest.xmlaLocationStillGetsThePropertyTerminator(SaikuOlapConnectionLocationTest.java:102)
+2026-10-05T00:08:02.8703515Z Caused by: org.olap4j.OlapException: This connection encountered an exception while executing a query.
+2026-10-05T00:08:02.8704681Z 	at org.olap4j.driver.xmla.XmlaHelper.createException(XmlaHelper.java:43)
+2026-10-05T00:08:02.8706100Z 	at org.olap4j.driver.xmla.XmlaOlap4jConnection.executeMetadataRequest(XmlaOlap4jConnection.java:878)
+2026-10-05T00:08:02.8707616Z 	at org.olap4j.driver.xmla.XmlaOlap4jDatabaseMetaData.getMetadata(XmlaOlap4jDatabaseMetaData.java:137)
+2026-10-05T00:08:02.8709082Z 	at org.olap4j.driver.xmla.XmlaOlap4jDatabaseMetaData.getMetadata(XmlaOlap4jDatabaseMetaData.java:67)
+2026-10-05T00:08:02.8710639Z 	at org.olap4j.driver.xmla.XmlaOlap4jDatabaseMetaData.getDatabaseProperties(XmlaOlap4jDatabaseMetaData.java:1044)
+2026-10-05T00:08:02.8712226Z 	at org.olap4j.driver.xmla.XmlaOlap4jConnection.makeConnectionPropertyList(XmlaOlap4jConnection.java:325)
+2026-10-05T00:08:02.8713658Z 	at org.olap4j.driver.xmla.XmlaOlap4jConnection.generateRequest(XmlaOlap4jConnection.java:1037)
+2026-10-05T00:08:02.8714967Z 	at org.olap4j.driver.xmla.XmlaOlap4jConnection.populateList(XmlaOlap4jConnection.java:850)
+2026-10-05T00:08:02.8716435Z 	at org.olap4j.driver.xmla.DeferredNamedListImpl.populateList(DeferredNamedListImpl.java:136)
+2026-10-05T00:08:02.8717689Z 	at org.olap4j.driver.xmla.DeferredNamedListImpl.getList(DeferredNamedListImpl.java:90)
+2026-10-05T00:08:02.9999999Z [INFO] ... (passing tests trimmed) ...
+2026-10-05T00:08:13.3603086Z [ERROR] Errors: 
+2026-10-05T00:08:13.3605315Z [ERROR]   SaikuOlapConnectionLocationTest.mondrianLocationStillGetsThePropertyTerminator:93 » Mondrian Mondrian Error:Internal error: Virtual file is not readable: mondrian://x
+2026-10-05T00:08:13.3611789Z [ERROR]   SaikuOlapConnectionLocationTest.xmlaLocationStillGetsThePropertyTerminator:102 » Runtime org.olap4j.OlapException: This connection encountered an exception while executing a query.
+2026-10-05T00:08:13.3613491Z [INFO] 
+2026-10-05T00:08:13.3614024Z [ERROR] Tests run: 1840, Failures: 0, Errors: 2, Skipped: 2
+2026-10-05T00:08:13.3614599Z [INFO] 
+2026-10-05T00:08:13.3631930Z [INFO] ------------------------------------------------------------------------
+2026-10-05T00:08:13.3632756Z [INFO] Reactor Summary for Saiku Module Project 4.8.0:
+2026-10-05T00:08:13.3633354Z [INFO] 
+2026-10-05T00:08:13.3633922Z [INFO] Saiku BOM .......................................... SUCCESS [  0.002 s]
+2026-10-05T00:08:13.3634857Z [INFO] Saiku Module Project ............................... SUCCESS [  9.893 s]
+2026-10-05T00:08:13.3636198Z [INFO] saiku - core libraries ............................. SUCCESS [  0.031 s]
+2026-10-05T00:08:13.3637131Z [INFO] saiku olap util .................................... SUCCESS [  1.740 s]
+2026-10-05T00:08:13.3637992Z [INFO] saiku - semantic layer ............................. SUCCESS [  6.097 s]
+2026-10-05T00:08:13.3638869Z [INFO] saiku - services ................................... FAILURE [ 24.937 s]
+2026-10-05T00:08:13.3639593Z [INFO] saiku - sql layer .................................. SKIPPED
+2026-10-05T00:08:13.3640241Z [INFO] saiku - web ........................................ SKIPPED
+2026-10-05T00:08:13.3640982Z [INFO] saiku - webapp ..................................... SKIPPED
+2026-10-05T00:08:13.3641738Z [INFO] saiku - launcher ................................... SKIPPED
+2026-10-05T00:08:13.3642532Z [INFO] saiku-proptest ..................................... SKIPPED
+2026-10-05T00:08:13.3643319Z [INFO] ------------------------------------------------------------------------
+2026-10-05T00:08:13.3644019Z [INFO] BUILD FAILURE
+2026-10-05T00:08:13.3644612Z [INFO] ------------------------------------------------------------------------
+2026-10-05T00:08:13.3645300Z [INFO] Total time:  43.600 s
+2026-10-05T00:08:13.3646031Z [INFO] Finished at: 2026-10-05T00:08:13Z
+2026-10-05T00:08:13.3646698Z [INFO] ------------------------------------------------------------------------
+2026-10-05T00:08:13.3648325Z [ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.2:test (default-test) on project saiku-service: 
+2026-10-05T00:08:13.3649296Z [ERROR] 
+2026-10-05T00:08:13.3650438Z [ERROR] See /home/runner/work/saiku/saiku/saiku-core/saiku-service/target/surefire-reports for the individual test results.
+2026-10-05T00:08:13.3651779Z [ERROR] See dump files (if any exist) [date].dump, [date]-jvmRun[N].dump and [date].dumpstream.
+2026-10-05T00:08:13.3652531Z [ERROR] -> [Help 1]
+2026-10-05T00:08:13.3652925Z [ERROR] 
+2026-10-05T00:08:13.3653560Z [ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+2026-10-05T00:08:13.3654509Z [ERROR] Re-run Maven using the -X switch to enable full debug logging.
+2026-10-05T00:08:13.3655152Z [ERROR] 
+2026-10-05T00:08:13.3656304Z [ERROR] For more information about the errors and possible solutions, please read the following articles:
+2026-10-05T00:08:13.3657635Z [ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException
+2026-10-05T00:08:13.3658392Z [ERROR] 
+2026-10-05T00:08:13.3659059Z [ERROR] After correcting the problems, you can resume the build with the command
+2026-10-05T00:08:13.3659879Z [ERROR]   mvn <args> -rf :saiku-service
+2026-10-05T00:08:13.4075424Z ##[error]Process completed with exit code 1.
+2026-10-05T00:08:13.4293187Z Post job cleanup.
+2026-10-05T00:08:13.5152566Z Post job cleanup.

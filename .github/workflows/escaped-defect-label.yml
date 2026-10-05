@@ -1,0 +1,98 @@
+name: escaped-defect attribution
+
+# Applies the `escaped-defect` label when a bug report names the PR that
+# introduced the problem (ported from saiku-cloud#1421).
+#
+# The point is that nobody tags by hand: a defect that only surfaced after the
+# PR merged is the measure of whether the gate is working, and a metric that
+# depends on someone remembering to label quietly reads zero. The rule lives in
+# `.github/scripts/escaped-defects.mjs` (`label` mode), so the quality dashboard
+# and this workflow cannot disagree about what counts.
+#
+# `edited` is handled too: filling the "Regressed by PR" field in after triage
+# labels the issue, and clearing it removes the label.
+#
+# This is a label workflow, NOT a gate: it is not a PR check and is deliberately
+# absent from ci-feedback's workflow_run list. Safety rules (pinned by
+# .github/scripts/test_workflow_pins.py and review):
+#   * the issue body is untrusted: it reaches the script only through an
+#     environment variable and a file, never interpolated into shell text;
+#   * the `issues` event runs against the default branch, and the checkout is
+#     sparse (only the script), so no PR or fork code is ever fetched or run;
+#   * the token can write issues and nothing else.
+
+on:
+  issues:
+    types: [opened, edited]
+
+permissions:
+  issues: write # label the issue
+  contents: read # sparse checkout of the script
+
+concurrency:
+  group: escaped-defect-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  attribute:
+    name: label escaped defects
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+
+      # Created on demand so a deleted label cannot leave this workflow failing
+      # on every issue. Never blocks the labelling itself.
+      - name: Ensure the label exists
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh label create escaped-defect \
+            --color B60205 \
+            --description "Bug found after the PR it was attributed to had already merged" \
+            || gh label edit escaped-defect \
+              --color B60205 \
+              --description "Bug found after the PR it was attributed to had already merged"
+
+      - name: Decide from the issue body
+        id: decide
+        env:
+          # The body goes through the environment, not into the script text:
+          # an issue body is untrusted input.
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          printf '%s' "$ISSUE_BODY" > "$RUNNER_TEMP/issue-body.md"
+          label="$(node .github/scripts/escaped-defects.mjs label --body "$RUNNER_TEMP/issue-body.md")"
+          echo "Body field says: $label"
+          echo "label=$label" >> "$GITHUB_OUTPUT"
+
+      - name: Add the label
+        if: steps.decide.outputs.label == 'escaped-defect'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: gh issue edit "$ISSUE_NUMBER" --add-label escaped-defect
+
+      - name: Remove the label when the attribution was cleared
+        if: >-
+          steps.decide.outputs.label == 'none'
+          && contains(github.event.issue.labels.*.name, 'escaped-defect')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: gh issue edit "$ISSUE_NUMBER" --remove-label escaped-defect

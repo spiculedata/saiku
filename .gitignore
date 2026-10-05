@@ -473,13 +473,16 @@ nbdist/
 !/lib/repo/**
 
 # Claude Code session worktrees / scratch (never commit) — except the shared,
-# reviewed agent assets: the layered safety model, project skills and the
-# corrections log (see AGENTS.md). `.claude/settings.local.json` stays ignored:
-# it is a personal, un-reviewed override.
+# reviewed agent assets: project settings (the PreToolUse guard + layered
+# permission policy), project skills, the corrections log and the session summary
+# (see AGENTS.md). `.claude/settings.local.json` stays ignored: it is a personal,
+# un-reviewed override.
 .claude/*
 !.claude/settings.json
 !.claude/skills/
 !.claude/memory/
+!.claude/session-summary.md
+# Personal overrides stay ignored — settings.local.json is a developer's own.
 
 # git worktrees
 .worktrees/
@@ -501,3 +504,7 @@ welcome-demo-fixed.png
 # Hypothesis-style. It is build output — regenerated on demand, ~640K after a full
 # run — so it is ignored rather than committed.
 saiku-proptest/.hegel/
+
+# Python bytecode (the .github/scripts tests run with python3)
+__pycache__/
+*.pyc

@@ -12,15 +12,16 @@
 	 * them — AppShell's `editable` prop drives whether page add / rename
 	 * affordances and in-grid editing are shown.
 	 */
-	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { appDoc } from '$lib/stores/appDoc.svelte';
+	import { PAGE_PARAM } from '$lib/dashboard/urlFilterState';
 	import { Button } from '$lib/components/ui';
 	import { toasts } from '$lib/stores/toasts.svelte';
 	import { i18n } from '$lib/stores/i18n.svelte';
 	import { Save, Pencil, Eye, Palette } from '@lucide/svelte';
 	import AppShell from '$lib/views/app/AppShell.svelte';
 	import { initialAppMode, type AppMode } from '$lib/views/app/appOpenMode';
+	import { createAppLoader } from '$lib/views/app/appLoader';
 	import AppInspector, {
 		type InspectorSection
 	} from '$lib/views/app/inspector/AppInspector.svelte';
@@ -50,19 +51,25 @@
 		}
 	});
 
-	onMount(() => {
-		untrack(() => void appDoc.loadApp(appPath));
+	// Load the app on mount AND whenever the path changes — one trigger, not
+	// two. This used to be an `onMount` load plus a path-watching effect, and
+	// both fired on first mount: the app was fetched twice and, worse, the second
+	// response landed AFTER the deep-link restore had already run, resetting the
+	// app to page 0 and letting the URL mirror rewrite the shared link
+	// (saiku#1766). `createAppLoader` holds the one-load-per-path rule; this
+	// effect only feeds it the current path plus the `?p=` deep link, and runs
+	// at least once — so it covers the initial load too.
+	const requestAppLoad = createAppLoader(({ path, pageId }) => {
+		void appDoc.loadApp(path, { pageId });
 	});
-
-	// Path can change without a remount — reload when it does. Guard against
-	// re-firing on the load's own store writes by only reacting to the path.
-	let lastLoaded = $state<string | null>(null);
 	$effect(() => {
 		const p = appPath;
-		if (p && p !== untrack(() => lastLoaded)) {
-			lastLoaded = p;
-			void appDoc.loadApp(p);
-		}
+		if (!p) return;
+		// `?p=` is read per load rather than latched at init: a client-side
+		// navigation to a different app brings its own page id, while a re-load
+		// re-applies whichever page the URL names right now. The store validates
+		// the id, so a stale link can't strand the app on no page.
+		requestAppLoad(p, page.url.searchParams.get(PAGE_PARAM));
 	});
 
 	async function handleSave(): Promise<void> {

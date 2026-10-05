@@ -1,0 +1,83 @@
+name: preview-infra
+
+# Offline checks for the per-PR preview environment system. Nothing here starts a
+# container, reaches a preview host or needs a secret: the lifecycle runs against an
+# in-memory host, the compose file is rendered client side with `docker compose config`
+# and the self-check runs against a fake Saiku.
+#
+# Ported from spiculedata/saiku-cloud .github/workflows/preview-compose.yml
+# (saiku-cloud#1378); see docs/decisions/ci-preview-environments.md.
+#
+# Verified here: the guard refuses everything that is not saiku-oss-pr-<n> (so a cloud
+# preview on the same box is untouchable), the lifecycle decisions and the host
+# commands it issues, the shape of the three preview workflows (trusted checkout, no
+# fork environments, minimal permissions, real 40-hex pins), the compose rendering
+# (no host ports, project-scoped names, the Traefik labels) and the self-check's
+# verdicts.
+# NOT verified here: that a stack boots, that the image exists, that the shared Traefik
+# routes it. That needs the real preview host.
+
+on:
+  pull_request:
+    paths:
+      - ".github/scripts/preview-*"
+      - ".github/actions/preview-host-access/**"
+      - ".github/workflows/preview-*.yml"
+      - "infra/preview/**"
+      - "docs/decisions/ci-preview-environments.md"
+  push:
+    branches: [development]
+    paths:
+      - ".github/scripts/preview-*"
+      - ".github/actions/preview-host-access/**"
+      - ".github/workflows/preview-*.yml"
+      - "infra/preview/**"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  offline:
+    name: preview / offline checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+
+      - name: Tool versions
+        run: |
+          node --version
+          docker compose version
+          python3 --version
+          shellcheck --version | head -2
+
+      - name: Lifecycle, guard, host, creds and workflow-shape tests
+        run: node --test .github/scripts/preview-*.test.mjs
+
+      - name: Shellcheck the preview scripts
+        # selfcheck.sh runs under busybox sh in the curl image, so lint it as POSIX sh.
+        run: |
+          shellcheck -s sh infra/preview/selfcheck.sh
+          shellcheck -s bash -S warning infra/preview/render-env.sh infra/preview/tests/*.sh
+
+      - name: render-env.sh produces a complete, per-PR env file
+        run: infra/preview/tests/test-render-env.sh
+
+      - name: The compose file renders; isolation, ports, labels, memory, credentials
+        # Renders PR 101 and PR 202, asserts the invariants, then breaks the file on
+        # purpose and requires each assertion to fail.
+        run: infra/preview/tests/test-compose.sh
+
+      - name: The self-check reports a silently-wrong stack as inactive
+        run: infra/preview/tests/test-selfcheck.sh

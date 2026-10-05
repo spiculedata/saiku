@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Fake `curl`: health / MCP smoke answers come from the fake container whose
+# published port matches the URL; stdin-config calls with no URL are webhooks.
+set -u
+: "${FAKE:?}"
+printf '%s\n' "curl $*" >>"$FAKE/calls.log"
+url=""; wfmt=""; hdr=""; auth=0; head=0; kcfg=0
+args=("$@"); i=0
+while ((i < ${#args[@]})); do
+  a="${args[$i]}"
+  case "$a" in
+    -w) wfmt="${args[$((i+1))]}"; i=$((i+2)) ;;
+    -D) hdr="${args[$((i+1))]}"; i=$((i+2)) ;;
+    -K) kcfg=1; i=$((i+2)) ;;
+    -o|-H|-X|--data|--max-time) i=$((i+2)) ;;
+    --head) head=1; i=$((i+1)) ;;
+    http*) url="$a"; i=$((i+1)) ;;
+    *) i=$((i+1)) ;;
+  esac
+done
+stdin=""; ((kcfg)) && stdin="$(cat)"
+if [[ -z "$url" ]]; then # webhook: URL arrives on stdin config
+  printf '%s | %s\n' "$stdin" "$*" >>"$FAKE/webhook.log"
+  [[ -f "$FAKE/webhook_fail" ]] && exit 22
+  exit 0
+fi
+[[ "$stdin" == *user* ]] && auth=1
+port="${url#http://127.0.0.1:}"; port="${port%%/*}"
+mode=""
+for c in "$FAKE"/containers/*; do
+  [[ -f "$c/port" && "$(cat "$c/port")" == "$port" && "$(cat "$c/running")" == true ]] && mode="$(cat "$c/mode")"
+done
+[[ -n "$mode" ]] || exit 7
+if ((head)); then [[ "$mode" == down ]] && exit 22; exit 0; fi
+code=401
+if ((auth)); then
+  code=200
+  [[ "$mode" == auth401 ]] && code=401
+  if [[ -n "$hdr" && "$mode" != nosession && "$code" == 200 ]]; then printf 'HTTP/1.1 200 OK\r\nMcp-Session-Id: fake-session\r\n\r\n' >"$hdr"; fi
+  [[ -n "$hdr" && "$mode" == nosession ]] && printf 'HTTP/1.1 200 OK\r\n\r\n' >"$hdr"
+else
+  [[ "$mode" == anon200 ]] && code=200
+fi
+[[ "$wfmt" == *http_code* ]] && printf '%s' "$code"
+exit 0
