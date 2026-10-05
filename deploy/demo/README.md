@@ -55,8 +55,9 @@ VM credential (no deploy key, no tailnet node, no `scw` token).
 8. Prunes: keeps the 3 newest images of the repository (plus running, candidate and
    `saiku-demo-previous`); never uses `-f`.
 
-**Smoke contract** (anonymous `POST /rest/saiku/api/mcp` `initialize`): anonymous returns
-401; with `admin:admin` (demo mode) returns 200 and an `Mcp-Session-Id` header. The
+**Smoke contract** (`POST /rest/saiku/api/mcp` `initialize`): an anonymous request is refused
+(403, from the CSRF filter, which runs before authentication; 401 is accepted too); a wrong
+password returns 401; `admin:admin` (demo mode) returns 200 and an `Mcp-Session-Id` header. The
 credentials are the public demo ones and are given to curl on stdin, not argv.
 
 Exit codes: `0` deployed / up to date / another run in progress; `1` pull or deploy failed
@@ -129,7 +130,7 @@ scw instance server ssh $ID command='systemctl enable --now saiku-demo-deploy.ti
 ```bash
 curl -sS -o /dev/null -w '%{http_code}\n' -X POST -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
   --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"check","version":"1"}}}' \
-  https://demo.saiku.bi/rest/saiku/api/mcp      # expect 401
+  https://demo.saiku.bi/rest/saiku/api/mcp      # expect 403 (anonymous POST: CSRF filter); 401 with a wrong password via -u admin:wrong
 ```
 
 ## Nightly reset

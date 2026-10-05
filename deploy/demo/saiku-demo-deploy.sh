@@ -139,6 +139,7 @@ config() {
   EXTRA_ENV_FILE="${SAIKU_RUNTIME_ENV_FILE:-}"
   SMOKE_USER="${SAIKU_SMOKE_USER:-admin}"
   SMOKE_PASS="${SAIKU_SMOKE_PASS:-admin}"
+  SMOKE_WRONG_PASS="not-${SMOKE_PASS}" # deliberately wrong: must be refused with 401
   CANDIDATE_MEMORY="${SAIKU_CANDIDATE_MEMORY:-1536m}"
   CANDIDATE_TMPFS_SIZE="${SAIKU_CANDIDATE_TMPFS_SIZE:-1g}"
   HEALTH_ATTEMPTS="${SAIKU_HEALTH_ATTEMPTS:-60}"
@@ -231,9 +232,14 @@ wait_healthy() {
   return 1
 }
 
-# Smoke contract: anonymous MCP initialize -> 401; authenticated (demo-mode
-# admin) initialize -> 200 with an Mcp-Session-Id response header. Credentials go
-# to curl on stdin (-K -), not argv, so they never appear in `ps`.
+# Smoke contract (POST /rest/saiku/api/mcp initialize):
+#   1. anonymous is REFUSED: 401 or 403. An anonymous POST to /rest/** carries no
+#      Authorization header, so it is not CSRF-exempt and the CSRF filter answers 403
+#      before authentication runs (saiku#1150); 2xx would mean the endpoint is open.
+#   2. a WRONG credential is refused with 401. An Authorization header is CSRF-exempt,
+#      so this one actually exercises authentication.
+#   3. the demo-mode admin gets 200 with an Mcp-Session-Id response header.
+# Credentials go to curl on stdin (-K -), not argv, so they never appear in `ps`.
 smoke_contract() {
   local base="$1" url="$1/rest/saiku/api/mcp" code hdrs
   local -a common=(-sS --max-time 20 -X POST
@@ -241,8 +247,14 @@ smoke_contract() {
     -H 'Accept: application/json, text/event-stream'
     --data "$MCP_INIT_BODY")
   code="$(curl "${common[@]}" -o /dev/null -w '%{http_code}' "$url" 2>/dev/null || true)"
+  if [[ "$code" != "401" && "$code" != "403" ]]; then
+    err "smoke: anonymous MCP initialize returned '$code', want 401 or 403"
+    return 1
+  fi
+  code="$(printf 'user = "%s:%s"\n' "$SMOKE_USER" "$SMOKE_WRONG_PASS" |
+    curl -K - "${common[@]}" -o /dev/null -w '%{http_code}' "$url" 2>/dev/null || true)"
   if [[ "$code" != "401" ]]; then
-    err "smoke: anonymous MCP initialize returned '$code', want 401"
+    err "smoke: MCP initialize with a wrong password returned '$code', want 401"
     return 1
   fi
   hdrs="$(mktemp)"
