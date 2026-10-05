@@ -93,7 +93,11 @@ announced.
 ### Authentication
 
 Saiku's REST surface under `/rest/saiku/*` is session based. The credentials come only from the environment
-(`SAIKU_ACCEPTANCE_USER`, `SAIKU_ACCEPTANCE_PASSWORD`); a spec says only *how* to use them:
+(`SAIKU_ACCEPTANCE_USER`, `SAIKU_ACCEPTANCE_PASSWORD`); a spec says only *how* to use them. In CI they default to
+the public demo login (`admin` / `admin`, the same pair the demo deploy smoke test uses), because the target
+(`ACCEPTANCE_BASE_URL`, `https://demo.saiku.bi`) is a public instance and there is nothing to keep secret. To aim
+acceptance at a private instance, set the two as repository **secrets** (they override the default and are withheld
+from fork PRs); never as variables, which are not masked in logs.
 
 | `auth` | What the runner does |
 |---|---|
