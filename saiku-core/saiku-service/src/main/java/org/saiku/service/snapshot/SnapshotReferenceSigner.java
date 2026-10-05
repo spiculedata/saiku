@@ -209,7 +209,9 @@ public final class SnapshotReferenceSigner {
         String owner = null;
         String path = null;
         String title = null;
-        long expires = Long.MAX_VALUE;
+        long expires = 0;
+        // 0 = the payload carried no 'e=' line; validate() rejects it rather than defaulting to
+        // "never" the way the old Long.MAX_VALUE sentinel did (saiku#2162).
         List<SnapshotPanel> panels = new ArrayList<>();
         int declaredCount = -1;
         String[] lines = payload.split("\n", -1);
