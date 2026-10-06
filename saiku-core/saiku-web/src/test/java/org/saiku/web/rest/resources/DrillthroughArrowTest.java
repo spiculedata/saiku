@@ -59,7 +59,7 @@ public class DrillthroughArrowTest {
         resource.setThinQueryService(new StubService(buildFakeResultSet()));
 
         HttpHeaders headers = fakeHeaders(MediaType.valueOf(ARROW), MediaType.APPLICATION_JSON_TYPE);
-        Response resp = resource.drillthrough("q", 100, null, null, headers);
+        Response resp = resource.drillthrough("q", 100, null, null, null, headers);
 
         assertEquals(200, resp.getStatus());
         assertTrue(resp.getMediaType().toString().startsWith(ARROW));
@@ -135,6 +135,11 @@ public class DrillthroughArrowTest {
 
         @Override
         public ResultSet drillthrough(String queryName, int maxrows, String returns) {
+            return rs;
+        }
+
+        @Override
+        public ResultSet drillthrough(String queryName, int maxrows, Integer firstRowset, String returns) {
             return rs;
         }
     }
