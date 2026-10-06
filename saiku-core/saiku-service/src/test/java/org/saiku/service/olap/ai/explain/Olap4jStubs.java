@@ -47,6 +47,23 @@ final class Olap4jStubs {
         return member(uniqueName, caption, Dimension.Type.MEASURE, null);
     }
 
+    /**
+     * A dimension member whose connection has gone, as Mondrian's is once a cellset outlives the
+     * connection that produced it: {@code getCaption()} throws the NullPointerException the real
+     * one does ("mondrianConnection is null"), while the name and unique name still answer.
+     */
+    static Member detachedMember(String uniqueName, String name) {
+        Dimension dimension = proxy(
+                Dimension.class, (m, args) -> "getDimensionType".equals(m.getName()) ? Dimension.Type.OTHER : null);
+        return proxy(Member.class, (m, args) -> switch (m.getName()) {
+            case "getUniqueName" -> uniqueName;
+            case "getName" -> name;
+            case "getDimension" -> dimension;
+            case "getCaption" -> throw new NullPointerException("this.mondrianConnection is null");
+            default -> null;
+        });
+    }
+
     private static Member member(String uniqueName, String caption, Dimension.Type type, String parentUniqueName) {
         Dimension dimension = proxy(Dimension.class, (m, args) -> "getDimensionType".equals(m.getName()) ? type : null);
         Member parent = parentUniqueName == null
