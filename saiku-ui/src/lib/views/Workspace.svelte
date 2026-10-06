@@ -445,7 +445,9 @@
 				{/if}
 			</div>
 			<div class="workspace__sidebar-footer">
-				<PrefsMenu />
+				<!-- saiku#1988: the workspace is where the cellset grid renders, so the
+				 decimal-places picker is offered here. -->
+				<PrefsMenu showDecimals />
 				<Button variant="outline" onclick={() => (aboutOpen = true)}
 					>{i18n.t('modal.about.title')}</Button
 				>

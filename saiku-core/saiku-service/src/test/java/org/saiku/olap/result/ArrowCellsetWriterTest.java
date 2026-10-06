@@ -79,6 +79,12 @@ public class ArrowCellsetWriterTest {
             assertEquals(1, ((Number) decoded.get("rowHeaderColCount")).intValue());
             List<?> colHeaderRows = (List<?>) decoded.get("columnHeaderRows");
             assertTrue("columnHeaderRows non-empty", colHeaderRows.size() >= 1);
+            @SuppressWarnings("unchecked")
+            List<List<Map<String, Object>>> colMembers =
+                    (List<List<Map<String, Object>>>) decoded.get("columnHeaderMembers");
+            assertNotNull("columnHeaderMembers present", colMembers);
+            assertEquals("Measures", colMembers.get(0).get(0).get("dimension"));
+            assertEquals("[Measures].[Unit Sales]", colMembers.get(0).get(0).get("uniqueName"));
             assertEquals("States_x_Measures", decoded.get("queryName"));
 
             assertTrue("has batch", reader.loadNextBatch());

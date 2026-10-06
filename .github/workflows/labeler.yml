@@ -1,0 +1,29 @@
+name: Labeler
+
+# Applies area labels to PRs from the changed paths (acmm:auto-label, saiku#2126).
+# Rules live in .github/labeler.yml.
+#
+# pull_request_target is used so fork PRs get a token that can write labels. It is
+# safe here because this job NEVER checks out or runs PR code: actions/labeler
+# reads the rules from the base branch and the changed-file list from the API.
+# Do not add a checkout step or any script that executes PR content to this job.
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: labeler-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # v7.0.0
+        with:
+          sync-labels: true

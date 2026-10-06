@@ -1,0 +1,23 @@
+[Unit]
+Description=Deploy the CI-green Saiku demo image (pull-based)
+Documentation=https://github.com/spiculedata/saiku/blob/development/deploy/demo/README.md
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# Optional: webhook URL and overrides. Keep it root:root 0600 (the webhook URL is a secret).
+EnvironmentFile=-/etc/saiku-demo-deploy.env
+ExecStart=/usr/local/sbin/saiku-demo-deploy.sh
+# /var/lib/saiku-demo-deploy: lock file + last-deploy / last-failure state.
+StateDirectory=saiku-demo-deploy
+# First boot of a candidate seeds a FoodMart home (~1 minute); allow generous slack.
+TimeoutStartSec=25min
+Nice=10
+# Hardening. The unit still drives the root docker socket, so this limits accidents,
+# it is not a sandbox: whoever can edit this script already owns the VM.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=yes

@@ -18,7 +18,11 @@ package org.saiku.datasources.connection;
 import static org.saiku.datasources.connection.encrypt.CryptoUtil.decrypt;
 
 import java.sql.Connection;
+import java.sql.SQLException;
+import java.util.Locale;
 import java.util.Properties;
+import java.util.Set;
+import java.util.regex.Pattern;
 import mondrian.rolap.RolapConnection;
 import org.olap4j.OlapConnection;
 import org.olap4j.OlapWrapper;
@@ -37,6 +41,60 @@ public class SaikuOlapConnection implements ISaikuConnection {
     private String passwordenc;
 
     private static final Logger log = LoggerFactory.getLogger(SaikuOlapConnection.class);
+
+    private static final String MONDRIAN_DRIVER = "mondrian.olap4j.MondrianOlap4jDriver";
+
+    /**
+     * saiku#2003: sub-protocols whose connect string is a {@code key=value;key=value} property
+     * list parsed by olap4j / Mondrian, so a trailing {@code ';'} terminates the last pair.
+     * A plain vendor driver URL ({@code jdbc:postgresql://host:5432/dmt}) is not a property
+     * list — {@code ';'} there is not a separator but part of the database name.
+     */
+    private static final Set<String> PROPERTY_LIST_SUB_PROTOCOLS =
+            Set.of("mondrian", "mondrian4", "xmla", "byolap", "avalon", "olap4j");
+
+    /**
+     * A URL is treated as a property list when one of its {@code ';'}-separated tokens (or the
+     * leading token) is a {@code key=} pair. Covers the non-{@code jdbc:} Mondrian property lists
+     * Saiku still stores for CSV datasources, e.g. {@code mondrian://datasources/foodmart.json;Catalog=...}.
+     */
+    private static final Pattern PROPERTY_LIST_URL = Pattern.compile("(?i)(?:^|;)\\s*[A-Za-z][A-Za-z0-9_.\\-]*\\s*=");
+
+    /**
+     * saiku#2003: whether {@code url} is a {@code key=value;} property list that needs a trailing
+     * {@code ';'} terminator. Appending one to a plain JDBC URL corrupts its last component — a
+     * Postgres database called {@code dmt} arrives as {@code dmt;} and the driver answers
+     * {@code FATAL: database "dmt;" does not exist} (the reporter's stack trace, from this class'
+     * own {@code openConnection} call).
+     */
+    static boolean needsPropertyTerminator(String url, String driver) {
+        // The Mondrian driver gets JdbcUser=/JdbcPassword= appended below, which needs the
+        // terminator regardless of how its location looks.
+        if (MONDRIAN_DRIVER.equals(driver)) {
+            return true;
+        }
+        if (url == null || url.isEmpty()) {
+            return false;
+        }
+        String trimmed = url.trim();
+        if (trimmed.toLowerCase(Locale.ROOT).startsWith("jdbc:")) {
+            int colon = trimmed.indexOf(':', "jdbc:".length());
+            String subProtocol = colon < 0 ? trimmed.substring(5) : trimmed.substring(5, colon);
+            if (PROPERTY_LIST_SUB_PROTOCOLS.contains(subProtocol.toLowerCase(Locale.ROOT))) {
+                return true;
+            }
+        }
+        return PROPERTY_LIST_URL.matcher(trimmed).find();
+    }
+
+    /** Close a connection we are about to reject, without masking the reason we are rejecting it. */
+    private static void closeQuietly(Connection connection) {
+        try {
+            connection.close();
+        } catch (SQLException ignore) {
+            // nothing useful to do — we are throwing the real diagnostic
+        }
+    }
 
     public SaikuOlapConnection(String name, Properties props) {
         this.name = name;
@@ -90,10 +148,11 @@ public class SaikuOlapConnection implements ISaikuConnection {
                     url = url.replace("jdbc:mondrian", "jdbc:mondrian4");
                     url = url.replace("DataSource=", "DataSource=osgi:service/jdbc/");
                 }
-                if (url.length() > 0 && url.charAt(url.length() - 1) != ';') {
+                // saiku#2003: only property-list URLs get the ';' terminator — see needsPropertyTerminator.
+                if (url.length() > 0 && url.charAt(url.length() - 1) != ';' && needsPropertyTerminator(url, driver)) {
                     url += ";";
                 }
-                if (driver.equals("mondrian.olap4j.MondrianOlap4jDriver")) {
+                if (MONDRIAN_DRIVER.equals(driver)) {
                     if (username != null && username.length() > 0) {
                         url += "JdbcUser=" + username + ";";
                     }
@@ -136,6 +195,19 @@ public class SaikuOlapConnection implements ISaikuConnection {
                 Connection connection = JdbcUrlPolicy.openConnection(url, username, password);
 
                 if (connection != null) {
+                    // saiku#2003: a driver that hands back a bare java.sql.Connection has no
+                    // Mondrian schema behind it, so there is no cube to load — the old blind cast
+                    // turned that into a ClassCastException with no explanation. Say what is wrong
+                    // and what to do about it.
+                    if (!(connection instanceof OlapWrapper)) {
+                        closeQuietly(connection);
+                        throw new IllegalStateException("Datasource '" + name + "' connects with "
+                                + (driver == null ? "no driver class" : driver)
+                                + " as a plain JDBC connection, with no OLAP schema attached, so no cube can be loaded"
+                                + " from it. Generate a Mondrian schema for this connection with the Schema Generator, or"
+                                + " point it at an existing Mondrian catalog (a MONDRIAN connection, whose location"
+                                + " carries Catalog=...;JdbcDrivers=...), then reload the cube.");
+                    }
                     final OlapWrapper wrapper = (OlapWrapper) connection;
                     OlapConnection tmpolapConnection = wrapper.unwrap(OlapConnection.class);
 
