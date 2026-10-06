@@ -94,6 +94,26 @@ public class MondrianRolePolicyTest {
     }
 
     @Test
+    public void parseMapping_treatsABlankValueAsNoRole() {
+        // saiku#1972: "ROLE_X= " maps to no role, not to a role literally named " ".
+        Map<String, List<String>> m = MondrianRolePolicy.parseMapping("ROLE_X= ;ROLE_Y=;ROLE_Z=Real");
+        assertEquals(List.of("Real"), m.get("ROLE_Z"));
+        assertEquals(1, m.size());
+        assertFalse(m.containsKey("ROLE_X"));
+        assertFalse(m.containsKey("ROLE_Y"));
+    }
+
+    @Test
+    public void resolve_lookup_ignoresBlankRolesEvenIfAMappingCarriesThem() {
+        // Defence in depth: a caller-built mapping (not via parseMapping) must not resolve to a blank role.
+        Map<String, List<String>> m = Map.of("R1", java.util.Arrays.asList(" ", "X", null, ""));
+        assertEquals(List.of("X"), MondrianRolePolicy.resolveMondrianRoles(Mode.LOOKUP, List.of("R1"), null, m));
+        assertTrue(MondrianRolePolicy.resolveMondrianRoles(
+                        Mode.LOOKUP, List.of("R1"), null, Map.of("R1", java.util.Arrays.asList(" ", "")))
+                .isEmpty());
+    }
+
+    @Test
     public void resolve_lookup_unionsMappedRolesWithoutDuplicates() {
         Map<String, List<String>> m = MondrianRolePolicy.parseMapping("R1=X;R1=Y;R2=Y;R2=Z");
         assertEquals(

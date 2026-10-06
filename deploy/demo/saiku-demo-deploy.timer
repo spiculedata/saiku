@@ -1,0 +1,12 @@
+[Unit]
+Description=Check for a new CI-green Saiku demo image every 5 minutes
+
+[Timer]
+OnBootSec=3min
+# Relative to when the previous run FINISHED, so runs can never stack up.
+OnUnitInactiveSec=5min
+RandomizedDelaySec=60
+AccuracySec=15s
+
+[Install]
+WantedBy=timers.target

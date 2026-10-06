@@ -51,6 +51,7 @@
 	"toolbar.autorun": "Ejecución automática",
 	"toolbar.nonEmpty": "No vacío",
 	"toolbar.visualTotals": "Recalcular totales para visibles",
+	"toolbar.cellLink": "Abrir enlace",
 	"toolbar.async": "Asíncrono",
 	"toolbar.swap": "⇄ Intercambiar",
 	"toolbar.mdx": "MDX",

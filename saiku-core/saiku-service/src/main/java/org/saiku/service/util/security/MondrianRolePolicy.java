@@ -121,7 +121,8 @@ public final class MondrianRolePolicy {
         }
         for (String entry : mapping.split(";")) {
             String[] m = entry.split("=");
-            if (m.length == 2) {
+            // saiku#1972: a blank value (ROLE_X= ) maps to no role, not to a role named " ".
+            if (m.length == 2 && !m[1].trim().isEmpty()) {
                 result.computeIfAbsent(m[0], k -> new ArrayList<>()).add(m[1]);
             }
         }
@@ -212,7 +213,11 @@ public final class MondrianRolePolicy {
             for (String sprRole : springRoles) {
                 List<String> roles = mapping.get(sprRole);
                 if (roles != null) {
-                    resolved.addAll(roles);
+                    for (String role : roles) {
+                        if (role != null && !role.trim().isEmpty()) { // saiku#1972: blank is no role
+                            resolved.add(role);
+                        }
+                    }
                 }
             }
         }

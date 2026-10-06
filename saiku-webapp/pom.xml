@@ -28,7 +28,7 @@
             <plugin>
                 <groupId>org.apache.felix</groupId>
                 <artifactId>maven-bundle-plugin</artifactId>
-                <version>6.1.0</version>
+                <version>6.2.0</version>
                 <extensions>true</extensions>
 
                 <configuration>
@@ -108,8 +108,8 @@
                             <goal>war</goal>
                         </goals>
                         <configuration>
-                            <!-- xerces is dragged in transitively (mondrian +
-                                 hadoop via hive-jdbc) but its
+                            <!-- xerces is dragged in transitively (mondrian;
+                                 formerly also hadoop via hive-jdbc) but its
                                  META-INF/services javax.xml.parsers.* override
                                  hijacks JAXP and Spring 6.2's stricter
                                  namespace validation breaks against it for
@@ -139,7 +139,9 @@
                                  picks netty-all's EmptyByteBuf which throws
                                  UnsupportedOperationException on memoryAddress(),
                                  crashing arrow's NettyAllocationManager.<clinit>
-                                 the first time a query executes. -->
+                                 the first time a query executes. Both only
+                                 ever arrived via Hive/Hadoop, which saiku#1916
+                                 removed; the excludes stay as a cheap guard. -->
                             <packagingExcludes>WEB-INF/lib/saiku-query-${saiku-query.version}.jar,WEB-INF/lib/xercesImpl-*.jar,WEB-INF/lib/netty-3.*.jar,WEB-INF/lib/netty-all-*.jar</packagingExcludes>
                         </configuration>
                     </execution>
@@ -166,7 +168,7 @@
             </plugin>
             <plugin>
                 <artifactId>maven-resources-plugin</artifactId>
-                <version>3.3.1</version>
+                <version>3.5.0</version>
                 <executions>
                     <execution>
                         <id>copy-resources</id>
@@ -336,20 +338,13 @@
                 </exclusion>
             </exclusions>
         </dependency>
-        <!-- saiku#1036: a first hive-jdbc declaration sat here; the one further
-             down is a strict superset (adds the JDK-21-critical jdk.tools +
-             hbase:* exclusions) and won under Maven's duplicate handling anyway
-             — deleted this copy, comments preserved on the survivor. -->
-        <dependency>
-            <groupId>org.apache.hive</groupId>
-            <artifactId>hive-cli</artifactId>
-            <exclusions>
-                <exclusion><groupId>net.hydromatic</groupId><artifactId>quidem</artifactId></exclusion>
-                <exclusion><groupId>net.hydromatic</groupId><artifactId>linq4j</artifactId></exclusion>
-                <exclusion><groupId>org.pentaho</groupId><artifactId>pentaho-aggdesigner-algorithm</artifactId></exclusion>
-                <exclusion><groupId>org.apache.hive</groupId><artifactId>hive-exec</artifactId></exclusion>
-            </exclusions>
-        </dependency>
+        <!-- saiku#1916: hive-cli, hive-jdbc and hadoop-common used to be
+             declared here so jdbc:hive2:// URLs loaded out of the box. No
+             main source imports org.apache.hive / org.apache.hadoop; the three
+             pulled ~150 Hadoop/Hive/YARN/ZooKeeper server jars into the WAR.
+             Hive is now opt-in: drop the standalone Hive JDBC driver into
+             saiku-home/plugins/ (see dist/README.md). The root pom's enforcer
+             rule keeps them out. -->
         <dependency>
             <groupId>org.saikuanalytics</groupId>
             <artifactId>saiku-web</artifactId>
@@ -402,45 +397,6 @@
         <dependency>
             <groupId>com.gizmodata</groupId>
             <artifactId>quack-jdbc</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.hive</groupId>
-            <artifactId>hive-jdbc</artifactId>
-            <exclusions>
-                <exclusion><groupId>net.hydromatic</groupId><artifactId>quidem</artifactId></exclusion>
-                <exclusion><groupId>net.hydromatic</groupId><artifactId>linq4j</artifactId></exclusion>
-                <exclusion><groupId>org.pentaho</groupId><artifactId>pentaho-aggdesigner-algorithm</artifactId></exclusion>
-                <!-- hive-exec ships a shaded protobuf 2.x that breaks Calcite
-                     Avatica's protobuf 4.x at class-load time
-                     (IncompatibleClassChangeError on GeneratedMessageV3
-                     vs GeneratedMessage). -->
-                <exclusion><groupId>org.apache.hive</groupId><artifactId>hive-exec</artifactId></exclusion>
-                <!-- hive-jdbc 2.3 → hive-metastore → hbase-client → hbase-annotations
-                     → jdk.tools:1.7 (system-scope ref to JDK 8 tools.jar). Same
-                     gone-on-JDK-21 issue as hadoop-common's transitive. -->
-                <exclusion><groupId>jdk.tools</groupId><artifactId>jdk.tools</artifactId></exclusion>
-                <exclusion><groupId>org.apache.hbase</groupId><artifactId>*</artifactId></exclusion>
-            </exclusions>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.hadoop</groupId>
-            <artifactId>hadoop-common</artifactId>
-            <exclusions>
-                <exclusion><groupId>com.sun.jersey</groupId><artifactId>*</artifactId></exclusion>
-                <exclusion><groupId>com.sun.jersey.contribs</groupId><artifactId>*</artifactId></exclusion>
-                <exclusion><groupId>javax.servlet</groupId><artifactId>*</artifactId></exclusion>
-                <exclusion><groupId>javax.servlet.jsp</groupId><artifactId>*</artifactId></exclusion>
-                <exclusion><groupId>javax.ws.rs</groupId><artifactId>*</artifactId></exclusion>
-                <exclusion><groupId>org.mortbay.jetty</groupId><artifactId>*</artifactId></exclusion>
-                <exclusion><groupId>tomcat</groupId><artifactId>jasper-compiler</artifactId></exclusion>
-                <exclusion><groupId>tomcat</groupId><artifactId>jasper-runtime</artifactId></exclusion>
-                <!-- jdk.tools:jdk.tools is a system-scope ref to JDK 8's
-                     tools.jar, removed by the JDK 9 module system. On JDK 21
-                     it can't be resolved and breaks the build on a fresh
-                     Maven cache. Saiku doesn't use any javac-API surface from
-                     tools.jar, so excluding is safe. -->
-                <exclusion><groupId>jdk.tools</groupId><artifactId>jdk.tools</artifactId></exclusion>
-            </exclusions>
         </dependency>
         <dependency>
             <groupId>com.h2database</groupId>
