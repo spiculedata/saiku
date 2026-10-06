@@ -1265,9 +1265,16 @@ file consumed by Spring.
 saiku.ai.ask.provider = anthropic
 # env ANTHROPIC_API_KEY = sk-ant-...
 
-# openai (or any OpenAI-compatible host — vLLM, Ollama, Together, LiteLLM)
+# openai (or any OpenAI-compatible host — vLLM, Together, LiteLLM)
 saiku.ai.ask.provider = openai
 # env OPENAI_API_KEY    = sk-...
+
+# ollama (saiku#904) — local/self-hosted Ollama. NO api key needed — Ollama
+# doesn't check one. This is the whole property list for the common case:
+# data never leaves the deployment's own trust boundary.
+saiku.ai.ask.provider = ollama
+# saiku.ai.ask.model    = llama3.1:8b-instruct-q4_K_M   # optional; default llama3.1
+# saiku.ai.ask.endpoint = http://my-ollama-host:11434/v1/chat/completions  # optional; default localhost:11434
 
 # azure-openai (saiku#1431) — Azure OpenAI Service. Requires an endpoint.
 saiku.ai.ask.provider = azure-openai
@@ -1283,9 +1290,26 @@ saiku.ai.ask.apiKey   = sk-...   # explicit override of the env var
 
 Provider defaults: `anthropic` → `claude-sonnet-4-6`,
 `openai` → `gpt-4o-mini` against `https://api.openai.com/v1/chat/completions`,
+`ollama` → `llama3.1` against `http://localhost:11434/v1/chat/completions`,
 `azure-openai` → no default endpoint (must be configured explicitly;
 provider refuses to construct otherwise so the key can't accidentally
 leak to the wrong host).
+
+`GET /saiku/info/diagnostics` (saiku#904) reports the resolved provider,
+model, endpoint and a live reachability probe for both this ask layer and
+the schema-generation enrichment pipeline (`saiku.schemagen.llm.provider`,
+which accepts the same `openai`/`ollama` values) — never the API key — so
+an operator can confirm the wiring without running a query:
+
+```json
+{
+  "ask": {"enabled": true, "provider": "ollama", "model": "llama3.1",
+          "endpoint": "http://localhost:11434/v1/chat/completions",
+          "configured": true, "reachable": true},
+  "schemaGen": {"enabled": true, "provider": "noop", "model": null,
+                "endpoint": null, "configured": false, "reachable": null}
+}
+```
 
 ### Bring-your-own LLM (saiku#1431)
 
@@ -1297,8 +1321,13 @@ BYOLLM shapes:
 | Shape                    | Provider          | Endpoint                                                                              | Auth header               |
 |--------------------------|-------------------|---------------------------------------------------------------------------------------|---------------------------|
 | Azure OpenAI Service     | `azure-openai`    | `https://<resource>.openai.azure.com/openai/deployments/<deployment>/chat/completions?api-version=<v>` | `api-key: <key>`         |
-| Self-hosted / OpenAI-compat proxy (vLLM, Ollama, LiteLLM, Together) | `openai`          | any URL that speaks OpenAI's Chat Completions API                                     | `Authorization: Bearer …` |
+| Local/self-hosted Ollama (saiku#904) | `ollama`          | `http://<host>:11434/v1/chat/completions` (default: localhost)                       | none required             |
+| Self-hosted / OpenAI-compat proxy (vLLM, LiteLLM, Together) | `openai`          | any URL that speaks OpenAI's Chat Completions API                                     | `Authorization: Bearer …` |
 | AWS Bedrock              | `openai` via [LiteLLM](https://docs.litellm.ai/) proxy | LiteLLM in front of Bedrock (`https://litellm.internal/v1/chat/completions`) | `Authorization: Bearer …` (LiteLLM handles SigV4 upstream) |
+
+`ollama` uses the same request-building code path as `openai` (Ollama's
+`/v1/chat/completions` is OpenAI-compatible) but skips the API-key
+requirement, since a local instance has nothing to check it against.
 
 The native `azure-openai` adapter takes care of the two Azure-specific
 things (deployment-name-in-URL and `api-key` header) so operators don't
