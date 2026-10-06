@@ -692,6 +692,7 @@
 	"warning.selectCubeToRun": "Select a cube before running a query.",
 	"warning.runBeforeExport": "Run a query first before exporting.",
 	"admin.tabs.users": "Users",
+	"admin.tabs.roles": "Roles",
 	"admin.tabs.datasources": "Datasources",
 	"admin.tabs.schemas": "Schemas",
 	"admin.tabs.logs": "Logs",
