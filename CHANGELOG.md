@@ -21,6 +21,29 @@ All notable changes to Saiku are documented here. This project follows
   reachability probe — never the API key — so an operator can confirm the
   wiring without running a query. (saiku#904)
 
+### Fixed
+
+- **XMLA: Excel / MSOLAP could not connect at all after the #1905 auth gate.**
+  `/xmla` was moved behind a dedicated stateless secured chain, which is the
+  right call, but it inherited the SPA's `HttpStatusEntryPoint(401)` entry
+  point — the one added in #878 so the browser would not pop a native auth
+  dialog over the SPA's routine XHR 401s. That entry point emits **no**
+  `WWW-Authenticate` header, and challenge-driven clients only ever send
+  credentials *in response to* a challenge: Excel/MSOLAP over WinHTTP (the
+  endpoint's `web.xml` mapping literally ships `Source=Excel`) sends an
+  anonymous request, waits for `401 WWW-Authenticate: Basic`, then retries with
+  credentials. With the header suppressed they never got past step one.
+  Pre-emptive-Basic clients (olap4j with credentials in the connect string,
+  `curl -u`, most Python/Java XMLA libraries) were unaffected, which is why the
+  breakage was invisible to them. `/xmla/**` now uses its own
+  `BasicAuthenticationEntryPoint` (`realm="Saiku XMLA"`) so challenge-driven
+  clients can negotiate, while the SPA chain keeps its bare-401 entry point —
+  the two chains pick per surface, because sharing one entry point would
+  either resurrect the browser dialog or strip the challenge back off XMLA.
+  Auth policy is unchanged: still `isFullyAuthenticated()`, still CSRF-off,
+  still the shared per-IP login rate limiter, still stateless. Only the 401's
+  headers differ. (saiku#1950)
+
 ### Security
 
 - **The default-credential boot gate now checks the password, not the hash**
@@ -43,6 +66,24 @@ All notable changes to Saiku are documented here. This project follows
   and demo installs are unaffected). Refused boots print the same `FATAL:` fix-it
   block and exit non-zero.
 
+- **Bare saved-query embeds scope guest slicer overrides to the saved
+  query's own FILTER axis (CWE-863, presentation scope, saiku#1946).** A
+  `kind=query` embed (`POST /saiku/api/embed/query/{path}`) has no filter
+  panel and no filter tiles, so — unlike the dashboard / app tile paths fixed
+  by saiku#1911 — nothing stopped a guest from re-pointing an arbitrary
+  non-forced hierarchy at arbitrary members, or adding a deeper level beside an
+  authored rows level, surfacing finer-grain rows than the author published
+  (e.g. individual customer names under an authored country roll-up). Forced
+  RLS filters were still enforced, so this was a presentation-scope
+  over-exposure bounded by the owner's `runAs` scope, not an RLS bypass — but
+  it bit hardest for public grants and pre-#1104 opaque tokens, which carry no
+  forced filters at all. Guest overrides are now reduced by
+  `SavedQueryFilterScope` to hierarchies the saved query already carries on its
+  FILTER axis, at an authored level, with the client members intersected with
+  the authored members. Anything else (unknown axis, different level, a
+  non-`in` operator, an entirely out-of-scope selection) is dropped, so the
+  query runs as authored rather than failing open; an MDX-mode, unreadable, or
+  unparseable saved query authorises no overrides at all.
 - **The SPA ships a default CSP and `frame-ancestors` (CWE-693 / CWE-1021,
   saiku#1917).** `SecurityHeadersFilter` emitted *no* framing headers unless
   `-Dsaiku.security.frameAncestors` was set, and a full CSP only under
@@ -133,6 +174,16 @@ All notable changes to Saiku are documented here. This project follows
   `securityContext: { runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001 }` on
   the pod so the mounted volume is group-owned by the runtime user.
 
+### Added
+
+- **Role management for Mondrian role-based security** (saiku#779). A new
+  **Roles** admin tab and `/rest/saiku/admin/roles` API show which Spring role
+  grants which Mondrian role on which datasource, and who holds it. You can
+  preview what a user, or an arbitrary set of roles, gets on every datasource
+  ("test as"). The preview runs the same resolution code as enforcement,
+  including the saiku#1968 fail-closed rule. Grants on `lookup`-mode
+  datasources can be edited in place. See `docs/ROLE-SECURITY.md`.
+
 ## 4.8.0 — 2026-09-15
 
 Minor release, and a **security release** — nine hardening fixes close an
@@ -184,6 +235,18 @@ Two changes are visible behaviour changes for API clients — see **Breaking**.
   takeover plus owner lockout. Colons, a `home:` prefix, and blank input also
   slipped through. (saiku#1906, saiku#1907, saiku#1934)
 - **Datasource names can no longer traverse paths.** (saiku#1906)
+- **The CSV-datasource Calcite model JSON is now escaped and
+  path-contained.** (saiku#1932) `getCSVJson` interpolated the datasource name
+  and a `location`-derived path into a hand-built model string with no
+  escaping — a `'` closed the quoted operand and the remainder was read as
+  further model keys — and the path was concatenated onto the datadir with no
+  containment check, so a `..` segment pointed the CSV read outside the repo
+  root. Both values are JSON-escaped now, and the path is resolved through the
+  same `resolveWithinDatadir` containment rule the rest of the repository write
+  layer uses (a path that normalises outside the datadir is rejected). The
+  branch is dormant in the shipped build — `JdbcUrlPolicy` (saiku#1902) denies
+  the `calcite` scheme — but it is now safe at the source rather than by
+  reliance on an upstream validator.
 
 ### Breaking
 

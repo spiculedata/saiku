@@ -114,6 +114,18 @@ Bugfixes come with a regression test. New features come with
 enough coverage that a future refactor can trust the tests. Ask
 in the PR if you're unsure how much is enough — happy to discuss.
 
+**Flaky tests.** CI retries a failing test once and records it; a pass on
+retry is a flake with a deadline, not a green light to ignore it. See
+[`docs/ci-flakes.md`](./docs/ci-flakes.md). When CI fails, the `ci feedback`
+bot comment on your PR names the first real error and a one-line repro
+([`docs/ci-feedback.md`](./docs/ci-feedback.md)).
+
+**Acceptance specs.** A PR that closes an issue ships
+`acceptance/<issue>/spec.json` — the issue's acceptance criteria as a
+runnable check — unless it only changes docs or tests (label
+`acceptance-waived`). The gate is switched on per issue number by
+maintainers; see [`acceptance/README.md`](./acceptance/README.md).
+
 ## Code style
 
 - **Palantir Java Format** enforced via
@@ -156,6 +168,11 @@ of [`ROADMAP.md`](./ROADMAP.md).
 
 ## PR review
 
+Reviewers (human and agent) work from
+[`docs/review-rubric.md`](./docs/review-rubric.md) — the shared axes, severity
+labels and report shape. `.github/prompts/review.md` runs the same rubric in any
+agent. The process below still governs who reviews what.
+
 - One maintainer approval + green CI is enough to merge routine
   changes.
 - Substantive changes (breaking APIs, licensing implications,
@@ -163,6 +180,18 @@ of [`ROADMAP.md`](./ROADMAP.md).
   give reviewers time.
 - If a review sits idle for more than a week, ping the PR politely.
   We're a small team; things fall through.
+
+### Preview environments
+
+A PR from a branch in this repository (not a fork) gets a throwaway preview at
+`https://oss-pr-<n>.preview.saiku.bi` (reachable from the tailnet) when it is authored
+by the Hive bot, carries the `preview` label, or a maintainer comments `/preview` on it.
+It is rebuilt on every push (once the PR's `docker` build has published its image),
+removed when the PR closes and after 24 hours without activity, and its status and URL
+are kept in one sticky PR comment. Credentials are never posted; validators fetch them
+as described in [`infra/preview/README.md`](./infra/preview/README.md#credentials-for-validators).
+Forks never get a preview. How it works and why:
+[`docs/decisions/ci-preview-environments.md`](./docs/decisions/ci-preview-environments.md).
 
 Reviews are meant to be a conversation, not a gate. If a reviewer
 asks for a change you disagree with, push back with reasoning —

@@ -173,9 +173,7 @@ public class WeakAdminPasswordPolicyTest {
                 "it is a well-known weak password",
                 reason("admin", "password"));
         assertEquals(
-                "the denylist is case-insensitive",
-                "it is a well-known weak password",
-                reason("admin", "PassWord123"));
+                "the denylist is case-insensitive", "it is a well-known weak password", reason("admin", "PassWord123"));
         assertEquals("a 1-character password is refused", "it is shorter than 12 characters", reason("admin", "a"));
         assertEquals(
                 "an 11-character password is refused on length",
