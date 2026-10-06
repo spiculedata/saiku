@@ -384,6 +384,124 @@ public class RepositoryDatasourceManagerTest {
         assertEquals("org.example.ConnectionProcessor", actual.getProperty(ISaikuConnection.CONNECTION_PROCESSORS));
     }
 
+    // ---------------------------------------------------------------------------------------
+    // saiku#1932: the CSV-datasource branch interpolated a location-derived path (and the
+    // datasource name) unescaped into a hand-built Calcite model JSON, and concatenated the
+    // datadir onto it with no containment check.
+    // ---------------------------------------------------------------------------------------
+
+    @Test
+    public void testJsonEscapeNeutralisesQuoteBreakout() {
+        // A raw `'` would terminate the quoted model JSON string and let the rest be read as a
+        // further model key (e.g. an injected `factory:`). Every quote and backslash must be
+        // escaped, and control characters must become a backslash-u escape (avatica's JsonReader
+        // rejects any other raw control character inside a string).
+        assertEquals("a\\'b", RepositoryDatasourceManager.jsonEscape("a'b"));
+        assertEquals("a\\\"b", RepositoryDatasourceManager.jsonEscape("a\"b"));
+        assertEquals("a\\\\b", RepositoryDatasourceManager.jsonEscape("a\\b"));
+        assertEquals("a\\nb", RepositoryDatasourceManager.jsonEscape("a\nb"));
+        assertEquals("a\\u0000b", RepositoryDatasourceManager.jsonEscape("a" + (char) 0x00 + "b"));
+        assertEquals("a\\u001fb", RepositoryDatasourceManager.jsonEscape("a" + (char) 0x1f + "b"));
+        assertEquals("plain/path.csv", RepositoryDatasourceManager.jsonEscape("plain/path.csv"));
+    }
+
+    @Test
+    public void testAddDatasourceEscapesQuoteInCsvPath() throws Exception {
+        // End-to-end: a `'` in the CSV path must reach the persisted Calcite model JSON escaped,
+        // so the model still parses as ONE operand string rather than being broken open by the
+        // attacker-controlled remainder.
+        String json = addCsvDatasource("c://temp/repo/x';factory: 'evil.json", "MOCK_CSV_QUOTE");
+
+        assertNotNull("the csv model json must be written", json);
+        assertTrue("the injected quote must be escaped, not raw: " + json, json.contains("x\\'"));
+        assertFalse(
+                "the injected `factory:` must not appear as a model key of its own: " + json,
+                json.contains("factory: 'evil.json"));
+        // ...and the schema factory the code itself writes is still there exactly once.
+        assertTrue(json.contains("factory: 'org.apache.calcite.adapter.csv.CsvTableFactory'"));
+    }
+
+    @Test
+    public void testAddDatasourceRejectsCsvPathEscapingDatadir() throws Exception {
+        // A `..` segment that normalises outside the datadir must be refused outright rather
+        // than interpolated into the model JSON as an out-of-root read target.
+        try {
+            addCsvDatasource("c://temp/repo/../../../../etc/passwd", "MOCK_CSV_TRAVERSAL");
+            fail("a CSV location escaping the datadir must be rejected");
+        } catch (IllegalArgumentException expected) {
+            // Fail closed.
+            assertTrue(expected.getMessage().contains("traversal"));
+        }
+    }
+
+    @Test
+    public void testAddDatasourceNormalisesInnerDotDotInCsvPath() throws Exception {
+        // A `..` that stays INSIDE the datadir is not an escape: it must be normalised away
+        // (so the persisted model JSON carries no `..` segment) and the datasource must still
+        // be written.
+        String json = addCsvDatasource("c://temp/repo/./sub/../data/file.csv", "MOCK_CSV_INNER_DOTDOT");
+
+        assertNotNull("the csv model json must be written", json);
+        assertFalse("no `..` segment may survive into the model JSON: " + json, json.contains("/../"));
+        assertTrue(json.contains("c:/temp/repo/data/file.csv"));
+    }
+
+    /**
+     * Drive {@code addDatasource} for a CSV datasource whose Calcite model path is {@code
+     * csvPath}, and return the persisted {@code <name>-csv.json} content (or null if it was not
+     * written).
+     */
+    private String addCsvDatasource(String csvPath, String dsName) throws Exception {
+        MockConnectionManager cManager = new MockConnectionManager();
+        MockRepositoryManager rManager = new MockRepositoryManager();
+
+        Map<String, Object> session = new HashMap<>();
+        session.put(RepositoryDatasourceManager.ORBIS_WORKSPACE_DIR, "workspace");
+
+        rdManager.setConnectionManager(cManager);
+        rdManager.setRepositoryManager(rManager);
+        rdManager.setType(CLASSPATH);
+        rdManager.setWorkspaces("true");
+        rdManager.setSessionRegistry(createScopedRepo(session));
+        rdManager.setDatadir("c:\\temp\\repo");
+
+        SaikuDatasource ds = new SaikuDatasource() {
+            @Override
+            public Type getType() {
+                return Type.OLAP;
+            }
+
+            @Override
+            public String getName() {
+                return dsName;
+            }
+
+            @Override
+            public Properties getProperties() {
+                Properties props = new Properties();
+                props.setProperty("driver", "mondrian.olap4j.MondrianOlap4jDriver");
+                // split[2] of the location is the Calcite model path; everything up to the first
+                // `;` in it is what gets resolved + interpolated as the CSV operand.
+                props.setProperty(
+                        "location",
+                        "jdbc:mondrian:Jdbc=jdbc:calcite:model=" + csvPath + ";Catalog=mondrian://datasources/" + dsName
+                                + ".xml;JdbcDrivers=org.apache.calcite.jdbc.Driver;");
+                props.setProperty("username", "bruno");
+                props.setProperty("password", "bruno");
+                props.setProperty("id", "b5ef4927-63e3-4d9c-b7dc-905fff8841f8");
+                props.setProperty("security.enabled", "false");
+                props.setProperty("type", "OLAP");
+                props.setProperty("csv", "true");
+
+                return props;
+            }
+        };
+
+        rdManager.addDatasource(ds);
+
+        return rManager.getInternalFile("/datasources/" + dsName + "-csv.json");
+    }
+
     private ScopedRepo createScopedRepo(Map<String, Object> sessionAttributes) {
         ScopedRepo repo = new ScopedRepo();
 

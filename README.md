@@ -155,6 +155,18 @@ Without the endpoint env var the agent is never loaded. See
 reference, sampling guidance, and what's not yet covered (Tier 2
 custom spans for `ThinQueryService` etc.).
 
+## Quality
+
+Quality signals — per-module test-count and line-coverage floors, UI type
+checks, UI tests — are declared as files (`.github/test-floors.json`,
+`.coverage-thresholds.json`) and **gated on every PR** by the `ci` workflow.
+A separate weekly run, `.github/workflows/quality-report.yml`, renders the same
+signals as one Markdown **quality dashboard** in its job summary: where each
+module stands, and by how much headroom. That run is read-only and is not a
+gate — the gates stay in CI. See [`docs/quality.md`](docs/quality.md). For how
+CI, the merge queue, images, previews and the demo deployment fit together, see
+[`docs/ci-overview.md`](docs/ci-overview.md).
+
 ## Build from source
 
 JDK 21 + Maven 3.9+ required.
