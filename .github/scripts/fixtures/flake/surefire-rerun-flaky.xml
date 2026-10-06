@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Real Surefire 3.5.2 output with -Dsurefire.rerunFailingTestsCount=1 (JUnit 5), trimmed: stack traces and properties removed. -->
+<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" name="demo.FlakyTest" tests="3" errors="0" skipped="0" failures="1">
+  <testcase name="alwaysFails" classname="demo.FlakyTest" time="0.011">
+    <failure message="still broken" type="org.opentest4j.AssertionFailedError"><![CDATA[org.opentest4j.AssertionFailedError: still broken
+	at ... (stack trimmed)
+]]></failure>
+    <rerunFailure message="still broken" type="org.opentest4j.AssertionFailedError">
+      <stackTrace><![CDATA[org.opentest4j.AssertionFailedError: still broken
+	at ... (stack trimmed)
+]]></stackTrace>
+    </rerunFailure>
+  </testcase>
+  <testcase name="passes" classname="demo.FlakyTest" time="0.001"/>
+  <testcase name="flakesOnce" classname="demo.FlakyTest" time="0.0">
+    <flakyFailure message="first attempt fails ==&gt; expected: &lt;true&gt; but was: &lt;false&gt;" type="org.opentest4j.AssertionFailedError">
+      <stackTrace><![CDATA[org.opentest4j.AssertionFailedError: first attempt fails ==> expected: <true> but was: <false>
+	at ... (stack trimmed)
+]]></stackTrace>
+    </flakyFailure>
+  </testcase>
+</testsuite>
