@@ -80,6 +80,22 @@ All notable changes to Saiku are documented here. This project follows
 
 ### Security
 
+- **`sql-serve` no longer exposes an unauthenticated SQL proxy on every interface**
+  (CWE-306 / CWE-1327, saiku#1910). The Avatica and Postgres-wire endpoints now
+  bind to `127.0.0.1` by default; a new `--bind` option moves them, and a
+  non-loopback bind is refused unless `--auth-user` plus a password
+  (`--auth-password-file` or `SAIKU_SQL_AUTH_PASSWORD`) is set. With it, Avatica
+  requires HTTP basic auth and PG-wire requires SCRAM-SHA-256.
+  `--allow-unauthenticated-remote` overrides the refusal for isolated networks
+  and prints a warning banner. The warehouse password can now come from
+  `--jdbc-password-file` or `SAIKU_SQL_JDBC_PASSWORD`; `--jdbc-password` still
+  works but warns, because it is visible in the process list. Neither endpoint
+  speaks TLS, so put a TLS-terminating proxy in front of a network-facing one.
+
+  **Upgrade action:** clients that reached `sql-serve` from another host stop
+  connecting. Add `--bind 0.0.0.0 --auth-user <name>` with a password file, and
+  give clients those credentials (`authentication=BASIC;avatica_user=…;avatica_password=…`
+  for Avatica, the normal user/password for Postgres clients).
 - **The default-credential boot gate now checks the password, not the hash**
   (CWE-1392 / CWE-521, saiku#1915). `enforceDefaultCredentialPolicy` compared
   the stored bcrypt **string** against the two shipped defaults, so any
