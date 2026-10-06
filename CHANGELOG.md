@@ -46,6 +46,26 @@ All notable changes to Saiku are documented here. This project follows
 
 ### Security
 
+- **The default-credential boot gate now checks the password, not the hash**
+  (CWE-1392 / CWE-521, saiku#1915). `enforceDefaultCredentialPolicy` compared
+  the stored bcrypt **string** against the two shipped defaults, so any
+  password supplied through `SAIKU_ADMIN_PASSWORD` sailed past the gate: bcrypt
+  salts are random, so `SAIKU_ADMIN_PASSWORD=admin` produced a new hash,
+  `isDefaultAdminValue` returned false, the boot proceeded with `admin`/`admin`
+  and the post-boot warning was silenced — defeating the control with the exact
+  credential it claims to block. A re-encoded `admin` hash (in the WAR or in an
+  external `users.properties`) is now recognised as the default, and a supplied
+  password must additionally clear a strength policy: **≥ 12 characters**, not
+  a well-known weak password (`admin`, `password`, `changeme`, `12345678`, …)
+  and not equal to the username. The hash-side denylist is matched with bcrypt
+  `matches` against an operators-supplied `users.properties`, where length
+  cannot be asserted. New `SAIKU_ADMIN_PASSWORD_FILE` reads the password from a
+  secret-manager mount (trailing newline stripped). Escape hatches, unchanged in
+  spirit: `SAIKU_ALLOW_WEAK_ADMIN_PASSWORD=true`, plus the existing
+  `SAIKU_ALLOW_DEFAULT_ADMIN=true` / `SAIKU_DEMO=true` (so the local IT harness
+  and demo installs are unaffected). Refused boots print the same `FATAL:` fix-it
+  block and exit non-zero.
+
 - **Bare saved-query embeds scope guest slicer overrides to the saved
   query's own FILTER axis (CWE-863, presentation scope, saiku#1946).** A
   `kind=query` embed (`POST /saiku/api/embed/query/{path}`) has no filter
