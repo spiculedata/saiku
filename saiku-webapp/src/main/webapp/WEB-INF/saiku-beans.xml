@@ -120,6 +120,13 @@
         <property name="logExtractor" ref="logwriterbean"/>
     </bean>
 
+    <!-- saiku#779: role inventory, "test as" preview and lookup-mode grant editing
+         (GET/POST/PUT/DELETE /saiku/admin/roles). Admin-gated. -->
+    <bean id="roleAdminResource" class="org.saiku.web.rest.resources.RoleAdminResource">
+        <property name="userService" ref="userServiceBean"/>
+        <property name="datasourceService" ref="datasourceServiceBean"/>
+    </bean>
+
     <bean id="olapDiscoverServiceBean" class="org.saiku.service.olap.OlapDiscoverService">
         <property name="datasourceService" ref="datasourceServiceBean"/>
     </bean>
