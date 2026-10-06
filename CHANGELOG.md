@@ -5,7 +5,95 @@ All notable changes to Saiku are documented here. This project follows
 
 ## Unreleased
 
+### Added
+
+- **`ai.provider=ollama` — local/self-hosted model support for the AI ask layer
+  and schema-generation enrichment.** Both now accept `ollama` as a first-class
+  provider value alongside `anthropic`/`openai`: it talks to a local Ollama
+  instance's OpenAI-compatible endpoint (`http://localhost:11434/v1/chat/completions`
+  by default) and needs **no API key**, unlike `openai`/`azure-openai` — Ollama
+  doesn't check one. For PII-strict deployments this means the model never
+  leaves the operator's own trust boundary; the only operator-visible
+  difference from a hosted provider is the URL. Schema-generation enrichment
+  (`saiku.schemagen.llm.provider`) also gained plain `openai` support as part
+  of this, previously Anthropic-only. New `GET /saiku/info/diagnostics`
+  reports each stack's configured provider/model/endpoint plus a live
+  reachability probe — never the API key — so an operator can confirm the
+  wiring without running a query. (saiku#904)
+
+### Fixed
+
+- **XMLA: Excel / MSOLAP could not connect at all after the #1905 auth gate.**
+  `/xmla` was moved behind a dedicated stateless secured chain, which is the
+  right call, but it inherited the SPA's `HttpStatusEntryPoint(401)` entry
+  point — the one added in #878 so the browser would not pop a native auth
+  dialog over the SPA's routine XHR 401s. That entry point emits **no**
+  `WWW-Authenticate` header, and challenge-driven clients only ever send
+  credentials *in response to* a challenge: Excel/MSOLAP over WinHTTP (the
+  endpoint's `web.xml` mapping literally ships `Source=Excel`) sends an
+  anonymous request, waits for `401 WWW-Authenticate: Basic`, then retries with
+  credentials. With the header suppressed they never got past step one.
+  Pre-emptive-Basic clients (olap4j with credentials in the connect string,
+  `curl -u`, most Python/Java XMLA libraries) were unaffected, which is why the
+  breakage was invisible to them. `/xmla/**` now uses its own
+  `BasicAuthenticationEntryPoint` (`realm="Saiku XMLA"`) so challenge-driven
+  clients can negotiate, while the SPA chain keeps its bare-401 entry point —
+  the two chains pick per surface, because sharing one entry point would
+  either resurrect the browser dialog or strip the challenge back off XMLA.
+  Auth policy is unchanged: still `isFullyAuthenticated()`, still CSRF-off,
+  still the shared per-IP login rate limiter, still stateless. Only the 401's
+  headers differ. (saiku#1950)
+
 ### Security
+
+- **Bare saved-query embeds scope guest slicer overrides to the saved
+  query's own FILTER axis (CWE-863, presentation scope, saiku#1946).** A
+  `kind=query` embed (`POST /saiku/api/embed/query/{path}`) has no filter
+  panel and no filter tiles, so — unlike the dashboard / app tile paths fixed
+  by saiku#1911 — nothing stopped a guest from re-pointing an arbitrary
+  non-forced hierarchy at arbitrary members, or adding a deeper level beside an
+  authored rows level, surfacing finer-grain rows than the author published
+  (e.g. individual customer names under an authored country roll-up). Forced
+  RLS filters were still enforced, so this was a presentation-scope
+  over-exposure bounded by the owner's `runAs` scope, not an RLS bypass — but
+  it bit hardest for public grants and pre-#1104 opaque tokens, which carry no
+  forced filters at all. Guest overrides are now reduced by
+  `SavedQueryFilterScope` to hierarchies the saved query already carries on its
+  FILTER axis, at an authored level, with the client members intersected with
+  the authored members. Anything else (unknown axis, different level, a
+  non-`in` operator, an entirely out-of-scope selection) is dropped, so the
+  query runs as authored rather than failing open; an MDX-mode, unreadable, or
+  unparseable saved query authorises no overrides at all.
+- **The SPA ships a default CSP and `frame-ancestors` (CWE-693 / CWE-1021,
+  saiku#1917).** `SecurityHeadersFilter` emitted *no* framing headers unless
+  `-Dsaiku.security.frameAncestors` was set, and a full CSP only under
+  `-Dsaiku.security.csp` — so out of the box `/ui/**` (a `security="none"`
+  Spring chain, which is why Spring's own `X-Frame-Options: DENY` never reached
+  the SPA HTML) was frameable by any origin and script execution was
+  unconstrained. Defaults are now:
+  - `Content-Security-Policy: frame-ancestors 'self'` + `X-Frame-Options: SAMEORIGIN`
+    on every response, closing the clickjacking path to delete / share-link
+    creation / admin toggles.
+  - `Content-Security-Policy-Report-Only` carrying the documented policy
+    (`default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';
+    img-src 'self' data: blob: https:; font-src 'self' data:; worker-src 'self'
+    blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors
+    'self'`). Report-only, so nothing breaks while a deployment validates it in
+    a browser; `script-src 'self'` is the directive that neutralises the
+    inline-handler payloads from the XSS findings once enforced.
+  - An operator-supplied `saiku.security.csp` that omits `frame-ancestors` now
+    gets the directive appended, so a hand-written policy can't silently
+    re-open the clickjacking hole.
+
+  **Upgrade action — iframe embedders.** If you frame `/ui/?embed=1` from a
+  foreign origin, widen the allow-list:
+  `-Dsaiku.security.frameAncestors="'self' https://wiki.example.com"`.
+  `X-Frame-Options` is then omitted (it cannot express a list) and the CSP
+  `frame-ancestors` directive carries the list. `-Dsaiku.security.frameAncestors=off`
+  restores the old, fully framable behaviour. The web-component embed
+  (`docs/embed/quickstart.md`) is unaffected. To enforce the CSP instead of
+  reporting it, set `-Dsaiku.security.csp` to the policy above; to silence the
+  report-only header, set `-Dsaiku.security.cspReportOnly=off`.
 
 - **Hive/Hadoop are no longer bundled; the Hive JDBC driver is an opt-in
   `plugins/` drop-in** (CWE-1104 / CWE-1395, saiku#1916). `hive-cli`,
@@ -89,6 +177,15 @@ All notable changes to Saiku are documented here. This project follows
   or restore `conf/secret.key` from backup. Set `-Dsaiku.home` (or
   `SAIKU_DS_ENCRYPTION_KEY`) in production: with `saiku.home` unset the key
   still falls back to `java.io.tmpdir` — now a WARN instead of silence.
+### Added
+
+- **Role management for Mondrian role-based security** (saiku#779). A new
+  **Roles** admin tab and `/rest/saiku/admin/roles` API show which Spring role
+  grants which Mondrian role on which datasource, and who holds it. You can
+  preview what a user, or an arbitrary set of roles, gets on every datasource
+  ("test as"). The preview runs the same resolution code as enforcement,
+  including the saiku#1968 fail-closed rule. Grants on `lookup`-mode
+  datasources can be edited in place. See `docs/ROLE-SECURITY.md`.
 
 ## 4.8.0 — 2026-09-15
 
@@ -141,6 +238,18 @@ Two changes are visible behaviour changes for API clients — see **Breaking**.
   takeover plus owner lockout. Colons, a `home:` prefix, and blank input also
   slipped through. (saiku#1906, saiku#1907, saiku#1934)
 - **Datasource names can no longer traverse paths.** (saiku#1906)
+- **The CSV-datasource Calcite model JSON is now escaped and
+  path-contained.** (saiku#1932) `getCSVJson` interpolated the datasource name
+  and a `location`-derived path into a hand-built model string with no
+  escaping — a `'` closed the quoted operand and the remainder was read as
+  further model keys — and the path was concatenated onto the datadir with no
+  containment check, so a `..` segment pointed the CSV read outside the repo
+  root. Both values are JSON-escaped now, and the path is resolved through the
+  same `resolveWithinDatadir` containment rule the rest of the repository write
+  layer uses (a path that normalises outside the datadir is rejected). The
+  branch is dormant in the shipped build — `JdbcUrlPolicy` (saiku#1902) denies
+  the `calcite` scheme — but it is now safe at the source rather than by
+  reliance on an upstream validator.
 
 ### Breaking
 

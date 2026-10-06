@@ -1,0 +1,225 @@
+name: nightly-compliance
+
+# Nightly compliance sweep (ACMM L4, saiku#2124). Runs the FULL verification
+# surface against the tip of `development` on a schedule, independent of any PR:
+#   - java:     mvn verify with ITs enabled + test-count floors + coverage floors
+#   - ui:       svelte-check/tsc + vitest
+#   - security: OWASP dependency-check (the opt-in `-P security` profile)
+# ci.yml is path-filtered and PR-scoped; this catches what slips through that —
+# a dependency advisory published overnight, a flaky IT, a drifted floor, an
+# upstream GH Packages artifact that changed under us.
+#
+# Failure reporting: the `report` job opens ONE tracking issue (label
+# `nightly-compliance`) on the first red night and appends a comment on each
+# later red night, instead of opening an issue per run. When a night goes green
+# it comments and closes that issue. No issue is touched while runs stay green.
+on:
+  schedule:
+    # 02:43 UTC daily. Off the hour on purpose: the top of the hour is when
+    # every scheduled workflow on GitHub fires.
+    - cron: "43 2 * * *"
+  workflow_dispatch:
+
+# Read-only default. Only the `report` job elevates (issues: write).
+permissions:
+  contents: read
+
+# Never stack two nightlies; let an in-flight one finish.
+concurrency:
+  group: nightly-compliance
+  cancel-in-progress: false
+
+jobs:
+  java:
+    name: java (JDK 22, full verify + floors)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: development
+      - name: Set up JDK 22
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "22"
+          cache: maven
+      # Identical to ci.yml: five GH Packages registries, one classic PAT with
+      # read:packages. The auto-issued GITHUB_TOKEN cannot read across orgs.
+      - name: Configure Maven settings.xml
+        env:
+          GH_PACKAGES_USER: ${{ github.actor }}
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+        run: |
+          mkdir -p ~/.m2
+          cat > ~/.m2/settings.xml <<EOF
+          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+            <servers>
+              <server><id>github-mondrian-saiku</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-olap4j</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-olap4j-xmlaserver</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-saiku-query</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-ossie</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+            </servers>
+          </settings>
+          EOF
+      - name: Check licence headers
+        run: ./scripts/check-licence-headers.sh
+      - name: mvn verify
+        run: mvn -B -ntp -DskipITs=false verify
+      - name: Verify test floors
+        # Same logic as ci.yml: fail when a module's surefire total drops below
+        # its floor in .github/test-floors.json.
+        run: |
+          set -euo pipefail
+          fail=0
+          while IFS=$'\t' read -r module floor; do
+            reports="${module}/target/surefire-reports"
+            if [[ ! -d "$reports" ]]; then
+              echo "::error::No surefire-reports for ${module} — module did not run tests"
+              fail=1
+              continue
+            fi
+            total=$(grep -hoE 'tests="[0-9]+"' "${reports}"/TEST-*.xml \
+                      | grep -oE '[0-9]+' | awk '{s+=$1} END {print s+0}')
+            echo "  ${module}: ${total} tests (floor ${floor})"
+            if (( total < floor )); then
+              echo "::error::${module} test count ${total} below floor ${floor}"
+              fail=1
+            fi
+          done < <(jq -r '.modules | to_entries[] | "\(.key)\t\(.value)"' .github/test-floors.json)
+          exit "$fail"
+      - name: Verify coverage floors
+        run: ./scripts/check-coverage.sh
+
+  ui:
+    name: ui (svelte-check + vitest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: saiku-ui
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: development
+      - name: Set up Node 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: saiku-ui/package-lock.json
+      - name: Install deps
+        run: npm ci
+      - name: svelte-check + tsc
+        run: npm run check
+      - name: vitest
+        run: npm test -- --run
+
+  security:
+    name: security (OWASP dependency-check)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: development
+      - name: Set up JDK 22
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "22"
+          cache: maven
+      - name: Configure Maven settings.xml
+        env:
+          GH_PACKAGES_USER: ${{ github.actor }}
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+        run: |
+          mkdir -p ~/.m2
+          cat > ~/.m2/settings.xml <<EOF
+          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+            <servers>
+              <server><id>github-mondrian-saiku</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-olap4j</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-olap4j-xmlaserver</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-saiku-query</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-ossie</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+            </servers>
+          </settings>
+          EOF
+      # Tests are already covered by the java job; this lane only needs the
+      # resolved dependency graph. NVD_API_KEY is optional but strongly
+      # recommended: without it the NVD feed download is rate-limited and can
+      # time out unattended. Add it as a repo secret to make this lane reliable.
+      - name: OWASP dependency-check
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+        run: |
+          set -euo pipefail
+          args=(-B -ntp -P security -DskipTests -DskipITs)
+          if [[ -n "${NVD_API_KEY:-}" ]]; then
+            args+=("-DnvdApiKey=${NVD_API_KEY}")
+          else
+            echo "::warning::NVD_API_KEY is not set; the NVD download may be rate-limited"
+          fi
+          mvn "${args[@]}" verify
+      - name: Upload dependency-check reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dependency-check-report
+          path: "**/target/dependency-check-report.*"
+          if-no-files-found: ignore
+          retention-days: 14
+
+  report:
+    name: report (tracking issue)
+    needs: [java, ui, security]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write # open / comment on / close the single tracking issue
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      JAVA_RESULT: ${{ needs.java.result }}
+      UI_RESULT: ${{ needs.ui.result }}
+      SECURITY_RESULT: ${{ needs.security.result }}
+      ISSUE_LABEL: nightly-compliance
+    steps:
+      - name: Open, update or close the tracking issue
+        run: |
+          set -euo pipefail
+          summary=$(printf -- '- java (verify + floors): %s\n- ui (check + vitest): %s\n- security (OWASP): %s' \
+            "$JAVA_RESULT" "$UI_RESULT" "$SECURITY_RESULT")
+
+          failed=0
+          for r in "$JAVA_RESULT" "$UI_RESULT" "$SECURITY_RESULT"; do
+            [[ "$r" == "success" ]] || failed=1
+          done
+
+          # Idempotent: the label may not exist yet. Ignore "already exists".
+          gh label create "$ISSUE_LABEL" --color d93f0b \
+            --description "Nightly compliance run failed" 2>/dev/null || true
+
+          existing=$(gh issue list --label "$ISSUE_LABEL" --state open \
+            --json number --jq '.[0].number // empty')
+
+          if [[ "$failed" == "1" ]]; then
+            body=$(printf 'Nightly compliance run failed: %s\n\n%s' "$RUN_URL" "$summary")
+            if [[ -n "$existing" ]]; then
+              gh issue comment "$existing" --body "$body"
+            else
+              gh issue create --label "$ISSUE_LABEL" \
+                --title "Nightly compliance failing on development" \
+                --body "$body"$'\n\nThis single issue tracks consecutive failures; later red nights add a comment here and it closes itself when a night passes.'
+            fi
+            exit 0
+          fi
+
+          if [[ -n "$existing" ]]; then
+            gh issue close "$existing" --comment "Nightly compliance is green again: ${RUN_URL}"
+          fi
+          echo "Nightly compliance green."

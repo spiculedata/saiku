@@ -299,6 +299,13 @@ public class SaikuLauncher implements Callable<Integer> {
             // XHR returns 401, which the saiku-ui surfaces as the
             // "Session ended" modal. Max-inactive bumped to 7 days so an
             // idle browser tab doesn't get prompted to re-login every hour.
+            //
+            // saiku#1859: the store is necessary but NOT sufficient on its own — the
+            // authenticated identity Saiku reads from /rest/saiku/session lived in a
+            // per-JVM map (SessionService.sessionHolder), so it died with the process even
+            // when the container session survived. That half is fixed in
+            // org.saiku.web.service.SessionService, which now mirrors the session map onto
+            // the HttpSession so it rides along in these files.
             Path sessionsDirPath = saikuHome.resolve("sessions");
             File sessionsDir = sessionsDirPath.toFile();
             sessionsDir.mkdirs();
@@ -312,19 +319,20 @@ public class SaikuLauncher implements Callable<Integer> {
                 System.err.println("WARNING: could not restrict the session store directory " + sessionsDirPath
                         + " to the owner: " + e.getMessage());
             }
-            FileSessionDataStore sessionStore = new FileSessionDataStore();
-            sessionStore.setStoreDir(sessionsDir);
-            DefaultSessionCache sessionCache = new DefaultSessionCache(sessionHandler);
-            sessionCache.setSessionDataStore(sessionStore);
-            sessionHandler.setSessionCache(sessionCache);
-            sessionHandler.setMaxInactiveInterval(7 * 24 * 60 * 60);
+            configureSessionPersistence(sessionHandler, sessionsDir);
 
             server.setHandler(webapp);
 
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 try {
                     server.stop();
-                } catch (Exception ignored) {
+                } catch (Exception e) {
+                    // saiku#1859: this used to be `catch (Exception ignored) {}`, which made a
+                    // failed session flush completely invisible — the store's shutdown pass is
+                    // what writes the last live sessions to disk, so swallowing it here turns a
+                    // visible failure into "everyone got logged out and nobody knows why".
+                    System.err.println("Saiku: server.stop() failed during shutdown: " + e);
+                    e.printStackTrace();
                 }
             }));
 
@@ -335,6 +343,33 @@ public class SaikuLauncher implements Callable<Integer> {
             TelemetryService.startIfEnabled(saikuHome, System.getProperty("saiku.version"));
 
             return server;
+        }
+
+        /**
+         * saiku#1859 — point a {@link org.eclipse.jetty.session.SessionHandler} at a
+         * {@link FileSessionDataStore} under {@code sessionsDir}, and make it write a session out
+         * as it is USED rather than only when the cache shuts down.
+         *
+         * <p>{@code saveOnCreate} matters because Jetty's default {@code NEVER_EVICT} cache only
+         * flushes on shutdown: a {@code kill -9}, a crash or a container stop loses every session
+         * that was never flushed. {@code flushOnResponseCommit} (Jetty's default, set explicitly
+         * so the intent is pinned and a future default flip can't silently regress it) writes at
+         * the end of every request that touched the session.
+         *
+         * <p>Package-private and static so it is directly unit-testable without booting Jetty.
+         */
+        static void configureSessionPersistence(
+                org.eclipse.jetty.session.AbstractSessionManager sessionHandler, File sessionsDir)
+                throws java.io.IOException {
+            sessionsDir.mkdirs();
+            FileSessionDataStore sessionStore = new FileSessionDataStore();
+            sessionStore.setStoreDir(sessionsDir);
+            DefaultSessionCache sessionCache = new DefaultSessionCache(sessionHandler);
+            sessionCache.setSessionDataStore(sessionStore);
+            sessionCache.setSaveOnCreate(true);
+            sessionCache.setFlushOnResponseCommit(true);
+            sessionHandler.setSessionCache(sessionCache);
+            sessionHandler.setMaxInactiveInterval(7 * 24 * 60 * 60);
         }
 
         /**

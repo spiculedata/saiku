@@ -1,0 +1,39 @@
+2026-10-04T12:00:00.0370000Z ##[group]Run npx vitest run
+2026-10-04T12:00:00.0740000Z [36;1mnpx vitest run[0m
+2026-10-04T12:00:00.1110000Z shell: /usr/bin/bash -e {0}
+2026-10-04T12:00:00.1480000Z ##[endgroup]
+2026-10-04T12:00:00.1850000Z 
+2026-10-04T12:00:00.2220000Z > saiku-ui@3.20.0 test
+2026-10-04T12:00:00.2590000Z > vitest run
+2026-10-04T12:00:00.2960000Z 
+2026-10-04T12:00:00.3330000Z 
+2026-10-04T12:00:00.3700000Z [1m[30m[46m RUN [49m[39m[22m [36mv5.0.1 [39m[90m/home/runner/work/saiku/saiku/saiku-ui[39m
+2026-10-04T12:00:00.4070000Z 
+2026-10-04T12:00:00.4440000Z  [31m❯[39m src/lib/zzFlakeFixture.test.ts [2m([22m[2m2 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[32m 4[2mms[22m[39m
+2026-10-04T12:00:00.4810000Z    [31m❯[39m formatResetCountdown [2m(2)[22m
+2026-10-04T12:00:00.5180000Z [31m     [31m×[31m renders days for a far-future reset[39m[32m 3[2mms[22m[39m
+2026-10-04T12:00:00.5550000Z 
+2026-10-04T12:00:00.5920000Z [31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 1 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+2026-10-04T12:00:00.6290000Z 
+2026-10-04T12:00:00.6660000Z [41m[1m FAIL [22m[49m src/lib/zzFlakeFixture.test.ts[2m > [22mformatResetCountdown[2m > [22mrenders days for a far-future reset
+2026-10-04T12:00:00.7030000Z [31m[1mAssertionError[22m: expected 'in 4 days' to be 'in 5 days' // Object.is equality[39m
+2026-10-04T12:00:00.7400000Z 
+2026-10-04T12:00:00.7770000Z Expected: [32m"in [7m5[27m days"[39m
+2026-10-04T12:00:00.8140000Z Received: [31m"in [7m4[27m days"[39m
+2026-10-04T12:00:00.8510000Z 
+2026-10-04T12:00:00.8880000Z [36m [2m❯[22m src/lib/zzFlakeFixture.test.ts:[2m4:23[22m[39m
+2026-10-04T12:00:00.9250000Z     [90m  2|[39m describe('formatResetCountdown', () => {
+2026-10-04T12:00:00.9620000Z     [90m  3|[39m  it('renders days for a far-future reset', () => {
+2026-10-04T12:00:00.9990000Z     [90m  4|[39m   expect('in 4 days').toBe('in 5 days');
+2026-10-04T12:00:01.0360000Z     [90m   |[39m                       [31m^[39m
+2026-10-04T12:00:01.0730000Z     [90m  5|[39m  });
+2026-10-04T12:00:01.1100000Z     [90m  6|[39m  it('renders hours', () => {
+2026-10-04T12:00:01.1470000Z 
+2026-10-04T12:00:01.1840000Z [31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯[22m[39m
+2026-10-04T12:00:01.2210000Z 
+2026-10-04T12:00:01.2580000Z 
+2026-10-04T12:00:01.2950000Z [2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+2026-10-04T12:00:01.3320000Z [2m      Tests [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m1 passed[39m[22m[90m (2)[39m
+2026-10-04T12:00:01.3690000Z [2m   Start at [22m 21:14:10
+2026-10-04T12:00:01.4060000Z [2m   Duration [22m 82ms[2m (transform 47%, import 24%, tests 19%, worker 9%)[22m
+2026-10-04T12:00:01.4430000Z ##[error]Process completed with exit code 1.

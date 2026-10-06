@@ -1,0 +1,101 @@
+name: flake ledger
+
+# Rolling flake ledger for the test suite. Ported from spiculedata/saiku-cloud
+# (.github/workflows/flake-ledger.yml, #1375), deliberately READ-ONLY here.
+#
+# `ci.yml` retries a failing test once, records what flaked, what is quarantined and
+# what is still broken, and uploads that record as a `flake-records-*` artifact. This
+# job folds the records of recent `ci` runs on `development` into the per-test-id
+# rolling flake rate a maintainer reads to decide whether a test needs fixing or
+# quarantining. The original opens a PR with the rebuilt ledger; here that would need
+# `contents: write` and `pull-requests: write` on a schedule, so the result goes to the
+# job summary and to an artifact instead, and committing it stays a human decision.
+# `node .github/scripts/flake-ledger.mjs ledger --out .github/flake-ledger.json` does
+# the same locally.
+#
+# It runs on a schedule rather than on every push because the interesting signal is a
+# RATE over many runs; a per-PR number would just be today's noise.
+
+on:
+  schedule:
+    # Weekdays 05:41 UTC, off the top of the hour where scheduled workflows queue up.
+    - cron: "41 5 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      window-runs:
+        description: "How many recent `ci` runs to fold into the ledger"
+        required: false
+        default: "40"
+
+permissions:
+  actions: read # download the flake-record artifacts of recent runs
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  ledger:
+    name: rebuild flake ledger
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+
+      - name: Download flake records from recent ci runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WINDOW: ${{ github.event.inputs.window-runs || '40' }}
+        run: |
+          set -euo pipefail
+          case "$WINDOW" in ''|*[!0-9]*) echo "::error::window-runs must be a number"; exit 1 ;; esac
+          mkdir -p records
+          count=0
+          total=0
+          ids=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?branch=development&per_page=${WINDOW}" \
+            --jq '[.workflow_runs[] | select(.conclusion == "success" or .conclusion == "failure")] | .[].id')
+          for id in $ids; do
+            total=$((total + 1))
+            if gh run download "$id" -p 'flake-records-*' -D "records/ci-$id" >/dev/null 2>&1; then
+              count=$((count + 1))
+            else
+              echo "no flake-record artifact in ci run $id (it predates the flake policy, or the artifact expired)"
+            fi
+          done
+          echo "collected records from ${count} of ${total} runs"
+          echo "window=${total}" > window.env
+
+      - name: Rebuild the ledger
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC1091
+          source window.env
+          node .github/scripts/flake-ledger.mjs ledger \
+            --records records \
+            --window-runs "$window" \
+            --out flake-ledger.json
+          node .github/scripts/flake-ledger.mjs render \
+            --ledger flake-ledger.json \
+            --quarantine .github/flake-quarantine.json
+
+      - name: Flag expired quarantine entries
+        run: |
+          # An expired entry blocks again on its own; this line is what makes it visible,
+          # because "the quarantine expired" is otherwise invisible until a test starts
+          # failing for real.
+          node .github/scripts/flake-ledger.mjs quarantine --check || echo "::warning::the quarantine list has expired or invalid entries"
+          node .github/scripts/flake-ledger.mjs quarantine
+
+      - name: Upload the rebuilt ledger
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: flake-ledger
+          path: flake-ledger.json
+          retention-days: 30
