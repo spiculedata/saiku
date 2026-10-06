@@ -73,6 +73,12 @@ public class Query2ResourceDrillthroughReturnsTest {
             this.capturedReturns = returns;
             throw new IllegalStateException("stop-after-capture");
         }
+
+        @Override
+        public ResultSet drillthrough(String queryName, int maxrows, Integer firstRowset, String returns) {
+            this.capturedReturns = returns;
+            throw new IllegalStateException("stop-after-capture");
+        }
     }
 
     private static AiCubeMetadataService fixedSchemaService() {
@@ -103,7 +109,7 @@ public class Query2ResourceDrillthroughReturnsTest {
         RecordingThinQueryService svc = new RecordingThinQueryService(cube);
         Query2Resource resource = resourceWithRecordingService(svc);
 
-        resource.drillthrough(QUERY_NAME, 100, null, "Year,Store Sales", null);
+        resource.drillthrough(QUERY_NAME, 100, null, null, "Year,Store Sales", null);
 
         assertEquals("[Time].[Time By].[Year],[Measures].[Store Sales]", svc.capturedReturns);
     }
@@ -113,7 +119,7 @@ public class Query2ResourceDrillthroughReturnsTest {
         RecordingThinQueryService svc = new RecordingThinQueryService(cube);
         Query2Resource resource = resourceWithRecordingService(svc);
 
-        resource.drillthrough(QUERY_NAME, 100, null, "[Time].[Time By].[Year]", null);
+        resource.drillthrough(QUERY_NAME, 100, null, null, "[Time].[Time By].[Year]", null);
 
         assertEquals("[Time].[Time By].[Year]", svc.capturedReturns);
     }
@@ -123,7 +129,7 @@ public class Query2ResourceDrillthroughReturnsTest {
         RecordingThinQueryService svc = new RecordingThinQueryService(cube);
         Query2Resource resource = resourceWithRecordingService(svc);
 
-        Response resp = resource.drillthrough(QUERY_NAME, 100, null, "Year,No Such Column", null);
+        Response resp = resource.drillthrough(QUERY_NAME, 100, null, null, "Year,No Such Column", null);
 
         assertEquals(400, resp.getStatus());
         assertEquals(MediaType.APPLICATION_JSON, resp.getMediaType().toString());
@@ -170,7 +176,7 @@ public class Query2ResourceDrillthroughReturnsTest {
         RecordingThinQueryService svc = new RecordingThinQueryService(cube);
         Query2Resource resource = resourceWithRecordingService(svc);
 
-        resource.drillthrough(QUERY_NAME, 100, null, null, null);
+        resource.drillthrough(QUERY_NAME, 100, null, null, null, null);
 
         assertEquals(null, svc.capturedReturns);
     }
@@ -183,7 +189,7 @@ public class Query2ResourceDrillthroughReturnsTest {
         Query2Resource resource = new Query2Resource();
         resource.setThinQueryService(svc);
 
-        resource.drillthrough(QUERY_NAME, 100, null, "Year,Store Sales", null);
+        resource.drillthrough(QUERY_NAME, 100, null, null, "Year,Store Sales", null);
 
         assertEquals("Year,Store Sales", svc.capturedReturns);
     }

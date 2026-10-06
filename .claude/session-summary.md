@@ -76,7 +76,7 @@ pushed down; normal sessions append and the history stays useful.
 ## Log
 
 ## 2026-10-05 — feature/837-query2-returns-resolution — merged development for PR #2047
-**Was doing:** merged development, retaining the base branch's uniform access-denied handling and the PR's Query2 `returns=` caption resolution.
+**Was doing:** merged development, retaining the base branch's uniform access-denied handling and the PR's Query2 `returns=` caption resolution; updated tests for the new `firstRowset` signature after CI found a compile error.
 **Now:** check PR #2047 CI after the push; local Maven tests could not run because this environment has no JDK or Maven.
 **Refs:** #837, #2047
 
