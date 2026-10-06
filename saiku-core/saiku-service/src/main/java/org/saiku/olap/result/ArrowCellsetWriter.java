@@ -51,8 +51,10 @@ import org.saiku.olap.query2.ThinQuery;
  *
  * <ul>
  *   <li>Schema metadata key {@code saiku.cellset} holds a JSON blob with
- *       {@code rowHeaderColCount}, {@code columnHeaderRows}, {@code runtimeMs},
- *       {@code width}, {@code height}, {@code mdx}, {@code queryName}.</li>
+ *       {@code rowHeaderColCount}, {@code columnHeaderRows},
+ *       {@code columnHeaderMembers} (caption + uniqueName + dimension per
+ *       column-axis member), {@code runtimeMs}, {@code width}, {@code height},
+ *       {@code mdx}, {@code queryName}.</li>
  *   <li>Row-header columns {@code r{i}_value}, {@code r{i}_uniqueName},
  *       {@code r{i}_dimension}, {@code r{i}_hierarchy}, {@code r{i}_level} —
  *       all dictionary-encoded strings.</li>
@@ -150,6 +152,7 @@ public final class ArrowCellsetWriter {
         Map<String, Object> blob = new LinkedHashMap<>();
         blob.put("rowHeaderColCount", shape.rowHeaderColCount);
         blob.put("columnHeaderRows", shape.columnHeaderRows);
+        blob.put("columnHeaderMembers", shape.columnHeaderMembers);
         blob.put("runtimeMs", Math.max(0L, System.currentTimeMillis() - started));
         blob.put("width", shape.rowHeaderColCount + shape.dataColCount);
         blob.put("height", shape.rowCount);
@@ -317,6 +320,10 @@ public final class ArrowCellsetWriter {
         final int dataColCount;
         final int rowCount;
         final List<List<String>> columnHeaderRows;
+        /** Parallel to {@link #columnHeaderRows}: dimension / hierarchy / uniqueName
+         *  per column-axis member so the SPA can substitute cell-link placeholders. */
+        final List<List<Map<String, String>>> columnHeaderMembers;
+
         final List<Position> rowPositions;
 
         private CellsetShape(
@@ -324,11 +331,13 @@ public final class ArrowCellsetWriter {
                 int dataColCount,
                 int rowCount,
                 List<List<String>> columnHeaderRows,
+                List<List<Map<String, String>>> columnHeaderMembers,
                 List<Position> rowPositions) {
             this.rowHeaderColCount = rowHeaderColCount;
             this.dataColCount = dataColCount;
             this.rowCount = rowCount;
             this.columnHeaderRows = columnHeaderRows;
+            this.columnHeaderMembers = columnHeaderMembers;
             this.rowPositions = rowPositions;
         }
 
@@ -358,6 +367,7 @@ public final class ArrowCellsetWriter {
 
             // Column-header rows: one row per hierarchy on the column axis.
             List<List<String>> colHeaderRows = new ArrayList<>();
+            List<List<Map<String, String>>> colHeaderMembers = new ArrayList<>();
             int colHeaderDepth = 1;
             List<Position> colPositions = colAxis != null ? colAxis.getPositions() : null;
             if (colPositions != null && !colPositions.isEmpty()) {
@@ -366,24 +376,52 @@ public final class ArrowCellsetWriter {
             }
             for (int depth = 0; depth < colHeaderDepth; depth++) {
                 List<String> header = new ArrayList<>();
+                List<Map<String, String>> members = new ArrayList<>();
                 if (colPositions != null) {
                     for (Position p : colPositions) {
                         List<Member> ms = p.getMembers();
                         if (ms != null && depth < ms.size()) {
                             Member m = ms.get(depth);
-                            header.add(m.getCaption() != null ? m.getCaption() : m.getName());
+                            String caption = m.getCaption() != null ? m.getCaption() : m.getName();
+                            header.add(caption);
+                            members.add(memberMeta(m, caption));
                         } else {
                             header.add("");
+                            members.add(new LinkedHashMap<>());
                         }
                     }
                 }
                 colHeaderRows.add(header);
+                colHeaderMembers.add(members);
             }
             if (colHeaderRows.isEmpty()) {
                 colHeaderRows.add(new ArrayList<>());
+                colHeaderMembers.add(new ArrayList<>());
             }
 
-            return new CellsetShape(rowHeaderDepth, dataColCount, rowCount, colHeaderRows, rowPositions);
+            return new CellsetShape(
+                    rowHeaderDepth, dataColCount, rowCount, colHeaderRows, colHeaderMembers, rowPositions);
+        }
+
+        private static Map<String, String> memberMeta(Member m, String caption) {
+            Map<String, String> meta = new LinkedHashMap<>();
+            meta.put("caption", caption == null ? "" : caption);
+            if (m.getUniqueName() != null) {
+                meta.put("uniqueName", m.getUniqueName());
+            }
+            Dimension d = m.getDimension();
+            if (d != null && d.getName() != null) {
+                meta.put("dimension", d.getName());
+            }
+            Hierarchy h = m.getHierarchy();
+            if (h != null && h.getUniqueName() != null) {
+                meta.put("hierarchy", h.getUniqueName());
+            }
+            Level l = m.getLevel();
+            if (l != null && l.getUniqueName() != null) {
+                meta.put("level", l.getUniqueName());
+            }
+            return meta;
         }
     }
 }

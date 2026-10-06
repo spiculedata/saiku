@@ -219,6 +219,34 @@ back to legacy with a one-shot WARN line in the log.
 
 3. Restart saiku — the new datasource appears in the cube selector.
 
+## Adding a Hive / Spark Thrift datasource (opt-in driver)
+
+Saiku no longer bundles the Hive JDBC driver (saiku#1916). Pulling it in
+dragged ~150 Hadoop/Hive/YARN/ZooKeeper server jars — many with known
+CVEs, plus a second log4j 1.x — into every install, including the vast
+majority that never talk to Hive. If you do need `jdbc:hive2://` URLs:
+
+1. Download the **standalone** Hive JDBC driver that matches your
+   HiveServer2 / Spark Thrift Server, e.g.
+   `org.apache.hive:hive-jdbc:<version>:standalone` from Maven Central
+   (`hive-jdbc-<version>-standalone.jar`). The standalone jar shades its
+   dependencies, so it is the only file you need.
+2. Copy it into `saiku-home/plugins/` (`/app/saiku-home/plugins/` in the
+   Docker image). Every `*.jar` there joins the webapp classpath at boot.
+   Keep the directory owner-writable only — a jar in `plugins/` runs with
+   full server privileges.
+3. Restart Saiku, then point a datasource at it with
+   `JdbcDrivers=org.apache.hive.jdbc.HiveDriver` and a
+   `jdbc:hive2://host:10000/db` URL, the same way as the PostgreSQL
+   example above.
+
+The same drop-in applies to any other driver Saiku doesn't bundle
+(Trino, Redshift, ClickHouse, …). Microsoft SQL Server is one of them:
+`mssql-jdbc` was only ever on the classpath as a side effect of the Hive
+dependency tree (an old 6.2.1 build pulled in through YARN), so SQL
+Server users should drop a current `mssql-jdbc-<version>.jre11.jar` into
+`plugins/` as well.
+
 ## Stopping
 
 `Ctrl+C` in the launcher's terminal. Saiku flushes the FileSessionDataStore

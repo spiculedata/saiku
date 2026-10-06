@@ -61,6 +61,7 @@ public class OlapMetaExplorer {
             return new SaikuConnection(connectionName, new ArrayList<>(), SaikuConnection.TYPE_OSSIE);
         }
         OlapConnection olapcon = connections.getOlapConnection(connectionName);
+        String sdsCellLink = resolveCellLinkUrl(connectionName);
         SaikuConnection connection;
         if (olapcon != null) {
             List<SaikuCatalog> catalogs = new ArrayList<>();
@@ -70,14 +71,16 @@ public class OlapMetaExplorer {
                     for (Schema schem : cat.getSchemas()) {
                         List<SaikuCube> cubes = new ArrayList<>();
                         for (Cube cub : schem.getCubes()) {
-                            cubes.add(new SaikuCube(
+                            SaikuCube sc = new SaikuCube(
                                     connectionName,
                                     cub.getUniqueName(),
                                     cub.getName(),
                                     cub.getCaption(),
                                     cat.getName(),
                                     schem.getName(),
-                                    cub.isVisible()));
+                                    cub.isVisible());
+                            applyCellLinkUrl(sc, cub, sdsCellLink);
+                            cubes.add(sc);
                         }
                         Collections.sort(cubes, new SaikuCubeCaptionComparator());
                         schemas.add(new SaikuSchema(schem.getName(), cubes));
@@ -90,13 +93,15 @@ public class OlapMetaExplorer {
                             List<SaikuCube> cubes = new ArrayList<>();
                             while (cubesResult.next()) {
 
-                                cubes.add(new SaikuCube(
+                                SaikuCube sc = new SaikuCube(
                                         connectionName,
                                         cubesResult.getString("CUBE_NAME"),
                                         cubesResult.getString("CUBE_NAME"),
                                         cubesResult.getString("CUBE_NAME"),
                                         cubesResult.getString("CATALOG_NAME"),
-                                        cubesResult.getString("SCHEMA_NAME")));
+                                        cubesResult.getString("SCHEMA_NAME"));
+                                applyCellLinkUrl(sc, null, sdsCellLink);
+                                cubes.add(sc);
                             }
                             Collections.sort(cubes, new SaikuCubeCaptionComparator());
                             schemas.add(new SaikuSchema("", cubes));
@@ -149,6 +154,7 @@ public class OlapMetaExplorer {
         // call so we can parse TimeCalc directives per cube. Empty when the
         // connection isn't configured with a Mondrian Catalog= URL.
         String catalogUrl = resolveCatalogUrl(connectionName);
+        String sdsCellLink = resolveCellLinkUrl(connectionName);
         List<SaikuCube> cubes = new ArrayList<>();
         if (olapcon != null) {
             try {
@@ -166,6 +172,7 @@ public class OlapMetaExplorer {
                             if (catalogUrl != null) {
                                 sc.setTimeCalcs(org.saiku.olap.util.TimeCalcParser.parse(catalogUrl, cub.getName()));
                             }
+                            applyCellLinkUrl(sc, cub, sdsCellLink);
                             cubes.add(sc);
                         }
                     }
@@ -193,6 +200,29 @@ public class OlapMetaExplorer {
         } catch (Exception ignored) {
             return null;
         }
+    }
+
+    /** {@code <cellLinkUrl>} on the {@code .sds}, or {@code null} when unset. */
+    private String resolveCellLinkUrl(String connectionName) {
+        try {
+            ISaikuConnection scon = connections.getConnection(connectionName);
+            if (scon == null) {
+                return null;
+            }
+            java.util.Properties props = scon.getProperties();
+            if (props == null) {
+                return null;
+            }
+            return org.saiku.olap.util.CellLinkUrl.preferCubeThenSds(
+                    null, props.getProperty(ISaikuConnection.CELL_LINK_URL_KEY));
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private static void applyCellLinkUrl(SaikuCube sc, Cube cub, String sdsFallback) {
+        sc.setCellLinkUrl(
+                org.saiku.olap.util.CellLinkUrl.preferCubeThenSds(ObjectUtil.cellLinkUrlFrom(cub), sdsFallback));
     }
 
     public List<SaikuCube> getCubes(List<String> connectionNames) throws SaikuOlapException {

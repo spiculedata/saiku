@@ -1,0 +1,71 @@
+name: preview host access
+description: >-
+  Join the tailnet and install the dedicated preview-host SSH identity. Used by
+  preview-env.yml, preview-reaper.yml and preview-command.yml. Ported from
+  spiculedata/saiku-cloud .github/actions/preview-host-access (saiku-cloud#1379).
+  Never reuses a deploy key: a preview runner can only reach the preview box.
+
+  Reference it as ./.github/actions/preview-host-access ONLY from a job whose
+  checkout is the repository root. A job that checks out into a subdirectory
+  must use that subdirectory in the path (a local action resolves against the
+  workspace, not against the checkout).
+
+inputs:
+  oauth-client-id:
+    description: Tailscale OAuth client id (tag:ci)
+    required: true
+  oauth-secret:
+    description: Tailscale OAuth secret
+    required: true
+  ssh-private-key:
+    description: Private key authorised on the preview box only
+    required: true
+  known-hosts:
+    description: Pinned host key line(s) for the preview box
+    required: true
+  target:
+    description: user@host of the preview box
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Connect runner to tailnet
+      uses: tailscale/github-action@6cae46e2d796f265265cfcf628b72a32b4d7cade # v3.3.0
+      with:
+        oauth-client-id: ${{ inputs.oauth-client-id }}
+        oauth-secret: ${{ inputs.oauth-secret }}
+        tags: tag:ci
+        version: latest
+
+    # The action above does not fail when it never joins, so assert it here and
+    # fail with an actionable message.
+    - name: Verify runner is on the tailnet and can reach the preview box
+      shell: bash
+      env:
+        TARGET: ${{ inputs.target }}
+      run: |
+        set -euo pipefail
+        state=$(tailscale status --json | jq -er '.BackendState')
+        if [ "$state" != "Running" ]; then
+          echo "::error::Runner did not join the tailnet (BackendState=$state). Check the Tailscale OAuth secrets and that the client owns tag:ci."
+          exit 1
+        fi
+        host="${TARGET#*@}"
+        if ! timeout 15 bash -c "</dev/tcp/$host/22"; then
+          echo "::error::On the tailnet but cannot reach the preview host on :22. Check the tag:ci ACL rule for the preview box."
+          exit 1
+        fi
+
+    - name: Install preview SSH identity
+      shell: bash
+      env:
+        PREVIEW_KEY: ${{ inputs.ssh-private-key }}
+        PREVIEW_KNOWN_HOSTS: ${{ inputs.known-hosts }}
+      run: |
+        set -euo pipefail
+        mkdir -p ~/.ssh
+        umask 077
+        printf '%s\n' "$PREVIEW_KEY" > ~/.ssh/preview
+        printf '%s\n' "$PREVIEW_KNOWN_HOSTS" > ~/.ssh/preview_known_hosts
+        chmod 600 ~/.ssh/preview ~/.ssh/preview_known_hosts

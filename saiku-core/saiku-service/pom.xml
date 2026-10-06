@@ -101,7 +101,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-resources-plugin</artifactId>
-                <version>3.3.1</version>
+                <version>3.5.0</version>
                 <!-- set encoding to something not platform dependent -->
                 <configuration>
                     <encoding>UTF-8</encoding>
@@ -167,6 +167,16 @@
 		<dependency>
 			<groupId>org.olap4j</groupId>
 			<artifactId>olap4j-xmlaserver</artifactId>
+			<exclusions>
+				<!-- saiku#1916: olap4j-xmlaserver declares log4j:log4j 1.2.17 but
+				     only uses org.apache.log4j.Logger, which the log4j-1.2-api
+				     bridge (declared below) provides. Shipping both put two
+				     copies of org.apache.log4j on the classpath. -->
+				<exclusion>
+					<groupId>log4j</groupId>
+					<artifactId>log4j</artifactId>
+				</exclusion>
+			</exclusions>
 		</dependency>
 		<dependency>
 			<groupId>jakarta.servlet</groupId>
@@ -291,7 +301,6 @@
 		<dependency>
 			<groupId>org.junit.vintage</groupId>
 			<artifactId>junit-vintage-engine</artifactId>
-			<version>5.11.3</version>
 			<scope>test</scope>
 		</dependency>
 		<dependency>
@@ -378,6 +387,14 @@
 		<dependency>
 			<groupId>jakarta.mail</groupId>
 			<artifactId>jakarta.mail-api</artifactId>
+		</dependency>
+		<!-- OpenPDF (maintained com.lowagie:itext fork, same com.lowagie.text.*
+		     API) — the headless snapshot renderer's PDF writer (saiku#1810). A
+		     pure-Java writer, so a dashboard PDF is produced with no browser
+		     and no display attached. Version from saiku-bom. -->
+		<dependency>
+			<groupId>com.github.librepdf</groupId>
+			<artifactId>openpdf</artifactId>
 		</dependency>
 		<dependency>
 			<groupId>org.eclipse.angus</groupId>
