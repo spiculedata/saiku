@@ -61,6 +61,29 @@ body:
     validations:
       required: true
   - type: textarea
+    id: acceptance_tests
+    attributes:
+      label: Acceptance tests
+      description: >-
+        The check that proves this bug is fixed, written against the expected behaviour above and
+        phrased so it fails today and passes after the fix (a request and what it must answer, or a
+        page and what it must show). A PR that closes this issue ships it as
+        acceptance/<issue>/spec.json (see acceptance/README.md and docs/acceptance-specs.md); a
+        docs-only or tests-only fix takes the acceptance-waived label instead. Optional for
+        reporters: a maintainer can fill it in.
+      placeholder: |
+        - GET /rest/saiku/api/... must answer 200 with ...
+        - Why today's code fails it (the wrong status, the missing field, the stack trace)
+  - type: input
+    id: regressed_by
+    attributes:
+      label: Regressed by PR
+      description: >-
+        Optional. If you know this worked before and which merged pull request broke it, give its
+        number (e.g. #2100). It feeds the escaped-defect metric on the quality dashboard
+        (docs/quality.md); leave it empty if you do not know.
+      placeholder: "#2100"
+  - type: textarea
     id: logs
     attributes:
       label: Relevant logs

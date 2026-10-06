@@ -1031,6 +1031,171 @@ describe('buildChartOption — number formatting (#1082)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// saiku#1779: per-AXIS number format. A dual-axis chart carries two measures —
+// by definition different magnitudes, usually different units — so one
+// chart-level Number format is always wrong for one of them. The reported
+// case: `Units Ordered` bars on the left, `Sell Through %` (a fraction, 1.284)
+// on the right, and the right axis read 0 … 2 with no % anywhere.
+// ---------------------------------------------------------------------------
+describe('buildChartOption — per-axis number format (#1779)', () => {
+	/** Two measures far enough apart for the auto dual-axis split. */
+	function dualSample(): ChartProjection {
+		return {
+			rowCategories: ['Jan', 'Feb'],
+			columnCategories: ['Units Ordered', 'Sell Through %'],
+			matrix: [
+				[100000, 1.284],
+				[120000, 0.512]
+			]
+		};
+	}
+
+	function axesOf(
+		opt: Record<string, unknown>
+	): Array<{ axisLabel?: { formatter?: (v: number) => string } }> {
+		return opt.yAxis as Array<{ axisLabel?: { formatter?: (v: number) => string } }>;
+	}
+
+	function seriesOf(
+		opt: Record<string, unknown>
+	): Array<{ name: string; label?: { formatter?: (p: { value: number }) => string } }> {
+		return opt.series as Array<{
+			name: string;
+			label?: { formatter?: (p: { value: number }) => string };
+		}>;
+	}
+
+	function tooltipText(opt: Record<string, unknown>, seriesName: string, value: number): string {
+		const fmt = (opt.tooltip as { formatter: (p: unknown) => string }).formatter;
+		return fmt([{ axisValueLabel: 'Jan', seriesName, dataIndex: 0, value }]);
+	}
+
+	test('a right-axis override formats only the right axis (the reported bug)', () => {
+		const opt = buildChartOption(
+			dualSample(),
+			'bar',
+			opts({
+				numberFormat: { thousands: true },
+				axisNumberFormat: { right: { percent: true, decimals: 0 } }
+			})
+		) as Record<string, unknown>;
+		const [left, right] = axesOf(opt);
+		// Right: the fraction measure reads as a percentage, 1.284 → 128%
+		// (not the reported "1" on a 0–2 axis).
+		expect(right.axisLabel?.formatter?.(1.284)).toBe('128%');
+		// Left: unchanged by the override — still the chart-level thousands grouping.
+		expect(left.axisLabel?.formatter?.(1234)).toBe('1,234');
+	});
+
+	test('no override on either side → both axes keep the chart-level format', () => {
+		const opt = buildChartOption(
+			dualSample(),
+			'bar',
+			opts({ numberFormat: { suffix: 'u' } })
+		) as Record<string, unknown>;
+		const [left, right] = axesOf(opt);
+		expect(left.axisLabel?.formatter?.(5)).toBe('5u');
+		expect(right.axisLabel?.formatter?.(5)).toBe('5u');
+	});
+
+	test('a left-axis override wins over the chart-level format', () => {
+		const opt = buildChartOption(
+			dualSample(),
+			'bar',
+			opts({ numberFormat: { suffix: 'u' }, axisNumberFormat: { left: { prefix: '£' } } })
+		) as Record<string, unknown>;
+		const [left, right] = axesOf(opt);
+		expect(left.axisLabel?.formatter?.(5)).toBe('£5');
+		expect(right.axisLabel?.formatter?.(5)).toBe('5u');
+	});
+
+	test('an EMPTY override renders raw values on that axis only', () => {
+		const opt = buildChartOption(
+			dualSample(),
+			'bar',
+			opts({ numberFormat: { suffix: 'u' }, axisNumberFormat: { right: {} } })
+		) as Record<string, unknown>;
+		const [left, right] = axesOf(opt);
+		expect(right.axisLabel?.formatter).toBeUndefined();
+		expect(left.axisLabel?.formatter?.(5)).toBe('5u');
+	});
+
+	test('legacy chart (no axisNumberFormat) is byte-for-byte unchanged', () => {
+		const plain = buildChartOption(sample(), 'bar', opts()) as Record<string, unknown>;
+		expect(Array.isArray(plain.yAxis)).toBe(false); // single axis
+		expect(
+			(plain.yAxis as { axisLabel?: { formatter?: unknown } }).axisLabel?.formatter
+		).toBeUndefined();
+		const fmtd = buildChartOption(
+			sample(),
+			'bar',
+			opts({ numberFormat: { suffix: 'u' } })
+		) as Record<string, unknown>;
+		expect((fmtd.yAxis as { axisLabel?: { formatter?: unknown } }).axisLabel?.formatter).toBeTypeOf(
+			'function'
+		);
+	});
+
+	test('each series’ data label uses ITS OWN axis format', () => {
+		const opt = buildChartOption(
+			dualSample(),
+			'bar',
+			opts({ axisNumberFormat: { left: { decimals: 0 }, right: { percent: true } } })
+		) as Record<string, unknown>;
+		const [units, sellThrough] = seriesOf(opt);
+		expect(units.label?.formatter?.({ value: 100000 })).toBe('100000');
+		expect(sellThrough.label?.formatter?.({ value: 1.284 })).toBe('128.4%');
+	});
+
+	test('tooltip values are formatted per side (right-axis series gets the %)', () => {
+		const opt = buildChartOption(
+			dualSample(),
+			'bar',
+			opts({ axisNumberFormat: { right: { suffix: '%' } } }),
+			undefined,
+			{ compact: true }
+		) as Record<string, unknown>;
+		expect(tooltipText(opt, 'Sell Through %', 1.284)).toContain('1.284%');
+		expect(tooltipText(opt, 'Units Ordered', 100000)).not.toContain('%');
+	});
+
+	test('a right-axis-only override still installs the compact tooltip formatter', () => {
+		const plain = buildChartOption(dualSample(), 'bar', opts(), undefined, {
+			compact: true
+		}) as Record<string, unknown>;
+		expect((plain.tooltip as { formatter?: unknown }).formatter).toBeUndefined();
+		const fmtd = buildChartOption(
+			dualSample(),
+			'bar',
+			opts({ axisNumberFormat: { right: { suffix: '%' } } }),
+			undefined,
+			{ compact: true }
+		) as Record<string, unknown>;
+		expect((fmtd.tooltip as { formatter?: unknown }).formatter).toBeTypeOf('function');
+	});
+
+	test('single-axis chart ignores the right-axis override (no right axis to format)', () => {
+		const opt = buildChartOption(
+			sample(),
+			'bar',
+			opts({ dualAxis: false, axisNumberFormat: { right: { suffix: '%' } } })
+		) as Record<string, unknown>;
+		const y = opt.yAxis as { axisLabel?: { formatter?: (v: number) => string } };
+		expect(y.axisLabel?.formatter).toBeUndefined();
+	});
+
+	test('axis formats do not leak into the heatmap visualMap text', () => {
+		const opt = buildChartOption(
+			sample(),
+			'heatmap',
+			opts({ numberFormat: { suffix: 'u' }, axisNumberFormat: { right: { suffix: '%' } } })
+		) as Record<string, unknown>;
+		const vm = (opt.visualMap as { text?: [string, string] }).text;
+		expect(vm?.[0]).toContain('u');
+		expect(vm?.[0]).not.toContain('%');
+	});
+});
+// ---------------------------------------------------------------------------
 // #1081: per-series colour override + theme-aware named palettes.
 // Precedence: per-series override > colour-blind-safe (highContrast) > named
 // palette > theme default (tk.chartColors).
