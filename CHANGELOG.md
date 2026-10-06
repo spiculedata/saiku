@@ -32,6 +32,15 @@ All notable changes to Saiku are documented here. This project follows
 
 ### Added
 
+- **`POST /ai/describe-query` — AI-suggested tile titles and descriptions**
+  (Tier-1, schema-only; saiku#909). Given a query's structure — selected
+  measures, row/column axes, slicer — but no data values, suggests a short
+  title and one-line description for the dashboard tile it will render as.
+  Gated at the `schema-only` policy tier (the least-trusted, default tier);
+  respects saiku#902 PII annotations by redacting member captions on any
+  PII-flagged level before they reach the prompt. 503s with a clear message
+  when no LLM upstream is configured.
+
 - **`ai.provider=ollama` — local/self-hosted model support for the AI ask layer
   and schema-generation enrichment.** Both now accept `ollama` as a first-class
   provider value alongside `anthropic`/`openai`: it talks to a local Ollama

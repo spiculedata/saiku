@@ -492,11 +492,24 @@
         <property name="policyGuard" ref="aiPolicyGuard"/>
     </bean>
 
+    <!-- saiku#909 — Tier-1 tile-title/description suggestion (POST /ai/describe-query).
+         Reuses the ask feature's own credentials (saiku.ai.ask.*) rather than a
+         separate config namespace — same "off by default (no API key), 503 with a
+         clear message until configured" posture as aiAskServiceBean / cubeDesignerAiService. -->
+    <bean id="tileDescribeService"
+          class="org.saiku.service.olap.ai.describe.TileDescribeService">
+        <constructor-arg value="${saiku.ai.ask.apiKey:}"/>
+        <constructor-arg value="${saiku.ai.ask.model:}"/>
+        <constructor-arg value="${saiku.ai.ask.endpoint:}"/>
+        <constructor-arg value="${saiku.ai.ask.timeoutSeconds:60}"/>
+    </bean>
+
     <bean id="aiQueryResource" scope="request"
           class="org.saiku.web.rest.resources.AiQueryResource">
         <aop:scoped-proxy/>
         <property name="aiPolicyGuard" ref="aiPolicyGuard"/>
         <property name="kAnonymityFilter" ref="kAnonymityFilter"/>
+        <property name="describeService" ref="tileDescribeService"/>
         <property name="thinQueryService" ref="thinQueryBean"/>
         <property name="cubeMetadataService" ref="aiCubeMetadataServiceBean"/>
         <property name="asyncQueryService" ref="asyncQueryServiceBean"/>
