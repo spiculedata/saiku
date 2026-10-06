@@ -70,10 +70,10 @@
 	},
 	"dependencies": {
 		"@concepttocloud/saiku-design-system": "*",
-		"@lucide/svelte": "^1.49.0",
+		"@lucide/svelte": "^1.50.0",
 		"@xyflow/svelte": "^1.7.0",
 		"apache-arrow": "^21.2.0",
-		"bits-ui": "^2.19.3",
+		"bits-ui": "^2.19.4",
 		"clsx": "^2.1.1",
 		"css-tree": "^3.2.1",
 		"dompurify": "^3.4.16",
