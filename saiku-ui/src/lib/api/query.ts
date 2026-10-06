@@ -458,6 +458,36 @@ export async function drillthroughColumns(queryName: string): Promise<Drillthrou
 	return body.columns;
 }
 
+/**
+ * Hierarchy-aware drill down (saiku#776): expand a single row by injecting its member's
+ * children as nested rows directly beneath it. `rowIndex` is the row's position on the last
+ * executed result's ROWS axis (the same indexing {@link CellEntry} rows already use).
+ */
+export async function drillDown(queryName: string, rowIndex: number): Promise<QueryResult> {
+	const res = await fetch(`${REST_BASE}/${encodeURIComponent(queryName)}/drill/${rowIndex}`, {
+		credentials: 'include',
+		headers: { Accept: 'application/json' }
+	});
+	if (!res.ok) {
+		const text = await res.text().catch(() => '');
+		throw new Error(`drill ${res.status}: ${text.slice(0, 200)}`);
+	}
+	return (await res.json()) as QueryResult;
+}
+
+/** Collapse a row previously expanded via {@link drillDown}. */
+export async function drillUp(queryName: string, rowIndex: number): Promise<QueryResult> {
+	const res = await fetch(`${REST_BASE}/${encodeURIComponent(queryName)}/drillup/${rowIndex}`, {
+		credentials: 'include',
+		headers: { Accept: 'application/json' }
+	});
+	if (!res.ok) {
+		const text = await res.text().catch(() => '');
+		throw new Error(`drillup ${res.status}: ${text.slice(0, 200)}`);
+	}
+	return (await res.json()) as QueryResult;
+}
+
 export async function cancelQuery(name: string): Promise<void> {
 	await fetch(`${REST_BASE}/${encodeURIComponent(name)}/cancel`, {
 		method: 'DELETE',

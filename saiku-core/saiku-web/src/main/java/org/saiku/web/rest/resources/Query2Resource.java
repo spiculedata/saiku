@@ -954,6 +954,62 @@ public class Query2Resource {
     }
 
     /**
+     * Drill down into a single row: injects the clicked member's children as nested rows
+     * directly beneath it and re-runs the query, leaving every other row untouched.
+     * @summary Drill down
+     * @param queryName The query name
+     * @param rowIndex The index of the row (on the last executed result's ROWS axis) to drill into
+     * @return The re-executed query result, with the member's children inserted beneath it
+     */
+    @GET
+    @Produces({"application/json"})
+    @Path("/{queryname}/drill/{rowindex}")
+    public Response drillDown(@PathParam("queryname") String queryName, @PathParam("rowindex") int rowIndex) {
+        if (log.isDebugEnabled()) {
+            log.debug("TRACK\t" + "\t/query/" + queryName + "/drill/" + rowIndex + "\tGET");
+        }
+        try {
+            QueryResult qr = RestUtil.convert(thinQueryService.drillDown(queryName, rowIndex));
+            org.saiku.service.util.QueryContext ctx = thinQueryService.getContext(queryName);
+            if (ctx != null) {
+                qr.setQuery(ctx.getOlapQuery());
+            }
+            return Response.ok(qr).type(MediaType.APPLICATION_JSON).build();
+        } catch (Exception e) {
+            log.error("Cannot drill down on query (" + queryName + ") row (" + rowIndex + ")", e);
+            return queryFailure(e);
+        }
+    }
+
+    /**
+     * Drill up: collapses a row previously expanded via {@link #drillDown}, removing the rows
+     * that were injected for its children.
+     * @summary Drill up
+     * @param queryName The query name
+     * @param rowIndex The index of the previously drilled-down parent row to collapse
+     * @return The re-executed query result, with the drilled-down children removed
+     */
+    @GET
+    @Produces({"application/json"})
+    @Path("/{queryname}/drillup/{rowindex}")
+    public Response drillUp(@PathParam("queryname") String queryName, @PathParam("rowindex") int rowIndex) {
+        if (log.isDebugEnabled()) {
+            log.debug("TRACK\t" + "\t/query/" + queryName + "/drillup/" + rowIndex + "\tGET");
+        }
+        try {
+            QueryResult qr = RestUtil.convert(thinQueryService.drillUp(queryName, rowIndex));
+            org.saiku.service.util.QueryContext ctx = thinQueryService.getContext(queryName);
+            if (ctx != null) {
+                qr.setQuery(ctx.getOlapQuery());
+            }
+            return Response.ok(qr).type(MediaType.APPLICATION_JSON).build();
+        } catch (Exception e) {
+            log.error("Cannot drill up on query (" + queryName + ") row (" + rowIndex + ")", e);
+            return queryFailure(e);
+        }
+    }
+
+    /**
      * Drill through on the query result set.
      * @summary Drill through
      * @param queryName The query name
