@@ -5,6 +5,31 @@ All notable changes to Saiku are documented here. This project follows
 
 ## Unreleased
 
+### Known issues
+
+- **MySQL / MariaDB on the Calcite SQL path** (saiku#1886, reported against
+  `pentaho:mondrian:4.8.1.33`/`.34` on MySQL 8.3). Two independent causes,
+  **both in the `spiculedata/mondrian-saiku` fork** — Saiku only consumes the
+  published `pentaho:mondrian` artifact, so a fix needs a new fork build and a
+  `saiku-bom` version bump here:
+
+  1. a `<View>` whose SQL uses MySQL's JSON operators (`->>`, `->`) fails to
+     parse on the Calcite path with `ParseException: Encountered "->"`, even
+     with `dialect="generic"` on a statement MySQL itself will execute;
+  2. `CalciteDialectMap.forceQuoting()` rebuilds a bare ANSI `SqlDialect` and
+     drops the auto-detected product dialect, so generated SQL carries `"`
+     quoting (and ANSI `ORDER BY … NULLS LAST`) that MySQL rejects with a
+     bare `SQLSyntaxErrorException`.
+
+  Workarounds: `-Dmondrian.calcite.strict=false` (global and blunt) or
+  `-Dmondrian.backend=legacy` (per-process).
+
+  The documentation previously listed MySQL/MariaDB, Oracle and MSSQL as
+  natively mapped dialects. They are not — only a Tier-1 subset in
+  `CalciteDialectMap` is; the rest go through `forceQuoting()` and lose their
+  product dialect. `docs/mondrian-fork.md` and `AGENTS.md` now document the
+  tiers and the defect.
+
 ### Added
 
 - **`ai.provider=ollama` — local/self-hosted model support for the AI ask layer

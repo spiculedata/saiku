@@ -75,6 +75,11 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-10-06 — docs/mysql-calcite-dialect-1886 — merged development for PR #2067
+**Was doing:** resolved the changelog conflict, retaining the PR's MySQL known issue and every development entry; the Mondrian docs and AGENTS.md guidance remain intact.
+**Now:** check PR #2067 CI after the push; local Maven build was unavailable because Java and Maven are not installed.
+**Refs:** #1886, #2067
+
 ## 2026-10-05 — feature/arrow-cell-property-columns — merged development for PR #2046
 **Was doing:** merged development, keeping both column-header member metadata and the PR's optional cell-property columns; Spotless passed.
 **Now:** check PR #2046 CI after the push; local Maven tests stopped at a GitHub Packages 401 before compilation.
