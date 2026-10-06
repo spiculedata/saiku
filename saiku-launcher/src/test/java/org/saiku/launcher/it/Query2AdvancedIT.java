@@ -7,9 +7,12 @@ package org.saiku.launcher.it;
 import static org.junit.Assert.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import java.net.URI;
 import java.net.URLEncoder;
+import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -126,6 +129,51 @@ public class Query2AdvancedIT {
     }
 
     @Test
+    public void drillDown_thenDrillUp_addsThenRemovesChildRows() throws Exception {
+        // saiku#776: drilling into a row should inject its children as nested rows
+        // beneath it (more body rows than the flat level), and drilling back up
+        // should restore the original row count exactly.
+        //
+        // thinQueryBean is session-scoped (saiku-beans.xml), and the harness's shared
+        // HttpClient has no CookieHandler, so a bare harness.getAuth() after
+        // executeProductFamilyQuery would land on a brand-new HttpSession with an empty
+        // ThinQueryService context — exactly why zoomIn/drillacross above only assert
+        // "route resolves", not a real round trip. Threading the Set-Cookie JSESSIONID
+        // through manually pins every call in this test to the session that executed
+        // the query, so the drill actually finds it.
+        String name = "q2-drill-" + System.nanoTime();
+        HttpResponse<String> exec = executeProductFamilyQuery(name);
+        String sessionCookie = extractSessionCookie(exec);
+        assertNotNull("execute should mint a session cookie", sessionCookie);
+        int baselineRows = harness.parse(exec).path("cellset").size();
+
+        HttpResponse<String> down = getWithSession(sessionCookie, "/rest/saiku/api/query/" + name + "/drill/0");
+        assertEquals(
+                "drill down should succeed, got " + down.statusCode() + " body=" + down.body(), 200, down.statusCode());
+        JsonNode drilled = harness.parse(down);
+        assertTrue(
+                "drilled result should have more rows than the flat level (" + baselineRows + "), got "
+                        + drilled.path("cellset").size(),
+                drilled.path("cellset").size() > baselineRows);
+
+        HttpResponse<String> up = getWithSession(sessionCookie, "/rest/saiku/api/query/" + name + "/drillup/0");
+        assertEquals("drill up should succeed, got " + up.statusCode() + " body=" + up.body(), 200, up.statusCode());
+        JsonNode collapsed = harness.parse(up);
+        assertEquals(
+                "collapsing should restore the original row count",
+                baselineRows,
+                collapsed.path("cellset").size());
+    }
+
+    @Test
+    public void drillDown_unknownQuery_routeResolvesWithoutAuthFailure() throws Exception {
+        HttpResponse<String> resp =
+                harness.getAuth("/rest/saiku/api/query/does-not-exist-" + System.nanoTime() + "/drill/0");
+        assertNotEquals("drill route must resolve (no 404 for the route itself)", 404, resp.statusCode());
+        assertNotEquals("drill auth must pass (no 401)", 401, resp.statusCode());
+    }
+
+    @Test
     public void deleteQueryByName_returnsGoneOrOk() throws Exception {
         String name = "q2-delete-" + System.nanoTime();
         executeProductFamilyQuery(name);
@@ -148,7 +196,32 @@ public class Query2AdvancedIT {
 
     // ---------------------------------------------------------------- helpers
 
-    private void executeProductFamilyQuery(String name) throws Exception {
+    /** Pulls the {@code JSESSIONID} cookie out of a response's {@code Set-Cookie} header. */
+    private static String extractSessionCookie(HttpResponse<String> resp) {
+        for (String header : resp.headers().allValues("set-cookie")) {
+            if (header.startsWith("JSESSIONID=")) {
+                int semi = header.indexOf(';');
+                return semi >= 0 ? header.substring(0, semi) : header;
+            }
+        }
+        return null;
+    }
+
+    /** GET with admin Basic auth AND an explicit session cookie, so the request lands on the
+     *  same HttpSession (and hence the same session-scoped ThinQueryService) as whichever
+     *  earlier call minted {@code sessionCookie}. */
+    private HttpResponse<String> getWithSession(String sessionCookie, String path) throws Exception {
+        HttpRequest req = HttpRequest.newBuilder(URI.create(harness.baseUrl() + path))
+                .timeout(Duration.ofSeconds(60))
+                .header("Authorization", harness.adminBasicAuth())
+                .header("Accept", "application/json")
+                .header("Cookie", sessionCookie)
+                .GET()
+                .build();
+        return harness.send(req);
+    }
+
+    private HttpResponse<String> executeProductFamilyQuery(String name) throws Exception {
         String body =
                 """
                 {
@@ -169,5 +242,6 @@ public class Query2AdvancedIT {
                 "setup execute should succeed, got " + exec.statusCode() + " body=" + exec.body(),
                 200,
                 exec.statusCode());
+        return exec;
     }
 }

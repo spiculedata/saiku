@@ -1,5 +1,7 @@
 import {
 	cancelQuery,
+	drillDown as drillDownApi,
+	drillUp as drillUpApi,
 	executeQuery,
 	executeQueryAsync,
 	newQuery,
@@ -774,6 +776,33 @@ class QueryStore {
 			}
 		}
 		this.abortController?.abort();
+	}
+
+	/**
+	 * Hierarchy-aware drill down (saiku#776): expand a single row, injecting its member's
+	 * children as nested rows beneath it. `rowIndex` is the row's position on the last
+	 * executed result's ROWS axis. Adopts the server's updated queryModel into `current` so
+	 * a later edit (which re-POSTs the full model via {@link run}) doesn't silently undo the
+	 * drill. Throws on failure — callers show it inline (there's no full-query error state to
+	 * fall back on for a single-row action).
+	 */
+	async drillDown(rowIndex: number): Promise<void> {
+		if (!this.current) return;
+		const r = await drillDownApi(this.current.name, rowIndex);
+		this.result = r;
+		if (r.query?.queryModel) {
+			this.current = { ...this.current, queryModel: r.query.queryModel };
+		}
+	}
+
+	/** Collapse a row previously expanded via {@link drillDown}. */
+	async drillUp(rowIndex: number): Promise<void> {
+		if (!this.current) return;
+		const r = await drillUpApi(this.current.name, rowIndex);
+		this.result = r;
+		if (r.query?.queryModel) {
+			this.current = { ...this.current, queryModel: r.query.queryModel };
+		}
 	}
 }
 
