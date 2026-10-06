@@ -33,6 +33,13 @@ public class SaikuCube extends AbstractSaikuObject {
      *  date-filter modal can render them as one-click measures. */
     private List<SaikuTimeCalc> timeCalcs;
 
+    /**
+     * Optional HTTP(S) URL template for opening a business-system page from a cellset
+     * intersection. Sourced from the cube annotation {@code saiku.cellLink.url}, falling
+     * back to {@code <cellLinkUrl>} on the {@code .sds}. Null when neither is set.
+     */
+    private String cellLinkUrl;
+
     public SaikuCube() {}
 
     public SaikuCube(
@@ -95,5 +102,13 @@ public class SaikuCube extends AbstractSaikuObject {
 
     public void setTimeCalcs(List<SaikuTimeCalc> timeCalcs) {
         this.timeCalcs = timeCalcs == null ? null : new ArrayList<>(timeCalcs);
+    }
+
+    public String getCellLinkUrl() {
+        return cellLinkUrl;
+    }
+
+    public void setCellLinkUrl(String cellLinkUrl) {
+        this.cellLinkUrl = cellLinkUrl;
     }
 }

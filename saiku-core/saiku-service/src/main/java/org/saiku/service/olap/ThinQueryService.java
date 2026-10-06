@@ -669,6 +669,77 @@ public class ThinQueryService implements Serializable {
         }
     }
 
+    /**
+     * List the named sets currently defined on a query's model (saiku#824).
+     * @param queryName The query name
+     * @return the live {@link ThinNamedSet} list backing {@code tq.getQueryModel().getNamedSets()}
+     */
+    public List<ThinNamedSet> getNamedSets(String queryName) {
+        return requireQueryModel(queryName).getNamedSets();
+    }
+
+    /**
+     * Append a named set to a query's model (saiku#824). Validates the same
+     * shape {@code AiSchemaConverter#validateNamedSets} enforces for the AI Query
+     * API's inline {@code namedSets[]}: non-blank {@code name}/{@code expression},
+     * unique {@code name} among the entries already on the model.
+     * @param queryName The query name
+     * @param namedSet The named set to append
+     * @return the appended named set
+     */
+    public ThinNamedSet addNamedSet(String queryName, ThinNamedSet namedSet) {
+        ThinQueryModel qm = requireQueryModel(queryName);
+        if (namedSet == null) {
+            throw new IllegalArgumentException("Named set body must not be null");
+        }
+        String name = namedSet.getName();
+        if (StringUtils.isBlank(name)) {
+            throw new IllegalArgumentException("Named set requires a non-blank 'name'");
+        }
+        if (StringUtils.isBlank(namedSet.getExpression())) {
+            throw new IllegalArgumentException("Named set '" + name + "' requires a non-blank 'expression'");
+        }
+        for (ThinNamedSet existing : qm.getNamedSets()) {
+            if (name.equals(existing.getName())) {
+                throw new IllegalArgumentException(
+                        "Duplicate named-set name '" + name + "'. Each named set on a query must use a unique name.");
+            }
+        }
+        qm.getNamedSets().add(namedSet);
+        return namedSet;
+    }
+
+    /**
+     * Remove a named set from a query's model by name (saiku#824).
+     * @param queryName The query name
+     * @param setName The named set's name
+     */
+    public void removeNamedSet(String queryName, String setName) {
+        ThinQueryModel qm = requireQueryModel(queryName);
+        boolean removed = qm.getNamedSets().removeIf(ns -> setName.equals(ns.getName()));
+        if (!removed) {
+            throw new SaikuServiceException("No named set '" + setName + "' on query: " + queryName);
+        }
+    }
+
+    /**
+     * Resolve {@code queryName}'s {@link ThinQueryModel}, lazily attaching an empty
+     * one if the stored {@link ThinQuery} doesn't carry one yet (the MDX
+     * constructor path leaves {@code queryModel} null — see {@link ThinQuery}).
+     */
+    private ThinQueryModel requireQueryModel(String queryName) {
+        if (!context.containsKey(queryName)) {
+            throw new SaikuServiceException("Cannot get query from context: " + queryName);
+        }
+        ThinQuery tq = context.get(queryName).getOlapQuery();
+        ThinQueryModel qm = tq.getQueryModel();
+        if (qm == null) {
+            qm = new ThinQueryModel();
+            tq.setQueryModel(qm);
+        }
+        return qm;
+    }
+
     public byte[] getExport(String queryName, String type) {
         return getExport(queryName, type, new FlattenedCellSetFormatter());
     }

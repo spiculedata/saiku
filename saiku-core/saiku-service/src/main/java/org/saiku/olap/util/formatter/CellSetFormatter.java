@@ -116,22 +116,18 @@ public class CellSetFormatter extends AbstractCellSetFormatter {
                     memberInfo.setHierarchy(member.getHierarchy().getUniqueName());
                     memberInfo.setLevel(member.getLevel().getUniqueName());
                     memberInfo.setUniquename(member.getUniqueName());
+                    // saiku#827: surface olap4j member-level properties (custom
+                    // hierarchy properties, description, member key, caption, ...)
+                    // the same way saiku#773/PR #821 did for cell properties.
+                    for (Map.Entry<String, String> e :
+                            MemberPropertyExtractor.extract(member).entrySet()) {
+                        memberInfo.setProperty(e.getKey(), e.getValue());
+                    }
                     //					try {
                     //						memberInfo.setChildMemberCount(member.getChildMemberCount());
                     //					} catch (OlapException e) {
                     //						e.printStackTrace();
                     //						throw new RuntimeException(e);
-                    //					}
-                    //					NamedList<Property> values = member.getLevel().getProperties();
-                    //					for(int j=0; j<values.size();j++){
-                    //						String val;
-                    //						try {
-                    //							val = member.getPropertyFormattedValue(values.get(j));
-                    //						} catch (OlapException e) {
-                    //							e.printStackTrace();
-                    //							throw new RuntimeException(e);
-                    //						}
-                    //						memberInfo.setProperty(values.get(j).getCaption(), val);
                     //					}
 
                     //					if (y > 0) {
