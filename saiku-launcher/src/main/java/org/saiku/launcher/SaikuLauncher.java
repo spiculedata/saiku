@@ -27,6 +27,7 @@ import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.session.DefaultSessionCache;
 import org.eclipse.jetty.session.FileSessionDataStore;
+import org.saiku.service.security.SecretFileStore;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
@@ -305,8 +306,19 @@ public class SaikuLauncher implements Callable<Integer> {
             // when the container session survived. That half is fixed in
             // org.saiku.web.service.SessionService, which now mirrors the session map onto
             // the HttpSession so it rides along in these files.
-            File sessionsDir = saikuHome.resolve("sessions").toFile();
+            Path sessionsDirPath = saikuHome.resolve("sessions");
+            File sessionsDir = sessionsDirPath.toFile();
             sessionsDir.mkdirs();
+            // The session store holds serialised JSESSIONID + Spring SecurityContext entries —
+            // a session file is a bearer credential. Restrict the directory to the owner (0700 /
+            // owner-only ACL) so a co-tenant on the host cannot lift a session and hijack an
+            // authenticated user (#1919 18c, CWE-732).
+            try {
+                SecretFileStore.restrictDirectory(sessionsDirPath);
+            } catch (IOException e) {
+                System.err.println("WARNING: could not restrict the session store directory " + sessionsDirPath
+                        + " to the owner: " + e.getMessage());
+            }
             configureSessionPersistence(sessionHandler, sessionsDir);
 
             server.setHandler(webapp);

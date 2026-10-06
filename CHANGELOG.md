@@ -154,6 +154,29 @@ All notable changes to Saiku are documented here. This project follows
   `securityContext: { runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001 }` on
   the pod so the mounted volume is group-owned by the runtime user.
 
+- **Secret files under `saiku-home` are now created 0600 and written
+  atomically** (CWE-732 / CWE-377, saiku#1919 item 18c). `conf/secret.key`
+  (the per-install AES key), `mail-config.json` (encrypted SMTP password),
+  `mail-consent.json` and the Jetty `sessions/` store (serialised
+  `SecurityContext` — a session file is a bearer credential) were written with
+  default permissions and, in the key's case, tightened *after* the write, so
+  on a default-umask host they were world-readable for at least the duration of
+  the write and forever where the umask was wide. A new `SecretFileStore`
+  creates every one of them already owner-only (POSIX `0600`, or an owner-only
+  ACL on Windows) and moves a restricted temp sibling into place, so a reader
+  never sees a half-written file. The `sessions/` directory itself is now
+  `0700`.
+
+  **Behaviour change — a key that exists but cannot be used now stops startup
+  instead of rotating silently.** Previously an unreadable or corrupt
+  `conf/secret.key` (e.g. a `saiku-home` that changed owner) was quietly
+  replaced with a fresh random key, which made every stored `v2:` datasource
+  password permanently undecryptable with no log line. Startup now fails with an
+  ERROR naming the file, and a key that cannot be *persisted* (read-only home)
+  is fatal for the same reason. Fix the ownership/permissions of `saiku-home`,
+  or restore `conf/secret.key` from backup. Set `-Dsaiku.home` (or
+  `SAIKU_DS_ENCRYPTION_KEY`) in production: with `saiku.home` unset the key
+  still falls back to `java.io.tmpdir` — now a WARN instead of silence.
 ### Added
 
 - **Role management for Mondrian role-based security** (saiku#779). A new
