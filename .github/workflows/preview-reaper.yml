@@ -1,0 +1,114 @@
+name: preview reaper
+
+# Hourly reconciliation of the OSS preview environments on the shared preview host.
+# Ported from spiculedata/saiku-cloud .github/workflows/preview-reaper.yml
+# (saiku-cloud#1379):
+#   * tears down environments whose PR closed, or with no activity for 24h
+#     (activity = a push, a collaborator `/preview`, or a review / review comment
+#     by a write+ collaborator; reviews are polled here, from the default branch,
+#     rather than via pull_request_review, which would run the PR's own copy of
+#     the workflow with these secrets)
+#   * removes orphaned compose projects and volumes (`saiku-oss-pr-<n>` only: the
+#     saiku-cloud previews on the same box are invisible to this reaper)
+#   * prunes unused images built from THIS repository; a host still too full
+#     afterwards fails THIS run (red, loud) while new environments queue instead
+#     of half-building
+#   * promotes queued PRs into freed slots
+#
+# Trusted code only: scheduled runs and workflow_dispatch use the default
+# branch's copy of this file and the scripts. No PR content is read.
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Read the real host but only log what would change'
+        type: boolean
+        default: true
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  reap:
+    name: preview / reaper
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      pull-requests: write
+    concurrency:
+      group: preview-reaper
+      cancel-in-progress: false
+    env:
+      PREVIEW_SSH_TARGET: ${{ vars.PREVIEW_SSH_TARGET }}
+      # Scheduled runs are real; manual runs default to dry-run.
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run && 'true' || 'false' }}
+    steps:
+      - name: Preview host configured?
+        id: cfg
+        run: |
+          if [ -n "$PREVIEW_SSH_TARGET" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No preview host configured (repository variable PREVIEW_SSH_TARGET is empty). Nothing to do."
+            echo "Preview host not configured (PREVIEW_SSH_TARGET unset): skipped." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.cfg.outputs.enabled == 'true'
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: steps.cfg.outputs.enabled == 'true'
+        with:
+          node-version: '22'
+
+      - uses: ./.github/actions/preview-host-access
+        if: steps.cfg.outputs.enabled == 'true'
+        with:
+          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
+          ssh-private-key: ${{ secrets.PREVIEW_SSH_PRIVATE_KEY }}
+          known-hosts: ${{ vars.PREVIEW_SSH_KNOWN_HOSTS }}
+          target: ${{ vars.PREVIEW_SSH_TARGET }}
+
+      # A failed or truncated PR list would look like "every PR closed" and
+      # tear everything down, so fail the run instead of guessing.
+      - name: List open PRs
+        if: steps.cfg.outputs.enabled == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" --jq '.[].number' \
+            | jq -s '.' > "$RUNNER_TEMP/open-prs.json"
+          jq -e 'type == "array" and all(.[]; type == "number")' "$RUNNER_TEMP/open-prs.json" > /dev/null
+
+      - name: Reap, prune and promote
+        if: steps.cfg.outputs.enabled == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREVIEW_SSH_KEY: /home/runner/.ssh/preview
+          PREVIEW_SSH_KNOWN_HOSTS: /home/runner/.ssh/preview_known_hosts
+          SAIKU_PREVIEW_MAX_ENVS: ${{ vars.PREVIEW_MAX_ENVS }}
+          SAIKU_PREVIEW_IDLE_HOURS: ${{ vars.PREVIEW_IDLE_HOURS }}
+          SAIKU_PREVIEW_BASE_DOMAIN: ${{ vars.PREVIEW_BASE_DOMAIN }}
+          SAIKU_PREVIEW_AUTHORS: ${{ vars.PREVIEW_AUTHORS }}
+        run: |
+          flags=()
+          if [ "$DRY_RUN" = "true" ]; then flags+=(--dry-run); fi
+          node .github/scripts/preview-ctl.mjs reap \
+            --host ssh ${flags[@]+"${flags[@]}"} \
+            --open-prs "$RUNNER_TEMP/open-prs.json" \
+            --activity github \
+            --sync-root "$GITHUB_WORKSPACE" \
+            --out "$RUNNER_TEMP/reap-result.json" \
+            --summary "$GITHUB_STEP_SUMMARY"
