@@ -145,11 +145,14 @@ saiku-embed {
 - **Cross-origin is the normal case, not a special one.** The component
   fetches with `credentials: "omit"` — the token is the only auth carrier, so
   no cookie/CORS-credential complications. Just make sure the Saiku origin is
-  reachable from the _viewer's browser_ (not merely from your server).
-- **Web component, not an iframe.** There's no `X-Frame-Options` /
-  `frame-ancestors` dance and host CSS can't bleed in (shadow root). If you
-  specifically need iframe-style process isolation, wrap the tag in your own
-  iframe page.
+  reachable from the *viewer's browser* (not merely from your server).
+- **Web component, not an iframe.** Host CSS can't bleed in (shadow root), and
+  you don't need to widen Saiku's own framing headers — the web component
+  fetches data over XHR. If you specifically need iframe-style process
+  isolation, wrap the tag in your own iframe page; note that since saiku#1917
+  `/ui/**` ships `frame-ancestors 'self'`, so a cross-origin iframe of Saiku
+  itself needs the deployment to set
+  `-Dsaiku.security.frameAncestors="'self' https://wiki.example.com"`.
 - **Blank chart but a token you believe in?** Every failure mode (wrong
   path, wrong kind, expired, revoked) returns the same opaque `EMBED_INVALID`
   401 by design — probes can't enumerate. Re-mint the token for the exact
