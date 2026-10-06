@@ -30,6 +30,22 @@ import {
 	type SaikuApp
 } from '$lib/api/apps';
 
+/** Extra input a caller can hand {@link AppDocStore.loadApp}. */
+export interface LoadAppOptions {
+	/** Page id carried by the app's `?p=` deep link. Honoured only when it names
+	 *  a page that actually exists in the loaded app — a stale or hand-edited
+	 *  link must not leave the app with no page selected, so an unknown id falls
+	 *  back to page 0. */
+	pageId?: string | null;
+}
+
+/** The page an app should open on: the deep-linked one when it exists in
+ *  {@code pages}, else the first page, else null for an empty app. */
+export function initialPageId(pages: AppPage[], pageId?: string | null): string | null {
+	if (pageId && pages.some((p) => p.id === pageId)) return pageId;
+	return pages[0]?.id ?? null;
+}
+
 /** One entry on the undo/redo stack — the whole editable envelope plus which
  *  page was active. Deep-cloned on capture so the stack never aliases live
  *  $state. */
@@ -133,14 +149,24 @@ class AppDocStore {
 		this.clearHistory();
 	}
 
-	/** Load an app from the repository, normalise it, and select page 0. */
-	async loadApp(path: string): Promise<void> {
+	/** Load an app from the repository, normalise it, and select the page the
+	 *  caller asked for — the `?p=` deep link when it names a real page in the
+	 *  loaded app (saiku#1766), otherwise page 0.
+	 *
+	 *  Selection lives HERE rather than in a view's mount hook because a load is
+	 *  the only moment that decides which page an app opens on: any later load of
+	 *  the same path (a re-mount, a route reuse, a double-fired load effect) used
+	 *  to reset the selection to page 0 *after* a view had already restored the
+	 *  deep link, so the shared link silently opened the Overview. Deriving the
+	 *  active page from the load's own input makes the outcome independent of how
+	 *  many loads race. */
+	async loadApp(path: string, opts: LoadAppOptions = {}): Promise<void> {
 		this.loading = true;
 		this.error = null;
 		try {
 			const app = await getApp(path);
 			this.current = normaliseApp(app);
-			this.activePageId = this.current.pages[0]?.id ?? null;
+			this.activePageId = initialPageId(this.current.pages, opts.pageId);
 			this.savedPath = path;
 			this.clearHistory();
 		} catch (e) {

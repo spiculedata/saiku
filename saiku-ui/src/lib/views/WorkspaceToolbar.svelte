@@ -29,6 +29,7 @@
 	import EmailMeThisModal from '$lib/modals/EmailMeThisModal.svelte';
 	import AiEmailPreparingPopup from '$lib/views/AiEmailPreparingPopup.svelte';
 	import { getQueryMdx, type ThinQuery } from '$lib/api/query';
+	import { cellsetToCsv, csvDownloadName, downloadCsv } from '$lib/cellset/exportCsv';
 	import ConfirmModal from '$lib/modals/ConfirmModal.svelte';
 	import WarningModal from '$lib/modals/WarningModal.svelte';
 	import MDXModal from '$lib/modals/MDXModal.svelte';
@@ -275,8 +276,26 @@
 			warningOpen = true;
 			return;
 		}
+		// saiku#1985 — CSV serialises the cellset the grid is already showing,
+		// so it downloads straight from the browser: no REST round-trip, and
+		// the file matches the on-screen grid exactly. XLS / PDF still need
+		// the server's document generation.
+		if (kind === 'csv') {
+			exportCsv();
+			return;
+		}
 		const name = encodeURIComponent(query.current.name);
 		window.open(`/rest/saiku/api/query/${name}/export/${kind}`, '_blank');
+	}
+
+	function exportCsv() {
+		const csv = cellsetToCsv(query.result);
+		if (!csv) {
+			warningMessage = i18n.t('warning.runBeforeExport');
+			warningOpen = true;
+			return;
+		}
+		downloadCsv(csvDownloadName(query.current?.name), csv);
 	}
 
 	async function onSavePick(folder: string, name: string) {
