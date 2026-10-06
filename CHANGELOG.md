@@ -62,6 +62,25 @@ All notable changes to Saiku are documented here. This project follows
   connecting. Add `--bind 0.0.0.0 --auth-user <name>` with a password file, and
   give clients those credentials (`authentication=BASIC;avatica_user=…;avatica_password=…`
   for Avatica, the normal user/password for Postgres clients).
+- **The default-credential boot gate now checks the password, not the hash**
+  (CWE-1392 / CWE-521, saiku#1915). `enforceDefaultCredentialPolicy` compared
+  the stored bcrypt **string** against the two shipped defaults, so any
+  password supplied through `SAIKU_ADMIN_PASSWORD` sailed past the gate: bcrypt
+  salts are random, so `SAIKU_ADMIN_PASSWORD=admin` produced a new hash,
+  `isDefaultAdminValue` returned false, the boot proceeded with `admin`/`admin`
+  and the post-boot warning was silenced — defeating the control with the exact
+  credential it claims to block. A re-encoded `admin` hash (in the WAR or in an
+  external `users.properties`) is now recognised as the default, and a supplied
+  password must additionally clear a strength policy: **≥ 12 characters**, not
+  a well-known weak password (`admin`, `password`, `changeme`, `12345678`, …)
+  and not equal to the username. The hash-side denylist is matched with bcrypt
+  `matches` against an operators-supplied `users.properties`, where length
+  cannot be asserted. New `SAIKU_ADMIN_PASSWORD_FILE` reads the password from a
+  secret-manager mount (trailing newline stripped). Escape hatches, unchanged in
+  spirit: `SAIKU_ALLOW_WEAK_ADMIN_PASSWORD=true`, plus the existing
+  `SAIKU_ALLOW_DEFAULT_ADMIN=true` / `SAIKU_DEMO=true` (so the local IT harness
+  and demo installs are unaffected). Refused boots print the same `FATAL:` fix-it
+  block and exit non-zero.
 
 - **Bare saved-query embeds scope guest slicer overrides to the saved
   query's own FILTER axis (CWE-863, presentation scope, saiku#1946).** A
@@ -171,6 +190,29 @@ All notable changes to Saiku are documented here. This project follows
   `securityContext: { runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001 }` on
   the pod so the mounted volume is group-owned by the runtime user.
 
+- **Secret files under `saiku-home` are now created 0600 and written
+  atomically** (CWE-732 / CWE-377, saiku#1919 item 18c). `conf/secret.key`
+  (the per-install AES key), `mail-config.json` (encrypted SMTP password),
+  `mail-consent.json` and the Jetty `sessions/` store (serialised
+  `SecurityContext` — a session file is a bearer credential) were written with
+  default permissions and, in the key's case, tightened *after* the write, so
+  on a default-umask host they were world-readable for at least the duration of
+  the write and forever where the umask was wide. A new `SecretFileStore`
+  creates every one of them already owner-only (POSIX `0600`, or an owner-only
+  ACL on Windows) and moves a restricted temp sibling into place, so a reader
+  never sees a half-written file. The `sessions/` directory itself is now
+  `0700`.
+
+  **Behaviour change — a key that exists but cannot be used now stops startup
+  instead of rotating silently.** Previously an unreadable or corrupt
+  `conf/secret.key` (e.g. a `saiku-home` that changed owner) was quietly
+  replaced with a fresh random key, which made every stored `v2:` datasource
+  password permanently undecryptable with no log line. Startup now fails with an
+  ERROR naming the file, and a key that cannot be *persisted* (read-only home)
+  is fatal for the same reason. Fix the ownership/permissions of `saiku-home`,
+  or restore `conf/secret.key` from backup. Set `-Dsaiku.home` (or
+  `SAIKU_DS_ENCRYPTION_KEY`) in production: with `saiku.home` unset the key
+  still falls back to `java.io.tmpdir` — now a WARN instead of silence.
 ### Added
 
 - **Role management for Mondrian role-based security** (saiku#779). A new
@@ -284,6 +326,12 @@ Two changes are visible behaviour changes for API clients — see **Breaking**.
 
 ### Added
 
+- **Hierarchy-aware drill down / drill up on the pivot grid.** Clicking the caret
+  on a row header now injects that member's children as nested rows directly
+  beneath it — `GET /rest/saiku/api/query/{name}/drill/{rowIndex}` — instead of
+  the old "zoom in" behaviour of replacing the whole level. Clicking again
+  (`GET .../drillup/{rowIndex}`) collapses just that member's children, leaving
+  any other independently drilled-down rows expanded. (saiku#776)
 - **Cube Designer — query preview.** "Try a query" now runs against the schema
   you are editing, before it is saved. The proposed XML is held in memory and the
   connection reuses the datasource's own JDBC settings, so the preview hits the

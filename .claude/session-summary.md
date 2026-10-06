@@ -75,6 +75,17 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-10-05 — feature/arrow-cell-property-columns — merged development for PR #2046
+**Was doing:** merged development, keeping both column-header member metadata and the PR's optional cell-property columns; Spotless passed.
+**Now:** check PR #2046 CI after the push; local Maven tests stopped at a GitHub Packages 401 before compilation.
+**Refs:** #828, #2046
+
+## 2026-10-05 — feature/issue-776-hierarchy-drill — merged development for PR #2040
+**Was doing:** merged development into PR #2040's branch, retaining the drill caret and the base branch's cell link action in CellsetTable.
+**Now:** check PR #2040 CI, especially `Query2AdvancedIT`; the Java test could not run locally because GitHub Packages artifacts require credentials.
+**Watch out:** preserve `seedQueryFromCellSet` and `setConsistent(false)` from the earlier CI fixes when editing the drill implementation.
+**Refs:** #776, #2040
+
 ## 2026-09-28 — feature/2101-session-summary-artifact — added this file
 **Was doing:** created the session-summary artifact for saiku#2101 (ACMM L3
 `acmm:session-summary`) and referenced it from the *Agent resources* section of
