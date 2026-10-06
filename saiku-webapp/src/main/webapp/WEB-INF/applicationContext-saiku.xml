@@ -29,7 +29,10 @@
   <!-- BASIC AUTHENTICATION -->
     <!-- saiku#1905 (CWE-611 + broken access control): dedicated auth gate for the
          XMLA SOAP endpoint. It is prefix-mapped /xmla/* (web.xml -> SaikuXmlaServlet),
-         and the security="none" chains below match MVC-style (servlet-path-RELATIVE):
+         and the security="none" chains below matched MVC-style (servlet-path-RELATIVE)
+         [NOTE: saiku#1951 has since added request-matcher="ant" to every none chain, so they
+         match the ABSOLUTE path and can no longer claim a servlet's pathInfo — but this
+         chain is kept as an independent, belt-and-braces gate over the whole /xmla surface]:
          a bare POST /xmla/ has pathInfo "/", which the pattern="/" none chain matches,
          and POST /xmla/<seg> (pathInfo "/<seg>") could be matched by e.g. the
          pattern="/ui/**" none chain — either way the request was claimed by a
@@ -49,11 +52,23 @@
          forged request to ride (the main chain likewise never CSRF-checks /xmla —
          SaikuCsrfRequestMatcher only guards /rest/**). basicAuth401NoChallenge returns
          a bare 401 (no WWW-Authenticate) so anonymous clients get 401, not a browser
-         auth-dialog challenge.
+         auth-dialog challenge — that reasoning is correct for the SPA but WRONG for XMLA,
+         see saiku#1950 below.
 
          create-session="stateless": XMLA clients authenticate per-request with HTTP
          Basic and carry no cookie, so this chain never persists a SecurityContext and
          never mints a Jetty FileSessionDataStore session file per request.
+
+         saiku#1950: entry-point-ref is xmlaBasicAuthChallenge, NOT basicAuth401NoChallenge.
+         The /xmla chain gets a REAL `WWW-Authenticate: Basic realm="Saiku XMLA"` challenge so
+         challenge-driven clients (Excel/MSOLAP over WinHTTP) can negotiate; the main SPA chain
+         below deliberately keeps the bare-401 no-challenge entry point (saiku#878) so the
+         browser never pops a native auth dialog over the SPA's XHR 401s. One shared entry point
+         would trade one client-compat problem for the other, so the two chains pick per surface.
+         Auth policy itself is UNCHANGED by this: still isFullyAuthenticated(), still CSRF-off,
+         still the shared per-IP loginRateLimitFilter, still stateless. Only the 401's headers
+         differ. Locked by XmlaAuthIT#anonymousPostToXmlaAdvertisesBasicChallenge and its
+         counterweight #spaChainStillOmitsBasicChallenge.
 
          loginRateLimitFilter (BEFORE BASIC_AUTH_FILTER): the SAME per-IP brute-force
          lockout the main chain uses — without it, /xmla would be an un-throttled
@@ -61,26 +76,61 @@
          to /xmla). The shared loginRateLimiter bean returns a 429 short-circuit once
          the IP exceeds the failure budget, before the AuthenticationProvider runs. -->
     <security:http pattern="/xmla/**" request-matcher="ant" use-expressions="true"
-                   create-session="stateless" entry-point-ref="basicAuth401NoChallenge">
+                   create-session="stateless" entry-point-ref="xmlaBasicAuthChallenge">
       <security:csrf disabled="true"/>
       <security:intercept-url pattern="/**" access="isFullyAuthenticated()" />
-      <security:http-basic entry-point-ref="basicAuth401NoChallenge"/>
+      <security:http-basic entry-point-ref="xmlaBasicAuthChallenge"/>
       <security:custom-filter ref="loginRateLimitFilter" before="BASIC_AUTH_FILTER"/>
       <security:anonymous/>
     </security:http>
 
-    <security:http pattern="/rest/saiku/info" security="none">
+    <!-- saiku#1951: the two legacy `security="none"` chains for "/rest/saiku/info" and
+         "/rest/saiku/info/ui-settings" were DEAD and have been DELETED. Those patterns
+         ("/rest/...") are ABSOLUTE-path shapes, but the none chains match the
+         SERVLET-RELATIVE lookup path — for the prefix-mapped Jersey servlet (/rest/*) the
+         lookup path is "/saiku/info", never "/rest/saiku/info", so these patterns could
+         never match. The endpoints were already served anonymously by the main chain's
+         permitAll rules below, which run WITH a full SecurityContext / CSRF machinery.
+         Converting them to ant matching would have been actively harmful: ant makes them
+         match again, and a security="none" chain installs NO filters at all — it would
+         have DOWNGRADED those endpoints from "anonymous with security context" to
+         "anonymous with no SecurityContext, no CSRF, no rate-limit". DELETED, not converted. -->
+
+    <!-- saiku#1951 (broken access control, same class as #1905's /xmla gap): every
+         security="none" chain below now carries request-matcher="ant" so its pattern is
+         matched against the ABSOLUTE request path instead of the servlet-relative lookup
+         path. Without it, a request to the prefix-mapped Jersey servlet (/rest/*) has a
+         pathInfo that one of these chains would claim: POST /rest/ (pathInfo "/") matched
+         pattern="/", POST /rest/ui/x (pathInfo "/ui/x") matched pattern="/ui/**", and so on
+         for /rest/images/**, /rest/repository/**, /rest/showcase/**, /rest/index.jsp, ...
+         Each of those would be served by Jersey with NO Spring Security filter at all
+         (no auth, no CSRF, no rate-limit, no SecurityContext) — exactly how /xmla/ slipped
+         in anonymous before #1905. Today every JAX-RS resource is class-rooted at /saiku/…,
+         so those shapes all 404; but any future resource rooted at one of these prefixes
+         (or at a bare "/") would be anonymous-BY-CONSTRUCTION and nothing in CI would catch it.
+
+         Behaviour-preserving for the intended paths: every pattern below targets a
+         DEFAULT-SERVLET path (/ui/**, /images/**, /, /index.jsp, /style.css, ...), and the
+         default servlet has no prefix mapping, so its lookup path IS the absolute path —
+         absolute matching therefore covers exactly the same URLs, and stops covering the
+         /rest/<static-prefix> steal.
+
+         ONE deliberate shift: BrandingServlet is prefix-mapped /ui/branding/* (web.xml), so its
+         MVC lookup path was "/x.css" — which matched NO none chain, and /ui/branding/* has no
+         intercept-url in the main chain, so it was served anonymously via the main chain (with a
+         SecurityContext). Under ant it joins /ui/** and is served by that none chain instead:
+         still anonymous, still public, now consistent with every other /ui/* asset, and without a
+         SecurityContext. That is the correct shape for a theme-CSS overlay, and the only
+         prefix-mapped servlet under a none-chain pattern besides /rest/* and /xmla/* (both of
+         which have their own dedicated ant-matched chains declared above). -->
+    <security:http pattern="/repository/**" request-matcher="ant" security="none">
     </security:http>
-    <security:http pattern="/rest/saiku/info/ui-settings" security="none">
-    </security:http>
-    <security:http pattern="/repository/**" security="none">
-    </security:http>
-    <security:http pattern="/ui/**" security="none">
+    <security:http pattern="/ui/**" request-matcher="ant" security="none">
     </security:http>
     <!-- Static showcase SPA (saiku-ui/static/showcase/) — public, same-origin so its
          fetches to /rest/saiku/api/* ride the visitor's own auth session (or the
          demo mode's warm-session bootstrap). -->
-    <security:http pattern="/showcase/**" security="none">
+    <security:http pattern="/showcase/**" request-matcher="ant" security="none">
     </security:http>
     <!-- Embeddability demo (embed-demo/) — the "FoodMart Ops" white-label OEM portal.
          Public static page; its same-origin fetches to /rest/saiku/api/ai/* warm an
@@ -90,23 +140,23 @@
          The bare "/embed-demo" (no trailing slash) needs its own permit — the Ant
          matcher's "/**" suffix does not cover it — so the container's redirect to
          "/embed-demo/" isn't swallowed by the authenticated /** rule as a 403. -->
-    <security:http pattern="/embed-demo" security="none">
+    <security:http pattern="/embed-demo" request-matcher="ant" security="none">
     </security:http>
-    <security:http pattern="/embed-demo/**" security="none">
+    <security:http pattern="/embed-demo/**" request-matcher="ant" security="none">
     </security:http>
     <!-- AQVIRA pharma OEM demo (aqvira-demo/) — same public-static + warm-session
          model as embed-demo. Bare path permitted so the trailing-slash redirect works. -->
-    <security:http pattern="/aqvira-demo" security="none">
+    <security:http pattern="/aqvira-demo" request-matcher="ant" security="none">
     </security:http>
-    <security:http pattern="/aqvira-demo/**" security="none">
+    <security:http pattern="/aqvira-demo/**" request-matcher="ant" security="none">
     </security:http>
-    <security:http pattern="/" security="none">
+    <security:http pattern="/" request-matcher="ant" security="none">
     </security:http>
-    <security:http pattern="/index.jsp" security="none">
+    <security:http pattern="/index.jsp" request-matcher="ant" security="none">
     </security:http>
-    <security:http pattern="/style.css" security="none">
+    <security:http pattern="/style.css" request-matcher="ant" security="none">
     </security:http>
-    <security:http pattern="/images/**" security="none">
+    <security:http pattern="/images/**" request-matcher="ant" security="none">
     </security:http>
     <!-- request-matcher="ant" forces the legacy AntPathMatcher semantics
          for intercept-url patterns. Spring Security 6 defaults to
@@ -226,7 +276,14 @@
            so a bare "/xmla/" (pathInfo "/") or "/xmla/<seg>" would be claimed by
            the pattern="/" or pattern="/…/**" none chains and served anonymously
            BEFORE reaching this chain. It is therefore gated by its own dedicated
-           ant-matched secured chain declared at the TOP of this file. See there. -->
+           ant-matched secured chain declared at the TOP of this file. See there.
+
+           NOTE (saiku#1951): that same MVC-style steal applied to this chain's own
+           /rest/** rule — a "/rest/ui/x"-shaped request was claimed by a none chain and
+           reached Jersey unfiltered. All security="none" chains now declare
+           request-matcher="ant" (match the absolute path), so the ONLY request that can
+           reach Jersey is one whose ABSOLUTE path is /rest/…, which lands here and is
+           gated by the rules below. -->
       <security:intercept-url pattern="/rest/**" access="isFullyAuthenticated()" />
       <security:intercept-url pattern="/json/**" access="isFullyAuthenticated()" />
       <security:intercept-url pattern="/WEB-INF/classes/legacy-schema" access="isAnonymous()" />

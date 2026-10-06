@@ -388,6 +388,14 @@
 			<groupId>jakarta.mail</groupId>
 			<artifactId>jakarta.mail-api</artifactId>
 		</dependency>
+		<!-- OpenPDF (maintained com.lowagie:itext fork, same com.lowagie.text.*
+		     API) — the headless snapshot renderer's PDF writer (saiku#1810). A
+		     pure-Java writer, so a dashboard PDF is produced with no browser
+		     and no display attached. Version from saiku-bom. -->
+		<dependency>
+			<groupId>com.github.librepdf</groupId>
+			<artifactId>openpdf</artifactId>
+		</dependency>
 		<dependency>
 			<groupId>org.eclipse.angus</groupId>
 			<artifactId>angus-mail</artifactId>

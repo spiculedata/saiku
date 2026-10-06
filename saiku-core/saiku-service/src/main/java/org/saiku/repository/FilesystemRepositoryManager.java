@@ -519,9 +519,12 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
                 throw new SaikuServiceException("You don't have permission to write to " + path);
             }
 
-            int pos = path.lastIndexOf(sep);
-            String filename = "." + sep + path.substring(pos + 1, path.length());
-            this.createFolder(filename);
+            // saiku#1936: this used to build `"./" + lastSegment` and hand THAT to
+            // createFolder(), so a folder create for "/a/b/c" landed at the datadir ROOT
+            // as "./c" instead of under "/a/b". createFolder() resolves through the same
+            // resolveWithinDatadir()-anchored path the ACL gate above just checked, so pass
+            // the caller's path through unchanged and let it resolve to its real location.
+            this.createFolder(path);
             return null;
 
         } else {
@@ -531,7 +534,6 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
             // any path in the repository (including other users' homes
             // and the shared /datasources tree).
             int pos = path.lastIndexOf(sep);
-            String filename = "." + sep + path.substring(pos + 1, path.length());
             // saiku#1660: a path with no separator (e.g. "welcome.saikudash",
             // as JAX-RS hands us when the client posts a bare filename) has
             // pos == -1, so path.substring(0, pos) threw
@@ -563,11 +565,13 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
                 throw new SaikuServiceException("You don't have permission to write to " + path);
             }
 
-            File check = this.getNode(filename);
-            if (check.exists()) {
-                check.delete();
-            }
-
+            // saiku#1936: the pre-write cleanup used to be
+            // `getNode("./" + basename)`, which resolves to the DATADIR ROOT — so saving
+            // "/homes/<u>/foo.json" silently deleted an unrelated "<datadir>/foo.json" and
+            // left the real target to be truncated by FileWriter below. There is nothing to
+            // clean up: `new FileWriter(resNode)` truncates the file we are about to write,
+            // and the resolved target must NOT be unlinked first (a later IOException would
+            // then leave nothing behind instead of the previous content).
             File resNode = this.createNode(path);
 
             FileWriter fileWriter;

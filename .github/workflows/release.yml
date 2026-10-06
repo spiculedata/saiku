@@ -23,8 +23,11 @@ jobs:
     name: Build fat JAR + dist zip
     runs-on: ubuntu-latest
     permissions:
-      contents: read # checkout only
-      packages: write # `mvn deploy` publishes module jars to GH Packages
+      contents: read # checkout only — NO packages: write here (saiku#1993).
+      # This job runs the full untrusted lifecycle (`mvn verify` + the
+      # frontend-maven-plugin `npm ci`/`npm run build` over saiku-ui's
+      # transitive tree), so it must not hold a GH Packages write token.
+      # Publishing moved to the dedicated `deploy-packages` job below.
     outputs:
       # ref_tag is the tag as pushed (v-prefixed); version has the v
       # stripped for filenames and headings. Anything addressing GitHub
@@ -47,16 +50,18 @@ jobs:
       # See ci.yml for the rationale — multi-server settings.xml so the build
       # can resolve mondrian and the spiculedata olap4j / olap4j-xmlaserver
       # artifacts from GitHub Packages.
+      #
+      # GH_PACKAGES_TOKEN is a PAT used for resolving inbound deps
+      # (mondrian-saiku etc) — READ-only resolution, no publish scope
+      # needed. There is deliberately NO `github-saiku-self` server entry
+      # in this job's settings.xml: the ephemeral GITHUB_TOKEN that
+      # publishes THIS repo's artifacts lives only in the
+      # `deploy-packages` job (saiku#1993), so no write-scoped credential
+      # sits on disk while tests / npm lifecycle scripts execute here.
       - name: Configure Maven settings.xml
         env:
           GH_PACKAGES_USER: ${{ github.actor }}
           GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
-          # GH_PACKAGES_TOKEN is a PAT used for resolving inbound deps
-          # (mondrian-saiku etc). For deploying THIS repo's own artifacts we
-          # use the workflow's ephemeral GITHUB_TOKEN under server id
-          # github-saiku-self — 'packages: write' is granted on THIS job (see
-          # the jar job's per-job `permissions:` block), not workflow-wide.
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p ~/.m2
           cat > ~/.m2/settings.xml <<EOF
@@ -66,7 +71,6 @@ jobs:
               <server><id>github-olap4j</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
               <server><id>github-olap4j-xmlaserver</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
               <server><id>github-saiku-query</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
-              <server><id>github-saiku-self</id><username>${GITHUB_ACTOR}</username><password>${GITHUB_TOKEN}</password></server>
             </servers>
           </settings>
           EOF
@@ -119,22 +123,6 @@ jobs:
         # directly with per-user Basic auth.
         run: mvn -B -ntp -DskipTests -pl saiku-launcher -am package
 
-      - name: mvn deploy (module jars to GH Packages)
-        # Publishes saiku-bom + saiku-core/* to maven.pkg.github.com/spiculedata/saiku
-        # so downstream consumers (saiku-cloud's IRepositoryManager
-        # adapter, embedders) can `<dependency>` saiku-service the
-        # normal way. saiku-launcher (fat jar) and saiku-webapp (raw
-        # war) opt out via maven-deploy-plugin <skip>true</skip> in
-        # their own poms — they ride to the GitHub Releases page only.
-        #
-        # `mvn deploy` from the reactor root walks every module in
-        # <modules>; the two opt-outs above keep GH Packages free of
-        # multi-hundred-meg blobs. Tests already ran in ci.yml on PR
-        # merge — re-running them here would be wasted runner minutes.
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: mvn -B -ntp -DskipTests deploy
-
       - name: Stage release assets
         env:
           VERSION: ${{ steps.meta.outputs.version }}
@@ -159,8 +147,10 @@ jobs:
           zip -r "release-assets/${STAGE}.zip" "$STAGE"
           # 3) CycloneDX SBOM (saiku#1990). cyclonedx-maven-plugin's
           #    makeAggregateBom writes ONE aggregate at the reactor top-level.
-          #    The last Maven step in this job is a full-reactor `mvn deploy`,
-          #    so the deterministic location is the root module's target/. Fall
+          #    The last Maven step in this job is the full-reactor
+          #    `mvn verify` (saiku#1993 moved `mvn deploy` out to the
+          #    dedicated `deploy-packages` job), so the deterministic
+          #    location is the root module's target/. Fall
           #    back to a tree search in case a future reordering moves it.
           SBOM_SRC="target/saiku-sbom.json"
           [ -f "$SBOM_SRC" ] || SBOM_SRC="$(find . -name saiku-sbom.json | head -1)"
@@ -191,6 +181,88 @@ jobs:
           name: saiku-sbom
           path: release-assets/${{ steps.meta.outputs.sbom_name }}
           retention-days: 7
+
+  deploy-packages:
+    # PUBLISH-ONLY job (saiku#1993). The jar job builds the release artifacts
+    # and never holds a write-scoped credential — it runs the whole untrusted
+    # lifecycle (`mvn verify` plus the frontend-maven-plugin `npm ci` /
+    # `npm run build` across saiku-ui's transitive dependency tree, whose
+    # install/postinstall scripts we do not control). Before this split the
+    # jar job wrote the ephemeral `packages:write` GITHUB_TOKEN into
+    # ~/.m2/settings.xml (server id `github-saiku-self`) BEFORE `mvn verify`,
+    # so any test, Maven plugin or npm lifecycle script could read a token
+    # that publishes to this repo's GitHub Packages.
+    #
+    # Here the token appears only in this job's settings.xml, and the only
+    # code that can run while it is on disk is the Maven build itself with
+    # tests, test-compilation and the frontend/npm goals switched off — so a
+    # compromised npm dependency can no longer reach a write-scoped token.
+    name: Deploy module jars to GitHub Packages
+    runs-on: ubuntu-latest
+    # Only start once the jar job's verify/package gate passed; a busted build
+    # never reaches the publishing step, and no release asset depends on this
+    # job (the JAR/dist/SBOM ride to the GitHub release from `jar`).
+    needs: [jar]
+    permissions:
+      contents: read # checkout only
+      packages: write # `mvn deploy` publishes module jars to GH Packages
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up JDK 22
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "22"
+          cache: maven
+
+      - name: Configure Maven settings.xml (publish credentials)
+        # Read-scoped PAT for resolving the inbound spiculedata artifacts
+        # (mondrian-saiku, olap4j, olap4j-xmlaserver, saiku-query) — GH
+        # Packages requires auth even for public downloads — plus the ONLY
+        # write-scoped entry, `github-saiku-self`, which is what the root
+        # pom's <distributionManagement> publishes to.
+        env:
+          GH_PACKAGES_USER: ${{ github.actor }}
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p ~/.m2
+          cat > ~/.m2/settings.xml <<EOF
+          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+            <servers>
+              <server><id>github-mondrian-saiku</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-olap4j</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-olap4j-xmlaserver</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-saiku-query</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-saiku-self</id><username>${GITHUB_ACTOR}</username><password>${GITHUB_TOKEN}</password></server>
+            </servers>
+          </settings>
+          EOF
+
+      - name: mvn deploy (module jars to GH Packages)
+        # Publishes saiku-bom + saiku-core/* to maven.pkg.github.com/spiculedata/saiku
+        # so downstream consumers (saiku-cloud's IRepositoryManager
+        # adapter, embedders) can `<dependency>` saiku-service the
+        # normal way. saiku-launcher (fat jar) and saiku-webapp (raw
+        # war) opt out via maven-deploy-plugin <skip>true</skip> in
+        # their own poms — they ride to the GitHub Releases page only.
+        #
+        # `mvn deploy` from the reactor root walks every module in
+        # <modules>; the two opt-outs above keep GH Packages free of
+        # multi-hundred-meg blobs.
+        #
+        # Every untrusted-lifecycle switch is explicit (saiku#1993):
+        #   -Dmaven.test.skip=true  no test compile, no surefire/failsafe
+        #   -Dskip.npm / -Dskip.installnodenpm
+        #                            skip the frontend-maven-plugin goals
+        #                            (no `npm ci`, no `npm run build`) — the
+        #                            published jars don't carry the UI bundle
+        #                            and a deploy must not re-run install
+        #                            scripts from the npm tree.
+        run: |
+          mvn -B -ntp -DskipTests -Dmaven.test.skip=true \
+              -Dskip.npm=true -Dskip.installnodenpm=true deploy
 
   docker:
     name: Build & push Docker image
@@ -280,7 +352,10 @@ jobs:
     name: Publish GitHub release
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
-    needs: [jar, docker]
+    # deploy-packages is in the fan-in so a failed GH Packages publish
+    # blocks the release announcement, exactly as it did when `mvn deploy`
+    # ran inside the jar job (saiku#1993).
+    needs: [jar, docker, deploy-packages]
     permissions:
       contents: write # create the GitHub release + upload assets
       id-token: write # keyless Sigstore signing for JAR + dist provenance (saiku#1992)

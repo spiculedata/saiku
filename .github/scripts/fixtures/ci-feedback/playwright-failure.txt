@@ -1,0 +1,92 @@
+2026-10-04T12:00:00.0370000Z ##[group]Run npm run e2e
+2026-10-04T12:00:00.0740000Z [36;1mnpm run e2e[0m
+2026-10-04T12:00:00.1110000Z shell: /usr/bin/bash -e {0}
+2026-10-04T12:00:00.1480000Z ##[endgroup]
+2026-10-04T12:00:00.1850000Z 
+2026-10-04T12:00:00.2220000Z > saiku-ui@3.20.0 e2e
+2026-10-04T12:00:00.2590000Z > playwright test
+2026-10-04T12:00:00.2960000Z 
+2026-10-04T12:00:00.3330000Z 
+2026-10-04T12:00:00.3700000Z [2mRunning [22m3[2m tests using [22m1[2m worker[22m
+2026-10-04T12:00:00.4070000Z 
+2026-10-04T12:00:00.4440000Z   [32m✓[39m  [2m1 [22m[chromium] › sample.spec.mjs:3:2 › Workbench measures › always passes[2m (160ms)[22m
+2026-10-04T12:00:00.4810000Z   [31m✘[39m  [2m2 [22m[31m[chromium] › sample.spec.mjs:7:2 › Workbench measures › flaky: fails first attempt only[39m[2m (50ms)[22m
+2026-10-04T12:00:00.5180000Z   [32m✓[39m  [2m3 [22m[chromium] › sample.spec.mjs:7:2 › Workbench measures › flaky: fails first attempt only[33m (retry #1)[39m[2m (51ms)[22m
+2026-10-04T12:00:00.5550000Z   [31m✘[39m  [2m4 [22m[31m[chromium] › sample.spec.mjs:11:2 › Workbench measures › always fails[39m[2m (545ms)[22m
+2026-10-04T12:00:00.5920000Z   [31m✘[39m  [2m5 [22m[31m[chromium] › sample.spec.mjs:11:2 › Workbench measures › always fails[39m[33m (retry #1)[39m[2m (558ms)[22m
+2026-10-04T12:00:00.6290000Z 
+2026-10-04T12:00:00.6660000Z 
+2026-10-04T12:00:00.7030000Z [31m  1) [chromium] › sample.spec.mjs:11:2 › Workbench measures › always fails [2m─────────────────────────[22m[39m
+2026-10-04T12:00:00.7400000Z 
+2026-10-04T12:00:00.7770000Z     Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+2026-10-04T12:00:00.8140000Z 
+2026-10-04T12:00:00.8510000Z     Locator: locator('h2')
+2026-10-04T12:00:00.8880000Z     Expected: visible
+2026-10-04T12:00:00.9250000Z     Timeout: 500ms
+2026-10-04T12:00:00.9620000Z     Error: element(s) not found
+2026-10-04T12:00:00.9990000Z 
+2026-10-04T12:00:01.0360000Z     Call log:
+2026-10-04T12:00:01.0730000Z     [2m  - Expect "toBeVisible" locator('h2') with timeout 500ms[22m
+2026-10-04T12:00:01.1100000Z     [2m  - waiting for locator('h2')[22m
+2026-10-04T12:00:01.1470000Z 
+2026-10-04T12:00:01.1840000Z 
+2026-10-04T12:00:01.2210000Z     [0m [90m 11 |[39m 	test([32m'always fails'[39m[33m,[39m [36masync[39m ({ page }) [33m=>[39m {
+2026-10-04T12:00:01.2580000Z      [90m 12 |[39m 		[36mawait[39m page[33m.[39msetContent([32m'<h1>hi</h1>'[39m)[33m;[39m
+2026-10-04T12:00:01.2950000Z     [31m[1m>[22m[39m[90m 13 |[39m 		[36mawait[39m expect(page[33m.[39mlocator([32m'h2'[39m))[33m.[39mtoBeVisible({ timeout[33m:[39m [35m500[39m })[33m;[39m
+2026-10-04T12:00:01.3320000Z      [90m    |[39m 		                                 [31m[1m^[22m[39m
+2026-10-04T12:00:01.3690000Z      [90m 14 |[39m 	})[33m;[39m
+2026-10-04T12:00:01.4060000Z      [90m 15 |[39m })[33m;[39m
+2026-10-04T12:00:01.4430000Z      [90m 16 |[39m[0m
+2026-10-04T12:00:01.4800000Z     [2m    at /home/runner/work/saiku/saiku/saiku-ui/e2e/sample.spec.mjs:13:36[22m
+2026-10-04T12:00:01.5170000Z 
+2026-10-04T12:00:01.5540000Z [2m    Error Context: test-results/sample-Workbench-measures-always-fails-chromium/error-context.md[22m
+2026-10-04T12:00:01.5910000Z 
+2026-10-04T12:00:01.6280000Z [90m    Retry #1 [2m───────────────────────────────────────────────────────────────────────────────────────[22m[39m
+2026-10-04T12:00:01.6650000Z 
+2026-10-04T12:00:01.7020000Z     Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+2026-10-04T12:00:01.7390000Z 
+2026-10-04T12:00:01.7760000Z     Locator: locator('h2')
+2026-10-04T12:00:01.8130000Z     Expected: visible
+2026-10-04T12:00:01.8500000Z     Timeout: 500ms
+2026-10-04T12:00:01.8870000Z     Error: element(s) not found
+2026-10-04T12:00:01.9240000Z 
+2026-10-04T12:00:01.9610000Z     Call log:
+2026-10-04T12:00:01.9980000Z     [2m  - Expect "toBeVisible" locator('h2') with timeout 500ms[22m
+2026-10-04T12:00:02.0350000Z     [2m  - waiting for locator('h2')[22m
+2026-10-04T12:00:02.0720000Z 
+2026-10-04T12:00:02.1090000Z 
+2026-10-04T12:00:02.1460000Z     [0m [90m 11 |[39m 	test([32m'always fails'[39m[33m,[39m [36masync[39m ({ page }) [33m=>[39m {
+2026-10-04T12:00:02.1830000Z      [90m 12 |[39m 		[36mawait[39m page[33m.[39msetContent([32m'<h1>hi</h1>'[39m)[33m;[39m
+2026-10-04T12:00:02.2200000Z     [31m[1m>[22m[39m[90m 13 |[39m 		[36mawait[39m expect(page[33m.[39mlocator([32m'h2'[39m))[33m.[39mtoBeVisible({ timeout[33m:[39m [35m500[39m })[33m;[39m
+2026-10-04T12:00:02.2570000Z      [90m    |[39m 		                                 [31m[1m^[22m[39m
+2026-10-04T12:00:02.2940000Z      [90m 14 |[39m 	})[33m;[39m
+2026-10-04T12:00:02.3310000Z      [90m 15 |[39m })[33m;[39m
+2026-10-04T12:00:02.3680000Z      [90m 16 |[39m[0m
+2026-10-04T12:00:02.4050000Z     [2m    at /home/runner/work/saiku/saiku/saiku-ui/e2e/sample.spec.mjs:13:36[22m
+2026-10-04T12:00:02.4420000Z 
+2026-10-04T12:00:02.4790000Z [2m    Error Context: test-results/sample-Workbench-measures-always-fails-chromium-retry1/error-context.md[22m
+2026-10-04T12:00:02.5160000Z 
+2026-10-04T12:00:02.5530000Z [31m  2) [chromium] › sample.spec.mjs:7:2 › Workbench measures › flaky: fails first attempt only [2m───────[22m[39m
+2026-10-04T12:00:02.5900000Z 
+2026-10-04T12:00:02.6270000Z     Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeGreaterThan[2m([22m[32mexpected[39m[2m)[22m
+2026-10-04T12:00:02.6640000Z 
+2026-10-04T12:00:02.7010000Z     Expected: > [32m0[39m
+2026-10-04T12:00:02.7380000Z     Received:   [31m0[39m
+2026-10-04T12:00:02.7750000Z 
+2026-10-04T12:00:02.8120000Z     [0m [90m  7 |[39m 	test([32m'flaky: fails first attempt only'[39m[33m,[39m [36masync[39m ({ page }[33m,[39m info) [33m=>[39m {
+2026-10-04T12:00:02.8490000Z      [90m  8 |[39m 		[36mawait[39m page[33m.[39msetContent([32m'<h1>hi</h1>'[39m)[33m;[39m
+2026-10-04T12:00:02.8860000Z     [31m[1m>[22m[39m[90m  9 |[39m 		expect(info[33m.[39mretry)[33m.[39mtoBeGreaterThan([35m0[39m)[33m;[39m
+2026-10-04T12:00:02.9230000Z      [90m    |[39m 		                   [31m[1m^[22m[39m
+2026-10-04T12:00:02.9600000Z      [90m 10 |[39m 	})[33m;[39m
+2026-10-04T12:00:02.9970000Z      [90m 11 |[39m 	test([32m'always fails'[39m[33m,[39m [36masync[39m ({ page }) [33m=>[39m {
+2026-10-04T12:00:03.0340000Z      [90m 12 |[39m 		[36mawait[39m page[33m.[39msetContent([32m'<h1>hi</h1>'[39m)[33m;[39m[0m
+2026-10-04T12:00:03.0710000Z     [2m    at /home/runner/work/saiku/saiku/saiku-ui/e2e/sample.spec.mjs:9:22[22m
+2026-10-04T12:00:03.1080000Z 
+2026-10-04T12:00:03.1450000Z [2m    Error Context: test-results/sample-Workbench-measures-flaky-fails-first-attempt-only-chromium/error-context.md[22m
+2026-10-04T12:00:03.1820000Z 
+2026-10-04T12:00:03.2190000Z [31m  1 failed[39m
+2026-10-04T12:00:03.2560000Z [31m    [chromium] › sample.spec.mjs:11:2 › Workbench measures › always fails [2m──────────────────────────[22m[39m
+2026-10-04T12:00:03.2930000Z [33m  1 flaky[39m
+2026-10-04T12:00:03.3300000Z [33m    [chromium] › sample.spec.mjs:7:2 › Workbench measures › flaky: fails first attempt only [2m────────[22m[39m
+2026-10-04T12:00:03.3670000Z [32m  1 passed[39m[2m (2.5s)[22m
+2026-10-04T12:00:03.4040000Z ##[error]Process completed with exit code 1.
