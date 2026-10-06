@@ -14,7 +14,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <version>3.5.2</version>
+                <version>3.6.0</version>
                 <configuration>
                     <argLine>@{argLine} -Xmx512m --add-opens=java.base/java.nio=ALL-UNNAMED</argLine>
                 </configuration>
@@ -387,6 +387,14 @@
 		<dependency>
 			<groupId>jakarta.mail</groupId>
 			<artifactId>jakarta.mail-api</artifactId>
+		</dependency>
+		<!-- OpenPDF (maintained com.lowagie:itext fork, same com.lowagie.text.*
+		     API) — the headless snapshot renderer's PDF writer (saiku#1810). A
+		     pure-Java writer, so a dashboard PDF is produced with no browser
+		     and no display attached. Version from saiku-bom. -->
+		<dependency>
+			<groupId>com.github.librepdf</groupId>
+			<artifactId>openpdf</artifactId>
 		</dependency>
 		<dependency>
 			<groupId>org.eclipse.angus</groupId>

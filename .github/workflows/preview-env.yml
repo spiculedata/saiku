@@ -1,0 +1,121 @@
+name: preview env
+
+# Per-PR preview environment lifecycle for the OSS stack.
+# Ported from spiculedata/saiku-cloud .github/workflows/preview-env.yml
+# (saiku-cloud#1379); see docs/decisions/ci-preview-environments.md.
+#
+#   opened / reopened / synchronize / labeled / ready_for_review  -> create or update
+#   closed (merged or not) / label removed                        -> tear down
+#   queue promotion, idle teardown, orphan reaping, pruning       -> preview-reaper.yml
+#   /preview comment                                              -> preview-command.yml
+#
+# Decisions live in .github/scripts/preview-lifecycle.mjs (unit-tested); this file
+# is glue.
+#
+# SECURITY MODEL (read before editing):
+#   * `pull_request_target` runs THIS file from the base branch, so a PR cannot
+#     edit the workflow or scripts that hold the tailnet and SSH credentials.
+#   * The checkout is the BASE branch, never the PR head. No PR-authored file
+#     is executed, sourced or copied to the preview host. The host gets the
+#     compose file from the base branch; the PR contributes only its per-SHA
+#     image tag (built by the PR's own CI, which has none of these secrets).
+#   * PR-authored text (title, branch, body) is never read. The script takes the
+#     event JSON from $GITHUB_EVENT_PATH and extracts a number, a login, labels
+#     and a 40-hex sha. Nothing from the event is interpolated into a script.
+#   * Fork PRs never get an environment (the job `if` and eligibility() both
+#     refuse). This repository is PUBLIC, so this is the line that matters.
+#   * Only the `preview` label can change an environment through a label event;
+#     any other label (the labeler adds risk labels to every PR) is skipped here
+#     before a tailnet join is spent on it.
+#   * One run per PR at a time (concurrency); cross-PR registry updates are
+#     serialised by a lock on the host.
+
+on:
+  pull_request_target:
+    branches: [development]
+    types: [opened, reopened, synchronize, labeled, unlabeled, ready_for_review, closed]
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lifecycle:
+    name: preview / lifecycle
+    # Same-repo PRs only. head.repo is null for a deleted fork, which also fails closed.
+    # A label event matters only for the `preview` label (an equality test in an
+    # expression, never interpolated into a script).
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (github.event.action != 'labeled' && github.event.action != 'unlabeled' ||
+      github.event.label.name == 'preview')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      pull-requests: write
+    concurrency:
+      group: preview-pr-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+    env:
+      PREVIEW_SSH_TARGET: ${{ vars.PREVIEW_SSH_TARGET }}
+    steps:
+      - name: Preview host configured?
+        id: cfg
+        run: |
+          if [ -n "$PREVIEW_SSH_TARGET" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No preview host configured (repository variable PREVIEW_SSH_TARGET is empty). Nothing to do."
+            echo "Preview host not configured (PREVIEW_SSH_TARGET unset): skipped." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # Base branch only. Do not add `ref:` pointing at the PR head.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.cfg.outputs.enabled == 'true'
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: steps.cfg.outputs.enabled == 'true'
+        with:
+          node-version: '22'
+
+      - uses: ./.github/actions/preview-host-access
+        if: steps.cfg.outputs.enabled == 'true'
+        with:
+          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
+          ssh-private-key: ${{ secrets.PREVIEW_SSH_PRIVATE_KEY }}
+          known-hosts: ${{ vars.PREVIEW_SSH_KNOWN_HOSTS }}
+          target: ${{ vars.PREVIEW_SSH_TARGET }}
+
+      - name: Apply the lifecycle decision for this event
+        if: steps.cfg.outputs.enabled == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREVIEW_SSH_KEY: /home/runner/.ssh/preview
+          PREVIEW_SSH_KNOWN_HOSTS: /home/runner/.ssh/preview_known_hosts
+          SAIKU_PREVIEW_MAX_ENVS: ${{ vars.PREVIEW_MAX_ENVS }}
+          SAIKU_PREVIEW_IDLE_HOURS: ${{ vars.PREVIEW_IDLE_HOURS }}
+          SAIKU_PREVIEW_BASE_DOMAIN: ${{ vars.PREVIEW_BASE_DOMAIN }}
+          SAIKU_PREVIEW_AUTHORS: ${{ vars.PREVIEW_AUTHORS }}
+        run: |
+          node .github/scripts/preview-ctl.mjs event \
+            --host ssh \
+            --github-event "$GITHUB_EVENT_PATH" \
+            --sync-root "$GITHUB_WORKSPACE" \
+            --out "$RUNNER_TEMP/preview-result.json" \
+            --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload result
+        if: always() && steps.cfg.outputs.enabled == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: preview-result
+          path: ${{ runner.temp }}/preview-result.json
+          if-no-files-found: ignore
+          retention-days: 7

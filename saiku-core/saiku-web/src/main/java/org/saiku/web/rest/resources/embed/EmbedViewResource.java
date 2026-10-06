@@ -22,6 +22,7 @@ import org.saiku.service.datasource.DatasourceService;
 import org.saiku.service.olap.ai.AiFilterSelection;
 import org.saiku.service.olap.ai.AiQueryRequest;
 import org.saiku.service.olap.ai.AiSavedQueryRequest;
+import org.saiku.service.olap.ai.SavedQueryFilterScope;
 import org.saiku.service.olap.ai.audit.AiAuditEntry;
 import org.saiku.service.olap.ai.audit.AiAuditLog;
 import org.saiku.web.rest.resources.AiQueryResource;
@@ -112,6 +113,12 @@ public class EmbedViewResource {
      * the overrides ride the same validated slicer path ({@link AiSavedQueryRequest#setFilters})
      * that the dashboard filter tiles already use, so a guest can't pivot the cube or inject MDX.
      * A saved query that carries forced RLS filters still fails closed (see {@link #runSavedQuery}).
+     *
+     * <p>saiku#1946: unlike the dashboard / app tile paths there is no author-declared filter-target
+     * list to gate these against, so every override is scoped to the saved query's OWN authored
+     * FILTER axis and narrowed within the authored members (see
+     * {@link SavedQueryFilterScope#narrowToAuthoredScope}) — a guest can no longer re-point a
+     * non-forced rows / columns / pages axis, nor add a deeper level beside an authored one.
      */
     @POST
     @Path("/query/{path:.+}")
@@ -154,8 +161,15 @@ public class EmbedViewResource {
         // Whitelist embed output formats — records (default) or matrix. Any other value falls
         // back to records rather than propagating an untrusted string to buildResponse.
         final String format = "matrix".equalsIgnoreCase(formatParam) ? "matrix" : "records";
-        final java.util.List<AiFilterSelection> overrides =
-                filters == null ? java.util.Collections.emptyList() : filters;
+        // saiku#1946: a bare saved query has NO author-declared filter-target list (no filter panel,
+        // no filter tiles) — the saved query's own slicer IS the author's declaration, so guest
+        // overrides are scoped to that authored FILTER axis and intersected with the authored
+        // members. Everything else (a re-point of a non-forced rows/columns/pages axis, an additive
+        // deeper level, an out-of-scope member) is dropped fail-closed and the query runs as
+        // authored. Unreadable / unparseable / MDX-mode saved query ⇒ no overrides at all.
+        final java.util.List<AiFilterSelection> overrides = filters == null || filters.isEmpty()
+                ? java.util.Collections.emptyList()
+                : SavedQueryFilterScope.narrowToAuthoredScope(loadPinnedSavedQuery(g), filters);
         try {
             Response result = sessionService.runAs(g.ownerUser, g.ownerRoles, () -> {
                 AiSavedQueryRequest sreq = new AiSavedQueryRequest();
@@ -1001,6 +1015,36 @@ public class EmbedViewResource {
     private static boolean eqIgnoreCase(String x, String y) {
         if (x == null) return y == null;
         return x.equalsIgnoreCase(y);
+    }
+
+    /**
+     * Read + parse the PINNED saved query (the {@code .saiku} the token names) under the owner's
+     * data scope, so {@link SavedQueryFilterScope} can read the axes the author authored. The path
+     * comes from the pinned details, never the client, and the read carries the owner's identity
+     * explicitly — the same delegation pattern as {@link #loadDashboard}. Returns null on a wrong
+     * suffix, an unreadable / empty file, or unparseable JSON, so the caller fails closed (no
+     * overrides survive).
+     */
+    private org.saiku.olap.query2.ThinQuery loadPinnedSavedQuery(EmbedGuestDetails g) {
+        if (g == null || g.resourcePath == null || !g.resourcePath.endsWith(".saiku")) {
+            return null;
+        }
+        String raw;
+        try {
+            raw = datasourceService.getFileData(g.resourcePath, g.ownerUser, g.ownerRoles);
+        } catch (RuntimeException e) {
+            log.warn("embed-view saved-query read failed for {}", g.resourcePath, e);
+            return null;
+        }
+        if (raw == null || raw.isEmpty()) {
+            return null;
+        }
+        try {
+            return MAPPER.readValue(raw, org.saiku.olap.query2.ThinQuery.class);
+        } catch (Exception e) {
+            log.warn("embedded saved query {} is unparseable — guest overrides dropped", g.resourcePath, e);
+            return null;
+        }
     }
 
     private Dashboard loadDashboard(EmbedGuestDetails g) {

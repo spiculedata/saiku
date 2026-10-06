@@ -9,6 +9,7 @@ package org.saiku.olap.result;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -43,6 +44,7 @@ import org.olap4j.metadata.Dimension;
 import org.olap4j.metadata.Hierarchy;
 import org.olap4j.metadata.Level;
 import org.olap4j.metadata.Member;
+import org.olap4j.metadata.Property;
 import org.saiku.olap.query2.ThinQuery;
 
 /**
@@ -107,6 +109,76 @@ public class ArrowCellsetWriterTest {
 
             assertFalse("no second batch", reader.loadNextBatch());
         }
+    }
+
+    @Test
+    public void addsOptionalCellPropertyColumnsOnlyWhereSomeCellPopulatesThem() throws Exception {
+        CellSet cellSet = buildFakeCellSetWithProperties();
+        ThinQuery query = new ThinQuery();
+        query.setName("PropCellsetTest");
+
+        ArrowCellsetWriter writer = new ArrowCellsetWriter();
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        writer.write(cellSet, query, out);
+
+        try (BufferAllocator alloc = new RootAllocator();
+                ArrowStreamReader reader = new ArrowStreamReader(new ByteArrayInputStream(out.toByteArray()), alloc)) {
+            VectorSchemaRoot root = reader.getVectorSchemaRoot();
+            Schema schema = root.getSchema();
+
+            // Measure 0 (Unit Sales) has formatString/foreColor/error populated on at
+            // least one cell, but never backColor/fontFlags/actionType -> only the
+            // populated ones get a column.
+            assertNotNull("c0_fmt_string present", findFieldOrNull(schema, "c0_fmt_string"));
+            assertNotNull("c0_fore_color present", findFieldOrNull(schema, "c0_fore_color"));
+            assertNotNull("c0_error present", findFieldOrNull(schema, "c0_error"));
+            assertNull("c0_back_color absent", findFieldOrNull(schema, "c0_back_color"));
+            assertNull("c0_font_flags absent", findFieldOrNull(schema, "c0_font_flags"));
+            assertNull("c0_action_type absent", findFieldOrNull(schema, "c0_action_type"));
+
+            // Measure 1 (Store Sales) never populates any cell property -> no
+            // optional columns at all, keeping the payload lean.
+            for (String suffix :
+                    new String[] {"fmt_string", "fore_color", "back_color", "font_flags", "action_type", "error"}) {
+                assertNull("c1_" + suffix + " absent", findFieldOrNull(schema, "c1_" + suffix));
+            }
+
+            String meta = schema.getCustomMetadata().get("saiku.cellset");
+            ObjectMapper om = new ObjectMapper();
+            @SuppressWarnings("unchecked")
+            Map<String, Object> decoded = om.readValue(meta, Map.class);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> cellPropertyColumns = (Map<String, Object>) decoded.get("cellPropertyColumns");
+            assertNotNull("cellPropertyColumns metadata present", cellPropertyColumns);
+            @SuppressWarnings("unchecked")
+            List<String> col0Props = (List<String>) cellPropertyColumns.get("0");
+            assertEquals(Arrays.asList("fmt_string", "fore_color", "error"), col0Props);
+            assertFalse("no entry for measure 1", cellPropertyColumns.containsKey("1"));
+
+            assertTrue("has batch", reader.loadNextBatch());
+            assertEquals(3, root.getRowCount());
+
+            FieldVector fmtStringVec = root.getVector("c0_fmt_string");
+            List<String> fmtStringValues = decodeDictString(fmtStringVec, reader);
+            assertEquals(Arrays.asList("$#,##0.00", "", ""), fmtStringValues);
+
+            FieldVector foreColorVec = root.getVector("c0_fore_color");
+            List<String> foreColorValues = decodeDictString(foreColorVec, reader);
+            assertEquals(Arrays.asList("16711680", "", ""), foreColorValues);
+
+            FieldVector errorVec = root.getVector("c0_error");
+            List<String> errorValues = decodeDictString(errorVec, reader);
+            assertEquals(Arrays.asList("", "", "Divide by zero"), errorValues);
+
+            assertFalse("no second batch", reader.loadNextBatch());
+        }
+    }
+
+    private static Field findFieldOrNull(Schema schema, String name) {
+        for (Field f : schema.getFields()) {
+            if (f.getName().equals(name)) return f;
+        }
+        return null;
     }
 
     private static List<String> decodeDictString(FieldVector encoded, ArrowStreamReader reader) throws Exception {
@@ -217,7 +289,114 @@ public class ArrowCellsetWriterTest {
             }
         }
 
-        // CellSet proxy — override getCell(List) dynamically.
+        return cellSetProxy(colAxis, rowAxis, cellByCoord);
+    }
+
+    private CellSet buildFakeCellSetWithProperties() {
+        // Row axis: 3 rows, single dimension, values unused by this test.
+        Dimension dim = proxy(Dimension.class, map("getName", "Store"));
+        Hierarchy hier =
+                proxy(Hierarchy.class, map("getName", "Store", "getUniqueName", "[Store]", "getDimension", dim));
+        Level lvl = proxy(Level.class, map("getName", "State", "getUniqueName", "[Store].[State]"));
+        List<Position> rowPositions = Arrays.asList(
+                pos(Collections.singletonList(member("USA", "[Store].[USA]", dim, hier, lvl))),
+                pos(Collections.singletonList(member("CA", "[Store].[USA].[CA]", dim, hier, lvl))),
+                pos(Collections.singletonList(member("OR", "[Store].[USA].[OR]", dim, hier, lvl))));
+        Map<String, Object> rowAxisAnswers = new HashMap<>();
+        rowAxisAnswers.put("getAxisOrdinal", Axis.ROWS);
+        rowAxisAnswers.put("getPositions", rowPositions);
+        rowAxisAnswers.put("getPositionCount", 3);
+        CellSetAxis rowAxis = proxy(CellSetAxis.class, rowAxisAnswers);
+
+        // Column axis: 2 measures.
+        Dimension mdim = proxy(Dimension.class, map("getName", "Measures"));
+        Hierarchy mhier =
+                proxy(Hierarchy.class, map("getName", "Measures", "getUniqueName", "[Measures]", "getDimension", mdim));
+        Level mlvl = proxy(Level.class, map("getName", "MeasuresLevel", "getUniqueName", "[Measures].[MeasuresLevel]"));
+        List<Position> colPositions = Arrays.asList(
+                pos(Collections.singletonList(member("Unit Sales", "[Measures].[Unit Sales]", mdim, mhier, mlvl))),
+                pos(Collections.singletonList(member("Store Sales", "[Measures].[Store Sales]", mdim, mhier, mlvl))));
+        Map<String, Object> colAxisAnswers = new HashMap<>();
+        colAxisAnswers.put("getAxisOrdinal", Axis.COLUMNS);
+        colAxisAnswers.put("getPositions", colPositions);
+        colAxisAnswers.put("getPositionCount", 2);
+        CellSetAxis colAxis = proxy(CellSetAxis.class, colAxisAnswers);
+
+        // Measure 0 (col 0): row 0 has formatString + foreColor, row 1 is a plain
+        // cell, row 2 is an error cell. Measure 1 (col 1): every cell is plain,
+        // so no optional property column should be emitted for it at all.
+        Map<List<Integer>, Cell> cellByCoord = new HashMap<>();
+        Map<Property.StandardCellProperty, Object> col0Row0Props = new HashMap<>();
+        col0Row0Props.put(Property.StandardCellProperty.FORMAT_STRING, "$#,##0.00");
+        col0Row0Props.put(Property.StandardCellProperty.FORE_COLOR, "16711680");
+        cellByCoord.put(Arrays.asList(0, 0), cellWithProperties(false, false, false, 1.0, "1.0", col0Row0Props, null));
+        cellByCoord.put(
+                Arrays.asList(0, 1), cellWithProperties(false, false, false, 2.0, "2.0", Collections.emptyMap(), null));
+        cellByCoord.put(
+                Arrays.asList(0, 2),
+                cellWithProperties(false, false, true, 0.0, null, Collections.emptyMap(), "Divide by zero"));
+        for (int row = 0; row < 3; row++) {
+            double v = 10.0 * (row + 1);
+            cellByCoord.put(
+                    Arrays.asList(1, row),
+                    cellWithProperties(false, false, false, v, String.valueOf(v), Collections.emptyMap(), null));
+        }
+
+        return cellSetProxy(colAxis, rowAxis, cellByCoord);
+    }
+
+    /** Builds a fake olap4j {@link Cell} that answers {@code getPropertyValue}
+     *  per-property (the generic {@link #proxy} helper only dispatches on
+     *  method name, which can't distinguish between different
+     *  {@code StandardCellProperty} arguments). */
+    private static Cell cellWithProperties(
+            boolean isEmpty,
+            boolean isNull,
+            boolean isError,
+            double value,
+            String formattedValue,
+            Map<Property.StandardCellProperty, Object> propertyValues,
+            String errorValue) {
+        InvocationHandler handler = (p, m, a) -> {
+            switch (m.getName()) {
+                case "isEmpty":
+                    return isEmpty;
+                case "isNull":
+                    return isNull;
+                case "isError":
+                    return isError;
+                case "getValue":
+                    return isError ? errorValue : (Object) value;
+                case "getDoubleValue":
+                    return value;
+                case "getFormattedValue":
+                    return formattedValue;
+                case "getPropertyValue":
+                    return a != null && a.length == 1 ? propertyValues.get(a[0]) : null;
+                case "toString":
+                    return "Cell@fake";
+                case "equals":
+                    return p == a[0];
+                case "hashCode":
+                    return System.identityHashCode(p);
+                default:
+                    Class<?> rt = m.getReturnType();
+                    if (rt == boolean.class) return false;
+                    if (rt == int.class) return 0;
+                    if (rt == long.class) return 0L;
+                    if (rt == double.class) return 0d;
+                    if (rt.isPrimitive()) return 0;
+                    return null;
+            }
+        };
+        return (Cell) Proxy.newProxyInstance(
+                ArrowCellsetWriterTest.class.getClassLoader(), new Class<?>[] {Cell.class}, handler);
+    }
+
+    /** CellSet proxy — {@code getCell(List)} looks up {@code cellByCoord}, everything
+     *  else delegates to the row/column axes given. */
+    private static CellSet cellSetProxy(
+            CellSetAxis colAxis, CellSetAxis rowAxis, Map<List<Integer>, Cell> cellByCoord) {
         InvocationHandler cellSetHandler = new InvocationHandler() {
             final List<CellSetAxis> axes = Arrays.asList(colAxis, rowAxis);
 

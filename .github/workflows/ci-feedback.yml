@@ -1,0 +1,118 @@
+name: ci feedback
+
+# Structured failure feedback for automated fixers.
+# Ported from spiculedata/saiku-cloud (.github/workflows/ci-feedback.yml, #1374).
+#
+# When any PR-gating workflow finishes, gather EVERY run for that commit and publish
+# one machine-readable `ci-feedback.json` (failing check names, the first REAL error
+# per failure, failing test ids, a one-line repro, artifact links) plus a sticky PR
+# comment with the same summary. Runtime-deprecation notices (Node 20, setup-java /
+# setup-node, "forced to run on Node.js 24") are filtered out of the primary error:
+# an automated fixer once re-dispatched a fix six times because that notice was the
+# only failure text it saw. Schema and version policy: docs/ci-feedback.md.
+#
+# SECURITY. This is a `workflow_run` workflow: it runs the DEFAULT-branch copy of this
+# file (development), with a token that can comment on PRs, in response to runs a PR
+# author controls. So:
+#   * the checkout is the default branch (sparse: only the extractor), never the PR
+#     head, and nothing from the PR is ever executed,
+#   * the PR's artifacts are never downloaded (an artifact is attacker-supplied data);
+#     only job logs and metadata are read, over the REST API, as TEXT,
+#   * every value from the triggering event reaches the shell through `env:`, never by
+#     `${{ }}` interpolation into a script (a branch name is attacker-chosen),
+#   * permissions are the minimum: read Actions metadata/logs, write PR comments,
+#   * the extractor redacts secrets, truncates, and escapes markdown (see the header of
+#     .github/scripts/ci-feedback.mjs).
+#
+# `workflow_run.workflows` matches on a workflow's `name:`, not its filename. When a
+# new PR-gating workflow is added, add its name here; ci-feedback.test.mjs fails
+# until you do (or list it as deliberately excluded there).
+#
+# `security-scan` and `model-diff` are PR-gating workflows that live on open PR
+# branches today; listing them here is harmless until they land (the guard test
+# knows about them) and means nobody has to remember to add them afterwards.
+
+on:
+  workflow_run:
+    workflows:
+      - acceptance
+      - ci
+      - design-system
+      - docker
+      - model-diff
+      - preview-infra
+      - release-prep
+      - security-scan
+    types: [completed]
+
+permissions:
+  actions: read          # list runs/jobs/artifacts, read job logs
+  contents: read         # sparse checkout of the extractor
+  pull-requests: write   # the sticky comment
+
+concurrency:
+  # Each run re-aggregates the whole commit, so a newer run fully supersedes an older one.
+  group: ci-feedback-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  feedback:
+    name: ci-feedback
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event.workflow_run.conclusion != 'skipped'
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+      PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+      FEEDBACK_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      # Default branch on purpose: the extractor must be the reviewed copy on development,
+      # never whatever the PR under test carries.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+
+      - name: Build ci-feedback.json
+        run: |
+          node .github/scripts/ci-feedback.mjs collect \
+            --repo "$GH_REPO" \
+            --sha "$HEAD_SHA" \
+            --pr "$PR_NUMBER" \
+            --branch "$HEAD_BRANCH" \
+            --feedback-url "$FEEDBACK_URL" \
+            --out ci-feedback.json \
+            --md ci-feedback.md
+          cat ci-feedback.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload ci-feedback.json
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          # Named after the run that triggered this one so it can be found from there.
+          name: ci-feedback-${{ github.event.workflow_run.id }}
+          path: |
+            ci-feedback.json
+            ci-feedback.md
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Update the sticky PR comment
+        if: env.PR_NUMBER != ''
+        run: |
+          node .github/scripts/ci-feedback.mjs comment \
+            --feedback ci-feedback.json \
+            --repo "$GH_REPO" \
+            --pr "$PR_NUMBER"

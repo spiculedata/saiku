@@ -23,52 +23,52 @@
         <constructor-arg value="ai.ossie.ask"/>
     </bean>
     <bean id="mailUnsubscribeRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
-          factory-method="sharedFromProperty">
+          factory-method="shared">
         <constructor-arg value="mail.unsubscribe"/>
         <constructor-arg value="${saiku.mail.unsubscribe.ratelimit.maxPerMinute:20}"/>
-        <constructor-arg value="20"/>
+        <constructor-arg value="60000"/>
     </bean>
     <bean id="mailConsentRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
-          factory-method="sharedFromProperty">
+          factory-method="shared">
         <constructor-arg value="mail.consent"/>
         <constructor-arg value="${saiku.mail.consent.ratelimit.maxPerMinute:20}"/>
-        <constructor-arg value="20"/>
+        <constructor-arg value="60000"/>
     </bean>
     <bean id="mailConsentAddressRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
-          factory-method="sharedFromProperty">
+          factory-method="shared">
         <constructor-arg value="mail.consent.address"/>
         <constructor-arg value="${saiku.mail.consent.address.ratelimit.maxPerMinute:10}"/>
-        <constructor-arg value="10"/>
+        <constructor-arg value="60000"/>
     </bean>
     <bean id="mailTestSendRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
-          factory-method="sharedFromProperty">
+          factory-method="shared">
         <constructor-arg value="mail.test"/>
         <constructor-arg value="${saiku.mail.test.ratelimit.maxPerMinute:5}"/>
-        <constructor-arg value="5"/>
+        <constructor-arg value="60000"/>
     </bean>
     <bean id="mailInviteRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
-          factory-method="sharedFromProperty">
+          factory-method="shared">
         <constructor-arg value="mail.invite"/>
         <constructor-arg value="${saiku.mail.invite.ratelimit.maxPerMinute:5}"/>
-        <constructor-arg value="5"/>
+        <constructor-arg value="60000"/>
     </bean>
     <bean id="mailSendRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
-          factory-method="sharedFromProperty">
+          factory-method="shared">
         <constructor-arg value="mail.send"/>
         <constructor-arg value="${saiku.mail.send.ratelimit.maxPerMinute:3}"/>
-        <constructor-arg value="3"/>
+        <constructor-arg value="60000"/>
     </bean>
     <bean id="mailEmailRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
-          factory-method="sharedFromProperty">
+          factory-method="shared">
         <constructor-arg value="mail.email"/>
         <constructor-arg value="${saiku.email.ratelimit.maxPerMinute:10}"/>
-        <constructor-arg value="10"/>
+        <constructor-arg value="60000"/>
     </bean>
     <bean id="jobRunNowRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
-          factory-method="sharedFromProperty">
+          factory-method="shared">
         <constructor-arg value="jobs.runNow"/>
         <constructor-arg value="${saiku.jobs.run.ratelimit.maxPerMinute:10}"/>
-        <constructor-arg value="10"/>
+        <constructor-arg value="60000"/>
     </bean>
 
     <!-- ==== consuming resources: limiter properties only ==== -->

@@ -2613,8 +2613,10 @@ public class AiQueryResource {
                 }
             } else if (body != null) {
                 for (AbstractBaseCell[] row : body) {
-                    rows.add(
-                            new AiQueryMetadata.Caption(rowName(row, rowHeaderCount), rowCaption(row, rowHeaderCount)));
+                    rows.add(new AiQueryMetadata.Caption(
+                            rowName(row, rowHeaderCount),
+                            rowCaption(row, rowHeaderCount),
+                            rowProperties(row, rowHeaderCount)));
 
                     if (useMatrix) {
                         Map<String, AiCell> cells = new LinkedHashMap<>();
@@ -2933,6 +2935,27 @@ public class AiQueryResource {
         // Same as rowName for the DTO matrix the API exposes — caption and
         // name converge once headers are formatted.
         return rowName(row, rowHeaderCount);
+    }
+
+    /**
+     * saiku#827: merge the olap4j member properties {@code MemberCell}
+     * carries (custom hierarchy properties, description, member key, ...;
+     * see {@code MemberPropertyExtractor}) across every row-header column,
+     * so a multi-axis row (e.g. Product Family + Year) surfaces properties
+     * from all of its header members. Later columns win on key collisions.
+     * Returns {@code null} (not an empty map) when nothing was set, so the
+     * caller's {@code NON_EMPTY} caption field stays absent on the wire.
+     */
+    private static Map<String, String> rowProperties(AbstractBaseCell[] row, int rowHeaderCount) {
+        Map<String, String> merged = null;
+        for (int c = 0; c < rowHeaderCount && c < row.length; c++) {
+            if (!(row[c] instanceof MemberCell)) continue;
+            Map<String, String> props = row[c].getProperties();
+            if (props == null || props.isEmpty()) continue;
+            if (merged == null) merged = new LinkedHashMap<>();
+            merged.putAll(props);
+        }
+        return merged;
     }
 
     private static String safe(String s) {
