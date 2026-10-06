@@ -229,6 +229,44 @@ The same `POST …/ai-evals/run` endpoint backs a "Run now" action and can be
 `curl`ed from any external scheduler — the sanctioned way to populate accuracy
 history on a cadence without an in-server cron.
 
+## Scheduled sweeps (saiku#1477)
+
+A deployment that wants the accuracy dashboard to fill in on its own — with no
+external scheduler and no CI job — can point an **in-server cron** at the
+sweep. It is **off by default**: nothing is scheduled unless you set a cron
+expression, and every fire is a real LLM sweep over every `*.eval.yaml`, so the
+cost is opt-in.
+
+```properties
+# <saiku-home>/saiku-beans.properties  — or -Dsaiku.ai.eval.schedule.cron=...
+saiku.ai.eval.schedule.cron = 0 30 3 * * *     # 03:30 every day
+saiku.ai.eval.schedule.cron = 0 */6 * * * *    # every six hours
+```
+
+The expression is Spring's strict **6-field** form (`sec min hour dom mon dow`)
+— a 5-field Unix cron is rejected. Rejection is deliberately quiet: an unset
+expression logs one INFO line at boot and starts no thread; an unparseable one
+logs one ERROR and likewise stays inert. A typo in a properties file must never
+fail the boot.
+
+Each fire runs the same `ScheduledEvalRunner` sweep the `POST /run` endpoint
+runs, and appends to the same H2 store the **Agent evals** dashboard reads.
+
+**How it differs from the CLI path.** The CLI drives the sweep through a real
+HTTP request, so queries execute under the calling admin's data scope. The cron
+runs on a daemon thread with no HTTP request and therefore no Spring
+`SecurityContext`: on a **security-enabled** datasource it lands on the same
+context-free carve-out that server start-up / connection warm-up uses. If your
+cubes are role-masked, point the cron at a cube where that is acceptable — or
+keep using the CLI, which runs under an authenticated principal.
+
+Scheduling is **self-rescheduling**: the next fire time is computed *after* each
+sweep completes, so a sweep that overruns its interval pushes the next fire out
+rather than overlapping itself against the same provider and result store.
+
+The CLI remains the CI-facing path — a cron on the app server is for continuous
+monitoring, not for gating a build.
+
 ## Error codes
 
 Structured YAML-parse failures surface with a stable code so CI can
@@ -250,6 +288,8 @@ a wrong answer":
 - **`saiku eval` CLI subcommand** — the out-of-process runner (see above).
 - **Result store + accuracy dashboard** — H2 (`EvalResultStore`) + the admin
   **Agent evals** trend view (saiku#1424 Phase 2/3).
+- **In-server scheduled sweeps** — `EvalCronScheduler` behind
+  `saiku.ai.eval.schedule.cron`, off by default (saiku#1477).
 - **Reference-query ground truth** — drift-proof, tracks live data.
 
 ## Non-goals for v1
