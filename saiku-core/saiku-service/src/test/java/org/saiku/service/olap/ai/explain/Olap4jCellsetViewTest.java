@@ -61,6 +61,16 @@ public class Olap4jCellsetViewTest {
         assertEquals("Store Sales", view.measure().caption());
     }
 
+    /** A cellset read back after its connection closed: Mondrian's getCaption() throws an NPE. */
+    @Test
+    public void aMemberDetachedFromItsConnectionIsExplainedUnderItsName() {
+        Member detachedRow = Olap4jStubs.detachedMember("[Customers].[USA]", "USA");
+        Olap4jCellsetView view = new Olap4jCellsetView(
+                Olap4jStubs.cellSet(List.of(List.of(SALES)), List.of(List.of(detachedRow)), new double[][] {{100d}}));
+
+        assertEquals(List.of(new CellMember("[Customers].[USA]", "USA", false, null)), view.rowHeader(0));
+    }
+
     @Test
     public void anEmptyCellReadsAsNaNAndNoFormatting() {
         Olap4jCellsetView view = new Olap4jCellsetView(Olap4jStubs.cellSet(

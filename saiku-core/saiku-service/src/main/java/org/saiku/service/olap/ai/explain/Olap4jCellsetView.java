@@ -131,8 +131,20 @@ public final class Olap4jCellsetView implements CellsetView {
         }
     }
 
+    /**
+     * The member's caption, or its name when the caption is blank or unavailable. The cellset is
+     * read back from the session's query context, so it can outlive the connection that produced
+     * it, and Mondrian's {@code getCaption()} asks that (by then null) connection for its locale and
+     * throws a {@link NullPointerException}. {@code getName()} and {@code getUniqueName()} need no
+     * connection, so a detached member is still explained, just under its name.
+     */
     private static String caption(Member member) {
-        String caption = member.getCaption();
+        String caption = null;
+        try {
+            caption = member.getCaption();
+        } catch (RuntimeException e) {
+            // detached from its connection: fall back to the name below
+        }
         return caption == null || caption.isBlank() ? member.getName() : caption;
     }
 
