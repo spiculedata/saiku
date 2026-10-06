@@ -85,7 +85,7 @@ public class TerminalCatchAllIT {
         "/aqvira-demo/", // public OEM demo page
         "/repository/", // none chain; unmounted in the shipped build -> 404, not 401
         "/rest/saiku/info", // permitAll in the main chain
-        "/rest/saiku/info/ui-settings", // none chain
+        "/rest/saiku/info/ui-settings", // permitAll in the main chain (saiku#1951)
         "/serverdocs/does-not-exist", // isAnonymous() rule
         "/favicon.ico" // saiku#1949 explicit permit (404 today, must not become 401)
     };

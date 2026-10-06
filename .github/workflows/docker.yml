@@ -5,10 +5,32 @@ name: docker
 # which produces stable semver tags + :latest; this workflow gives
 # users a way to pull "current development tip" without waiting for
 # a release.
+#
+# Same-repo pull requests targeting development ALSO build and push a per-PR
+# image (`pr-<n>` + the 7-hex PR head SHA) so a reviewer can pull exactly what
+# a PR built. Fork PRs and Dependabot PRs build only and never push. Tag
+# grammar and retention: docs/ci-images.md.
 on:
   push:
     branches: [development, main]
+  pull_request:
+    branches: [development]
+    # Only changes that can alter the image. Docs-only PRs do not build one.
+    paths:
+      - "pom.xml"
+      - "**/pom.xml"
+      - "saiku-*/**"
+      - "lib/**"
+      - "Dockerfile"
+      - "docker/**"
+      - ".github/workflows/docker.yml"
   workflow_dispatch:
+
+# A newer push to a PR supersedes the older build; development/main/manual runs
+# are never cancelled (each rolling tag must land).
+concurrency:
+  group: docker-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Least-privilege default: read-only for the whole workflow. Each job below
 # elevates ONLY the scope it needs (see per-job `permissions:` blocks), so the
@@ -98,6 +120,10 @@ jobs:
     # (SEC S2). Permissions are JOB-level, not workflow-level (SEC N1).
     name: Push & attest image
     runs-on: ubuntu-latest
+    env:
+      # On pull_request GITHUB_SHA is the synthetic merge commit, which nobody
+      # can map back to a PR head. Tag with the head commit instead.
+      IMAGE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     needs: [build]
     permissions:
       contents: read # checkout the Docker build context
@@ -120,7 +146,30 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
+      # Everything below keys off this one output. A PR image is published only
+      # when the PR head lives in THIS repository and was not opened by
+      # Dependabot: a fork's GITHUB_TOKEN has no packages:write (the push would
+      # fail) and publishing a stranger's build into our registry is not ours to
+      # do either way. Those PRs still build the image, they just do not push.
+      - name: Resolve publish eligibility
+        id: publish
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REPO: ${{ github.repository }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ] && { [ "$HEAD_REPO" != "$REPO" ] || [ "$ACTOR" = "dependabot[bot]" ]; }; then
+            echo "push=false" >> "$GITHUB_OUTPUT"
+            echo "PR from $HEAD_REPO by $ACTOR: build only, no registry push."
+          else
+            echo "push=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "short_sha=${IMAGE_SHA::7}" >> "$GITHUB_OUTPUT"
+
       - name: Log in to GHCR
+        if: steps.publish.outputs.push == 'true'
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ${{ env.REGISTRY }}
@@ -136,9 +185,14 @@ jobs:
           #   ghcr.io/spiculedata/saiku:development  (rolling tip)
           #   ghcr.io/spiculedata/saiku:main         (rolling tip of main)
           #   ghcr.io/spiculedata/saiku:sha-abc1234  (immutable, pinnable)
+          # Same-repo PR:
+          #   ghcr.io/spiculedata/saiku:pr-123       (moves with the PR)
+          #   ghcr.io/spiculedata/saiku:abc1234      (7-hex PR head SHA, bare)
           tags: |
             type=ref,event=branch
-            type=sha,prefix=sha-,format=short
+            type=sha,prefix=sha-,format=short,enable=${{ github.event_name != 'pull_request' }}
+            type=raw,value=pr-${{ github.event.pull_request.number }},enable=${{ github.event_name == 'pull_request' }}
+            type=raw,value=${{ steps.publish.outputs.short_sha }},enable=${{ github.event_name == 'pull_request' }}
 
       - name: Build & push
         id: build
@@ -146,7 +200,7 @@ jobs:
         with:
           context: .
           file: Dockerfile
-          push: true
+          push: ${{ steps.publish.outputs.push == 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           # buildx cache via GitHub's built-in Action cache, so iterative
@@ -158,10 +212,11 @@ jobs:
           # image push on `development`, so it carries the same SBOM + SLSA
           # provenance attestations as the released image. This is where the
           # container supply-chain wiring is proven ahead of a tagged release.
-          sbom: true
-          provenance: mode=max
+          sbom: ${{ steps.publish.outputs.push == 'true' }}
+          provenance: ${{ steps.publish.outputs.push == 'true' && 'mode=max' || 'false' }}
 
       - name: Attest image build provenance
+        if: steps.publish.outputs.push == 'true'
         # saiku#1992: keyless Sigstore provenance for the rolling image, logged
         # to Rekor and pushed to GHCR as a referring attestation. subject-digest
         # is the image index digest emitted by the build step above.
