@@ -15,7 +15,7 @@
 # re-tagged or tampered upstream can't change what we build on. To roll the
 # base forward, resolve the new multi-arch index digest and update both here:
 #   docker buildx imagetools inspect eclipse-temurin:21-jre-noble
-FROM eclipse-temurin:21-jre-noble@sha256:7739f0ffce786528961eea6bf46d9610ee968ac6127c9b2e93494757bdecce9f
+FROM eclipse-temurin:23-jre-noble@sha256:482448f7d10c123f7453a2ef54035a315399547fdfc8339c37b69995845b8738
 ARG JAR_PATH=build-context/saiku.jar
 ARG OTEL_AGENT_VERSION=2.28.1
 ARG OTEL_AGENT_SHA256=faa89bdeebf9b1f52be4a4374689176717b02a59df2d8f8b6eb9aa39f9292589
@@ -53,6 +53,26 @@ RUN set -eux; \
     echo "${OTEL_AGENT_SHA256}  /opt/saiku/otel/opentelemetry-javaagent.jar" | sha256sum -c -
 
 ENV SAIKU_HOME=/app/saiku-home
+
+# Fonts for headless image rendering (saiku#1810).
+#
+# The headless dashboard snapshot renderer draws PNG digests (#1099) with
+# java.awt.Graphics2D. AWT resolves its LOGICAL fonts (SansSerif) through
+# fontconfig, and the pinned eclipse-temurin JRE base carries neither
+# fontconfig config nor any font — so without this, a PNG render dies with
+# "Fontconfig head is null" at the first drawString(). (The PDF path is
+# unaffected: OpenPDF embeds the standard-14 Helvetica metrics itself.)
+#
+# fontconfig + fonts-dejavu-core is a small, licence-clean (Bitstream Vera
+# derived, free) install and is the minimum that makes AWT text rendering work
+# headlessly. Baked into the image rather than mounted so the demo/dist path
+# works out of the box.
+RUN set -eux; \
+    apt-get update; \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        fontconfig fonts-dejavu-core; \
+    fc-cache -f; \
+    rm -rf /var/lib/apt/lists/*
 
 # JVM safety defaults (#1989 / #1919 item 18a). Set via JAVA_TOOL_OPTIONS so
 # the JVM applies them regardless of how it is launched, and so an operator's

@@ -107,6 +107,16 @@ Pass slicer overrides as a JSON array. They ride the same validated slicer path
 the dashboard filter tiles use — the saved query's cube binding and axes are
 untouched, so a host can parameterise an embed without re-authoring the query.
 
+Overrides are **narrow-only, and scoped to the saved query's own slicer
+(saiku#1946)**: an override is honoured only when the saved query already
+carries that hierarchy on its FILTER axis, and its members are intersected with
+the members the author published on that level. An override on any other axis —
+or on a different level of an authored hierarchy — is dropped and the query
+renders as authored. So a `filter` can re-slice what the author already
+published, never re-point the query onto a dimension the author didn't expose,
+nor drill past an authored roll-up. To publish a slice, author it on the saved
+query's slicer.
+
 ```html
 <saiku-embed
 	server="..."
@@ -379,6 +389,14 @@ An embed with none of these set renders exactly as before (ECharts defaults).
   spliced, and a `FORCE_ON` redaction policy still emits its gateway header.
   A client `filter=`/filter-tile override can only **narrow** a query, never
   widen it. Embedding an app adds no new query path.
+- **Bare saved-query embeds are scoped too.** A `kind=query` embed has no
+  author-declared filter panel or filter tiles, so the saved query's own FILTER
+  axis is the scope (saiku#1946): overrides outside it are dropped, and the
+  members of an honoured override are intersected with the authored ones. An
+  override that can't be proven to narrow (unknown axis, different level, a
+  non-`in` operator, an empty intersection) is dropped — the query runs as
+  authored rather than failing open. This matters most for public grants and
+  pre-`saiku#1104` opaque tokens, which carry no forced RLS filters at all.
 - **Cross-origin cookie isolation.** The embed sends
   `credentials: "omit"`, so the host page's Saiku session cookie (if
   the user happens to be logged in) doesn't flow with embed reads.

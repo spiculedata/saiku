@@ -5,6 +5,7 @@
 	import { i18n } from '$lib/stores/i18n.svelte';
 	import type {
 		ChartOptions,
+		NumberFormatOptions,
 		TrendLineMode,
 		ChartColorRamp,
 		ReferenceLine,
@@ -17,6 +18,14 @@
 	import { PALETTE_IDS } from '$lib/views/chartTheme';
 	// #1084: which chart kinds support conditional formatting (gates the section).
 	import { CONDITIONAL_FORMAT_CHART_TYPES } from '$lib/charts/build';
+	// saiku#1779: the per-axis number-format rules, shared with the builder.
+	import {
+		axisFormatOrEmpty,
+		isOwnAxisFormat,
+		patchAxisFormat,
+		setAxisFormatMode,
+		type AxisSide
+	} from '$lib/charts/axisNumberFormat';
 
 	interface Props {
 		initial: ChartOptions;
@@ -251,6 +260,9 @@
 	);
 	const nfThousands = $derived(form.numberFormat?.thousands ?? false);
 	const nfAbbreviate = $derived(form.numberFormat?.abbreviate ?? false);
+	// saiku#1779: a percent format scales a stored FRACTION by 100 and appends
+	// "%". Without it a "%"-suffixed axis prints the fraction's own digits.
+	const nfPercent = $derived(form.numberFormat?.percent ?? false);
 
 	function setNumberFormat(patch: Partial<NonNullable<ChartOptions['numberFormat']>>): void {
 		form.numberFormat = { ...form.numberFormat, ...patch };
@@ -264,6 +276,47 @@
 		}
 		const n = Number(trimmed);
 		setNumberFormat({ decimals: Number.isFinite(n) ? Math.max(0, Math.floor(n)) : null });
+	}
+
+	/* saiku#1779: per-axis number format. Key PRESENCE is the intent: a side with
+	 * no key inherits the chart-level `numberFormat` above; a side with a key owns
+	 * its text outright (an empty override renders raw values on that axis alone).
+	 * The rules live in charts/axisNumberFormat.ts — the SAME module the chart
+	 * builder resolves with — so the modal can never offer a combination the chart
+	 * can't honour, and both are unit-tested against one definition. */
+
+	/** Does this side carry its own format (key present)? */
+	function axisFormatIsOwn(side: AxisSide): boolean {
+		return isOwnAxisFormat(form, side);
+	}
+
+	function axisFormat(side: AxisSide): NumberFormatOptions {
+		return axisFormatOrEmpty(form, side);
+	}
+
+	/** "inherit" drops the key; "own" writes an empty format the author fills in. */
+	function setAxisFormatOwn(side: AxisSide, own: boolean): void {
+		form.axisNumberFormat = setAxisFormatMode(form, side, own);
+	}
+
+	function editAxisFormat(side: AxisSide, patch: Partial<NumberFormatOptions>): void {
+		form.axisNumberFormat = patchAxisFormat(form, side, patch);
+	}
+
+	// Decimal input as a string so a blank field can mean "auto" (null).
+	function axisDecimalsText(side: AxisSide): string {
+		const d = axisFormat(side).decimals;
+		return d === null || d === undefined ? '' : String(d);
+	}
+
+	function onAxisDecimalsInput(side: AxisSide, raw: string): void {
+		const trimmed = raw.trim();
+		if (trimmed === '') {
+			editAxisFormat(side, { decimals: null });
+			return;
+		}
+		const n = Number(trimmed);
+		editAxisFormat(side, { decimals: Number.isFinite(n) ? Math.max(0, Math.floor(n)) : null });
 	}
 
 	// issue #1081: per-series colour override helpers. An absent / blank entry
@@ -482,6 +535,113 @@
 					</div>
 				</div>
 			{/if}
+			<!-- saiku#1779: per-AXIS number format. A dual-axis chart's two sides are,
+         by definition, different measures — usually different units — so the one
+         chart-level Number format above is always wrong for one of them (a
+         fraction-valued "Sell Through %" rendered `0 … 2` with no % anywhere).
+         Each side can inherit the chart default or override it on its own.
+         Same ≥2-series gate as the picker above: with one measure there is only
+         ever a left axis and a per-side format would be meaningless. -->
+			{#if seriesNames.length >= 2}
+				{#snippet axisFormatEditor(side: AxisSide)}
+					<div class="axis-format__side">
+						<div class="flex items-center gap-3">
+							<span class="flex-1 text-sm text-fg">
+								{i18n.t(`modal.chart.axis.${side}`)}
+								{i18n.t('modal.chart.axisFormat.axis')}
+							</span>
+							<select
+								class="field__input series-axis__pick"
+								value={axisFormatIsOwn(side) ? 'own' : 'inherit'}
+								onchange={(e) =>
+									setAxisFormatOwn(side, (e.currentTarget as HTMLSelectElement).value === 'own')}
+							>
+								<option value="inherit">
+									{i18n.t('modal.chart.axisFormat.inherit', 'Use chart default')}
+								</option>
+								<option value="own">{i18n.t('modal.chart.axisFormat.own', 'Custom')}</option>
+							</select>
+						</div>
+						{#if axisFormatIsOwn(side)}
+							<div class="flex gap-3">
+								<label class="field flex-1">
+									<span class="field__label">{i18n.t('modal.chart.numberFormat.prefix')}</span>
+									<input
+										class="field__input"
+										value={axisFormat(side).prefix ?? ''}
+										placeholder={i18n.t('modal.chart.numberFormat.prefixPlaceholder')}
+										oninput={(e) =>
+											editAxisFormat(side, {
+												prefix: (e.currentTarget as HTMLInputElement).value
+											})}
+									/>
+								</label>
+								<label class="field flex-1">
+									<span class="field__label">{i18n.t('modal.chart.numberFormat.suffix')}</span>
+									<input
+										class="field__input"
+										value={axisFormat(side).suffix ?? ''}
+										placeholder={i18n.t('modal.chart.numberFormat.suffixPlaceholder')}
+										oninput={(e) =>
+											editAxisFormat(side, {
+												suffix: (e.currentTarget as HTMLInputElement).value
+											})}
+									/>
+								</label>
+								<label class="field flex-1">
+									<span class="field__label">{i18n.t('modal.chart.numberFormat.decimals')}</span>
+									<input
+										class="field__input"
+										type="number"
+										min="0"
+										max="20"
+										value={axisDecimalsText(side)}
+										placeholder={i18n.t('modal.chart.numberFormat.decimalsAuto')}
+										oninput={(e) =>
+											onAxisDecimalsInput(side, (e.currentTarget as HTMLInputElement).value)}
+									/>
+								</label>
+							</div>
+							<label class="inline-flex items-center gap-2 text-xs text-fg">
+								<input
+									type="checkbox"
+									checked={axisFormat(side).thousands ?? false}
+									onchange={(e) =>
+										editAxisFormat(side, {
+											thousands: (e.currentTarget as HTMLInputElement).checked
+										})}
+								/>
+								{i18n.t('modal.chart.numberFormat.thousands')}
+							</label>
+							<!-- saiku#1779: the case that made this feature necessary — a
+                 fraction-valued measure (Sell Through % = 1.284) whose axis needs
+                 to read 128%, not 1. -->
+							<label
+								class="inline-flex items-center gap-2 text-xs text-fg"
+								title={i18n.t('modal.chart.numberFormat.percent.hint')}
+							>
+								<input
+									type="checkbox"
+									checked={axisFormat(side).percent ?? false}
+									onchange={(e) =>
+										editAxisFormat(side, {
+											percent: (e.currentTarget as HTMLInputElement).checked
+										})}
+								/>
+								{i18n.t('modal.chart.numberFormat.percent')}
+							</label>
+						{/if}
+					</div>
+				{/snippet}
+				<div class="axis-format">
+					<span class="text-sm text-fg-muted">{i18n.t('modal.chart.axisFormat')}</span>
+					<p class="m-0 text-xs text-fg-subtle">{i18n.t('modal.chart.axisFormat.hint')}</p>
+					<div class="flex flex-col gap-2">
+						{@render axisFormatEditor('left')}
+						{@render axisFormatEditor('right')}
+					</div>
+				</div>
+			{/if}
 			<!-- issue #1089: per-series chart-type override (combo charts). Cartesian
          multi-series only — pick a type per series (or "Default" = chart type). -->
 			{#if showComboTypes}
@@ -639,6 +799,20 @@
 									setNumberFormat({ abbreviate: (e.currentTarget as HTMLInputElement).checked })}
 							/>
 							{i18n.t('modal.chart.numberFormat.abbreviate')}
+						</label>
+					</label>
+					<label class="field flex-1">
+						<label
+							class="inline-flex items-center gap-2 text-fg"
+							title={i18n.t('modal.chart.numberFormat.percent.hint')}
+						>
+							<input
+								type="checkbox"
+								checked={nfPercent}
+								onchange={(e) =>
+									setNumberFormat({ percent: (e.currentTarget as HTMLInputElement).checked })}
+							/>
+							{i18n.t('modal.chart.numberFormat.percent')}
 						</label>
 					</label>
 				</div>
@@ -895,6 +1069,21 @@
 	.series-axis__pick {
 		width: 8rem;
 		flex: 0 0 auto;
+	}
+	/* saiku#1779: per-axis number format — same card as .series-axis, with the
+   per-side override nested one level deeper. */
+	.axis-format {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-2);
+		padding: var(--space-2) var(--space-3);
+		background: hsl(var(--bg-subtle));
+		border-radius: var(--radius-sm);
+	}
+	.axis-format__side {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-2);
 	}
 	.number-format {
 		display: flex;
