@@ -75,6 +75,11 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-10-06 — docs/mysql-calcite-dialect-1886 — merged development for PR #2067
+**Was doing:** resolved the changelog conflict, retaining the PR's MySQL known issue and every development entry; the Mondrian docs and AGENTS.md guidance remain intact.
+**Now:** check PR #2067 CI after the push; local Maven build was unavailable because Java and Maven are not installed.
+**Refs:** #1886, #2067
+
 ## 2026-10-05 — feature/823-drillthrough-firstrowset-toggle — merged development for PR #2042
 **Was doing:** merged development twice into PR #2042, retaining its drillthrough column discovery alongside the base branch's drillDown/drillUp API and safer Query2Resource error handling.
 **Now:** check PR #2042 CI after the latest push; the first merge passed JDK, UI, and bundle CI, and local UI check, focused tests, build, and lint passed.
