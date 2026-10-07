@@ -346,6 +346,12 @@ public class Query2Resource {
             // text-plain content-type dance.
             String body = "{\"sql\":" + jacksonJsonString(sql) + "}";
             return Response.ok(body).type("application/json").build();
+        } catch (SaikuAccessDeniedException e) {
+            // The denial may name a datasource or field; keep the response information-free.
+            return Response.status(Response.Status.FORBIDDEN)
+                    .entity("{\"error\":\"Access denied\"}")
+                    .type("application/json")
+                    .build();
         } catch (Exception e) {
             log.error("Cannot preview Ossie SQL", e);
             String msg = e.getMessage() == null ? "internal error" : e.getMessage();

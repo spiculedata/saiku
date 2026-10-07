@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.saiku.datasources.connection.ISaikuConnection;
 import org.saiku.datasources.connection.SaikuOssieConnection;
@@ -36,6 +37,7 @@ import org.saiku.service.olap.ai.KAnonymityFilter;
 import org.saiku.service.ossie.OssieDiscoverService;
 import org.saiku.service.ossie.OssieModelDto;
 import org.saiku.service.ossie.OssieQueryService;
+import org.saiku.service.ossie.OssieRoleContext;
 import org.saiku.service.ossie.ai.OssieAiQueryRequest;
 import org.saiku.service.ossie.ai.OssieAiQueryResponse;
 import org.saiku.service.ossie.ai.OssieAiSchema;
@@ -43,6 +45,7 @@ import org.saiku.service.ossie.ai.OssieAiSchemaProjector;
 import org.saiku.service.ossie.ai.OssieAiValidationException;
 import org.saiku.service.ossie.ai.OssieAiValidator;
 import org.saiku.service.ossie.ai.OssieAsyncQueryService;
+import org.saiku.web.rest.util.SessionRoles;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -391,6 +394,9 @@ public class AiOssieResource {
                         "model '" + modelName + "' not found on connection '" + connectionName + "'",
                         List.of(semantic.getName()));
             }
+            // saiku#1393 — strip fields/metrics the caller's roles deny before the agent-facing
+            // schema is built, same as the workbench discover endpoint.
+            semantic = OssieRoleContext.filterHidden(semantic, Set.copyOf(SessionRoles.currentRoles()));
             // #1404 — ?refresh=true drops the projector's cached samples for this model so the
             // next fetch re-runs the SELECT DISTINCTs against the warehouse.
             if (Boolean.TRUE.equals(refresh)) {
