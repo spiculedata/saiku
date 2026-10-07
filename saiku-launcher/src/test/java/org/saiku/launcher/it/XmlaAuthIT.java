@@ -53,6 +53,15 @@ import org.junit.Test;
  *       the fault body never contains the injected file marker. This is the true end-to-end XXE
  *       reversion guard: it goes through Jetty, Spring Security, and mondrian's real SOAP fault
  *       marshalling, none of which the pure-unit test exercises.
+ *   <li>(saiku#1950) An anonymous {@code POST /xmla} is 401 <em>with</em> a
+ *       {@code WWW-Authenticate: Basic} challenge, and the Excel/MSOLAP negotiate (anonymous
+ *       request, then the same request retried with Basic credentials) succeeds. Challenge-driven
+ *       clients only ever send credentials in response to that header, so without it they cannot
+ *       connect at all — while pre-emptive-Basic clients would never have noticed its absence.
+ *   <li>(saiku#1950) The main SPA chain still returns a bare 401 with <em>no</em>
+ *       {@code WWW-Authenticate} header. That is the whole reason the two chains use different
+ *       entry points, so it is asserted here as the counterweight: restoring the challenge for
+ *       XMLA must not resurrect the native browser auth dialog over the SPA (saiku#878).
  * </ol>
  *
  * <p>NOT covered by a live IT here: the dedicated chain's {@code loginRateLimitFilter} 429
@@ -210,5 +219,99 @@ public class XmlaAuthIT {
                 "expected a SOAP fault body for the rejected DOCTYPE payload (status=" + resp.statusCode() + "): "
                         + body,
                 body.toLowerCase(Locale.ROOT).contains("fault"));
+    }
+
+    /**
+     * saiku#1950: the property Excel/MSOLAP actually depend on. Both negotiate over WinHTTP —
+     * they send an anonymous request first and only supply credentials once the server answers
+     * 401 with {@code WWW-Authenticate: Basic}. A bare 401 (the {@code HttpStatusEntryPoint} the
+     * /xmla chain inherited from the SPA posture) leaves those clients with nothing to respond to,
+     * so they never authenticate at all.
+     */
+    @Test
+    public void anonymousPostToXmlaAdvertisesBasicChallenge() throws Exception {
+        HttpResponse<String> resp = postXmla("/xmla", wellFormedDiscoverBody(), null);
+
+        assertEquals(
+                "Unauthenticated POST /xmla must still be rejected — status=" + resp.statusCode() + ", body: "
+                        + resp.body(),
+                401,
+                resp.statusCode());
+
+        String challenge = resp.headers().firstValue("WWW-Authenticate").orElse("");
+        assertTrue(
+                "POST /xmla must answer 401 with a `WWW-Authenticate: Basic` challenge so "
+                        + "challenge-driven clients (Excel/MSOLAP over WinHTTP) can negotiate (saiku#1950) — "
+                        + "header was: '" + challenge + "'",
+                challenge.toLowerCase(Locale.ROOT).startsWith("basic"));
+        assertTrue(
+                "the Basic challenge must name a realm — clients that key off the realm string see an "
+                        + "empty/absent one here. Header was: '" + challenge + "'",
+                challenge.toLowerCase(Locale.ROOT).contains("realm="));
+    }
+
+    /**
+     * saiku#1950: the full Excel handshake, end-to-end — anonymous request, read the challenge,
+     * retry the identical request with Basic credentials. This is the round-trip a challenge-driven
+     * client performs; if either half regresses (challenge dropped, or Basic stopped being accepted)
+     * this fails.
+     */
+    @Test
+    public void challengeThenRetryWithBasicSucceeds() throws Exception {
+        // Step 1 — negotiate, as Excel does: no credentials, expect 401 + challenge.
+        HttpResponse<String> challenged = postXmla("/xmla", wellFormedDiscoverBody(), null);
+        assertEquals(
+                "negotiate step must be a 401 — status=" + challenged.statusCode() + ", body: " + challenged.body(),
+                401,
+                challenged.statusCode());
+        String challenge = challenged.headers().firstValue("WWW-Authenticate").orElse("");
+        assertTrue(
+                "negotiate step must advertise Basic — header was: '" + challenge + "'",
+                challenge.toLowerCase(Locale.ROOT).startsWith("basic"));
+
+        // Step 2 — same request, credentials supplied because of that challenge.
+        HttpResponse<String> authenticated = postXmla("/xmla", wellFormedDiscoverBody(), harness.adminBasicAuth());
+        assertNotEquals(
+                "the retry with Basic credentials must not be rejected as unauthenticated (saiku#1950 "
+                        + "challenge handshake) — status=" + authenticated.statusCode() + ", body: "
+                        + authenticated.body(),
+                401,
+                authenticated.statusCode());
+        assertNotEquals(
+                "the retry with Basic credentials must not be rejected as forbidden — status="
+                        + authenticated.statusCode() + ", body: " + authenticated.body(),
+                403,
+                authenticated.statusCode());
+        assertTrue(
+                "expected a SOAP envelope once authenticated (status=" + authenticated.statusCode() + "): "
+                        + authenticated.body(),
+                authenticated.body() != null && authenticated.body().contains("Envelope"));
+    }
+
+    /**
+     * saiku#1950: the counterweight to the test above. The /xmla chain got a real challenge, so the
+     * main SPA chain must NOT have picked one up: the SPA's routine XHR 401s ("is the user signed
+     * in?") are answered with a bare 401 precisely so the browser never opens a native Basic auth
+     * dialog over the app (saiku#878). Sharing one entry point across both chains would trade one
+     * client-compat problem for the other.
+     */
+    @Test
+    public void spaChainStillOmitsBasicChallenge() throws Exception {
+        HttpRequest unauthenticated = HttpRequest.newBuilder(URI.create(baseUrl + "/rest/saiku/api/tile-plugins"))
+                .timeout(Duration.ofSeconds(20))
+                .GET()
+                .build();
+        HttpResponse<String> resp = client.send(unauthenticated, HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(
+                "/rest/saiku/api/tile-plugins is full-auth and must 401 when anonymous — status=" + resp.statusCode()
+                        + ", body: " + resp.body(),
+                401,
+                resp.statusCode());
+        assertFalse(
+                "the SPA chain must keep its bare-401 no-challenge entry point — a `WWW-Authenticate` header "
+                        + "here makes the browser pop a native auth dialog over the SPA's XHR 401s (saiku#878), "
+                        + "and restoring the challenge for /xmla (saiku#1950) must not have changed that",
+                resp.headers().firstValue("WWW-Authenticate").isPresent());
     }
 }

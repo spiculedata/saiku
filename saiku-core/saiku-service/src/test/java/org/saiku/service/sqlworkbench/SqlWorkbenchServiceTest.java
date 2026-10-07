@@ -110,7 +110,7 @@ public class SqlWorkbenchServiceTest {
         // The row never made it in — the guard fired before a connection was ever opened.
         SqlWorkbenchService.SqlQueryResult result =
                 service.execute("alice", DATA_SOURCE_ID, "SELECT COUNT(*) FROM customer", null);
-        assertEquals(2, result.rows().get(0).get(0));
+        assertEquals(2L, result.rows().get(0).get(0));
 
         // recent() is newest-first: index 0 is the SELECT COUNT(*) that ran second, index 1 is
         // the rejected INSERT that ran first.
