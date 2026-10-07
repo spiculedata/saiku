@@ -32,6 +32,19 @@ All notable changes to Saiku are documented here. This project follows
 
 ### Added
 
+- **MDX workbench, phase 1+2 (saiku#1106).** A new `/ui/workbench` route
+  promotes the toolbar's MDXModal to a full page: Monaco-backed MDX editor,
+  a cube selector, and a read-only result grid, so raw MDX isn't trapped
+  behind a modal anymore. `mdx-lang.ts` now also wires a
+  cube-grounded completion provider — typing `[Measures].` or `[<Dimension>].`
+  suggests that cube's live measures / dimensions / hierarchies / levels,
+  sourced from the same schema cache the sidebar uses. The completion
+  context is shared with the existing MDXModal, so autocomplete works there
+  too. Query history (last 20 runs, per-user, local) and save-as-query
+  (writing into the same repository canvas queries use) round out the page.
+  Member-value completion and a Playwright e2e spec are tracked as
+  follow-ups on the issue.
+
 - **SCIM 2.0 provisioning endpoint for enterprise IdPs** (saiku#1438). Saiku now
   speaks the SCIM 2.0 core profile (RFC 7643 schema, RFC 7644 protocol) at
   `/rest/scim/v2`, so Okta, Microsoft Entra ID or OneLogin can own the user
