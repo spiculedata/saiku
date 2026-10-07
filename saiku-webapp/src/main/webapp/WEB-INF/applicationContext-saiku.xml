@@ -309,6 +309,11 @@
            (more specific first); ant matcher — `*` matches the single {username} segment. -->
       <security:intercept-url pattern="/rest/saiku/statistics/**" access="hasRole('ADMIN')" />
       <security:intercept-url pattern="/rest/saiku/*/org.saiku.datasources/**" access="hasRole('ADMIN')" />
+      <!-- saiku#1107: SQL workbench — belt-and-braces alongside SqlWorkbenchResource's
+           @RolesAllowed({"ROLE_ADMIN","ROLE_SQL_EXEC"}). Must precede /rest/** (more specific
+           first); the audit read endpoint lives under /saiku/admin/** and is already covered
+           above. -->
+      <security:intercept-url pattern="/rest/saiku/sql-workbench/**" access="hasRole('ADMIN') or hasRole('SQL_EXEC')" />
       <!-- NOTE (saiku#1905): the /xmla SOAP endpoint is NOT gated by an
            intercept-url in this chain. It is prefix-mapped /xmla/* (web.xml), and
            the security="none" chains above match MVC-style (servlet-path-relative),
