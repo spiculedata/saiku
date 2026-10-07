@@ -47,6 +47,14 @@ or filters and the SPA writes MDX for you.
 > (≥ 12 characters, not a well-known weak password), so `SAIKU_ADMIN_PASSWORD=admin`
 > is refused too.
 
+> **Demo fixtures follow demo mode** (saiku#1953). A boot without `SAIKU_DEMO=true`
+> stages **no** demo content: no FoodMart/Bank/TPC-DS/Flights schemas, no H2
+> fixtures, no datasource descriptors — a fresh home comes up with an empty
+> datasource list. Set `SAIKU_SEED=true` to install the fixtures on a
+> non-demo boot, or `SAIKU_DEMO=true SAIKU_SEED=false` for the demo login against
+> your own cubes. Seeding is seed-if-absent, so an existing `saiku-home` is never
+> rewritten or emptied.
+
 > **The container runs as a non-root user** (uid/gid `10001:10001`). A *fresh*
 > named/anonymous volume works out of the box. Any **pre-existing** `saiku-home`
 > from an older root container — bind mount or named volume — must be re-owned
@@ -136,6 +144,17 @@ overlays, auto-refresh, PDF/PNG export and read-only share links. See the
 [`docs/dashboards-user-guide.md`](docs/dashboards-user-guide.md) for the full
 walkthrough, and [`saiku-ui/src/embed/README.md`](saiku-ui/src/embed/README.md)
 to embed a dashboard in your own app via the `<saiku-embed>` web component.
+
+## User provisioning (SCIM 2.0)
+
+Saiku speaks the SCIM 2.0 core profile, so Okta, Microsoft Entra ID or
+OneLogin can own the user lifecycle: an admin mints one bearer token per
+connector, and create / update / deactivate / group-assignment all flow into
+the Saiku user directory without anyone touching the admin console. SCIM
+handles lifecycle; OIDC/SAML handles authentication — a provisioned account has
+no usable local password. See
+[`docs/SCIM-PROVISIONING.md`](docs/SCIM-PROVISIONING.md) for the connector
+walkthrough, the attribute mapping and its limits.
 
 ## Observability
 
