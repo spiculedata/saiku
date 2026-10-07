@@ -10,6 +10,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.ws.rs.core.Response;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -29,6 +30,7 @@ import org.saiku.service.olap.ai.AiQueryResponse;
 import org.saiku.service.olap.ai.AiSchema;
 import org.saiku.service.olap.ai.ask.AiAskApi;
 import org.saiku.service.olap.ai.ask.AiAskService;
+import org.saiku.service.olap.ai.ask.CertifiedQuery;
 import org.saiku.service.olap.ai.ask.CertifiedQueryParser;
 import org.saiku.service.olap.ai.ask.CertifiedQueryRegistry;
 import org.saiku.service.olap.ai.ask.NlAskMessage;
@@ -74,20 +76,20 @@ public class AiCertifiedQueryResourceTest {
     }
 
     @Test
-    public void listReturnsSummariesWithoutTheQueryBody() {
+    public void listReturnsSummariesWithoutTheQueryBody() throws Exception {
         Response resp = resource.listCertified(false);
         assertEquals(200, resp.getStatus());
         @SuppressWarnings("unchecked")
         Map<String, Object> body = (Map<String, Object>) resp.getEntity();
         @SuppressWarnings("unchecked")
-        List<Map<String, Object>> entries = (List<Map<String, Object>>) body.get("certified");
+        List<CertifiedQuery.Summary> entries = (List<CertifiedQuery.Summary>) body.get("certified");
         assertEquals(1, entries.size());
-        assertEquals("monthly-net-revenue", entries.get(0).get("id"));
-        assertNotNull(entries.get(0).get("description"));
-        assertNotNull(entries.get(0).get("matchIntent"));
-        assertNull(
+        assertEquals("monthly-net-revenue", entries.get(0).id());
+        assertNotNull(entries.get(0).description());
+        assertNotNull(entries.get(0).matchIntent());
+        assertFalse(
                 "the approved MDX must not leak from the catalogue",
-                entries.get(0).get("query"));
+                new ObjectMapper().writeValueAsString(entries.get(0)).contains("\"query\""));
         assertNull(body.get("errors"));
     }
 
@@ -98,9 +100,10 @@ public class AiCertifiedQueryResourceTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> body = (Map<String, Object>) resp.getEntity();
         @SuppressWarnings("unchecked")
-        List<Map<String, Object>> errors = (List<Map<String, Object>>) body.get("errors");
+        List<CertifiedQueryRegistry.CertifiedError> errors =
+                (List<CertifiedQueryRegistry.CertifiedError>) body.get("errors");
         assertEquals(1, errors.size());
-        assertEquals("MALFORMED_JSON", errors.get(0).get("code"));
+        assertEquals("MALFORMED_JSON", errors.get(0).code());
     }
 
     @Test

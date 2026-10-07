@@ -76,7 +76,7 @@ pushed down; normal sessions append and the history stays useful.
 ## Log
 
 ## 2026-10-07 — feature/certified-query-catalog — merged development for PR #2064
-**Was doing:** merged development, combined both increases to the Java test floors, and corrected the certified resource test's ask request type.
+**Was doing:** merged development, combined both increases to the Java test floors, and corrected the certified resource test's ask request and response type assumptions after CI feedback.
 **Now:** check PR #2064 CI; this workspace has no Java or Maven installation, so the Java build must run in CI.
 **Refs:** #1430, #2064
 
