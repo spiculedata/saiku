@@ -84,8 +84,7 @@ public class ReadOnlySqlGuardTest {
     @Test
     public void rejects_a_stacked_statement_after_a_valid_select() {
         assertThrows(
-                IllegalArgumentException.class,
-                () -> ReadOnlySqlGuard.checkReadOnly("SELECT 1; DROP TABLE customer"));
+                IllegalArgumentException.class, () -> ReadOnlySqlGuard.checkReadOnly("SELECT 1; DROP TABLE customer"));
     }
 
     @Test

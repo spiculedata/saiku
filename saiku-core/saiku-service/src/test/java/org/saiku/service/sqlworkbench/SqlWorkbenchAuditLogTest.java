@@ -85,6 +85,8 @@ public class SqlWorkbenchAuditLogTest {
         SqlWorkbenchAuditEntry e = entry("alice", SqlWorkbenchAuditEntry.OUTCOME_SUCCESS);
         e.sql = "SELECT * FROM customer WHERE id = 42";
         auditLog.record(e);
-        assertEquals("SELECT * FROM customer WHERE id = 42", auditLog.recent(1, 0, null).get(0).sql);
+        assertEquals(
+                "SELECT * FROM customer WHERE id = 42",
+                auditLog.recent(1, 0, null).get(0).sql);
     }
 }

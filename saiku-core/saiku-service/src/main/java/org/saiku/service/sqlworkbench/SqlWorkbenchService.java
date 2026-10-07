@@ -67,7 +67,8 @@ public class SqlWorkbenchService {
         Map<String, SaikuDatasource> all = datasourceService.getDatasources(userRoles);
         List<DatasourceView> out = new ArrayList<>();
         for (SaikuDatasource ds : all.values()) {
-            out.add(new DatasourceView(ds.getName(), ds.getType() == null ? null : ds.getType().name()));
+            out.add(new DatasourceView(
+                    ds.getName(), ds.getType() == null ? null : ds.getType().name()));
         }
         out.sort(Comparator.comparing(DatasourceView::name));
         return out;
