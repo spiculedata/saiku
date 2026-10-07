@@ -225,6 +225,8 @@
         <aop:scoped-proxy/>
         <property name="mailSender" ref="mailSender"/>
         <property name="mailConfig" ref="mailConfig"/>
+        <!-- saiku#1913: singleton limiter — a per-request instance never trips. -->
+        <property name="emailRateLimiter" ref="mailEmailRateLimiter"/>
     </bean>
 
     <!-- saiku#943 Phase 0 (mail-setup wizard). Writable, encrypted-at-rest,
@@ -251,6 +253,8 @@
         <property name="mailConfigStore" ref="mailConfigStore"/>
         <property name="mailConfigResolver" ref="mailConfigResolver"/>
         <property name="userService" ref="userServiceBean"/>
+        <!-- saiku#1913: singleton limiter — a per-request instance never trips. -->
+        <property name="testSendRateLimiter" ref="mailTestSendRateLimiter"/>
     </bean>
 
     <!-- saiku#1811 PR1 (recipient-trust model). Writable, file-backed recipient
@@ -297,6 +301,8 @@
         <aop:scoped-proxy/>
         <property name="suppressionStore" ref="suppressionStore"/>
         <property name="unsubscribeTokens" ref="unsubscribeTokens"/>
+        <!-- saiku#1913: singleton limiter — a per-request instance never trips. -->
+        <property name="rateLimiter" ref="mailUnsubscribeRateLimiter"/>
     </bean>
 
     <!-- saiku#1811 PR3 (double-opt-in consent + fail-closed RecipientGate). Writable,
@@ -330,6 +336,9 @@
     <bean id="consentConfirmResource" scope="request" class="org.saiku.web.email.ConsentConfirmResource">
         <aop:scoped-proxy/>
         <property name="consentStore" ref="recipientConsentStore"/>
+        <!-- saiku#1913: singleton limiters — a per-request instance never trips. -->
+        <property name="rateLimiter" ref="mailConsentRateLimiter"/>
+        <property name="addressRateLimiter" ref="mailConsentAddressRateLimiter"/>
     </bean>
     <!-- saiku#1811 PR4 (the send gate — consent invite + multi-recipient send). THIS IS
          THE FIRST CODE THAT CAN MAIL A NON-SELF ADDRESS. Fenced by a default-OFF, ops-only
@@ -384,6 +393,9 @@
         <property name="consentInviteService" ref="consentInviteService"/>
         <property name="mailConfigResolver" ref="mailConfigResolver"/>
         <property name="userService" ref="userServiceBean"/>
+        <!-- saiku#1913: singleton limiters — a per-request instance never trips. -->
+        <property name="inviteRateLimiter" ref="mailInviteRateLimiter"/>
+        <property name="sendRateLimiter" ref="mailSendRateLimiter"/>
     </bean>
 
     <!-- saiku#1029: demo email gate. fromEnvironment() reads WORKOS_API_KEY +
@@ -525,6 +537,8 @@
              saiku.ai.ask.provider is set to 'anthropic' or 'openai' and the
              matching API key env var is supplied. See aiAskServiceBean below. -->
         <property name="askService" ref="aiAskServiceBean"/>
+        <!-- saiku#1913: singleton limiter — a per-request instance never trips. -->
+        <property name="askRateLimiter" ref="aiQueryAskRateLimiter"/>
         <!-- NL email-draft slice, Task 3: same mailSender bean emailResource uses for its
              health check (above), so /ai/ask's EMAIL_DRAFT outcome refuses honestly
              ("Email isn't set up on this server.") whenever mail delivery isn't configured,
@@ -571,6 +585,8 @@
         <property name="asyncQueryService" ref="ossieAsyncQueryServiceBean"/>
         <property name="kAnonymityFilter" ref="kAnonymityFilter"/>
         <property name="askService" ref="ossieAiAskServiceBean"/>
+        <!-- saiku#1913: singleton limiter — a per-request instance never trips. -->
+        <property name="askRateLimiter" ref="aiOssieAskRateLimiter"/>
     </bean>
     <!-- R5: Ossie natural-language ask. Reads saiku.ai.ask.provider + API key from env/props;
          disabled by default (health returns configured=false; /ask returns 503). -->
@@ -805,6 +821,72 @@
          X-Forwarded-For (set saiku.auth.trustForwardedFor=true only when
          fronted by a proxy you control). -->
     <bean id="loginRateLimiter" class="org.saiku.web.security.ratelimit.LoginRateLimiter"/>
+
+    <!-- saiku#1913: per-endpoint AI/mail rate limiters as SINGLETON beans.
+         Every limiter below used to be `new AiRateLimiter(...)` in a field of a
+         scope="request" resource, so its bucket map was rebuilt (empty) on each
+         request and tryAcquire() always saw count=1 -> the limit never tripped.
+         AiRateLimiter.shared(name) keys its bucket store by name, so every
+         request's resource instance counts in ONE budget. The resources keep a
+         private per-instance limiter as their field default (correct for unit
+         tests, useless in production); the injection below is what makes the
+         cap real, and AiRateLimiterWiringTest fails if one is ever dropped. -->
+    <bean id="aiQueryAskRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="ai.query.ask"/>
+    </bean>
+    <bean id="aiOssieAskRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="ai.ossie.ask"/>
+    </bean>
+    <bean id="mailUnsubscribeRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="mail.unsubscribe"/>
+        <constructor-arg value="${saiku.mail.unsubscribe.ratelimit.maxPerMinute:20}"/>
+        <constructor-arg value="60000"/>
+    </bean>
+    <bean id="mailConsentRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="mail.consent"/>
+        <constructor-arg value="${saiku.mail.consent.ratelimit.maxPerMinute:20}"/>
+        <constructor-arg value="60000"/>
+    </bean>
+    <bean id="mailConsentAddressRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="mail.consent.address"/>
+        <constructor-arg value="${saiku.mail.consent.address.ratelimit.maxPerMinute:10}"/>
+        <constructor-arg value="60000"/>
+    </bean>
+    <bean id="mailTestSendRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="mail.test"/>
+        <constructor-arg value="${saiku.mail.test.ratelimit.maxPerMinute:5}"/>
+        <constructor-arg value="60000"/>
+    </bean>
+    <bean id="mailInviteRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="mail.invite"/>
+        <constructor-arg value="${saiku.mail.invite.ratelimit.maxPerMinute:5}"/>
+        <constructor-arg value="60000"/>
+    </bean>
+    <bean id="mailSendRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="mail.send"/>
+        <constructor-arg value="${saiku.mail.send.ratelimit.maxPerMinute:3}"/>
+        <constructor-arg value="60000"/>
+    </bean>
+    <bean id="mailEmailRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="mail.email"/>
+        <constructor-arg value="${saiku.email.ratelimit.maxPerMinute:10}"/>
+        <constructor-arg value="60000"/>
+    </bean>
+    <bean id="jobRunNowRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="jobs.runNow"/>
+        <constructor-arg value="${saiku.jobs.run.ratelimit.maxPerMinute:10}"/>
+        <constructor-arg value="60000"/>
+    </bean>
 
     <!-- saiku#878 follow-up: replace BasicAuthenticationEntryPoint with
          an entry point that returns 401 without WWW-Authenticate. The
@@ -1475,6 +1557,8 @@
         <property name="jobStore" ref="jobStore"/>
         <property name="jobScheduler" ref="jobScheduler"/>
         <property name="userService" ref="userServiceBean"/>
+        <!-- saiku#1913: singleton limiter — a per-request instance never trips. -->
+        <property name="runNowRateLimiter" ref="jobRunNowRateLimiter"/>
     </bean>
 
 </beans>

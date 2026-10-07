@@ -22,6 +22,7 @@ import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+import org.saiku.service.util.exception.SaikuServiceException;
 
 /**
  * Regression coverage for the path-traversal vector in {@code FilesystemRepositoryManager}:
@@ -402,6 +403,135 @@ public class FilesystemRepositoryManagerPathTraversalTest {
                 // fail-closed
             }
         }
+    }
+
+    // --- saiku#1933: InvalidPathException consistency + log-message hygiene + charset ---
+
+    /**
+     * saiku#1933: {@code delete()} is reached from the public {@code deleteFolder}}. A NUL byte
+     * makes {@code Paths.get()} throw {@link java.nio.file.InvalidPathException}, which is
+     * unchecked and used to escape raw; a delete must instead fail closed the way every other
+     * bad path does.
+     */
+    @Test
+    public void deleteFolder_rejects_unparseable_path_without_throwing() throws Exception {
+        File secret = new File(datadir, "unknown/etc/keepme.txt");
+        Files.write(secret.toPath(), "KEEP".getBytes(StandardCharsets.UTF_8));
+
+        try {
+            manager.deleteFolder("etc/evil\0/../keepme.txt");
+        } catch (java.nio.file.InvalidPathException raw) {
+            fail("deleteFolder must fail closed on an unparseable path, not let InvalidPathException escape");
+        }
+
+        assertTrue("a refused delete must leave the datadir untouched", secret.exists());
+    }
+
+    /**
+     * saiku#1933: the same input through the read side. {@code removeInternalFile} delegates to
+     * the private {@code getNode()}, which must now catch {@link java.nio.file.InvalidPathException}
+     * and fail closed with the unchecked {@link SaikuServiceException} it already uses for a
+     * traversal attempt -- not surface the platform's raw exception.
+     */
+    @Test
+    public void removeInternalFile_rejects_unparseable_path_fail_closed() throws Exception {
+        try {
+            manager.removeInternalFile("/etc/evil\0/keepme.txt");
+            fail("removeInternalFile must reject a path the platform refused to parse");
+        } catch (SaikuServiceException expected) {
+            // fail-closed
+        } catch (java.nio.file.InvalidPathException raw) {
+            fail("getNode must catch InvalidPathException instead of letting it escape raw");
+        }
+    }
+
+    /**
+     * saiku#1933: the read entry points that call {@code resolveWithinDatadir} directly declare
+     * {@link RepositoryException}, so the unchecked escape has to be closed there too -- otherwise
+     * a NUL byte in a REST path is a 500 with a stack trace instead of a clean rejection.
+     */
+    @Test
+    public void getInternalFile_rejects_unparseable_path_as_repository_exception() throws Exception {
+        try {
+            manager.getInternalFile("/etc/evil\0/keepme.txt");
+            fail("getInternalFile must reject a path the platform refused to parse");
+        } catch (RepositoryException expected) {
+            // fail-closed, and the message must not echo the raw path (CWE-117)
+            assertFalse(
+                    "the rejection message must not echo the caller path",
+                    String.valueOf(expected.getMessage()).contains("keepme"));
+        } catch (java.nio.file.InvalidPathException raw) {
+            fail("getInternalFile must not let InvalidPathException escape raw");
+        }
+    }
+
+    /**
+     * saiku#1933 (CWE-117): the shared traversal rejection message used to embed the raw caller
+     * path. On Linux {@code Paths.get()} accepts a newline, so a crafted path let an attacker
+     * forge log lines wherever the message was logged or returned. The message must now be
+     * constant, with the raw value only at DEBUG.
+     */
+    @Test
+    public void traversal_rejection_message_is_constant_and_carries_no_newline() throws Exception {
+        String newlinePath = "../../outside/" + outsideSecret.getName() + "\nINFO forged log line";
+        try {
+            manager.getInternalFile(newlinePath);
+            fail("a traversal path must be rejected");
+        } catch (RepositoryException expected) {
+            String message = String.valueOf(expected.getMessage());
+            assertEquals(
+                    "the rejection message must be a constant, not an echo of the caller path",
+                    "Path traversal attempt rejected",
+                    message);
+            assertFalse("the rejection message must not contain a newline", message.contains("\n"));
+        }
+    }
+
+    /**
+     * saiku#1933: {@code saveDataSource} used {@code baos.toString()} plus {@code new
+     * FileWriter(f)} -- two implicit platform-default-charset round trips. On a host whose
+     * default is not UTF-8 (a Cp1252 locale, or an explicit {@code -Dfile.encoding}), an
+     * accented datasource name would be written as mojibake and would not match the filename it
+     * is stored under on the next load. Pinning UTF-8 makes the descriptor bytes the same
+     * everywhere.
+     *
+     * <p>Note this assertion is only load-bearing on a harness whose default charset is not
+     * UTF-8 (the CI image is UTF-8, so it is a no-op there); it documents the invariant either
+     * way.
+     */
+    @Test
+    public void saveDataSource_writes_utf8_bytes_for_an_accented_name() throws Exception {
+        File datasources = new File(datadir, "unknown/datasources");
+        if (!datasources.mkdirs()) {
+            throw new IllegalStateException("Could not create " + datasources);
+        }
+
+        DataSource ds = new DataSource();
+        ds.setName("Ventes Été");
+
+        manager.saveDataSource(ds, "/datasources/Ventes Été.sds", "fixme");
+
+        File written = new File(datasources, "Ventes Été.sds");
+        assertTrue("saveDataSource must write the descriptor", written.exists());
+        byte[] bytes = Files.readAllBytes(written.toPath());
+        String decoded = new String(bytes, StandardCharsets.UTF_8);
+        assertTrue("the descriptor must carry the accented name, encoded as UTF-8", decoded.contains("Ventes Été"));
+        assertTrue(
+                "the accent must be stored as its UTF-8 encoding (0xC3 0xA9), not a single-byte code page byte",
+                indexOf(bytes, new byte[] {(byte) 0xC3, (byte) 0xA9}) >= 0);
+    }
+
+    private static int indexOf(byte[] haystack, byte[] needle) {
+        outer:
+        for (int i = 0; i + needle.length <= haystack.length; i++) {
+            for (int j = 0; j < needle.length; j++) {
+                if (haystack[i + j] != needle[j]) {
+                    continue outer;
+                }
+            }
+            return i;
+        }
+        return -1;
     }
 
     // --- helpers -------------------------------------------------------------
