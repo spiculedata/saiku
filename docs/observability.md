@@ -12,6 +12,10 @@ This is **Tier 1**: zero-code instrumentation. Custom spans for
 top of the same SDK once we know what's worth tracing — tracked under
 a follow-up issue.
 
+For build-time rather than runtime signals — test-count floors, coverage floors,
+UI checks — see [`quality.md`](quality.md). That is the quality *dashboard*;
+this doc is what a running server exposes.
+
 ## What gets instrumented automatically
 
 The agent's bytecode-injected instrumentation covers everything Saiku

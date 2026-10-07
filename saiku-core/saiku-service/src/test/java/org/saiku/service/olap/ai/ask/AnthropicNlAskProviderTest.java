@@ -23,6 +23,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import javax.net.ssl.SSLSession;
 import org.junit.Test;
+import org.saiku.service.mcp.outbound.McpOutboundToolDescriptor;
 import org.saiku.service.olap.ai.AiCubeRef;
 
 /** Unit tests for {@link AnthropicNlAskProvider}. No network. */
@@ -469,6 +470,129 @@ public class AnthropicNlAskProviderTest {
         NlAskResponse resp = AnthropicNlAskProvider.parseToolResponse(body, "claude-x");
         assertTrue(resp.degraded());
         assertEquals("empty dashboard tool input", resp.reason());
+    }
+
+    /* ---------------------------- saiku#1425: outbound MCP tools ---------------------------- */
+
+    private static final McpOutboundToolDescriptor MCP_TOOL_DESCRIPTOR = new McpOutboundToolDescriptor(
+            "mcp__notion__search_docs",
+            "notion",
+            "search_docs",
+            "Search the Notion workspace",
+            "{\"type\":\"object\",\"properties\":{\"q\":{\"type\":\"string\"}}}");
+
+    @Test
+    public void autoModeAdvertisesMcpToolsAlongsideBuiltins() throws Exception {
+        AnthropicNlAskProvider provider =
+                new AnthropicNlAskProvider(new AnthropicNlAskProvider.Config("k", "claude-x", 0.0, 1024, null));
+        NlAskRequest req = new NlAskRequest(
+                CUBE,
+                "q",
+                SCHEMA,
+                REQUEST_SCHEMA,
+                List.of(),
+                null,
+                NlAskRequest.ForceTool.AUTO,
+                null,
+                null,
+                null,
+                List.of(),
+                List.of(MCP_TOOL_DESCRIPTOR));
+
+        JsonNode root = MAPPER.readTree(provider.buildRequestBody(req));
+        JsonNode tools = root.get("tools");
+
+        assertEquals(6, tools.size());
+        JsonNode mcpTool = null;
+        for (JsonNode t : tools) {
+            if ("mcp__notion__search_docs".equals(t.get("name").asText())) {
+                mcpTool = t;
+            }
+        }
+        assertNotNull("mcp tool must be advertised", mcpTool);
+        assertTrue(mcpTool.get("description").asText().startsWith("[external MCP tool via notion]"));
+        assertEquals("object", mcpTool.get("input_schema").get("type").asText());
+        assertTrue(root.get("system").asText().contains("EXTERNAL TOOLS"));
+    }
+
+    @Test
+    public void mcpToolsAreOmittedWhenNoneConfigured() throws Exception {
+        AnthropicNlAskProvider provider =
+                new AnthropicNlAskProvider(new AnthropicNlAskProvider.Config("k", "claude-x", 0.0, 1024, null));
+        NlAskRequest req = new NlAskRequest(CUBE, "q", SCHEMA, REQUEST_SCHEMA, List.of());
+
+        JsonNode root = MAPPER.readTree(provider.buildRequestBody(req));
+
+        assertEquals(5, root.get("tools").size());
+        assertFalse(root.get("system").asText().contains("EXTERNAL TOOLS"));
+    }
+
+    @Test
+    public void mcpToolsAreOmittedOnForcedQueryTurn() throws Exception {
+        AnthropicNlAskProvider provider =
+                new AnthropicNlAskProvider(new AnthropicNlAskProvider.Config("k", "claude-x", 0.0, 1024, null));
+        NlAskRequest req = new NlAskRequest(
+                CUBE,
+                "q",
+                SCHEMA,
+                REQUEST_SCHEMA,
+                List.of(),
+                null,
+                NlAskRequest.ForceTool.QUERY,
+                null,
+                null,
+                null,
+                List.of(),
+                List.of(MCP_TOOL_DESCRIPTOR));
+
+        JsonNode root = MAPPER.readTree(provider.buildRequestBody(req));
+
+        for (JsonNode t : root.get("tools")) {
+            assertFalse(t.get("name").asText().startsWith("mcp__"));
+        }
+    }
+
+    @Test
+    public void mcpToolsRideAlongsideForcedInsightTurn() throws Exception {
+        AnthropicNlAskProvider provider =
+                new AnthropicNlAskProvider(new AnthropicNlAskProvider.Config("k", "claude-x", 0.0, 1024, null));
+        NlAskRequest req = new NlAskRequest(
+                CUBE,
+                "q",
+                SCHEMA,
+                REQUEST_SCHEMA,
+                List.of(),
+                "some cellset digest",
+                NlAskRequest.ForceTool.INSIGHT,
+                null,
+                null,
+                null,
+                List.of(),
+                List.of(MCP_TOOL_DESCRIPTOR));
+
+        JsonNode root = MAPPER.readTree(provider.buildRequestBody(req));
+
+        boolean sawMcpTool = false;
+        for (JsonNode t : root.get("tools")) {
+            if ("mcp__notion__search_docs".equals(t.get("name").asText())) sawMcpTool = true;
+        }
+        assertTrue(sawMcpTool);
+    }
+
+    @Test
+    public void parseToolResponseRecognisesMcpQualifiedToolName() throws Exception {
+        String body = "{\"usage\":{\"input_tokens\":9,\"output_tokens\":4},"
+                + "\"content\":[{\"type\":\"tool_use\",\"id\":\"toolu_mcp1\",\"name\":\"mcp__notion__search_docs\","
+                + "\"input\":{\"q\":\"onboarding\"}}]}";
+
+        NlAskResponse resp = AnthropicNlAskProvider.parseToolResponse(body, "claude-x");
+
+        assertFalse(resp.degraded());
+        assertEquals(NlAskResponse.Kind.MCP_TOOL, resp.kind());
+        assertEquals("mcp__notion__search_docs", resp.mcpToolQualifiedName());
+        assertEquals("toolu_mcp1", resp.toolCallId());
+        JsonNode parsed = MAPPER.readTree(resp.payloadJson());
+        assertEquals("onboarding", parsed.get("q").asText());
     }
 
     /** Minimal {@link HttpClient} stub — only {@code send} is exercised. Captures the last request. */

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { Button, Input, Textarea } from '$lib/components/ui';
 	import { adminSchemas, type AdminSchema } from '$lib/api/admin';
 	import { toasts } from '$lib/stores/toasts.svelte';
@@ -68,7 +69,10 @@
 <div class="pane">
 	<header class="mb-3 flex items-center justify-between">
 		<h2>{i18n.t('admin.tabs.schemas')}</h2>
-		<Button onclick={() => (uploading = true)}>{i18n.t('admin.uploadSchema')}</Button>
+		<div class="flex gap-2">
+			<Button variant="outline" onclick={() => goto('/admin/model-ide')}>Open Model IDE</Button>
+			<Button onclick={() => (uploading = true)}>{i18n.t('admin.uploadSchema')}</Button>
+		</div>
 	</header>
 	{#if error}<p class="callout callout--danger">{error}</p>{/if}
 	{#if loading}
@@ -83,6 +87,11 @@
 						<td>{s.path ?? ''}</td>
 						<td>{s.type ?? ''}</td>
 						<td class="data-grid__actions">
+							<Button
+								variant="outline"
+								onclick={() => goto(`/admin/model-ide?open=${encodeURIComponent(s.name)}`)}
+								>Edit</Button
+							>
 							<Button variant="destructive" onclick={() => (deleting = s)}>Delete</Button>
 						</td>
 					</tr>
