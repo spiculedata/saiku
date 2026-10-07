@@ -120,6 +120,16 @@
         <property name="logExtractor" ref="logwriterbean"/>
     </bean>
 
+    <!-- saiku#1120: measure/dimension/hierarchy/level lineage — GET /saiku/admin/lineage?measure=...
+         scans saved queries, dashboards and schema calculated members for a reference. -->
+    <bean id="measureLineageServiceBean" class="org.saiku.web.rest.resources.lineage.MeasureLineageService">
+        <property name="datasourceService" ref="datasourceServiceBean"/>
+    </bean>
+    <bean id="lineageResourceBean" class="org.saiku.web.rest.resources.lineage.LineageResource">
+        <property name="lineageService" ref="measureLineageServiceBean"/>
+        <property name="userService" ref="userServiceBean"/>
+    </bean>
+
     <!-- saiku#779: role inventory, "test as" preview and lookup-mode grant editing
          (GET/POST/PUT/DELETE /saiku/admin/roles). Admin-gated. -->
     <bean id="roleAdminResource" class="org.saiku.web.rest.resources.RoleAdminResource">
@@ -225,6 +235,8 @@
         <aop:scoped-proxy/>
         <property name="mailSender" ref="mailSender"/>
         <property name="mailConfig" ref="mailConfig"/>
+        <!-- saiku#1913: singleton limiter — a per-request instance never trips. -->
+        <property name="emailRateLimiter" ref="mailEmailRateLimiter"/>
     </bean>
 
     <!-- saiku#943 Phase 0 (mail-setup wizard). Writable, encrypted-at-rest,
@@ -251,6 +263,8 @@
         <property name="mailConfigStore" ref="mailConfigStore"/>
         <property name="mailConfigResolver" ref="mailConfigResolver"/>
         <property name="userService" ref="userServiceBean"/>
+        <!-- saiku#1913: singleton limiter — a per-request instance never trips. -->
+        <property name="testSendRateLimiter" ref="mailTestSendRateLimiter"/>
     </bean>
 
     <!-- saiku#1811 PR1 (recipient-trust model). Writable, file-backed recipient
@@ -297,6 +311,8 @@
         <aop:scoped-proxy/>
         <property name="suppressionStore" ref="suppressionStore"/>
         <property name="unsubscribeTokens" ref="unsubscribeTokens"/>
+        <!-- saiku#1913: singleton limiter — a per-request instance never trips. -->
+        <property name="rateLimiter" ref="mailUnsubscribeRateLimiter"/>
     </bean>
 
     <!-- saiku#1811 PR3 (double-opt-in consent + fail-closed RecipientGate). Writable,
@@ -330,6 +346,9 @@
     <bean id="consentConfirmResource" scope="request" class="org.saiku.web.email.ConsentConfirmResource">
         <aop:scoped-proxy/>
         <property name="consentStore" ref="recipientConsentStore"/>
+        <!-- saiku#1913: singleton limiters — a per-request instance never trips. -->
+        <property name="rateLimiter" ref="mailConsentRateLimiter"/>
+        <property name="addressRateLimiter" ref="mailConsentAddressRateLimiter"/>
     </bean>
     <!-- saiku#1811 PR4 (the send gate — consent invite + multi-recipient send). THIS IS
          THE FIRST CODE THAT CAN MAIL A NON-SELF ADDRESS. Fenced by a default-OFF, ops-only
@@ -384,6 +403,9 @@
         <property name="consentInviteService" ref="consentInviteService"/>
         <property name="mailConfigResolver" ref="mailConfigResolver"/>
         <property name="userService" ref="userServiceBean"/>
+        <!-- saiku#1913: singleton limiters — a per-request instance never trips. -->
+        <property name="inviteRateLimiter" ref="mailInviteRateLimiter"/>
+        <property name="sendRateLimiter" ref="mailSendRateLimiter"/>
     </bean>
 
     <!-- saiku#1029: demo email gate. fromEnvironment() reads WORKOS_API_KEY +
@@ -429,6 +451,12 @@
         <property name="thinQueryService" ref="thinQueryBean"/>
         <property name="repository" ref="repository2bean"/>
         <property name="asyncQueryService" ref="asyncQueryServiceBean"/>
+        <!-- saiku#837: reuse the AI query surface's cube-metadata service so
+             drillthrough returns= on the Query2 workspace path resolves bare
+             captions to qualified MDX the same way AiQueryResource does
+             (saiku#782). Defined below, but Spring resolves bean refs by id
+             regardless of declaration order. -->
+        <property name="cubeMetadataService" ref="aiCubeMetadataServiceBean"/>
     </bean>
 
     <!-- ====================================================================
@@ -528,6 +556,8 @@
         <!-- saiku#1430: certified-query catalogue backing GET /ai/certified and
              POST /ai/certified/{id}/run (verbatim execution + source/certifiedId attribution). -->
         <property name="certifiedQueries" ref="certifiedQueryRegistryBean"/>
+        <!-- saiku#1913: singleton limiter — a per-request instance never trips. -->
+        <property name="askRateLimiter" ref="aiQueryAskRateLimiter"/>
         <!-- NL email-draft slice, Task 3: same mailSender bean emailResource uses for its
              health check (above), so /ai/ask's EMAIL_DRAFT outcome refuses honestly
              ("Email isn't set up on this server.") whenever mail delivery isn't configured,
@@ -574,6 +604,8 @@
         <property name="asyncQueryService" ref="ossieAsyncQueryServiceBean"/>
         <property name="kAnonymityFilter" ref="kAnonymityFilter"/>
         <property name="askService" ref="ossieAiAskServiceBean"/>
+        <!-- saiku#1913: singleton limiter — a per-request instance never trips. -->
+        <property name="askRateLimiter" ref="aiOssieAskRateLimiter"/>
     </bean>
     <!-- R5: Ossie natural-language ask. Reads saiku.ai.ask.provider + API key from env/props;
          disabled by default (health returns configured=false; /ask returns 503). -->
@@ -757,6 +789,10 @@
              before it is digested and fed back to the model — parity with the masking every other
              egress path (records/matrix via AiQueryResource) already applies. -->
         <property name="kAnonymityFilter" ref="kAnonymityFilter"/>
+        <!-- Outbound MCP tool catalogue (saiku#1425) — admin-enabled external tools the chained-ask
+             loop offers alongside the built-in emit_* tools. Optional: null when no servers are
+             registered means the loop simply never advertises any mcp__* tool. -->
+        <property name="mcpOutbound" ref="mcpOutboundToolCatalogBean"/>
     </bean>
 
     <!-- Skill catalogue (saiku#1426). Markdown files with YAML frontmatter under
@@ -792,6 +828,32 @@
     </bean>
 
     <!-- ====================================================================
+         Outbound MCP (saiku#1425) — admin-registered external MCP servers DimSum can call
+         mid-conversation. JSON registrations under saiku-home/mcp-servers/*.json, same scan/CRUD
+         model as Agent Spaces. Off by default: a server contributes NOTHING to the ask layer until
+         an admin explicitly enables individual tools (see McpOutboundServer / docs/MCP-OUTBOUND.md).
+         ==================================================================== -->
+    <bean id="mcpOutboundServerRegistryBean"
+          class="org.saiku.service.mcp.outbound.McpOutboundServerRegistry">
+        <constructor-arg type="java.lang.String" value="${saiku.home:./saiku-home}/mcp-servers"/>
+    </bean>
+
+    <bean id="mcpOutboundClientBean" class="org.saiku.service.mcp.outbound.McpOutboundClient"/>
+
+    <bean id="mcpOutboundToolCatalogBean" class="org.saiku.service.mcp.outbound.McpOutboundToolCatalog">
+        <constructor-arg ref="mcpOutboundServerRegistryBean"/>
+        <constructor-arg ref="mcpOutboundClientBean"/>
+    </bean>
+
+    <!-- Admin CRUD (GET/PUT/DELETE /saiku/admin/mcp-servers, GET .../{id}/tools for live
+         discovery). Admin-gated, same posture as agentSpaceAdminResource. -->
+    <bean id="mcpOutboundAdminResource" class="org.saiku.web.rest.resources.McpOutboundAdminResource">
+        <property name="registry" ref="mcpOutboundServerRegistryBean"/>
+        <property name="client" ref="mcpOutboundClientBean"/>
+        <property name="catalog" ref="mcpOutboundToolCatalogBean"/>
+    </bean>
+
+    <!-- ====================================================================
          MCP streamable-http endpoint (org.saiku.web.rest.resources.mcp.McpResource
          @ /saiku/api/mcp). Native Jersey resource that speaks JSON-RPC 2.0
          to MCP hosts (Claude Desktop, Cursor, Cline, mcp-inspector) and
@@ -821,6 +883,72 @@
          X-Forwarded-For (set saiku.auth.trustForwardedFor=true only when
          fronted by a proxy you control). -->
     <bean id="loginRateLimiter" class="org.saiku.web.security.ratelimit.LoginRateLimiter"/>
+
+    <!-- saiku#1913: per-endpoint AI/mail rate limiters as SINGLETON beans.
+         Every limiter below used to be `new AiRateLimiter(...)` in a field of a
+         scope="request" resource, so its bucket map was rebuilt (empty) on each
+         request and tryAcquire() always saw count=1 -> the limit never tripped.
+         AiRateLimiter.shared(name) keys its bucket store by name, so every
+         request's resource instance counts in ONE budget. The resources keep a
+         private per-instance limiter as their field default (correct for unit
+         tests, useless in production); the injection below is what makes the
+         cap real, and AiRateLimiterWiringTest fails if one is ever dropped. -->
+    <bean id="aiQueryAskRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="ai.query.ask"/>
+    </bean>
+    <bean id="aiOssieAskRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="ai.ossie.ask"/>
+    </bean>
+    <bean id="mailUnsubscribeRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="mail.unsubscribe"/>
+        <constructor-arg value="${saiku.mail.unsubscribe.ratelimit.maxPerMinute:20}"/>
+        <constructor-arg value="60000"/>
+    </bean>
+    <bean id="mailConsentRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="mail.consent"/>
+        <constructor-arg value="${saiku.mail.consent.ratelimit.maxPerMinute:20}"/>
+        <constructor-arg value="60000"/>
+    </bean>
+    <bean id="mailConsentAddressRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="mail.consent.address"/>
+        <constructor-arg value="${saiku.mail.consent.address.ratelimit.maxPerMinute:10}"/>
+        <constructor-arg value="60000"/>
+    </bean>
+    <bean id="mailTestSendRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="mail.test"/>
+        <constructor-arg value="${saiku.mail.test.ratelimit.maxPerMinute:5}"/>
+        <constructor-arg value="60000"/>
+    </bean>
+    <bean id="mailInviteRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="mail.invite"/>
+        <constructor-arg value="${saiku.mail.invite.ratelimit.maxPerMinute:5}"/>
+        <constructor-arg value="60000"/>
+    </bean>
+    <bean id="mailSendRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="mail.send"/>
+        <constructor-arg value="${saiku.mail.send.ratelimit.maxPerMinute:3}"/>
+        <constructor-arg value="60000"/>
+    </bean>
+    <bean id="mailEmailRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="mail.email"/>
+        <constructor-arg value="${saiku.email.ratelimit.maxPerMinute:10}"/>
+        <constructor-arg value="60000"/>
+    </bean>
+    <bean id="jobRunNowRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="jobs.runNow"/>
+        <constructor-arg value="${saiku.jobs.run.ratelimit.maxPerMinute:10}"/>
+        <constructor-arg value="60000"/>
+    </bean>
 
     <!-- saiku#878 follow-up: replace BasicAuthenticationEntryPoint with
          an entry point that returns 401 without WWW-Authenticate. The
@@ -1255,6 +1383,28 @@
         <property name="aiService" ref="cubeDesignerAiService"/>
     </bean>
 
+    <!-- saiku#1107: SQL workbench — read-only ad-hoc SQL against a datasource's underlying JDBC
+         connection, gated to ROLE_SQL_EXEC/ROLE_ADMIN. Reuses schemaGenConnectionProvider (same
+         JdbcUrlPolicy-guarded connection resolution as the cube/schema designer) and its own
+         append-only audit log at ${saiku.home}/logs/sql-workbench-audit.jsonl. -->
+    <bean id="sqlWorkbenchAuditLog" class="org.saiku.service.sqlworkbench.SqlWorkbenchAuditLog"/>
+
+    <bean id="sqlWorkbenchService" class="org.saiku.service.sqlworkbench.SqlWorkbenchService">
+        <constructor-arg ref="schemaGenConnectionProvider"/>
+        <constructor-arg ref="datasourceServiceBean"/>
+        <constructor-arg ref="sqlWorkbenchAuditLog"/>
+    </bean>
+
+    <bean id="sqlWorkbenchResource" class="org.saiku.web.rest.resources.sqlworkbench.SqlWorkbenchResource">
+        <constructor-arg ref="sqlWorkbenchService"/>
+        <property name="userService" ref="userServiceBean"/>
+    </bean>
+
+    <bean id="sqlWorkbenchAuditResource"
+          class="org.saiku.web.rest.resources.sqlworkbench.SqlWorkbenchAuditResource">
+        <property name="auditLog" ref="sqlWorkbenchAuditLog"/>
+    </bean>
+
     <!-- ====================================================================
          #1809 PR4: periodic-send job scheduler — WIRED LIVE.
 
@@ -1490,6 +1640,63 @@
         <aop:scoped-proxy/>
         <property name="jobStore" ref="jobStore"/>
         <property name="jobScheduler" ref="jobScheduler"/>
+        <property name="userService" ref="userServiceBean"/>
+        <!-- saiku#1913: singleton limiter — a per-request instance never trips. -->
+        <property name="runNowRateLimiter" ref="jobRunNowRateLimiter"/>
+    </bean>
+
+    <!-- ====================================================================
+         SCIM 2.0 provisioning for enterprise IdPs (issue #1438).
+         Mounted at /rest/scim/v2 (Jersey is prefix-mapped /rest/*, so the URL an
+         IdP is configured with is https://host/rest/scim/v2). Deliberately kept
+         parallel to — and isolated from — /rest/saiku/api/*: it authenticates with
+         its own bearer tokens, never with a Saiku session or HTTP Basic, and a SCIM
+         principal's only authority is ROLE_SCIM, which no other URL rule grants.
+         - scimTokenStore: file-backed at ${saiku.home}/scim-tokens/<sha256>.json.
+           Only the SHA-256 of a bearer is persisted; the plaintext is shown once at mint.
+         - scimGroupStore: file-backed at ${saiku.home}/scim-groups/<uuid>.json. A SCIM
+           group owns one Saiku role name (its displayName); membership is applied to
+           USER_ROLES by scimService.
+         - scimRateLimiter: 100 requests/minute per token (saiku.scim.rate-limit.per-minute).
+         - scimAuthFilter: Spring Security custom filter on /rest/scim/v2 — validates the
+           bearer, enforces the rate limit, sets a request-scoped ROLE_SCIM principal and
+           audit-logs every call with token label + IdP + operation.
+         - scimTokenResource (@ /saiku/admin/scim/tokens): admin mint/list/revoke. Inherits
+           the /rest/saiku/admin/** hasRole('ADMIN') URL gate plus a @RolesAllowed.
+         ==================================================================== -->
+    <bean id="scimTokenStore" class="org.saiku.web.scim.ScimTokenStore"/>
+    <bean id="scimGroupStore" class="org.saiku.web.scim.ScimGroupStore"/>
+    <bean id="scimRateLimiter" class="org.saiku.web.scim.ScimRateLimiter"/>
+
+    <bean id="scimService" class="org.saiku.web.scim.ScimService">
+        <constructor-arg ref="userServiceBean"/>
+        <constructor-arg ref="scimGroupStore"/>
+        <constructor-arg value="${saiku.scim.default-workspace:}"/>
+    </bean>
+
+    <bean id="scimAuthFilter" class="org.saiku.web.security.scim.ScimAuthFilter">
+        <constructor-arg ref="scimTokenStore"/>
+        <constructor-arg ref="scimRateLimiter"/>
+    </bean>
+
+    <bean id="scimDiscoveryResource"
+          class="org.saiku.web.rest.resources.scim.ScimDiscoveryResource">
+        <property name="scimService" ref="scimService"/>
+    </bean>
+
+    <bean id="scimUsersResource"
+          class="org.saiku.web.rest.resources.scim.ScimUsersResource">
+        <property name="scimService" ref="scimService"/>
+    </bean>
+
+    <bean id="scimGroupsResource"
+          class="org.saiku.web.rest.resources.scim.ScimGroupsResource">
+        <property name="scimService" ref="scimService"/>
+    </bean>
+
+    <bean id="scimTokenResource"
+          class="org.saiku.web.rest.resources.scim.ScimTokenResource">
+        <property name="tokenStore" ref="scimTokenStore"/>
         <property name="userService" ref="userServiceBean"/>
     </bean>
 

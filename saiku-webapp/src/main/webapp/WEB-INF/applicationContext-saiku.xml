@@ -84,6 +84,42 @@
       <security:anonymous/>
     </security:http>
 
+    <!-- saiku#1438: SCIM 2.0 provisioning surface (/rest/scim/v2), on its OWN chain so it is
+         genuinely isolated from the Saiku session/Basic surface.
+
+         Why a dedicated chain rather than two intercept-urls on the main chain:
+         - Auth conventions differ. A SCIM connector presents `Authorization: Bearer <token>`
+           and nothing else; http-basic is deliberately NOT enabled here, so a Saiku account
+           (admin/admin included) can never be used to drive provisioning.
+         - CSRF is off, correctly: an IdP connector is a stateless machine client with no
+           ambient cookie, and demanding a CSRF token would break every connector.
+         - create-session="stateless": no HttpSession is minted per SCIM call. The bearer is
+           re-validated from disk on every request, so revoking a token takes effect on the
+           very next call and there is no session to invalidate or hijack.
+         - permitAll at the URL layer is intentional — the scimAuthFilter IS the authentication
+           boundary here and answers 401 itself, in SCIM's own error body, before Jersey is
+           reached. Letting the main chain answer instead produces a bodyless 401 that
+           Okta/Entra surface as an unhelpful generic "SCIM error".
+         - ant-matched, declared BEFORE the security="none" chains, for the same reason the
+           /xmla chain above is: a bare /rest/scim/v2 must not be claimed by a permissive chain.
+         The filter additionally rate-limits per token (100 req/min by default) and
+         audit-logs every call with the token label, its IdP and the operation. -->
+    <security:http pattern="/rest/scim/v2" request-matcher="ant" use-expressions="true"
+                   create-session="stateless" entry-point-ref="basicAuth401NoChallenge">
+      <security:csrf disabled="true"/>
+      <security:intercept-url pattern="/**" access="permitAll" />
+      <security:custom-filter ref="scimAuthFilter" before="FIRST"/>
+      <security:anonymous/>
+    </security:http>
+
+    <security:http pattern="/rest/scim/v2/**" request-matcher="ant" use-expressions="true"
+                   create-session="stateless" entry-point-ref="basicAuth401NoChallenge">
+      <security:csrf disabled="true"/>
+      <security:intercept-url pattern="/**" access="permitAll" />
+      <security:custom-filter ref="scimAuthFilter" before="FIRST"/>
+      <security:anonymous/>
+    </security:http>
+
     <!-- saiku#1951: the two legacy `security="none"` chains for "/rest/saiku/info" and
          "/rest/saiku/info/ui-settings" were DEAD and have been DELETED. Those patterns
          ("/rest/...") are ABSOLUTE-path shapes, but the none chains match the
@@ -273,6 +309,11 @@
            (more specific first); ant matcher — `*` matches the single {username} segment. -->
       <security:intercept-url pattern="/rest/saiku/statistics/**" access="hasRole('ADMIN')" />
       <security:intercept-url pattern="/rest/saiku/*/org.saiku.datasources/**" access="hasRole('ADMIN')" />
+      <!-- saiku#1107: SQL workbench — belt-and-braces alongside SqlWorkbenchResource's
+           @RolesAllowed({"ROLE_ADMIN","ROLE_SQL_EXEC"}). Must precede /rest/** (more specific
+           first); the audit read endpoint lives under /saiku/admin/** and is already covered
+           above. -->
+      <security:intercept-url pattern="/rest/saiku/sql-workbench/**" access="hasRole('ADMIN') or hasRole('SQL_EXEC')" />
       <!-- NOTE (saiku#1905): the /xmla SOAP endpoint is NOT gated by an
            intercept-url in this chain. It is prefix-mapped /xmla/* (web.xml), and
            the security="none" chains above match MVC-style (servlet-path-relative),

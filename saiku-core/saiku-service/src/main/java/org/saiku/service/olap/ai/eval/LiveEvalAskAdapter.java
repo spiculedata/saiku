@@ -118,6 +118,12 @@ public final class LiveEvalAskAdapter implements EvalAskAdapter {
                 // degraded rather than silently mis-scored, so a suite run makes the gap visible.
             case CERTIFIED -> EvalAskResult.forDegraded(
                     outcome.model(), "certified intent not yet supported by the eval harness");
+                // saiku#1425: outbound MCP tool calls are an intermediate step askChained dispatches
+                // and loops past internally — a lone MCP_TOOL_CALL outcome reaching here means the
+                // chain never reached a terminal step (e.g. it hit the step cap). Same "not yet
+                // supported" treatment as EMAIL_DRAFT rather than a silent mis-score.
+            case MCP_TOOL_CALL -> EvalAskResult.forDegraded(
+                    outcome.model(), "mcp-tool-call intent not yet supported by the eval harness");
         };
     }
 

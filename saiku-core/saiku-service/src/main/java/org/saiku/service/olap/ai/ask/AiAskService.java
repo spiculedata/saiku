@@ -12,6 +12,9 @@ import java.util.List;
 import java.util.Objects;
 import org.saiku.olap.dto.resultset.CellDataSet;
 import org.saiku.olap.query2.ThinQuery;
+import org.saiku.service.mcp.outbound.McpOutboundClient;
+import org.saiku.service.mcp.outbound.McpOutboundToolCatalog;
+import org.saiku.service.mcp.outbound.McpOutboundToolDescriptor;
 import org.saiku.service.olap.ThinQueryService;
 import org.saiku.service.olap.ai.AiCubeMetadataService;
 import org.saiku.service.olap.ai.AiCubeRef;
@@ -107,6 +110,17 @@ public class AiAskService {
      */
     private KAnonymityFilter kAnonymityFilter;
 
+    /**
+     * Outbound MCP tool catalogue (saiku#1425) — admin-registered external servers whose ENABLED
+     * tools the {@link #askChained} loop offers to the LLM alongside the built-in emit_* tools, and
+     * dispatches through when the model calls one. Optional, setter-injected like {@link #skills} /
+     * {@link #spaces}; {@code null} means outbound MCP isn't configured on this instance, and the
+     * chained loop simply never advertises any {@code mcp__*} tools. NOT wired into the classic
+     * single-shot {@link #ask} path — that call has no execute-and-continue loop to dispatch a tool
+     * call through, so advertising one there would let the model "call" a tool that's never invoked.
+     */
+    private McpOutboundToolCatalog mcpOutbound;
+
     public AiAskService(AiCubeMetadataService metadataService, NlAskProvider provider) {
         this(metadataService, provider, defaultMapper());
     }
@@ -148,6 +162,16 @@ public class AiAskService {
     /** Certified-query catalogue used by this service, if wired. */
     public CertifiedQueryRegistry certifiedQueries() {
         return certifiedQueries;
+    }
+
+    /** Spring setter — wired to {@code mcpOutboundToolCatalogBean} in {@code saiku-beans.xml}. */
+    public void setMcpOutbound(McpOutboundToolCatalog mcpOutbound) {
+        this.mcpOutbound = mcpOutbound;
+    }
+
+    /** Outbound MCP tool catalogue, or {@code null} if the operator hasn't configured any servers. */
+    public McpOutboundToolCatalog mcpOutbound() {
+        return mcpOutbound;
     }
 
     /** Spring setter — wired to {@code aiLlmEgressGuard} in {@code saiku-beans.xml}. */
@@ -279,9 +303,25 @@ public class AiAskService {
             AiEmailDraft emailDraft,
             String model,
             SpaceAccess denial,
+            McpToolCallSummary mcpToolCall,
             CertifiedQuery certifiedQuery) {
 
-        /** Back-compatible 9-component form (no certified query). */
+        /** Back-compatible 10-component form (no certified query). */
+        public AskOutcome(
+                Kind kind,
+                boolean degraded,
+                String reason,
+                AiQueryRequest request,
+                AiInsight insight,
+                AiViewChange viewChange,
+                AiEmailDraft emailDraft,
+                String model,
+                SpaceAccess denial,
+                McpToolCallSummary mcpToolCall) {
+            this(kind, degraded, reason, request, insight, viewChange, emailDraft, model, denial, mcpToolCall, null);
+        }
+
+        /** Back-compatible 9-component form (no MCP tool call, no certified query). */
         public AskOutcome(
                 Kind kind,
                 boolean degraded,
@@ -292,7 +332,7 @@ public class AiAskService {
                 AiEmailDraft emailDraft,
                 String model,
                 SpaceAccess denial) {
-            this(kind, degraded, reason, request, insight, viewChange, emailDraft, model, denial, null);
+            this(kind, degraded, reason, request, insight, viewChange, emailDraft, model, denial, null, null);
         }
 
         public enum Kind {
@@ -306,23 +346,38 @@ public class AiAskService {
              * {@code request}: there is no model-authored {@link AiQueryRequest} to convert, because
              * the model was never asked. {@link #certifiedQuery()} is the authority.
              */
-            CERTIFIED
+            CERTIFIED,
+            /**
+             * saiku#1425: the model called an admin-enabled outbound MCP tool. Intermediate-only —
+             * {@link #askChained} dispatches the call and loops again; this kind never terminates a
+             * chain by itself (a step cap or a later terminal tool does). Carries no {@link #request}
+             * / {@link #insight} / etc — see {@link #mcpToolCall} instead.
+             */
+            MCP_TOOL_CALL
         }
 
         public static AskOutcome ok(AiQueryRequest request, String model) {
-            return new AskOutcome(Kind.QUERY, false, null, request, null, null, null, model, SpaceAccess.OK);
+            return new AskOutcome(Kind.QUERY, false, null, request, null, null, null, model, SpaceAccess.OK, null);
         }
 
         public static AskOutcome okInsight(AiInsight insight, String model) {
-            return new AskOutcome(Kind.INSIGHT, false, null, null, insight, null, null, model, SpaceAccess.OK);
+            return new AskOutcome(Kind.INSIGHT, false, null, null, insight, null, null, model, SpaceAccess.OK, null);
         }
 
         public static AskOutcome okViewChange(AiViewChange viewChange, String model) {
-            return new AskOutcome(Kind.VIEW_CHANGE, false, null, null, null, viewChange, null, model, SpaceAccess.OK);
+            return new AskOutcome(
+                    Kind.VIEW_CHANGE, false, null, null, null, viewChange, null, model, SpaceAccess.OK, null);
         }
 
         public static AskOutcome okEmailDraft(AiEmailDraft emailDraft, String model) {
-            return new AskOutcome(Kind.EMAIL_DRAFT, false, null, null, null, null, emailDraft, model, SpaceAccess.OK);
+            return new AskOutcome(
+                    Kind.EMAIL_DRAFT, false, null, null, null, null, emailDraft, model, SpaceAccess.OK, null);
+        }
+
+        /** saiku#1425: the model called {@code mcpToolCall.qualifiedName()}; see {@link McpToolCallSummary}. */
+        public static AskOutcome okMcpToolCall(McpToolCallSummary mcpToolCall, String model) {
+            return new AskOutcome(
+                    Kind.MCP_TOOL_CALL, false, null, null, null, null, null, model, SpaceAccess.OK, mcpToolCall);
         }
 
         /**
@@ -330,12 +385,13 @@ public class AiAskService {
          * the whole point — a certified answer is a fixed artefact, not a generation.
          */
         public static AskOutcome okCertified(CertifiedQuery certified) {
-            return new AskOutcome(Kind.CERTIFIED, false, null, null, null, null, null, null, SpaceAccess.OK, certified);
+            return new AskOutcome(
+                    Kind.CERTIFIED, false, null, null, null, null, null, null, SpaceAccess.OK, null, certified);
         }
 
         /** Provider-side degrade (transport/parse/refusal) — carries no space-scope denial. */
         public static AskOutcome degraded(String reason, String model) {
-            return new AskOutcome(null, true, reason, null, null, null, null, model, SpaceAccess.OK);
+            return new AskOutcome(null, true, reason, null, null, null, null, model, SpaceAccess.OK, null);
         }
 
         /**
@@ -343,9 +399,24 @@ public class AiAskService {
          * HTTP status without prose-prefix matching on {@link #reason()}.
          */
         public static AskOutcome degraded(String reason, String model, SpaceAccess denial) {
-            return new AskOutcome(null, true, reason, null, null, null, null, model, denial);
+            return new AskOutcome(null, true, reason, null, null, null, null, model, denial, null);
         }
     }
+
+    /**
+     * saiku#1425: one outbound MCP tool call the chained-ask loop made on the model's behalf, kept
+     * for transparency in the step transcript the client renders (mirrors how a QUERY step shows the
+     * request it built).
+     *
+     * @param qualifiedName the {@code mcp__<server>__<tool>} name the model called.
+     * @param argumentsJson the raw arguments JSON the model emitted.
+     * @param resultDigest the (possibly truncated) text result fed back to the model; {@code null}
+     *     when the call failed — see {@code error}.
+     * @param error true when the call failed (unreachable server, remote tool error, …); {@code
+     *     resultDigest} then carries the failure reason instead of a result, matching what the model
+     *     was actually told.
+     */
+    public record McpToolCallSummary(String qualifiedName, String argumentsJson, String resultDigest, boolean error) {}
 
     /**
      * Ordered transcript of one chained ask: each step reuses the single-turn {@link AskOutcome}
@@ -708,6 +779,13 @@ public class AiAskService {
             histLocal = dropAssistantTurns(histLocal);
         }
         final List<NlAskMessage> hist = histLocal;
+        // saiku#1425: admin-enabled outbound MCP tools, offered alongside the built-in emit_* tools
+        // on every AUTO/INSIGHT-forced turn (see the wantMcpTools gating in each provider) so the
+        // model can pull external context before or after building/reporting on a cube query — the
+        // "combined metrics + context in one turn" shape. Resolved ONCE per chain (not re-fetched
+        // every turn) so a slow/unreachable server can't add latency to every step; the catalogue
+        // itself is already refresh-cached — see McpOutboundToolCatalog.
+        final List<McpOutboundToolDescriptor> mcpToolsForChain = mcpOutbound != null ? mcpOutbound.tools() : List.of();
 
         // --- the loop ---
         List<AskOutcome> steps = new ArrayList<>();
@@ -756,7 +834,8 @@ public class AiAskService {
                     currentQueryJson,
                     skillsFragment,
                     null,
-                    List.copyOf(transcript));
+                    List.copyOf(transcript),
+                    mcpToolsForChain);
             // OPT-3: a rate-limited turn (HTTP 429) is paced + retried in place — the SAME request,
             // since a rate limit isn't the model's fault — up to a bounded retry count. A non-429
             // degrade never enters that loop. Shared with buildDashboard (see askWithPacedRetry).
@@ -766,6 +845,26 @@ public class AiAskService {
             if (resp.degraded()) {
                 steps.add(AskOutcome.degraded(resp.reason(), resp.model()));
                 break;
+            }
+
+            if (resp.kind() == NlAskResponse.Kind.MCP_TOOL) {
+                // saiku#1425: dispatch the outbound tool call server-side and feed the result back —
+                // the same execute-and-continue shape as a QUERY step, except NOTHING here touches
+                // turnDigest (that's reserved for cube cell data; an external tool's result is a
+                // different kind of context and doesn't unlock emit_insight/emit_view_change on its
+                // own). The step is recorded either way so the client can render "called X" in the
+                // transcript, matching the transparency a QUERY step gets.
+                McpToolCallSummary summary = dispatchMcpTool(resp);
+                steps.add(AskOutcome.okMcpToolCall(summary, resp.model()));
+                if (i == cap - 1) {
+                    hitStepLimit = true; // cap reached still pulling external context
+                    break;
+                }
+                String mcpCallId =
+                        (resp.toolCallId() != null && !resp.toolCallId().isBlank()) ? resp.toolCallId() : "call_" + i;
+                String fedBack = summary.error() ? "ERROR: " + summary.resultDigest() : summary.resultDigest();
+                transcript.add(new ToolTurn(mcpCallId, summary.qualifiedName(), resp.payloadJson(), fedBack));
+                continue;
             }
 
             AskOutcome outcome = routeResponse(resp, null, hadCellsetOnScreen);
@@ -812,6 +911,31 @@ public class AiAskService {
             // else: loop again — the model now has the data and should emit_insight (the report).
         }
         return new AskChain(List.copyOf(steps), hitStepLimit);
+    }
+
+    /**
+     * saiku#1425: dispatch a model-emitted outbound-MCP tool call through {@link #mcpOutbound}.
+     * Never throws — {@link McpOutboundToolCatalog#callTool} already converts every transport /
+     * validation failure into a typed {@code CallResult}, so an unreachable server or a stale tool
+     * name becomes an honest failure summary fed back to the model, not an exception that would
+     * abort the whole chain.
+     */
+    private McpToolCallSummary dispatchMcpTool(NlAskResponse resp) {
+        String qualifiedName = resp.mcpToolQualifiedName();
+        if (mcpOutbound == null || qualifiedName == null || qualifiedName.isBlank()) {
+            // Defensive only — the provider can't have advertised an mcp__* tool without a non-empty
+            // mcpToolsForChain, which requires mcpOutbound != null. Covers a hypothetical
+            // hallucinated tool name reaching here regardless. Never a blank/null qualifiedName in
+            // the summary — it feeds ToolTurn.toolName, which rejects blank.
+            String label = (qualifiedName == null || qualifiedName.isBlank()) ? "mcp__unknown" : qualifiedName;
+            return new McpToolCallSummary(label, resp.payloadJson(), "outbound MCP is not available", true);
+        }
+        McpOutboundClient.CallResult result = mcpOutbound.callTool(qualifiedName, resp.payloadJson());
+        if (!result.ok()) {
+            log.info("chained ask: outbound MCP tool call failed: {} ({})", qualifiedName, result.error());
+            return new McpToolCallSummary(qualifiedName, resp.payloadJson(), result.error(), true);
+        }
+        return new McpToolCallSummary(qualifiedName, resp.payloadJson(), result.resultText(), false);
     }
 
     /**

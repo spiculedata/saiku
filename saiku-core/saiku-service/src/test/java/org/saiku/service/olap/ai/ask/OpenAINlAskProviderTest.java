@@ -23,6 +23,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import javax.net.ssl.SSLSession;
 import org.junit.Test;
+import org.saiku.service.mcp.outbound.McpOutboundToolDescriptor;
 import org.saiku.service.olap.ai.AiCubeRef;
 
 /** Unit tests for {@link OpenAINlAskProvider}. No network. */
@@ -479,6 +480,133 @@ public class OpenAINlAskProviderTest {
         NlAskResponse resp = OpenAINlAskProvider.parseToolResponse(body, "gpt-x");
         assertTrue(resp.degraded());
         assertEquals("empty dashboard tool arguments", resp.reason());
+    }
+
+    /* ---------------------------- saiku#1425: outbound MCP tools ---------------------------- */
+
+    private static final McpOutboundToolDescriptor MCP_TOOL_DESCRIPTOR = new McpOutboundToolDescriptor(
+            "mcp__notion__search_docs",
+            "notion",
+            "search_docs",
+            "Search the Notion workspace",
+            "{\"type\":\"object\",\"properties\":{\"q\":{\"type\":\"string\"}}}");
+
+    @Test
+    public void autoModeAdvertisesMcpToolsAlongsideBuiltins() throws Exception {
+        OpenAINlAskProvider provider = new OpenAINlAskProvider(
+                new OpenAINlAskProvider.Config("k", "gpt-x", OpenAINlAskProvider.DEFAULT_ENDPOINT, 0.0, 1024, null));
+        NlAskRequest req = new NlAskRequest(
+                CUBE,
+                "q",
+                SCHEMA,
+                REQUEST_SCHEMA,
+                List.of(),
+                null,
+                NlAskRequest.ForceTool.AUTO,
+                null,
+                null,
+                null,
+                List.of(),
+                List.of(MCP_TOOL_DESCRIPTOR));
+
+        JsonNode root = MAPPER.readTree(provider.buildRequestBody(req));
+        JsonNode tools = root.get("tools");
+
+        // AUTO's 5 built-ins + 1 outbound mcp tool.
+        assertEquals(6, tools.size());
+        JsonNode mcpFn = null;
+        for (JsonNode t : tools) {
+            if ("mcp__notion__search_docs".equals(t.get("function").get("name").asText())) {
+                mcpFn = t.get("function");
+            }
+        }
+        assertNotNull("mcp tool must be advertised", mcpFn);
+        assertTrue(mcpFn.get("description").asText().startsWith("[external MCP tool via notion]"));
+        assertEquals("object", mcpFn.get("parameters").get("type").asText());
+        assertTrue(root.get("messages").get(0).get("content").asText().contains("EXTERNAL TOOLS"));
+    }
+
+    @Test
+    public void mcpToolsAreOmittedWhenNoneConfigured() throws Exception {
+        OpenAINlAskProvider provider = new OpenAINlAskProvider(
+                new OpenAINlAskProvider.Config("k", "gpt-x", OpenAINlAskProvider.DEFAULT_ENDPOINT, 0.0, 1024, null));
+        NlAskRequest req = new NlAskRequest(CUBE, "q", SCHEMA, REQUEST_SCHEMA, List.of());
+
+        JsonNode root = MAPPER.readTree(provider.buildRequestBody(req));
+
+        assertEquals(5, root.get("tools").size());
+        assertFalse(root.get("messages").get(0).get("content").asText().contains("EXTERNAL TOOLS"));
+    }
+
+    @Test
+    public void mcpToolsAreOmittedOnForcedQueryTurn() throws Exception {
+        OpenAINlAskProvider provider = new OpenAINlAskProvider(
+                new OpenAINlAskProvider.Config("k", "gpt-x", OpenAINlAskProvider.DEFAULT_ENDPOINT, 0.0, 1024, null));
+        NlAskRequest req = new NlAskRequest(
+                CUBE,
+                "q",
+                SCHEMA,
+                REQUEST_SCHEMA,
+                List.of(),
+                null,
+                NlAskRequest.ForceTool.QUERY,
+                null,
+                null,
+                null,
+                List.of(),
+                List.of(MCP_TOOL_DESCRIPTOR));
+
+        JsonNode root = MAPPER.readTree(provider.buildRequestBody(req));
+
+        for (JsonNode t : root.get("tools")) {
+            assertFalse(t.get("function").get("name").asText().startsWith("mcp__"));
+        }
+    }
+
+    @Test
+    public void mcpToolsRideAlongsideForcedInsightTurn() throws Exception {
+        // The chained-ask loop's continuation turn forces INSIGHT after a query executes — mcp
+        // tools must stay reachable there too, or "combine the cube result with external context"
+        // is impossible once a report is the only built-in tool left.
+        OpenAINlAskProvider provider = new OpenAINlAskProvider(
+                new OpenAINlAskProvider.Config("k", "gpt-x", OpenAINlAskProvider.DEFAULT_ENDPOINT, 0.0, 1024, null));
+        NlAskRequest req = new NlAskRequest(
+                CUBE,
+                "q",
+                SCHEMA,
+                REQUEST_SCHEMA,
+                List.of(),
+                "some cellset digest",
+                NlAskRequest.ForceTool.INSIGHT,
+                null,
+                null,
+                null,
+                List.of(),
+                List.of(MCP_TOOL_DESCRIPTOR));
+
+        JsonNode root = MAPPER.readTree(provider.buildRequestBody(req));
+
+        boolean sawMcpTool = false;
+        for (JsonNode t : root.get("tools")) {
+            if (t.get("function").get("name").asText().equals("mcp__notion__search_docs")) sawMcpTool = true;
+        }
+        assertTrue(sawMcpTool);
+    }
+
+    @Test
+    public void parseToolResponseRecognisesMcpQualifiedFunctionName() throws Exception {
+        String body = "{\"usage\":{\"prompt_tokens\":9,\"completion_tokens\":4},"
+                + "\"choices\":[{\"message\":{\"tool_calls\":[{\"id\":\"call_mcp_1\",\"function\":{"
+                + "\"name\":\"mcp__notion__search_docs\",\"arguments\":\"{\\\"q\\\":\\\"onboarding\\\"}\"}}]}}]}";
+
+        NlAskResponse resp = OpenAINlAskProvider.parseToolResponse(body, "gpt-x");
+
+        assertFalse(resp.degraded());
+        assertEquals(NlAskResponse.Kind.MCP_TOOL, resp.kind());
+        assertEquals("mcp__notion__search_docs", resp.mcpToolQualifiedName());
+        assertEquals("call_mcp_1", resp.toolCallId());
+        JsonNode parsed = MAPPER.readTree(resp.payloadJson());
+        assertEquals("onboarding", parsed.get("q").asText());
     }
 
     /** Minimal {@link HttpClient} stub — only {@code send} is exercised. Captures the last request. */
