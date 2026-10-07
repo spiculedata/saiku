@@ -3099,6 +3099,8 @@ public class AiQueryResource {
                     + "]";
             log.info("Scenario what-if MDX: {}", mdx);
             try (org.olap4j.OlapStatement st = con.createStatement()) {
+                // saiku#1914: server-enforced statement timeout on this execute path too.
+                org.saiku.olap.util.QueryGuardrails.applyQueryTimeout(st);
                 // 1) actuals under the (empty) scenario
                 org.olap4j.CellSet actual = st.executeOlapQuery(mdx);
                 java.util.List<org.olap4j.Position> rows =
