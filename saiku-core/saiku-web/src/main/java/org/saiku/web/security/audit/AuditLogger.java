@@ -55,6 +55,33 @@ public final class AuditLogger {
         emit("rate_limit_triggered", req, username, null);
     }
 
+    /**
+     * saiku#1438 — one line per SCIM call. The acceptance criteria require the token label, the IdP
+     * the token is labelled for, and the operation type on <em>every</em> call, so all three are
+     * always emitted (as {@code null}-cleaned fields) rather than folded into the reason.
+     *
+     * <p>The bearer itself is never part of the line — {@code tokenLabel} is the operator-chosen
+     * name ("Okta production") and {@code tokenId} is the truncated SHA-256 handle, which is not a
+     * usable credential.
+     */
+    public static void scim(
+            HttpServletRequest req,
+            String tokenLabel,
+            String tokenId,
+            String idp,
+            String operation,
+            String outcome,
+            int status) {
+        Map<String, Object> extra = new LinkedHashMap<>();
+        extra.put("scim_token_label", tokenLabel == null ? "" : tokenLabel);
+        extra.put("scim_token_id", tokenId == null ? "" : truncate(tokenId, 12));
+        extra.put("scim_idp", idp == null ? "" : idp);
+        extra.put("scim_operation", operation == null ? "" : operation);
+        extra.put("scim_outcome", outcome == null ? "" : outcome);
+        extra.put("scim_status", status);
+        emit("scim_call", req, null, null, extra);
+    }
+
     private static void emit(String event, HttpServletRequest req, String username, String reason) {
         emit(event, req, username, reason, null);
     }
