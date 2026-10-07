@@ -1,0 +1,27 @@
+2026-10-04T12:08:52.0517723Z ##[group]Run npm test -- --run
+2026-10-04T12:08:52.0518055Z [36;1mnpm test -- --run[0m
+2026-10-04T12:08:52.0579199Z shell: /usr/bin/bash -e {0}
+2026-10-04T12:08:52.0579553Z ##[endgroup]
+2026-10-04T12:08:52.1618246Z 
+2026-10-04T12:08:52.1618744Z > saiku-ui@3.20.0 test
+2026-10-04T12:08:52.1619306Z > vitest run && npm run lint --run
+2026-10-04T12:08:52.1619581Z 
+2026-10-04T12:08:53.2953032Z 
+2026-10-04T12:08:53.2953032Z (vitest output trimmed: all tests passed)
+2026-10-04T12:09:27.0463949Z [2m            [22m [2mon CI this only helps when the cache directory is persisted between runs[22m
+2026-10-04T12:09:27.0464944Z [2m            [22m [2mlearn more: https://vitest.dev/guide/improving-performance#caching-between-reruns[22m
+2026-10-04T12:09:27.0465412Z 
+2026-10-04T12:09:27.2487245Z npm warn Unknown cli config "--run". This will stop working in the next major version of npm.
+2026-10-04T12:09:27.2632021Z 
+2026-10-04T12:09:27.2632742Z > saiku-ui@3.20.0 lint
+2026-10-04T12:09:27.2633512Z > npm run lint:format && npm run lint:tokens && npm run lint:eslint
+2026-10-04T12:09:27.2633909Z 
+2026-10-04T12:09:27.3434613Z npm warn Unknown env config "run". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+2026-10-04T12:09:27.3581700Z 
+2026-10-04T12:09:27.3582055Z > saiku-ui@3.20.0 lint:format
+2026-10-04T12:09:27.3582663Z > prettier --check .
+2026-10-04T12:09:27.3582939Z 
+2026-10-04T12:09:27.4449022Z Checking formatting...
+2026-10-04T12:09:34.1843385Z [[33mwarn[39m] src/lib/cube-designer/mondrian-import.test.ts
+2026-10-04T12:09:44.4107929Z [[33mwarn[39m] Code style issues found in the above file. Run Prettier with --write to fix.
+2026-10-04T12:09:44.5015214Z ##[error]Process completed with exit code 1.

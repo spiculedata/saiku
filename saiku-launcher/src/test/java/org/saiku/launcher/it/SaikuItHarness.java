@@ -99,6 +99,12 @@ public final class SaikuItHarness {
         // policy env. bootServer's resolveDemoAiPolicyDefault respects an explicit ai.policy, so
         // this stands with or without demo mode. No IT asserts a more restrictive default.
         System.setProperty("ai.policy", "full");
+        // saiku#1953: fixture staging now follows demo mode, and this harness boots WITHOUT
+        // SAIKU_DEMO (it authenticates as admin/admin via saiku.allowDefaultAdmin instead).
+        // The data ITs need the FoodMart fixture + foodmart datasource, so the harness opts
+        // seeding back on explicitly — the same escape hatch an operator uses to get the
+        // fixtures on a non-demo boot.
+        System.setProperty("saiku.seed", "true");
         // Boot port=0 → OS picks an ephemeral port. Host 127.0.0.1 to avoid
         // firewall prompts on macOS CI runners.
         Server server = SaikuLauncher.ServeCommand.bootServer(0, "127.0.0.1", "/", home);

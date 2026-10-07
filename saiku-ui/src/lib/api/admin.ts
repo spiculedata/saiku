@@ -316,6 +316,74 @@ export const adminAgentSpaces = {
 	remove: (id: string) => json<null>('DELETE', `/agent-spaces/${encodeURIComponent(id)}`)
 };
 
+/* ---------------- Mondrian role security (saiku#779) ---------------- */
+
+/** How a datasource resolves Spring roles to Mondrian roles (server `MondrianRolePolicy.Mode`). */
+export type RoleSecurityMode = 'DISABLED' | 'ONE2ONE' | 'LOOKUP' | 'PASSTHROUGH' | 'UNKNOWN';
+
+/** What a caller gets on a datasource (server `MondrianRolePolicy.Access`). */
+export type RoleAccess =
+	'UNSECURED' | 'SCOPED' | 'FULL_ADMIN' | 'DENIED' | 'PASSTHROUGH' | 'UNKNOWN';
+
+export interface RoleGrant {
+	datasource: string;
+	mondrianRoles: string[];
+}
+
+export interface AdminRole {
+	name: string;
+	admin: boolean;
+	/** Users in the Saiku user store holding this role. */
+	users: string[];
+	/** Mondrian roles this role alone resolves to, per datasource. */
+	grants: RoleGrant[];
+}
+
+export interface DatasourceRoleSecurity {
+	name: string;
+	id: string | null;
+	type: string | null;
+	securityEnabled: boolean;
+	mode: RoleSecurityMode;
+	/** Roles the schema declares; `null` when they couldn't be read. */
+	mondrianRoles: string[] | null;
+	/** Parsed `security.mapping`: Spring role -> Mondrian roles. */
+	mapping: Record<string, string[]>;
+}
+
+export interface RoleOverview {
+	adminRoles: string[];
+	roles: AdminRole[];
+	datasources: DatasourceRoleSecurity[];
+}
+
+export interface RolePreview {
+	username: string | null;
+	roles: string[];
+	admin: boolean;
+	datasources: Array<{
+		datasource: string;
+		mode: RoleSecurityMode;
+		access: RoleAccess;
+		mondrianRoles: string[];
+	}>;
+}
+
+export const adminRoles = {
+	overview: () => get<RoleOverview>('/roles'),
+	previewUser: (username: string) =>
+		json<RolePreview>('POST', '/roles/preview', { username }) as Promise<RolePreview>,
+	previewRoles: (roles: string[]) =>
+		json<RolePreview>('POST', '/roles/preview', { roles }) as Promise<RolePreview>,
+	/** Replace a Spring role's Mondrian grants on a `lookup`-mode datasource; `[]` revokes. */
+	setGrants: (role: string, datasource: string, mondrianRoles: string[]) =>
+		json<DatasourceRoleSecurity>(
+			'PUT',
+			`/roles/${encodeURIComponent(role)}/grants/${encodeURIComponent(datasource)}`,
+			{ mondrianRoles }
+		) as Promise<DatasourceRoleSecurity>
+};
+
 /* ---------------- Mondrian statistics ---------------- */
 
 export interface MondrianVersion {

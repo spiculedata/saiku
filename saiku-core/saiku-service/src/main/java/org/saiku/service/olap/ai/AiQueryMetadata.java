@@ -4,8 +4,10 @@
  */
 package org.saiku.service.olap.ai;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Per-result metadata returned alongside the matrix. Lets clients (and
@@ -16,12 +18,24 @@ public class AiQueryMetadata {
     public static class Caption {
         private String name;
         private String caption;
+        /** olap4j member-level properties surfaced from the row/column header
+         *  (custom hierarchy properties, description, member key, ...) via
+         *  {@code MemberPropertyExtractor} (saiku#827). {@code NON_EMPTY} so
+         *  headers with no member-set properties stay lean on the wire. */
+        @JsonInclude(JsonInclude.Include.NON_EMPTY)
+        private Map<String, String> properties;
 
         public Caption() {}
 
         public Caption(String name, String caption) {
             this.name = name;
             this.caption = caption;
+        }
+
+        public Caption(String name, String caption, Map<String, String> properties) {
+            this.name = name;
+            this.caption = caption;
+            this.properties = properties;
         }
 
         public String getName() {
@@ -38,6 +52,14 @@ public class AiQueryMetadata {
 
         public void setCaption(String v) {
             this.caption = v;
+        }
+
+        public Map<String, String> getProperties() {
+            return properties;
+        }
+
+        public void setProperties(Map<String, String> v) {
+            this.properties = v;
         }
     }
 

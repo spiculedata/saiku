@@ -30,6 +30,7 @@
 	// $lib alias and must stay self-contained. tileRegistry is type-only aside
 	// from the `svelte` Component type, so it bundles into the IIFE cleanly.
 	import { getTileRenderer } from '../lib/dashboard/tileRegistry';
+	import { coerceGridInt, MAX_GRID_SPAN } from './embedResource';
 	// Side-effect: register the built-in embed renderers (echarts-option) so the
 	// custom-tile dispatch below can resolve them. Kept embed-local so no app
 	// component / store graph leaks into the self-contained embed bundle.
@@ -129,9 +130,33 @@
 	}
 
 	/* Map abstract grid cells (cols × rows) to CSS Grid. `cols` defaults to 12;
-	 * `h=1` ≈ 60 px matches the workbench default row height. */
-	let gridCols = $derived(layout?.cols ?? 12);
+	 * `h=1` ≈ 60 px matches the workbench default row height.
+	 *
+	 * saiku#1938: the dashboard/app DTO types `cols` and every tile's x/y/w/h as
+	 * `int`, but the document is a raw JsonNode — a string really can arrive, and
+	 * these values are interpolated straight into an inline `style`. Coerce before
+	 * interpolation so a hostile value cannot inject extra declarations (Svelte
+	 * sets the attribute, so there is no HTML breakout — the ceiling is CSS, worst
+	 * case a `url()` beacon). `cols` is clamped too: an unbounded repeat() count
+	 * is a cheap host-page layout wedge. */
+	let gridCols = $derived(Math.min(Math.max(1, coerceGridInt(layout?.cols, 12, 1)), MAX_GRID_SPAN));
 	const ROW_HEIGHT_PX = 60;
+
+	/** Tile x/y (0-based offset) and w/h (span units), coerced to safe integers. */
+	function tileX(tile: EmbedDashboardTile): number {
+		return coerceGridInt(tile.x, 0);
+	}
+	function tileY(tile: EmbedDashboardTile): number {
+		return coerceGridInt(tile.y, 0);
+	}
+	/** Spans are min 1 — a `span 0` tile collapses to nothing and reads as a
+	 *  rendering bug rather than a rejected value. */
+	function tileW(tile: EmbedDashboardTile): number {
+		return coerceGridInt(tile.w, 1, 1);
+	}
+	function tileH(tile: EmbedDashboardTile): number {
+		return coerceGridInt(tile.h, 1, 1);
+	}
 
 	/** Single big-number summary for a KPI tile — first row, first numeric
 	 *  column. Falls back to "-" if the result is empty. */
@@ -161,8 +186,8 @@
 		<div
 			class="tile"
 			style="
-        grid-column: {tile.x + 1} / span {tile.w};
-        grid-row: {tile.y + 1} / span {tile.h};
+        grid-column: {tileX(tile) + 1} / span {tileW(tile)};
+        grid-row: {tileY(tile) + 1} / span {tileH(tile)};
       "
 		>
 			{#if tile.title}

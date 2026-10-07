@@ -1,0 +1,73 @@
+# Path-based PR labels, applied by .github/workflows/labeler.yml (actions/labeler v7).
+# Syntax: https://github.com/actions/labeler#usage
+# Labels are advisory routing hints; nothing gates on them. Globs are matched
+# against the paths changed in the PR and a PR can carry several labels.
+
+area/ui:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'saiku-ui/**'
+
+area/design-system:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'saiku-ui/design-system/**'
+          - 'saiku-ui/src/lib/design-system/**'
+          - 'saiku-ui/src/lib/components/ui/**'
+
+area/service:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'saiku-core/saiku-service/**'
+          - 'saiku-core/saiku-olap-util/**'
+          - 'saiku-core/saiku-semantic/**'
+          - 'saiku-core/saiku-sql/**'
+
+area/web:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'saiku-core/saiku-web/**'
+          - 'saiku-webapp/**'
+
+area/launcher:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'saiku-launcher/**'
+          - 'docker/**'
+          - 'dist/**'
+
+area/build:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '**/pom.xml'
+          - 'saiku-bom/**'
+          - 'saiku-proptest/**'
+          - 'lib/**'
+
+area/telemetry:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'telemetry/**'
+
+docs:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'docs/**'
+          - '**/*.md'
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.github/workflows/**'
+          - '.github/dependabot.yml'
+          - '.github/test-floors.json'
+          - 'scripts/**'
+
+agent-config:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'AGENTS.md'
+          - 'CLAUDE.md'
+          - '.claude/**'
+          - '.github/prompts/**'
+          - '.github/copilot-instructions.md'

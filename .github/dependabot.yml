@@ -22,6 +22,14 @@ updates:
       interval: weekly
     open-pull-requests-limit: 3
     labels: [dependencies, docker]
+    # The runtime baseline is JRE 21 (an LTS). Dependabot bumped 21-jre-noble to
+    # 23-jre-noble (#2149), whose image ships no curl: the OpenTelemetry-agent download
+    # in the Dockerfile and the container HEALTHCHECK both call curl, so every image
+    # build on development failed until it was reverted. Digest refreshes of the 21 tag
+    # still arrive; a JRE major change is a decision with its own PR, not a bot bump.
+    ignore:
+      - dependency-name: "eclipse-temurin"
+        update-types: ["version-update:semver-major"]
   # saiku-ui has its own package.json and is not part of the Maven reactor, so
   # it needs its own entry — without one it is never scanned at all.
   #
