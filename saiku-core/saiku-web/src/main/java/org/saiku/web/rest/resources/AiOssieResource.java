@@ -129,6 +129,8 @@ public class AiOssieResource {
      * Ossie {@code /ask} was a bypass surface — a client 429'd or 413'd on {@code /ai/ask} could
      * switch to {@code /ai/ossie/ask} and reach the paid LLM provider unbounded. Defaults mirror
      * {@link AiQueryResource} so the guard is on even before Spring wires the shared beans.
+     * Production wires the {@code aiOssieAskRateLimiter} SINGLETON (saiku#1913); a per-request
+     * limiter would never trip.
      */
     private org.saiku.service.olap.ai.AiPolicyGuard aiPolicyGuard =
             new org.saiku.service.olap.ai.AiPolicyGuard(org.saiku.service.olap.ai.AiPolicy.FULL);

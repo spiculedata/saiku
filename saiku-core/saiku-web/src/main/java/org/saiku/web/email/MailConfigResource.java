@@ -67,7 +67,8 @@ public class MailConfigResource {
      * Per-admin rate limit for the test-send endpoint (saiku#943, P0-C). A test send reaches an
      * external SMTP transport, so an unbounded frequency is a probe/abuse vector even behind the
      * admin gate — cap it low (default 5/min). Mirrors {@code EmailResource#emailRateLimiter}: a
-     * direct {@code new} field + setter, keyed by the authenticated principal.
+     * direct {@code new} field + setter, keyed by the authenticated principal. Production injects
+     * the {@code mailTestSendRateLimiter} SINGLETON (saiku#1913) — a per-request limiter never trips.
      */
     private AiRateLimiter testSendRateLimiter =
             new AiRateLimiter(Integer.getInteger("saiku.mail.test.ratelimit.maxPerMinute", 5), 60_000L);
