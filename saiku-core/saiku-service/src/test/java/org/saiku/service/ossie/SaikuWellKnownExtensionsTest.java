@@ -101,7 +101,8 @@ public class SaikuWellKnownExtensionsTest {
 
     @Test
     public void emptyAllowMeansAllowAll() {
-        SaikuWellKnownExtensions.Roles r = new SaikuWellKnownExtensions.Roles(Set.of(), Set.of("ROLE_EMBED"), List.of());
+        SaikuWellKnownExtensions.Roles r =
+                new SaikuWellKnownExtensions.Roles(Set.of(), Set.of("ROLE_EMBED"), List.of());
         assertTrue(r.permits(Set.of("ROLE_ANYTHING")));
         assertTrue(r.permits(Set.of()));
         assertFalse(r.permits(Set.of("ROLE_EMBED", "ROLE_OTHER")));
@@ -115,7 +116,9 @@ public class SaikuWellKnownExtensionsTest {
                         + "{\"role\":\"ROLE_APAC\",\"expression\":\"REGION IN ('APAC','Japan')\"},"
                         + "{\"role\":\"ROLE_EMEA\",\"expression\":\"REGION = 'EMEA'\"}]}}")));
         assertNotNull(w.roles());
-        assertTrue("allow/deny absent, row_predicates alone is enough to keep the roles block", w.roles().allow().isEmpty());
+        assertTrue(
+                "allow/deny absent, row_predicates alone is enough to keep the roles block",
+                w.roles().allow().isEmpty());
         assertEquals(
                 List.of(
                         new SaikuWellKnownExtensions.Roles.RowPredicate("ROLE_APAC", "REGION IN ('APAC','Japan')"),

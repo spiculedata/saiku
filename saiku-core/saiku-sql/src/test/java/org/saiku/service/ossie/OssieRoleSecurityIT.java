@@ -145,7 +145,8 @@ public class OssieRoleSecurityIT {
     private static void authenticateAs(String user, String... authorities) {
         List<SimpleGrantedAuthority> auths =
                 Arrays.stream(authorities).map(SimpleGrantedAuthority::new).toList();
-        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(user, "n/a", auths));
+        SecurityContextHolder.getContext()
+                .setAuthentication(new UsernamePasswordAuthenticationToken(user, "n/a", auths));
     }
 
     private static ThinQuery thinQuery(OssieQueryModel model) {

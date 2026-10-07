@@ -102,8 +102,8 @@ public final class OssieRoleContext {
         for (OssieModelDto.Field f : ds.getFields()) {
             if (fieldName.equalsIgnoreCase(f.getName())) {
                 if (!permits(f.getAllowRoles(), f.getDenyRoles(), callerRoles)) {
-                    throw new SaikuAccessDeniedException(
-                            "Access denied: field '" + datasetName + "." + fieldName + "' is not visible to the caller's roles");
+                    throw new SaikuAccessDeniedException("Access denied: field '" + datasetName + "." + fieldName
+                            + "' is not visible to the caller's roles");
                 }
                 return;
             }

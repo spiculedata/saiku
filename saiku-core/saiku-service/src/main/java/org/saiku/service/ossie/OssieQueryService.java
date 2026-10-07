@@ -73,8 +73,9 @@ public class OssieQueryService {
      * empty set (fail-closed: no role is ever granted to an unauthenticated caller).
      */
     private static Set<String> getSpringRoles() {
-        Authentication auth =
-                SecurityContextHolder.getContext() == null ? null : SecurityContextHolder.getContext().getAuthentication();
+        Authentication auth = SecurityContextHolder.getContext() == null
+                ? null
+                : SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !auth.isAuthenticated() || auth instanceof AnonymousAuthenticationToken) {
             return Set.of();
         }

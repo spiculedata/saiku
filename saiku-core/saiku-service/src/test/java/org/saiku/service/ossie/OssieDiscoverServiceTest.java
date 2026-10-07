@@ -369,10 +369,14 @@ public class OssieDiscoverServiceTest {
             OssieModelDto.Dataset geography = dto.getDatasets().get(0);
             assertEquals(1, geography.getRowPredicates().size());
             assertEquals("ROLE_APAC", geography.getRowPredicates().get(0).getRole());
-            assertEquals("REGION IN ('APAC','Japan')", geography.getRowPredicates().get(0).getExpression());
+            assertEquals(
+                    "REGION IN ('APAC','Japan')",
+                    geography.getRowPredicates().get(0).getExpression());
 
             OssieModelDto.Dataset noPredicates = dto.getDatasets().get(1);
-            assertTrue("dataset without the extension has no row predicates", noPredicates.getRowPredicates().isEmpty());
+            assertTrue(
+                    "dataset without the extension has no row predicates",
+                    noPredicates.getRowPredicates().isEmpty());
         } finally {
             Files.deleteIfExists(wkYaml);
         }
