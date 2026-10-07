@@ -492,11 +492,24 @@
         <property name="policyGuard" ref="aiPolicyGuard"/>
     </bean>
 
+    <!-- saiku#909 — Tier-1 tile-title/description suggestion (POST /ai/describe-query).
+         Reuses the ask feature's own credentials (saiku.ai.ask.*) rather than a
+         separate config namespace — same "off by default (no API key), 503 with a
+         clear message until configured" posture as aiAskServiceBean / cubeDesignerAiService. -->
+    <bean id="tileDescribeService"
+          class="org.saiku.service.olap.ai.describe.TileDescribeService">
+        <constructor-arg value="${saiku.ai.ask.apiKey:}"/>
+        <constructor-arg value="${saiku.ai.ask.model:}"/>
+        <constructor-arg value="${saiku.ai.ask.endpoint:}"/>
+        <constructor-arg value="${saiku.ai.ask.timeoutSeconds:60}"/>
+    </bean>
+
     <bean id="aiQueryResource" scope="request"
           class="org.saiku.web.rest.resources.AiQueryResource">
         <aop:scoped-proxy/>
         <property name="aiPolicyGuard" ref="aiPolicyGuard"/>
         <property name="kAnonymityFilter" ref="kAnonymityFilter"/>
+        <property name="describeService" ref="tileDescribeService"/>
         <property name="thinQueryService" ref="thinQueryBean"/>
         <property name="cubeMetadataService" ref="aiCubeMetadataServiceBean"/>
         <property name="asyncQueryService" ref="asyncQueryServiceBean"/>
@@ -517,6 +530,28 @@
              ("Email isn't set up on this server.") whenever mail delivery isn't configured,
              instead of handing back an un-sendable draft. -->
         <property name="mailSender" ref="mailSender"/>
+    </bean>
+
+    <!-- Vendor semantic-model import (#1730) — convert a LookML / dbt manifest upload into
+         Ossie YAML, validate it, and (on the explicit save call) write it under
+         ${saiku.home}/semantic-models/. The registry is the "converter hub" seam: a new
+         spoke is a VendorModelConverter plus one constructor arg, no REST or UI change. -->
+    <bean id="vendorModelConverterRegistry" class="org.saiku.service.ossie.converter.VendorModelConverterRegistry">
+        <constructor-arg>
+            <list>
+                <bean class="org.saiku.service.ossie.converter.LookmlConverter"/>
+                <bean class="org.saiku.service.ossie.converter.DbtManifestConverter"/>
+            </list>
+        </constructor-arg>
+    </bean>
+    <bean id="vendorModelImportService" class="org.saiku.service.ossie.converter.VendorModelImportService">
+        <constructor-arg ref="vendorModelConverterRegistry"/>
+        <constructor-arg type="java.nio.file.Path"
+                         value="${saiku.home:./saiku-home}/semantic-models"/>
+    </bean>
+    <bean id="ossieImportResource" class="org.saiku.web.rest.resources.OssieImportResource">
+        <property name="importService" ref="vendorModelImportService"/>
+        <property name="userService" ref="userServiceBean"/>
     </bean>
 
     <!-- Ossie AI Query API (#1394) — parallel to aiQueryResource but for semantic-YAML
@@ -1338,6 +1373,37 @@
     </bean>
 
     <!-- ====================================================================
+         #1099: WEBHOOK_DIGEST handler — Slack / Microsoft Teams channel digests.
+
+         Webhooks only, NO OAuth: an admin pastes a Slack or Teams incoming-webhook
+         URL into the job payload (SSRF-validated at parse time, same
+         WebhookUrlValidator saiku#1098 built), and on its cadence this handler
+         reads the SAME small set of key measures as the email digest (again via
+         aiMeasureValueReader — a fresh ThinQueryService per run, safe off-request)
+         and POSTs a Slack Block Kit / Teams MessageCard summary plus a deep link
+         to the LIVE dashboard (mailLinkBuilder — SSRF-safe, no request-controlled
+         host).
+
+         *** LEAN, LINK-BASED. *** Same posture as #943's DASHBOARD_DIGEST: no
+         dashboard renderer, no headless browser, no PNG attachment — the renderer
+         (#1810) is out of scope. The OAuth-bot / Graph one-click install variant
+         is explicitly out of scope for this repo (saiku-cloud#1210).
+
+         There is no "self" fallback here (a chat webhook has no self-address
+         equivalent) — a delivery failure simply fails the run.
+         ==================================================================== -->
+
+    <!-- Generic SSRF-hardened JSON POST sender, shared shape with webhookAlertChannel's transport
+         (validated-resolve + DNS-rebind re-check immediately before send). -->
+    <bean id="webhookJsonSender" class="org.saiku.service.schedule.alert.WebhookJsonSender"/>
+
+    <bean id="channelDigestJobHandler" class="org.saiku.service.schedule.digest.ChannelDigestJobHandler">
+        <constructor-arg ref="aiMeasureValueReader"/>
+        <constructor-arg ref="webhookJsonSender"/>
+        <constructor-arg ref="mailLinkBuilder"/>
+    </bean>
+
+    <!-- ====================================================================
          #1810: headless dashboard snapshot renderer (PDF/PNG) — WIRED, NOT
          YET CONSUMED.
 
@@ -1382,7 +1448,8 @@
 
     <!-- The live engine. init-method="start" starts the ticker at boot; destroy-method="shutdown"
          stops both the ticker and worker pools cleanly on context close. Registered handlers: the
-         no-op ("NOOP") and the threshold-alert ("THRESHOLD_ALERT", #1098). -->
+         no-op ("NOOP"), the threshold-alert ("THRESHOLD_ALERT", #1098), the email dashboard digest
+         ("DASHBOARD_DIGEST", #943), and the Slack/Teams channel digest ("WEBHOOK_DIGEST", #1099). -->
     <bean id="jobScheduler" class="org.saiku.service.schedule.JobScheduler"
           init-method="start" destroy-method="shutdown">
         <constructor-arg ref="jobStore"/>
@@ -1393,6 +1460,7 @@
                 <entry key="NOOP" value-ref="noOpJobHandler"/>
                 <entry key="THRESHOLD_ALERT" value-ref="thresholdAlertJobHandler"/>
                 <entry key="DASHBOARD_DIGEST" value-ref="dashboardDigestJobHandler"/>
+                <entry key="WEBHOOK_DIGEST" value-ref="channelDigestJobHandler"/>
             </map>
         </property>
     </bean>
