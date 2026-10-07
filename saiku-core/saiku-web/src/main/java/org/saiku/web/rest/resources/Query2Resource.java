@@ -58,6 +58,12 @@ import org.saiku.olap.util.exception.SaikuOlapException;
 import org.saiku.service.async.AsyncQueryHandle;
 import org.saiku.service.async.AsyncQueryService;
 import org.saiku.service.olap.ThinQueryService;
+import org.saiku.service.olap.ai.AiCubeMetadataService;
+import org.saiku.service.olap.ai.AiCubeRef;
+import org.saiku.service.olap.ai.AiPiiException;
+import org.saiku.service.olap.ai.AiReturnsResolver;
+import org.saiku.service.olap.ai.AiSchema;
+import org.saiku.service.olap.ai.AiValidationException;
 import org.saiku.service.olap.drillthrough.DrillThroughResult;
 import org.saiku.service.util.exception.SaikuAccessDeniedException;
 import org.saiku.service.util.exception.SaikuServiceException;
@@ -106,6 +112,17 @@ public class Query2Resource {
 
     public AsyncQueryService getAsyncQueryService() {
         return asyncQueryService;
+    }
+
+    /** saiku#837: same cube-metadata service the AI query surface uses for
+     *  {@code returns=} caption→qualified-MDX resolution (saiku#782), reused
+     *  here so the Query2 drillthrough entry points get the same behaviour.
+     *  Nullable — a deployment that hasn't wired the AI metadata bean simply
+     *  skips resolution and passes {@code returns=} through unchanged. */
+    private AiCubeMetadataService cubeMetadataService;
+
+    public void setCubeMetadataService(AiCubeMetadataService cubeMetadataService) {
+        this.cubeMetadataService = cubeMetadataService;
     }
 
     /**
@@ -444,6 +461,66 @@ public class Query2Resource {
         Status status = isClientError(e) ? Status.BAD_REQUEST : Status.INTERNAL_SERVER_ERROR;
         return Response.status(status)
                 .entity(new QueryResult(error))
+                .type(MediaType.APPLICATION_JSON)
+                .build();
+    }
+
+    /**
+     * saiku#837 — Query2 parity for saiku#782: rewrite a bare-caption
+     * {@code returns=} drillthrough clause into the fully-qualified MDX form
+     * Mondrian's {@code RETURN} clause expects, using the same
+     * {@link AiReturnsResolver} the AI query surface (saiku#782,
+     * {@code AiQueryResource.rewriteDrillthroughReturns}) already applies.
+     * Tokens already bracketed ({@code [...]}) pass through unchanged.
+     *
+     * <p>Writes the resolved value into {@code out[0]} (defaults to the raw
+     * {@code returns}). Returns a 400 {@link Response} carrying the typed
+     * validation envelope when the resolver can't match a token (or refuses
+     * a PII-flagged one); {@code null} otherwise, meaning the caller should
+     * proceed with {@code out[0]}.
+     *
+     * <p>A schema lookup failure (unknown cube, discover error) must not
+     * poison the drillthrough — falls through with the raw value and lets
+     * Mondrian report whatever it reports, same posture as the AI path.
+     */
+    private Response resolveDrillthroughReturns(String queryName, String returns, String[] out) {
+        out[0] = returns;
+        if (returns == null || returns.trim().isEmpty() || cubeMetadataService == null) {
+            return null;
+        }
+        try {
+            org.saiku.service.util.QueryContext qc = thinQueryService.getContext(queryName);
+            if (qc != null && qc.getOlapQuery() != null && qc.getOlapQuery().getCube() != null) {
+                org.saiku.olap.dto.SaikuCube cube = qc.getOlapQuery().getCube();
+                AiCubeRef ref =
+                        new AiCubeRef(cube.getConnection(), cube.getCatalog(), cube.getSchema(), cube.getName());
+                AiSchema schema = cubeMetadataService.getSchema(ref);
+                out[0] = AiReturnsResolver.resolve(returns, schema);
+            }
+        } catch (AiPiiException pe) {
+            log.info("drillthrough returns= refused (PII column): query={} message={}", queryName, pe.getMessage());
+            return returnsValidationError(pe.getField(), pe.getMessage(), pe.getAvailable());
+        } catch (AiValidationException ve) {
+            return returnsValidationError(ve.getField(), ve.getMessage(), ve.getAvailable());
+        } catch (RuntimeException ignored) {
+            // Schema lookup failure (unknown cube, discover error) — fall through with the raw
+            // returns value; the existing Mondrian-error translation path handles whatever the
+            // downstream RETURN clause produces.
+        }
+        return null;
+    }
+
+    /** Standard {@code {status,error,field,available}} validation-error envelope — same shape as
+     *  {@code AiQueryResponse} on the AI query surface so a client that already understands one
+     *  drillthrough validation error understands the other. */
+    private Response returnsValidationError(String field, String message, List<String> available) {
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("status", "VALIDATION_ERROR");
+        body.put("error", message);
+        body.put("field", field);
+        body.put("available", available == null ? List.of() : available);
+        return Response.status(Response.Status.BAD_REQUEST)
+                .entity(body)
                 .type(MediaType.APPLICATION_JSON)
                 .build();
     }
@@ -1039,6 +1116,12 @@ public class Query2Resource {
         if (log.isDebugEnabled()) {
             log.debug("TRACK\t" + "\t/query/" + queryName + "/drillthrough\tGET");
         }
+        // saiku#837: resolve bare-caption returns= to qualified MDX before it reaches the engine.
+        String[] resolvedReturns = {returns};
+        Response returnsError = resolveDrillthroughReturns(queryName, returns, resolvedReturns);
+        if (returnsError != null) return returnsError;
+        returns = resolvedReturns[0];
+
         boolean arrow = clientPrefersArrow(headers);
         ResultSet rs = null;
         try {
@@ -1196,6 +1279,12 @@ public class Query2Resource {
             log.debug("TRACK\t" + "\t/query/" + queryName + "/drillthrough/export/csv (maxrows:" + maxrows + " position"
                     + position + ")\tGET");
         }
+        // saiku#837: resolve bare-caption returns= to qualified MDX before it reaches the engine.
+        String[] resolvedReturns = {returns};
+        Response returnsError = resolveDrillthroughReturns(queryName, returns, resolvedReturns);
+        if (returnsError != null) return returnsError;
+        returns = resolvedReturns[0];
+
         ResultSet rs = null;
 
         try {

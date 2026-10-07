@@ -75,6 +75,15 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-10-06 — feature/837-query2-returns-resolution — merged latest development for PR #2047
+**Was doing:** merged development into the existing PR branch, preserving both session-summary entries and the earlier `firstRowset` CI fix.
+**Now:** check PR #2047 CI after the push; this workspace has no JDK or Maven.
+**Refs:** #837, #2047
+
+## 2026-10-05 — feature/837-query2-returns-resolution — merged development for PR #2047
+**Was doing:** merged development, retaining the base branch's uniform access-denied handling and the PR's Query2 `returns=` caption resolution; updated tests for the new `firstRowset` signature after CI found a compile error.
+**Now:** check PR #2047 CI after the push; local Maven tests could not run because this environment has no JDK or Maven.
+**Refs:** #837, #2047
 ## 2026-10-07 — feature/1107-sql-workbench — merged development for PR #2053
 **Was doing:** merged development at 4fb7b66c1, retained all changelog entries, combined test floors, and corrected the SQL workbench JDBC `Long` assertion identified in PR comments.
 **Now:** check PR #2053 CI after the push; local Java tests could not run because this environment has no JDK.
@@ -114,7 +123,6 @@ pushed down; normal sessions append and the history stays useful.
 **Was doing:** merged development, keeping both column-header member metadata and the PR's optional cell-property columns; Spotless passed.
 **Now:** check PR #2046 CI after the push; local Maven tests stopped at a GitHub Packages 401 before compilation.
 **Refs:** #828, #2046
-
 ## 2026-10-05 — feature/issue-776-hierarchy-drill — merged development for PR #2040
 **Was doing:** merged development into PR #2040's branch, retaining the drill caret and the base branch's cell link action in CellsetTable.
 **Now:** check PR #2040 CI, especially `Query2AdvancedIT`; the Java test could not run locally because GitHub Packages artifacts require credentials.
