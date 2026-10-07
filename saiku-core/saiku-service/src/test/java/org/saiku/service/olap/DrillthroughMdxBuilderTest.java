@@ -9,6 +9,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
+import org.saiku.olap.util.QueryGuardrails;
 
 /**
  * Pure-unit contract for {@link DrillthroughMdxBuilder#build(String, int, Integer, String, boolean)}.
@@ -18,17 +19,29 @@ import org.junit.Test;
  * emitted {@code DRILLTHROUGH FIRST_ROWSET N SELECT ...} — a token Mondrian's MDX parser doesn't
  * recognise. The build was failing with a 500 + opaque message. This builder is the new shared
  * MDX-emission seam; the test pins the four shapes plus the Mondrian-fallback policy.
+ *
+ * <p>saiku#1914 added the server-side ceiling: {@code maxrows <= 0} no longer produces a bare
+ * {@code DRILLTHROUGH} (an unbounded fact-table scan) but the configured ceiling, and a
+ * {@code maxrows} above the ceiling is clamped down to it. The ceiling in a test JVM (no
+ * {@code saiku.properties} override) is {@link QueryGuardrails#DEFAULT_MAX_ROWS}.
  */
 public class DrillthroughMdxBuilderTest {
 
     private static final String BASE = "SELECT NON EMPTY {[Measures].[Sales]} ON COLUMNS FROM [Cube]";
 
     @Test
-    public void plain_drillthrough_when_no_caps() {
+    public void no_caps_falls_back_to_server_row_ceiling() {
+        // saiku#1914: maxrows<=0 used to emit a bare "DRILLTHROUGH SELECT ..." — unbounded.
         String mdx = DrillthroughMdxBuilder.build(BASE, 0, null, null, /*isMondrian*/ true);
-        assertTrue(mdx.startsWith("DRILLTHROUGH SELECT"));
-        assertFalse("no MAXROWS when not asked for", mdx.contains("MAXROWS"));
-        assertFalse("no FIRST_ROWSET when not asked for", mdx.contains("FIRST_ROWSET"));
+        assertEquals("DRILLTHROUGH MAXROWS " + QueryGuardrails.DEFAULT_MAX_ROWS + " " + BASE, mdx);
+        assertFalse("no bare DRILLTHROUGH escape hatch", mdx.startsWith("DRILLTHROUGH SELECT"));
+    }
+
+    @Test
+    public void maxrows_above_server_ceiling_is_clamped() {
+        int ceiling = QueryGuardrails.maxRows();
+        String mdx = DrillthroughMdxBuilder.build(BASE, ceiling + 1, null, null, true);
+        assertEquals("DRILLTHROUGH MAXROWS " + ceiling + " " + BASE, mdx);
     }
 
     @Test
