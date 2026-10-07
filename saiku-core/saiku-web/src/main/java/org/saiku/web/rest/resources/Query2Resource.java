@@ -330,9 +330,9 @@ public class Query2Resource {
             String body = "{\"sql\":" + jacksonJsonString(sql) + "}";
             return Response.ok(body).type("application/json").build();
         } catch (SaikuAccessDeniedException e) {
-            // saiku#1393 — the shelf state names a field/metric the caller's roles deny.
+            // The denial may name a datasource or field; keep the response information-free.
             return Response.status(Response.Status.FORBIDDEN)
-                    .entity("{\"error\":" + jacksonJsonString(e.getMessage()) + "}")
+                    .entity("{\"error\":\"Access denied\"}")
                     .type("application/json")
                     .build();
         } catch (Exception e) {
@@ -416,13 +416,6 @@ public class Query2Resource {
                 qr.setQuery(tq);
             }
             return Response.ok(qr).type(MediaType.APPLICATION_JSON).build();
-        } catch (SaikuAccessDeniedException e) {
-            // saiku#1393 — the shelf state names a field/metric the caller's roles deny.
-            log.warn("Ossie query denied ({}): {}", tq, e.getMessage());
-            return Response.status(Response.Status.FORBIDDEN)
-                    .entity(new QueryResult(e.getMessage()))
-                    .type(MediaType.APPLICATION_JSON)
-                    .build();
         } catch (Exception e) {
             log.error("Cannot execute query (" + tq + ")", e);
             return queryFailure(e);

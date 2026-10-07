@@ -76,8 +76,8 @@ pushed down; normal sessions append and the history stays useful.
 ## Log
 
 ## 2026-10-07 — feature/1393-ossie-role-security — merged development for PR #2057
-**Was doing:** merged development at 4fb7b66c1, retained every changelog entry, and applied the Spotless formatting reported by the earlier CI run.
-**Now:** check PR #2057 CI after the push; local Maven verification cannot reach the authenticated GitHub Packages dependencies.
+**Was doing:** merged development at 4fb7b66c1, retained every changelog entry, applied Spotless formatting, and fixed the 403 response that leaked a datasource name in CI.
+**Now:** check PR #2057 CI after the fix; local Maven verification cannot reach the authenticated GitHub Packages dependencies.
 **Refs:** #1393, #2057
 
 ## 2026-10-06 — feature/823-drillthrough-firstrowset-toggle — merged latest development for PR #2042
