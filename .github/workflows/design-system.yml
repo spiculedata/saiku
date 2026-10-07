@@ -34,6 +34,9 @@ jobs:
   publish:
     name: Build, verify, publish to npm
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # OIDC token for `npm publish --provenance`
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -100,10 +103,12 @@ jobs:
         if: steps.registry.outputs.exists == 'false' && !inputs.dry_run
         working-directory: saiku-ui/design-system
         # NPM_TOKEN is an Automation token on the npm org, already used by the
-        # embed packages in release.yml.
+        # embed packages in release.yml. `--provenance` needs `id-token:
+        # write` (granted on this job) and attaches a signed SLSA statement
+        # npm displays on the package page and `npm audit signatures` checks.
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --access public
+        run: npm publish --access public --provenance
 
       - name: Summary
         env:

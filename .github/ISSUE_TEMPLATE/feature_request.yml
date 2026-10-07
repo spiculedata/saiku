@@ -17,6 +17,19 @@ body:
     validations:
       required: true
   - type: textarea
+    id: acceptance_tests
+    attributes:
+      label: Acceptance tests
+      description: >-
+        The checks that prove this is done, one line each, phrased as observable behaviour (a request
+        and its answer, or a page and what it shows). A PR that closes this issue ships them as
+        acceptance/<issue>/spec.json (see acceptance/README.md and docs/acceptance-specs.md); a
+        docs-only or tests-only change takes the acceptance-waived label instead. Optional for
+        contributors: a maintainer can fill it in.
+      placeholder: |
+        - POST /rest/saiku/api/... with ... returns ...
+        - The workspace shows ... after ...
+  - type: textarea
     id: alternatives
     attributes:
       label: Alternatives considered

@@ -22,6 +22,8 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
@@ -290,31 +292,21 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
                 }
             }
 
-            boolean f = true;
+            // saiku#1932 (CWE-116 / CWE-22): the CSV path below is interpolated into the
+            // hand-built Calcite model JSON in getCSVJson, so resolve it against the datadir
+            // FIRST — before it is stat()'d below and before it is serialised. Previously the
+            // path was only ever concatenated with the datadir (and interpolated raw), so a
+            // `..` segment in the datasource location pointed the CSV read outside the repo
+            // root. resolveWithinDatadir normalises `..` away and fails closed on an escape.
+            String csvModelPath = path.startsWith("mondrian:") ? path : resolveWithinDatadir(path);
 
-            if (new File(getDatadir() + path).exists() && new File(getDatadir() + path).isDirectory()) {
-                f = false;
-            }
+            // isDirectory() already implies exists(); the old code asked twice.
+            boolean f = !new File(getDatadir() + csvModelPath).isDirectory();
 
-            path = path.replace("\\", "/");
-            path = path.replaceAll("[/]+", "/");
-
-            if (!path.startsWith("mondrian:")) {
-                String pathToSave = getDatadir() + path;
-
-                pathToSave = pathToSave.replace("\\", "/");
-                pathToSave = pathToSave.replaceAll("[/]+", "/");
-
-                irm.saveInternalFile(
-                        this.getCSVJson(f, ds.getName(), pathToSave),
-                        separator + "datasources" + separator + ds.getName() + "-csv.json",
-                        null);
-            } else {
-                irm.saveInternalFile(
-                        this.getCSVJson(f, ds.getName(), path),
-                        separator + "datasources" + separator + ds.getName() + "-csv.json",
-                        null);
-            }
+            irm.saveInternalFile(
+                    this.getCSVJson(f, ds.getName(), csvModelPath),
+                    separator + "datasources" + separator + ds.getName() + "-csv.json",
+                    null);
 
             irm.saveDataSource(ds, separator + "datasources" + separator + ds.getName() + ".sds", "fixme");
 
@@ -950,20 +942,98 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
         return this.type;
     }
 
+    /**
+     * Resolve a repository-relative CSV path against {@link #getDatadir()}, refusing anything that
+     * normalises outside it.
+     *
+     * <p>saiku#1932 (CWE-22): this mirrors {@code FilesystemRepositoryManager}'s private
+     * {@code resolveWithinDatadir} so the CSV-model path in the Calcite JSON obeys the same
+     * containment rule as the rest of the repository write layer — including the historical
+     * convention that a leading {@code /} is REPO-relative (the code this replaces did plain
+     * {@code getDatadir() + path} string concatenation, so {@code /etc/foo} meant
+     * {@code <datadir>/etc/foo}). Unreachable from the shipped build today (JdbcUrlPolicy denies
+     * the {@code calcite} scheme, saiku#1902) but fixed at the source rather than relied on.
+     *
+     * <p>Fails closed and unchecked, like the repository layer's own guard: a path that escapes
+     * the datadir throws {@link IllegalArgumentException} rather than being silently rewritten.
+     */
+    private String resolveWithinDatadir(String repoRelativePath) {
+        if (repoRelativePath == null) {
+            throw new IllegalArgumentException("Path must not be null");
+        }
+        String stripped = repoRelativePath;
+        while (stripped.startsWith("/") || stripped.startsWith("\\")) {
+            stripped = stripped.substring(1);
+        }
+        Path base = Paths.get(getDatadir()).toAbsolutePath().normalize();
+        Path resolved = base.resolve(stripped).normalize();
+        if (!resolved.startsWith(base)) {
+            // Do not echo the raw path back — it is untrusted input and this message can end up
+            // in a REST body and in logs (same reasoning as validateDatasourceName, saiku#1906).
+            throw new IllegalArgumentException("Path traversal attempt rejected in datasource CSV location");
+        }
+        return resolved.toString().replace("\\", "/");
+    }
+
+    /**
+     * Escape a value for interpolation into the single-quoted Calcite model JSON built by
+     * {@link #getCSVJson(boolean, String, String)}.
+     *
+     * <p>saiku#1932 (CWE-116): the model is a hand-built string, so an unescaped {@code '} in
+     * the datasource name or CSV path terminated the quoted string early and let the remainder be
+     * read as a further model key (e.g. an extra {@code factory:}). Calcite parses this model with
+     * the avatica {@code JsonReader}, whose unquoted-key dialect accepts {@code '}-quoted strings
+     * and the standard JSON escapes, so escaping {@code '}, the quote characters, backslashes and
+     * control characters is both sufficient and round-trip safe.
+     */
+    static String jsonEscape(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(raw.length() + 8);
+        for (int i = 0; i < raw.length(); i++) {
+            char c = raw.charAt(i);
+            switch (c) {
+                case '\\' -> sb.append("\\\\");
+                case '\'' -> sb.append("\\'");
+                case '"' -> sb.append("\\\"");
+                case '\n' -> sb.append("\\n");
+                case '\r' -> sb.append("\\r");
+                case '\t' -> sb.append("\\t");
+                case '\b' -> sb.append("\\b");
+                case '\f' -> sb.append("\\f");
+                default -> {
+                    if (c < 0x20) {
+                        sb.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        sb.append(c);
+                    }
+                }
+            }
+        }
+        return sb.toString();
+    }
+
     private String getCSVJson(boolean file, String name, String path) {
         path = path.replace("\\", "/");
         path = path.replaceAll("[/]+", "/");
 
+        // saiku#1932: never interpolate a raw, unescaped name/path into the model JSON.
+        String safeName = jsonEscape(name);
+        String safePath = jsonEscape(path);
+
         String p;
         if (!file) {
-            p = "directory: '" + path + "'\n";
+            p = "directory: '" + safePath + "'\n";
 
             return "{\n" + "version: '1.0',\n"
                     + "defaultSchema: '"
-                    + name + "',\n" + "schemas: [\n"
+                    + safeName
+                    + "',\n" + "schemas: [\n"
                     + "{\n"
                     + "name: '"
-                    + name + "',\n" + "type: 'custom',\n"
+                    + safeName
+                    + "',\n" + "type: 'custom',\n"
                     + "factory: 'org.apache.calcite.adapter.csv.CsvSchemaFactory',\n"
                     + "operand: {\n"
                     + p
@@ -972,16 +1042,19 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
                     + "]\n"
                     + "}";
         } else {
-            p = "file: '" + path + "',";
+            p = "file: '" + safePath + "',";
 
             return "{\n" + "version: '1.0',\n"
                     + "defaultSchema: '"
-                    + name + "',\n" + "schemas: [\n"
+                    + safeName
+                    + "',\n" + "schemas: [\n"
                     + "{\n"
                     + "name: '"
-                    + name + "',\n" + "tables:[{\n"
+                    + safeName
+                    + "',\n" + "tables:[{\n"
                     + "name: '"
-                    + name + "1',\n" + "type: 'custom',\n"
+                    + safeName
+                    + "1',\n" + "type: 'custom',\n"
                     + "factory: 'org.apache.calcite.adapter.csv.CsvTableFactory',\n"
                     + "operand: {\n"
                     + p

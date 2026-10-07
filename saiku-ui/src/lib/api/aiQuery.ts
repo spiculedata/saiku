@@ -302,6 +302,10 @@ export interface AiDrillthroughOptions {
 	position?: string;
 	/** Cap on returned fact rows. */
 	maxRows?: number;
+	/** Warehouse-side short-circuit bound (saiku#774/#822) — an alternative to
+	 *  maxRows' in-engine cap. Applies to whole-result drills only (no
+	 *  `position`); the server prefers firstRowset when both are supplied. */
+	firstRowset?: number;
 	/** Dimension/measure unique names to project. Omit for all columns. */
 	returns?: string[];
 }
@@ -316,6 +320,7 @@ export async function aiDrillthrough(
 	const params = new URLSearchParams();
 	if (opts.position) params.set('position', opts.position);
 	if (opts.maxRows != null) params.set('maxrows', String(opts.maxRows));
+	if (opts.firstRowset != null) params.set('firstRowset', String(opts.firstRowset));
 	if (opts.returns && opts.returns.length) params.set('returns', opts.returns.join(','));
 	const qs = params.toString();
 	const url = `${REST_BASE}/query/${encodeURIComponent(queryId)}/drillthrough${qs ? `?${qs}` : ''}`;
@@ -343,6 +348,49 @@ export async function aiDrillthrough(
 		return JSON.parse(text) as AiDrillthroughResult;
 	} catch (e) {
 		throw new Error(`aiDrillthrough -> ${res.status}: non-JSON response (${(e as Error).message})`);
+	}
+}
+
+/** One drillthrough-eligible column, as reported by the discovery endpoint.
+ *  `name` is the MDX-qualified label (e.g. `[Time].[Time].[Year]`) — exactly
+ *  what `returns` accepts. */
+export interface AiDrillthroughColumn {
+	name: string;
+	type: string;
+}
+
+/** GET /rest/saiku/api/ai/query/{queryId}/drillthrough/columns — lists the
+ *  drillthrough-eligible columns for a prior AI query (saiku#774), so a
+ *  column picker can be populated before issuing a constrained drillthrough.
+ *  Throws on a non-ok response. */
+export async function aiDrillthroughColumns(queryId: string): Promise<AiDrillthroughColumn[]> {
+	const url = `${REST_BASE}/query/${encodeURIComponent(queryId)}/drillthrough/columns`;
+	const res = await fetch(url, {
+		method: 'GET',
+		credentials: 'include',
+		headers: { Accept: 'application/json' }
+	});
+	const text = await res.text();
+	if (!res.ok) {
+		let msg = `aiDrillthroughColumns -> ${res.status}`;
+		if (text) {
+			try {
+				const parsed = JSON.parse(text) as { error?: string; message?: string };
+				if (parsed.error || parsed.message) msg = parsed.error ?? parsed.message ?? msg;
+			} catch {
+				msg = `${msg}: ${text}`;
+			}
+		}
+		throw new Error(msg);
+	}
+	if (!text) throw new Error(`aiDrillthroughColumns -> ${res.status}: empty body`);
+	try {
+		const body = JSON.parse(text) as { columns: AiDrillthroughColumn[] };
+		return body.columns;
+	} catch (e) {
+		throw new Error(
+			`aiDrillthroughColumns -> ${res.status}: non-JSON response (${(e as Error).message})`
+		);
 	}
 }
 
@@ -519,6 +567,7 @@ export function aiDrillthroughCsvUrl(queryId: string, opts: AiDrillthroughOption
 	const params = new URLSearchParams();
 	if (opts.position) params.set('position', opts.position);
 	if (opts.maxRows != null) params.set('maxrows', String(opts.maxRows));
+	if (opts.firstRowset != null) params.set('firstRowset', String(opts.firstRowset));
 	if (opts.returns && opts.returns.length) params.set('returns', opts.returns.join(','));
 	const qs = params.toString();
 	return `${REST_BASE}/query/${encodeURIComponent(queryId)}/drillthrough/export/csv${qs ? `?${qs}` : ''}`;

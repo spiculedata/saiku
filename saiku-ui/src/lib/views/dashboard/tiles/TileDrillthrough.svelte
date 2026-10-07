@@ -16,7 +16,11 @@
 
 	import DrillthroughModal from '$lib/modals/DrillthroughModal.svelte';
 	import DrillthroughResultModal from '$lib/modals/DrillthroughResultModal.svelte';
-	import { aiDrillthrough, downloadAiDrillthroughCsv } from '$lib/api/aiQuery';
+	import {
+		aiDrillthrough,
+		aiDrillthroughColumns,
+		downloadAiDrillthroughCsv
+	} from '$lib/api/aiQuery';
 	import { drillthroughToQueryResult } from '$lib/dashboard/drillthroughCoord';
 	import { datasources } from '$lib/stores/datasources.svelte';
 	import { session } from '$lib/stores/session.svelte';
@@ -83,6 +87,7 @@
 		dimensions: string[];
 		measures: string[];
 		maxRows: number;
+		firstRowset?: number;
 	}): Promise<void> {
 		pickerOpen = false;
 		if (!activeQueryId) return;
@@ -93,6 +98,7 @@
 			const dt = await aiDrillthrough(activeQueryId, {
 				position: activePosition ?? undefined,
 				maxRows: opts.maxRows,
+				firstRowset: opts.firstRowset,
 				returns: returns.length ? returns : undefined
 			});
 			result = drillthroughToQueryResult(dt);
@@ -102,7 +108,11 @@
 		}
 	}
 
-	function exportCsv(opts: { dimensions: string[]; measures: string[] }): void {
+	function exportCsv(opts: {
+		dimensions: string[];
+		measures: string[];
+		firstRowset?: number;
+	}): void {
 		// Issue #1051: stream the drillthrough as a CSV file from the AI Query
 		// surface (GET /ai/query/{queryId}/drillthrough/export/csv). The endpoint
 		// sets Content-Disposition: attachment, so opening the same-origin
@@ -115,8 +125,17 @@
 		downloadAiDrillthroughCsv(activeQueryId, {
 			position: activePosition ?? undefined,
 			maxRows: 10000,
+			firstRowset: opts.firstRowset,
 			returns: returns.length ? returns : undefined
 		});
+	}
+
+	/** saiku#774/#823 — narrow the picker to the columns this specific query
+	 *  can actually drill through, via the AI Query API's discovery endpoint
+	 *  (already live; this is the dashboard/AI call site). */
+	function discoverColumns() {
+		if (!activeQueryId) return Promise.resolve([]);
+		return aiDrillthroughColumns(activeQueryId);
 	}
 </script>
 
@@ -125,6 +144,7 @@
 	{measures}
 	maxRows={1000}
 	open={pickerOpen}
+	{discoverColumns}
 	onRun={runDrillthrough}
 	onExportCsv={exportCsv}
 	onCancel={() => (pickerOpen = false)}

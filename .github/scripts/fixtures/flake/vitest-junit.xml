@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="2" failures="1" errors="0" time="0.00415675">
+    <testsuite name="src/lib/zzFlakeFixture.test.ts" timestamp="2026-10-05T01:14:19.277Z" hostname="runner" tests="2" failures="1" errors="0" skipped="0" time="0.00415675">
+        <testcase classname="src/lib/zzFlakeFixture.test.ts" name="formatResetCountdown &gt; renders days for a far-future reset" time="0.003383958">
+            <failure message="expected &apos;in 4 days&apos; to be &apos;in 5 days&apos; // Object.is equality" type="AssertionError">
+AssertionError: expected &apos;in 4 days&apos; to be &apos;in 5 days&apos; // Object.is equality
+
+Expected: &quot;in 5 days&quot;
+Received: &quot;in 4 days&quot;
+
+ ❯ src/lib/zzFlakeFixture.test.ts:4:23
+            </failure>
+        </testcase>
+        <testcase classname="src/lib/zzFlakeFixture.test.ts" name="formatResetCountdown &gt; renders hours" time="0.000137541">
+        </testcase>
+    </testsuite>
+</testsuites>

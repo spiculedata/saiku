@@ -223,12 +223,12 @@ public class AiCertifiedQueryResourceTest {
         assertNull(body.getResponse().getCertifiedId());
     }
 
-    private Response derivedAsk() {
+    private AiAskApi.AskRequest derivedAsk() {
         wireDerivedAskService();
         AiAskApi.AskRequest body = new AiAskApi.AskRequest();
         body.setQuestion("how many units did we ship?");
         body.setCube(new AiCubeRef("conn", "cat", "sch", "Sales"));
-        return resource.ask(body);
+        return body;
     }
 
     private void wireDerivedAskService() {
