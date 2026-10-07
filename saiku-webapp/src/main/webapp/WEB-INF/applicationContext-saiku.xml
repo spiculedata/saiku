@@ -134,7 +134,10 @@
     </security:http>
     <!-- Embeddability demo (embed-demo/) — the "FoodMart Ops" white-label OEM portal.
          Public static page; its same-origin fetches to /rest/saiku/api/ai/* warm an
-         admin/admin session the same way the showcase does. The AI endpoints stay
+         admin/admin session the same way the showcase does — ONLY when
+         /rest/saiku/info/capabilities reports demoMode:true (saiku#1908); elsewhere
+         they ride the visitor's own session. Each page also pins its inline script
+         with a hash-based CSP <meta> (DemoPagesHardeningTest). The AI endpoints stay
          behind /rest/** auth + the ask rate-limiter/policy guard — the page being
          public does not open the LLM to anonymous unbounded use.
          The bare "/embed-demo" (no trailing slash) needs its own permit — the Ant
