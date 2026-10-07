@@ -1,0 +1,349 @@
+name: quality-report
+
+# Quality dashboard (saiku#2098). Renders the repository's declared quality
+# signals — test-count floors, line-coverage floors, UI checks — as one
+# Markdown report in the run summary, so a human can audit where quality
+# stands (and by how much it has drifted) without reading raw build logs.
+#
+# This is a REPORT, deliberately not a gate. The hard gates live in ci.yml and
+# already run on every PR:
+#   - test-count floors  → .github/test-floors.json
+#   - coverage floors    → .coverage-thresholds.json (scripts/check-coverage.sh)
+#   - formatting         → spotless:check, bound to the `verify` phase
+# A PR that breaks a signal is blocked there. What the gates cannot tell you is
+# whether a module sits one test above its floor or four hundred, and that is
+# the gap this closes.
+#
+# Triggers: weekly (Monday 05:17 UTC) and on demand. Deliberately NOT on every
+# push — the signal only moves when a batch of work lands, and a weekly read is
+# what a human actually consumes. The per-PR verdict stays with ci.yml.
+on:
+  schedule:
+    # Weekly, Monday 05:17 UTC. Off the hour on purpose — the top of the hour
+    # is when every scheduled workflow on GitHub fires, and this runner would
+    # be queueing behind them.
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+# Read-only. Nothing here writes to the repo — no comments, no issues, no
+# labels, no releases. (The `defects` job adds read-only issue / pull-request
+# scopes at job level for the escaped-defect section.)
+permissions:
+  contents: read
+
+# One report a week; never stack two in flight on a dispatch.
+concurrency:
+  group: quality-report-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  java:
+    name: java signals
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up JDK 22
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "22"
+          cache: maven
+      # Same five GH Packages registries ci.yml writes — setup-java only wires
+      # one <server>, and the Spicule Mondrian/olap4j artifacts are not on any
+      # public remote. Without this the build fails on dependency resolution,
+      # which would look like a quality regression when it is an auth problem.
+      - name: Configure Maven settings.xml
+        env:
+          GH_PACKAGES_USER: ${{ github.actor }}
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+        run: |
+          mkdir -p ~/.m2
+          cat > ~/.m2/settings.xml <<EOF
+          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+            <servers>
+              <server><id>github-mondrian-saiku</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-olap4j</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-olap4j-xmlaserver</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-saiku-query</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-ossie</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+            </servers>
+          </settings>
+          EOF
+      # `verify`, not `test`: the JaCoCo report is bound to the verify phase,
+      # and coverage is one of the signals being reported. Integration tests are
+      # skipped — this lane measures unit-level signals, and the ITs are already
+      # exercised by ci.yml on the PR that changed them.
+      #
+      # continue-on-error: a red build must still produce a report. If the
+      # build dies, every module reads "not measured", which the report renders
+      # as ⚪ with a note rather than as a pass.
+      - name: mvn verify (unit signals)
+        id: build
+        continue-on-error: true
+        run: mvn -B -ntp -DskipITs=true verify
+      - name: Collect licence-header signal
+        # Cheap, and a genuinely useful drift signal: a new Java file landing
+        # without its header is invisible until release.
+        run: |
+          {
+            echo "### Source hygiene"
+            echo
+            if ./scripts/check-licence-headers.sh; then
+              echo "- ✅ every tracked Java file carries a licence header"
+            else
+              echo "- ⚠️ licence-header check failed (see the log above)"
+            fi
+            echo
+            if grep -rIl --include='*.java' $'\r' saiku-core saiku-webapp saiku-launcher >/dev/null 2>&1; then
+              echo "- ⚠️ CRLF line endings found in Java sources — a Windows checkout with core.autocrlf=true; spotless will reject these on CI"
+            else
+              echo "- ✅ no CRLF line endings in Java sources"
+            fi
+          } > quality-java-hygiene.md
+          cat quality-java-hygiene.md
+      - name: Render Java quality report
+        env:
+          # Echoed into the report so a red build is never mistaken for a
+          # quality finding — it is a build finding, and the log has the detail.
+          BUILD_RESULT: ${{ steps.build.outcome }}
+        run: |
+          {
+            if [ "${BUILD_RESULT}" != "success" ]; then
+              echo "> ⚠️ \`mvn verify\` concluded **${BUILD_RESULT}** — the Java rows below are incomplete."
+              echo "> The build log has the failure; it is not a quality-signal regression."
+              echo
+            fi
+            cat quality-java-hygiene.md
+            ./scripts/quality-report.sh --title "Java signals (test counts & coverage)"
+          } > quality-java.md
+          cat quality-java.md
+      - name: Upload Java report fragment
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: quality-java
+          path: quality-java.md
+          retention-days: 30
+
+  ui:
+    name: ui signals
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: saiku-ui
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Node 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: saiku-ui/package-lock.json
+      - name: Install deps
+        run: npm ci
+      # Same continue-on-error reasoning as the Java lane: the report is the
+      # deliverable, so a failing check is a row in it, not an absent report.
+      - name: svelte-check + tsc
+        id: check
+        continue-on-error: true
+        run: npm run check
+      # `npx vitest`, NOT `npm test -- …`: the `test` script is
+      # `vitest run && npm run lint`, so npm appends trailing flags to the END
+      # of that string — `--reporter=json` would land on the eslint step, not
+      # on vitest. Calling the binary directly is the only way to get a machine
+      # -readable results file out of the same run.
+      - name: vitest
+        id: vitest
+        continue-on-error: true
+        run: npx vitest run --reporter=json --outputFile=vitest-results.json
+      - name: ESLint
+        id: lint
+        continue-on-error: true
+        run: npm run lint
+      - name: Render UI quality report
+        env:
+          CHECK_RESULT: ${{ steps.check.outcome }}
+          VITEST_RESULT: ${{ steps.vitest.outcome }}
+          LINT_RESULT: ${{ steps.lint.outcome }}
+        run: |
+          set -uo pipefail
+          {
+            echo "### UI signals (saiku-ui)"
+            echo
+            echo "| Signal | Result |"
+            echo '| --- | :---: |'
+            if [ "${CHECK_RESULT}" = "success" ]; then
+              echo "| \`svelte-check\` + \`tsc\` | ✅ clean |"
+            else
+              echo "| \`svelte-check\` + \`tsc\` | ❌ ${CHECK_RESULT} — type errors, see the log |"
+            fi
+            if [ "${LINT_RESULT}" = "success" ]; then
+              echo "| ESLint | ✅ clean |"
+            else
+              echo "| ESLint | ❌ ${LINT_RESULT} — see the log |"
+            fi
+            if [ -f vitest-results.json ]; then
+              total=$(jq -r '.numTotalTests // 0' vitest-results.json)
+              passed=$(jq -r '.numPassedTests // 0' vitest-results.json)
+              failed=$(jq -r '.numFailedTests // 0' vitest-results.json)
+              pending=$(jq -r '.numPendingTests // 0' vitest-results.json)
+              echo
+              echo "| Vitest | Tests | Passed | Failed | Pending |"
+              echo '| --- | ---: | ---: | ---: | ---: |'
+              echo "| saiku-ui | ${total} | ${passed} | ${failed} | ${pending} |"
+              echo
+              if [ "${failed}" -gt 0 ]; then
+                echo "**❌ ${failed} UI test(s) failing.**"
+              else
+                echo "**✅ all ${passed} UI tests passing.**"
+              fi
+            else
+              echo
+              echo "| Vitest | ❌ ${VITEST_RESULT} — no results file, see the log |"
+            fi
+          } > ../quality-ui.md
+          cat ../quality-ui.md
+      - name: Upload UI report fragment
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: quality-ui
+          path: quality-ui.md
+          retention-days: 30
+
+  defects:
+    name: escaped defects
+    # Bugs filed against code that had already merged (docs/quality.md). Read-only:
+    # it lists issues and PRs and writes nothing back. Every step that talks to the
+    # API is continue-on-error, and a failed read produces NO fragment, so the
+    # dashboard omits the section rather than printing a clean week.
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      issues: read
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      WEEKS: "8"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+      # Bounded to issues updated in the last 120 days. The file only appears when
+      # the whole read succeeded, so a truncated payload is never rendered.
+      - name: Fetch recent issues
+        continue-on-error: true
+        run: |
+          since="$(date -u -d '120 days ago' +%Y-%m-%dT%H:%M:%SZ)"
+          gh api --paginate "repos/${GH_REPO}/issues?state=all&since=${since}&per_page=100" \
+            | jq -s '{issues: (add // [] | map(select(has("pull_request") | not)))}' > issues.tmp
+          mv issues.tmp issues.json
+          echo "collected $(jq '.issues | length' issues.json) issues"
+      # Only bugs that claim to have escaped can be counted, so only their PR
+      # references are resolved. Not-a-PR numbers 404 and are simply skipped.
+      - name: Fetch the merge state of referenced PRs
+        continue-on-error: true
+        run: |
+          : > pr-state.ndjson
+          for n in $(node .github/scripts/escaped-defects.mjs refs --issues issues.json); do
+            if state="$(gh api "repos/${GH_REPO}/pulls/${n}" --jq '{html_url, merged_at}' 2>/dev/null)"; then
+              jq -n --arg n "$n" --argjson v "$state" '{($n): $v}' >> pr-state.ndjson
+            fi
+          done
+          jq -s 'add // {}' pr-state.ndjson > pull-requests.json
+          echo "resolved $(jq 'length' pull-requests.json) pull requests"
+      # Denominator. `merged:>=` is cumulative and search has no two-sided range,
+      # so the script differences consecutive boundaries; a failed query is `skip`
+      # and leaves the weeks it touches as n/a.
+      - name: Count PRs merged per week
+        continue-on-error: true
+        run: |
+          : > merged-totals.txt
+          while read -r key date; do
+            total="$(gh api -X GET search/issues -f "q=repo:${GH_REPO} is:pr is:merged merged:>=${date}" \
+              --jq '.total_count' 2>/dev/null || echo skip)"
+            echo "${key} ${total}" >> merged-totals.txt
+            sleep 2 # search is rate-limited to 30 requests a minute
+          done < <(node .github/scripts/escaped-defects.mjs boundaries --weeks "${WEEKS}")
+          node .github/scripts/escaped-defects.mjs merged-counts --totals merged-totals.txt > merged-counts.json
+          echo "merged per week: $(cat merged-counts.json)"
+      # Exits 3 and writes nothing when there is no issues payload.
+      - name: Render escaped-defect section
+        continue-on-error: true
+        run: |
+          node .github/scripts/escaped-defects.mjs render \
+            --issues issues.json \
+            --pull-requests pull-requests.json \
+            --merged-counts merged-counts.json \
+            --weeks "${WEEKS}" \
+            --out quality-escaped-defects.md
+          cat quality-escaped-defects.md
+      - name: Upload escaped-defect fragment
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: quality-escaped-defects
+          path: quality-escaped-defects.md
+          if-no-files-found: ignore
+          retention-days: 30
+
+  report:
+    name: quality dashboard
+    # always(): the dashboard is exactly what you want when a lane is red.
+    needs: [java, ui, defects]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download report fragments
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: quality-*
+          merge-multiple: true
+          path: fragments
+      - name: Assemble dashboard
+        run: |
+          set -euo pipefail
+          REPORT=quality-report-$(date -u +%Y-%m-%d).md
+          {
+            echo "# Saiku quality dashboard"
+            echo
+            echo "- Commit: \`${GITHUB_SHA}\` (\`${GITHUB_REF_NAME}\`)"
+            echo "- Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo "- Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo
+            echo "Signals are defined in \`.github/test-floors.json\` and \`.coverage-thresholds.json\`."
+            echo "See [docs/quality.md](../blob/${GITHUB_REF_NAME}/docs/quality.md) for how to read this and how to move a signal."
+            echo
+            # A lane that produced no artifact (cancelled, out of disk) must not
+            # take the whole dashboard down with it — absent is reported by
+            # absence, and the gates in ci.yml are unaffected either way.
+            for f in fragments/quality-java.md fragments/quality-ui.md; do
+              if [ -f "$f" ]; then
+                cat "$f"
+                echo
+              else
+                echo "> ⚠️ \`$f\` was not produced — that lane did not finish."
+                echo
+              fi
+            done
+            # Optional section: when the issues read failed there is no fragment
+            # and the section is omitted. Absence must never read as a clean week.
+            if [ -f fragments/quality-escaped-defects.md ]; then
+              cat fragments/quality-escaped-defects.md
+              echo
+            fi
+          } > "$REPORT"
+          cat "$REPORT"
+          # The summary is the dashboard: it renders on the run page itself, so
+          # a reader never has to download anything.
+          cat "$REPORT" >> "$GITHUB_STEP_SUMMARY"
+      - name: Archive dashboard
+        # Also kept as an artifact so successive weekly runs can be diffed.
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: quality-report
+          path: quality-report-*.md
+          retention-days: 90

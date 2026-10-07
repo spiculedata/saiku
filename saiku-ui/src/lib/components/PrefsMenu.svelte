@@ -3,6 +3,7 @@
 	import { Button } from '$lib/components/ui';
 	import { theme } from '$lib/stores/theme.svelte';
 	import { i18n } from '$lib/stores/i18n.svelte';
+	import { decimalPlaces, decimalOptions } from '$lib/stores/decimalPlaces.svelte';
 	import LocalePicker from '$lib/components/LocalePicker.svelte';
 
 	interface Props {
@@ -10,8 +11,13 @@
 		 *  the workspace sidebar footer; "down" suits a top toolbar (saiku#1050,
 		 *  the dashboard toolbar) so the panel doesn't open off the top of screen. */
 		placement?: 'up' | 'down';
+		/** Show the "Decimal places" picker (saiku#1988). Display-only rounding of
+		 *  numeric cells in a cellset grid, so it only makes sense where a grid is
+		 *  actually rendered — the workspace query editor opts in; the dashboard
+		 *  toolbar (which has no cellset) leaves it off. */
+		showDecimals?: boolean;
 	}
-	let { placement = 'up' }: Props = $props();
+	let { placement = 'up', showDecimals = false }: Props = $props();
 
 	let open = $state(false);
 
@@ -85,6 +91,31 @@
 				<span class="text-sm text-fg-muted">{i18n.t('topbar.language')}</span>
 				<LocalePicker />
 			</div>
+			{#if showDecimals}
+				<!-- saiku#1988: display-only decimal places for cellset grids.
+				     Export / drillthrough keep the server's formatting. -->
+				<div class="flex items-center justify-between gap-3">
+					<label class="text-sm text-fg-muted" for="prefs-decimal-places">
+						{i18n.t('topbar.decimals')}
+					</label>
+					<select
+						id="prefs-decimal-places"
+						class="decimals-select"
+						title={i18n.t('topbar.decimals.hint')}
+						value={decimalPlaces.decimals === null ? 'auto' : String(decimalPlaces.decimals)}
+						onchange={(e) => {
+							const v = (e.currentTarget as HTMLSelectElement).value;
+							decimalPlaces.set(v === 'auto' ? null : Number(v));
+						}}
+					>
+						{#each decimalOptions() as opt}
+							<option value={opt === null ? 'auto' : String(opt)}>
+								{opt === null ? i18n.t('topbar.decimals.auto') : opt}
+							</option>
+						{/each}
+					</select>
+				</div>
+			{/if}
 		</div>
 	{/if}
 </div>
@@ -117,4 +148,13 @@
 		right: 0;
 	}
 	/* #1091: active state for the colour-blind-safe toggle. */
+	.decimals-select {
+		background: hsl(var(--bg));
+		color: hsl(var(--fg));
+		border: 1px solid hsl(var(--border));
+		border-radius: var(--radius);
+		padding: 2px 6px;
+		font: inherit;
+		font-size: 0.8125rem;
+	}
 </style>

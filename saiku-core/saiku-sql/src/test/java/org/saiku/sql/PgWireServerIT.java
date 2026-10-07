@@ -6,20 +6,29 @@ package org.saiku.sql;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.io.IOException;
+import java.net.Inet4Address;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.NetworkInterface;
+import java.net.Socket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.Collections;
 import java.util.Properties;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.saiku.sql.server.OssieSqlServer;
+import org.saiku.sql.server.SqlServerCredentials;
 import org.saiku.sql.server.pgwire.PgWireServer;
 
 /**
@@ -153,6 +162,79 @@ public class PgWireServerIT {
         // to a single 'Q' message.
         p.setProperty("preferQueryMode", "simple");
         return DriverManager.getConnection("jdbc:postgresql://localhost:" + server.getPort() + "/saiku", p);
+    }
+
+    @Test
+    public void scramAuthAcceptsCorrectPassword() throws Exception {
+        try (PgWireServer secured = securedServer();
+                Connection remote = openPgClient(secured.getPort(), "bi", "s3cret, with comma");
+                Statement s = remote.createStatement();
+                ResultSet rs = s.executeQuery("SELECT COUNT(*) FROM SALES.CUSTOMERS")) {
+            assertTrue(rs.next());
+            assertEquals(4, rs.getInt(1));
+        }
+    }
+
+    @Test
+    public void scramAuthRejectsWrongPassword() throws Exception {
+        try (PgWireServer secured = securedServer()) {
+            openPgClient(secured.getPort(), "bi", "wrong").close();
+            fail("wrong password must not authenticate");
+        } catch (SQLException e) {
+            assertEquals("28P01", e.getSQLState());
+        }
+    }
+
+    @Test
+    public void scramAuthRejectsWrongUser() throws Exception {
+        try (PgWireServer secured = securedServer()) {
+            openPgClient(secured.getPort(), "someone-else", "s3cret, with comma")
+                    .close();
+            fail("unknown user must not authenticate");
+        } catch (SQLException e) {
+            assertEquals("28P01", e.getSQLState());
+        }
+    }
+
+    @Test
+    public void defaultConstructorBindsToLoopbackOnly() throws Exception {
+        // saiku#1910: the trust-mode constructor must never listen on the wildcard address.
+        try (Socket probe = new Socket()) {
+            probe.connect(new InetSocketAddress("127.0.0.1", server.getPort()), 2000);
+        }
+        InetAddress external = firstNonLoopbackAddress();
+        if (external == null) return; // no other interface on this host to probe
+        try (Socket probe = new Socket()) {
+            probe.connect(new InetSocketAddress(external, server.getPort()), 2000);
+            fail("PG-wire server reachable on " + external);
+        } catch (IOException expected) {
+            // connection refused — bound to loopback only
+        }
+    }
+
+    private PgWireServer securedServer() throws IOException {
+        return new PgWireServer(
+                "127.0.0.1", 0, calciteConnectString, new SqlServerCredentials("bi", "s3cret, with comma"));
+    }
+
+    private static InetAddress firstNonLoopbackAddress() throws IOException {
+        for (NetworkInterface nic : Collections.list(NetworkInterface.getNetworkInterfaces())) {
+            if (!nic.isUp() || nic.isLoopback()) continue;
+            for (InetAddress a : Collections.list(nic.getInetAddresses())) {
+                if (a instanceof Inet4Address && !a.isLoopbackAddress()) return a;
+            }
+        }
+        return null;
+    }
+
+    private Connection openPgClient(int port, String user, String password) throws Exception {
+        Class.forName("org.postgresql.Driver");
+        Properties p = new Properties();
+        p.setProperty("user", user);
+        p.setProperty("password", password);
+        p.setProperty("sslmode", "disable");
+        p.setProperty("preferQueryMode", "simple");
+        return DriverManager.getConnection("jdbc:postgresql://localhost:" + port + "/saiku", p);
     }
 
     private Connection openPgClientExtended() throws Exception {
