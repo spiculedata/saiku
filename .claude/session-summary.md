@@ -79,6 +79,10 @@ pushed down; normal sessions append and the history stays useful.
 **Was doing:** merged development, retaining both export delivery and webhook digest wiring, corrected the export test stub's `createQuery` return type, and fixed a null-data test helper exposed by CI.
 **Now:** check PR #2080 CI; local focused Maven tests stop at GitHub Packages 401 before compilation, while Spotless and XML parsing pass.
 **Refs:** #1987, #2080
+## 2026-10-07 — security/1914-query-timeout-result-limits — merged development for PR #2082
+**Was doing:** merged development at 4fb7b66c1, retaining the cell-property columns and bounded Arrow allocator in the sole conflict.
+**Now:** check PR #2082 CI; local focused Maven tests stop before compilation because GitHub Packages returns 401 for Mondrian and olap4j.
+**Refs:** #1914, #2082
 
 ## 2026-10-06 — feature/823-drillthrough-firstrowset-toggle — merged latest development for PR #2042
 **Was doing:** merged development at ccb56fa82, retaining both session-summary entries; UI check and build passed, but local Vitest stalled and Java/Maven are unavailable.

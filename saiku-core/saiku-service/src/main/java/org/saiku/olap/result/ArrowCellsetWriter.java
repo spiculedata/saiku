@@ -45,6 +45,7 @@ import org.olap4j.metadata.Hierarchy;
 import org.olap4j.metadata.Level;
 import org.olap4j.metadata.Member;
 import org.saiku.olap.query2.ThinQuery;
+import org.saiku.olap.util.QueryGuardrails;
 import org.saiku.olap.util.formatter.CellPropertyExtractor;
 
 /**
@@ -97,7 +98,12 @@ public final class ArrowCellsetWriter {
         CellDataMatrix data = CellDataMatrix.of(cellSet, shape);
         long started = System.currentTimeMillis();
 
-        try (BufferAllocator allocator = new RootAllocator()) {
+        // saiku#1914: bounded allocator. This used to be `new RootAllocator()` —
+        // Long.MAX_VALUE — so a crossjoin producing a huge cellset could allocate
+        // off-heap without limit (CWE-770). The budget is saiku.olap.arrow.max.bytes
+        // (default 256 MiB); exceeding it throws OutOfMemoryException from Arrow,
+        // which the caller already surfaces as a query failure.
+        try (BufferAllocator allocator = new RootAllocator(QueryGuardrails.arrowAllocatorBytes())) {
             AtomicLong dictIdSeq = new AtomicLong(1L);
             Map<String, Long> dictIds = new LinkedHashMap<>();
             List<Field> fields = buildFields(shape, data, dictIdSeq, dictIds);
