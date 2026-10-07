@@ -75,6 +75,10 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-10-07 — feature/1427-semantic-layer-sync — merged development for PR #2062
+**Was doing:** merged development at 4fb7b66c1, keeping the semantic export guidance and both newer AGENTS.md entries; the exporter tests and Spotless passed.
+**Now:** check PR #2062 CI after the push; local Maven test could not resolve private GitHub Packages dependencies (HTTP 401).
+**Refs:** #1427, #2062
 ## 2026-10-07 — feature/1393-ossie-role-security — merged development for PR #2057
 **Was doing:** merged development at 4fb7b66c1, retained every changelog entry, applied Spotless formatting, and fixed the 403 response that leaked a datasource name in CI.
 **Now:** check PR #2057 CI after the fix; local Maven verification cannot reach the authenticated GitHub Packages dependencies.

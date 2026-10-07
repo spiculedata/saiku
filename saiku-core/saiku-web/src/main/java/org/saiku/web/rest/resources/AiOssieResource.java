@@ -94,6 +94,9 @@ public class AiOssieResource {
 
     private final OssieAiSchemaProjector projector = new OssieAiSchemaProjector();
     private final OssieAiValidator validator = new OssieAiValidator();
+    /** Semantic Layer Sync (saiku#1427) — stateless, no Spring wiring needed (like the two above). */
+    private final org.saiku.service.export.semantic.SemanticExportService semanticExportService =
+            new org.saiku.service.export.semantic.SemanticExportService();
 
     public void setOssieDiscoverService(OssieDiscoverService s) {
         this.ossieDiscoverService = s;
@@ -455,6 +458,45 @@ public class AiOssieResource {
         } catch (Exception e) {
             log.error("Ossie ontology fetch failed for {}/{}", connectionName, modelName, e);
             return error("ontology fetch failed");
+        }
+    }
+
+    // -------------------------------------------------------------------
+    // GET /export/{connection}/{tool} — Semantic Layer Sync (saiku#1427)
+    // -------------------------------------------------------------------
+
+    /**
+     * Render a connection's Ossie model into a downloadable BI-tool artefact — {@code tool} is
+     * {@code tableau} (a {@code .tds} datasource file) or {@code superset} (a dataset-export
+     * {@code .zip}, the same shape {@code superset import-datasources} consumes). See
+     * {@link org.saiku.service.export.semantic.TableauTdsExporter} and
+     * {@link org.saiku.service.export.semantic.SupersetDatasetYamlExporter} for exactly what each
+     * format does and does not carry over (notably: no live warehouse credentials — the analyst
+     * completes the connection locally).
+     */
+    @GET
+    @Path("/export/{connection}/{tool}")
+    @Produces({MediaType.APPLICATION_XML, "application/zip"})
+    public Response exportSemanticModel(
+            @PathParam("connection") String connectionName, @PathParam("tool") String tool) {
+        if (ossieDiscoverService == null) {
+            return error("Ossie discover not wired");
+        }
+        try {
+            OssieModelDto semantic = ossieDiscoverService.getModel(connectionName);
+            org.saiku.service.export.semantic.SemanticExportResult result =
+                    semanticExportService.export(semantic, tool);
+            return Response.ok(result.getContent())
+                    .type(result.getContentType())
+                    .header("Content-Disposition", "attachment; filename=\"" + result.getFilename() + "\"")
+                    .build();
+        } catch (org.saiku.service.export.semantic.SemanticExportException e) {
+            return badRequest("tool", e.getMessage(), List.of("tableau", "superset"));
+        } catch (IllegalArgumentException e) {
+            return badRequest("connection", e.getMessage(), List.of());
+        } catch (Exception e) {
+            log.error("Ossie semantic export failed for connection='{}' tool='{}'", connectionName, tool, e);
+            return error("semantic export failed: " + e.getMessage());
         }
     }
 
