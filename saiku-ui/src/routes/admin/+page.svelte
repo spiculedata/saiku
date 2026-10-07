@@ -9,9 +9,11 @@
 	import EvalsAdmin from '$lib/views/admin/EvalsAdmin.svelte';
 	import AgentSpacesAdmin from '$lib/views/admin/AgentSpacesAdmin.svelte';
 	import ApiAccessAdmin from '$lib/views/admin/ApiAccessAdmin.svelte';
+	import RolesAdmin from '$lib/views/admin/RolesAdmin.svelte';
 	import LoginForm from '$lib/views/LoginForm.svelte';
 
-	type Tab = 'users' | 'datasources' | 'schemas' | 'logs' | 'stats' | 'evals' | 'spaces' | 'api';
+	type Tab =
+		'users' | 'roles' | 'datasources' | 'schemas' | 'logs' | 'stats' | 'evals' | 'spaces' | 'api';
 	let tab = $state<Tab>('users');
 </script>
 
@@ -32,6 +34,12 @@
 				role="tab"
 				class:active={tab === 'users'}
 				onclick={() => (tab = 'users')}>{i18n.t('admin.tabs.users')}</button
+			>
+			<button
+				type="button"
+				role="tab"
+				class:active={tab === 'roles'}
+				onclick={() => (tab = 'roles')}>{i18n.t('admin.tabs.roles')}</button
 			>
 			<button
 				type="button"
@@ -73,6 +81,8 @@
 		<section class="flex-1 overflow-auto p-6">
 			{#if tab === 'users'}
 				<UsersAdmin />
+			{:else if tab === 'roles'}
+				<RolesAdmin />
 			{:else if tab === 'datasources'}
 				<DatasourcesAdmin />
 			{:else if tab === 'schemas'}

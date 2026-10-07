@@ -40,9 +40,20 @@ mode ships a self-contained H2 + FoodMart cube — drag fields onto rows, column
 or filters and the SPA writes MDX for you.
 
 > **For a real deployment**, drop `SAIKU_DEMO=true` and set an admin password:
-> `-e SAIKU_ADMIN_PASSWORD='a-strong-password'`. Saiku **refuses to start** on the
-> default `admin`/`admin` once it's network-reachable, so one of those two is
-> required.
+> `-e SAIKU_ADMIN_PASSWORD='a-strong-password'` (or
+> `-e SAIKU_ADMIN_PASSWORD_FILE=/run/secrets/saiku-admin-password`). Saiku
+> **refuses to start** on the default `admin`/`admin` once it's network-reachable,
+> so one of those two is required — and the password must itself clear the policy
+> (≥ 12 characters, not a well-known weak password), so `SAIKU_ADMIN_PASSWORD=admin`
+> is refused too.
+
+> **Demo fixtures follow demo mode** (saiku#1953). A boot without `SAIKU_DEMO=true`
+> stages **no** demo content: no FoodMart/Bank/TPC-DS/Flights schemas, no H2
+> fixtures, no datasource descriptors — a fresh home comes up with an empty
+> datasource list. Set `SAIKU_SEED=true` to install the fixtures on a
+> non-demo boot, or `SAIKU_DEMO=true SAIKU_SEED=false` for the demo login against
+> your own cubes. Seeding is seed-if-absent, so an existing `saiku-home` is never
+> rewritten or emptied.
 
 > **The container runs as a non-root user** (uid/gid `10001:10001`). A *fresh*
 > named/anonymous volume works out of the box. Any **pre-existing** `saiku-home`
@@ -167,6 +178,18 @@ Two guardrails an operator is expected to tune, both documented in
 - **AI ask cost budget** — per-principal and per-instance daily ceilings
   charged from the token usage the provider actually reports, plus a cap on
   concurrent chained asks (`saiku.ai.budget.*`).
+
+## Quality
+
+Quality signals — per-module test-count and line-coverage floors, UI type
+checks, UI tests — are declared as files (`.github/test-floors.json`,
+`.coverage-thresholds.json`) and **gated on every PR** by the `ci` workflow.
+A separate weekly run, `.github/workflows/quality-report.yml`, renders the same
+signals as one Markdown **quality dashboard** in its job summary: where each
+module stands, and by how much headroom. That run is read-only and is not a
+gate — the gates stay in CI. See [`docs/quality.md`](docs/quality.md). For how
+CI, the merge queue, images, previews and the demo deployment fit together, see
+[`docs/ci-overview.md`](docs/ci-overview.md).
 
 ## Build from source
 

@@ -1,0 +1,91 @@
+name: acceptance
+
+# Runs a PR's `acceptance/<issue>/` specs against a base URL and publishes the
+# result into ci-feedback.json. Ported from spiculedata/saiku-cloud (#1382) and
+# adapted to Saiku's REST surface (docs/acceptance-specs.md).
+#
+# The GATE is `ci / acceptance convention` inside ci.yml: a PR that closes issue
+# N must ship acceptance/N/spec.json. This workflow EXECUTES those specs, which
+# needs somewhere to execute them (a deployed Saiku with the FoodMart demo). It is
+# driven by repository variables and degrades honestly: with no
+# `ACCEPTANCE_BASE_URL` configured the specs are recorded `not-run` with a reason,
+# never `pass`, and the job is green.
+#
+# SECURITY. `pull_request` (never `pull_request_target`), read-only token. The
+# runner executes the PR's own spec files, which is the point, so this job holds
+# nothing but the acceptance account. The target is the PUBLIC demo (demo.saiku.bi),
+# whose login is public (admin/admin), so SAIKU_ACCEPTANCE_USER / _PASSWORD default to
+# it and a fork PR can run login-dependent specs too. To aim acceptance at a PRIVATE
+# instance, set them as repository SECRETS (they override the default, are masked in
+# logs and are withheld from fork PRs, whose login-dependent specs then fail rather
+# than leak); NEVER as repository variables, which are not masked. Only the base URL
+# is a variable. Use a low-privilege account on a disposable or demo instance, never a
+# production admin: a same-repo PR author can read what the job can. The spec commands run with an
+# allow-listed environment and api specs may only talk to the base URL's origin
+# (see the header of .github/scripts/acceptance-runner.mjs).
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: acceptance-specs-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  specs:
+    name: acceptance / specs
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+
+      - name: Run the specs
+        env:
+          ACCEPTANCE_BASE_URL: ${{ vars.ACCEPTANCE_BASE_URL }}
+          # Default to the PUBLIC demo login (demo.saiku.bi runs SAIKU_DEMO=true with admin/admin, the
+          # same pair the deploy smoke test uses), so there is nothing to keep secret and fork PRs
+          # can run login-dependent specs. A repository SECRET overrides it for a private target.
+          SAIKU_ACCEPTANCE_USER: ${{ secrets.SAIKU_ACCEPTANCE_USER || 'admin' }}
+          SAIKU_ACCEPTANCE_PASSWORD: ${{ secrets.SAIKU_ACCEPTANCE_PASSWORD || 'admin' }}
+        run: |
+          if [ -z "${ACCEPTANCE_BASE_URL:-}" ]; then
+            echo "::notice::ACCEPTANCE_BASE_URL is not configured; the specs are recorded as not-run."
+          fi
+          node .github/scripts/acceptance-runner.mjs run --all \
+            --out acceptance-results.json --feedback ci-feedback.json
+
+      - name: Summarise
+        if: always()
+        run: |
+          {
+            echo '## Acceptance specs'
+            echo
+            echo '```json'
+            cat acceptance-results.json 2>/dev/null || echo '{}'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload results and the updated ci-feedback.json
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: acceptance-results-${{ github.event.pull_request.number }}
+          path: |
+            acceptance-results.json
+            ci-feedback.json
+          if-no-files-found: warn
+          retention-days: 14

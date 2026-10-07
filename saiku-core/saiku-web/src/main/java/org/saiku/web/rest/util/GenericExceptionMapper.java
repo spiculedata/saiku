@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.saiku.service.olap.ai.AiValidationException;
+import org.saiku.service.util.exception.SaikuAccessDeniedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -59,6 +60,12 @@ import org.slf4j.LoggerFactory;
  *       case on {@code BasicRepositoryResource2}; surfaced as a 400 client
  *       error with a generic message (preserves saiku#865 behaviour without
  *       leaking the NPE detail).</li>
+ *   <li>{@link SaikuAccessDeniedException} — saiku#1973: the caller IS
+ *       authenticated but is not authorised for the datasource they named
+ *       (the #1968 fail-closed denial). That is a 403, not one of our faults,
+ *       so it gets its own fixed, information-free envelope instead of the
+ *       opaque 500 — which was the tell-tale sign of a server fault rather
+ *       than an authorization decision.</li>
  * </ul>
  */
 @Provider
@@ -121,7 +128,24 @@ public class GenericExceptionMapper implements ExceptionMapper<Throwable> {
                     .build();
         }
 
-        // 5) Everything else: log the full stack server-side keyed by a
+        // 5) saiku#1973 — access denied on a datasource (saiku#1968 fail-closed
+        //    denial) is an authorization decision, not an internal fault: 403
+        //    with a fixed body. The thrown message names the datasource, which
+        //    the caller has no business learning from the denial path, so it is
+        //    logged server-side and never echoed.
+        SaikuAccessDeniedException denied = findAccessDenied(t);
+        if (denied != null) {
+            log.warn("Access denied on datasource [detail={}]", denied.getMessage());
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("status", "FORBIDDEN");
+            body.put("error", "Access denied");
+            return Response.status(Response.Status.FORBIDDEN)
+                    .type(MediaType.APPLICATION_JSON)
+                    .entity(body)
+                    .build();
+        }
+
+        // 6) Everything else: log the full stack server-side keyed by a
         //    correlation id and return an information-free 500. The body
         //    carries no message, class name, cause chain, or stack.
         String ref = UUID.randomUUID().toString();
@@ -134,5 +158,23 @@ public class GenericExceptionMapper implements ExceptionMapper<Throwable> {
                 .type(MediaType.APPLICATION_JSON)
                 .entity(body)
                 .build();
+    }
+
+    /**
+     * Walk the cause chain for a {@link SaikuAccessDeniedException} (saiku#1973).
+     *
+     * <p>By exception TYPE, never by message text — the denial message is the one string we are
+     * explicitly not honouring. The walk matters because a resource (or an AOP proxy) may rewrap the
+     * denial before it reaches the mapper, and a denial that degraded into an opaque 500 purely
+     * because of a wrapper is exactly the inconsistency this issue is about. Self-referencing cause
+     * chains terminate the loop.
+     */
+    static SaikuAccessDeniedException findAccessDenied(Throwable t) {
+        for (Throwable c = t; c != null; c = c.getCause() == c ? null : c.getCause()) {
+            if (c instanceof SaikuAccessDeniedException denied) {
+                return denied;
+            }
+        }
+        return null;
     }
 }

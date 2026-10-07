@@ -43,6 +43,7 @@ Plus the long-tail:
 | `GET /saiku/api/ai/query/{queryId}/drillthrough/export/csv` | Same params as the JSON drillthrough (`position`, `returns`, `maxrows`, `firstRowset`); streams `text/csv` with `Content-Disposition: attachment` for direct download (saiku#1051). |
 | `POST /saiku/api/ai/anomaly` | Run a query, then flag anomalous points along a time axis. Returns the typed records response with an `anomaly:{score,expected,direction}` block on each flagged cell, plus an `anomaly` summary (`method`, `threshold`, `anomalyCount`) (saiku#907). |
 | `POST /saiku/api/ai/forecast` | Run a time-series query, then project `horizon` future points with prediction intervals. Returns the typed records response (observed data untouched) plus a `forecast` block keyed by measure (saiku#908). |
+| `POST /saiku/api/ai/describe-query` | Tier-1 (schema-only): suggest a short title + one-line description for a query's structure — measures, rows, columns, slicer. Never executes the query; no data values leave the box (saiku#909). |
 
 All routes require an authenticated session (form login at `POST /login`
 on the launcher; same auth as the regular UI).
@@ -887,6 +888,50 @@ appends these as a dashed continuation with a shaded confidence band.
 
 ---
 
+## Step 8 — tile titles/descriptions: `POST /ai/describe-query` (saiku#909)
+
+Tier-1 (schema-only): suggests a short title and one-sentence description
+for the dashboard tile a query will render as, based purely on the query's
+**structure** — selected measures, row/column axes, slicer — never on data
+values or aggregated results. The query is validated and resolved against
+the live schema exactly like `/ai/query`, but is never executed.
+
+```jsonc
+// POST /ai/describe-query
+{
+  "query": { /* a normal /query request body */ }
+}
+```
+
+```jsonc
+// 200
+{
+  "suggestedTitle": "Sales by region, last 4 quarters",
+  "suggestedDescription": "Compares quarterly sales across geographic regions for the trailing 12 months."
+}
+```
+
+Notes:
+
+- Gated at the `schema-only` policy tier — the least-trusted, default
+  tier — so it stays available under every `ai.policy` setting.
+- Respects saiku#902 PII annotations: any measure or level tagged
+  `saiku.semantic.pii=true` that the query touches has its member captions
+  replaced with `[REDACTED]` before the structure summary is built. The
+  axis/filter shape (dimension, hierarchy, level) is kept so the model
+  still understands "this breaks down by X" — it just never sees which
+  members.
+- `400 VALIDATION_ERROR` on a malformed request or an unresolvable name —
+  same envelope as `/ai/query`.
+- `503` with `{"status":"AI_NOT_CONFIGURED","error":"AI not configured"}`
+  when no LLM upstream is configured.
+- `502` with `{"status":"AI_UPSTREAM_ERROR", ...}` on a transport / upstream
+  failure.
+- Every call is audit-logged (saiku#906), same as the rest of the `/ai/*`
+  surface.
+
+---
+
 ## Request body — every option
 
 ```jsonc
@@ -1248,9 +1293,16 @@ file consumed by Spring.
 saiku.ai.ask.provider = anthropic
 # env ANTHROPIC_API_KEY = sk-ant-...
 
-# openai (or any OpenAI-compatible host — vLLM, Ollama, Together, LiteLLM)
+# openai (or any OpenAI-compatible host — vLLM, Together, LiteLLM)
 saiku.ai.ask.provider = openai
 # env OPENAI_API_KEY    = sk-...
+
+# ollama (saiku#904) — local/self-hosted Ollama. NO api key needed — Ollama
+# doesn't check one. This is the whole property list for the common case:
+# data never leaves the deployment's own trust boundary.
+saiku.ai.ask.provider = ollama
+# saiku.ai.ask.model    = llama3.1:8b-instruct-q4_K_M   # optional; default llama3.1
+# saiku.ai.ask.endpoint = http://my-ollama-host:11434/v1/chat/completions  # optional; default localhost:11434
 
 # azure-openai (saiku#1431) — Azure OpenAI Service. Requires an endpoint.
 saiku.ai.ask.provider = azure-openai
@@ -1266,9 +1318,26 @@ saiku.ai.ask.apiKey   = sk-...   # explicit override of the env var
 
 Provider defaults: `anthropic` → `claude-sonnet-4-6`,
 `openai` → `gpt-4o-mini` against `https://api.openai.com/v1/chat/completions`,
+`ollama` → `llama3.1` against `http://localhost:11434/v1/chat/completions`,
 `azure-openai` → no default endpoint (must be configured explicitly;
 provider refuses to construct otherwise so the key can't accidentally
 leak to the wrong host).
+
+`GET /saiku/info/diagnostics` (saiku#904) reports the resolved provider,
+model, endpoint and a live reachability probe for both this ask layer and
+the schema-generation enrichment pipeline (`saiku.schemagen.llm.provider`,
+which accepts the same `openai`/`ollama` values) — never the API key — so
+an operator can confirm the wiring without running a query:
+
+```json
+{
+  "ask": {"enabled": true, "provider": "ollama", "model": "llama3.1",
+          "endpoint": "http://localhost:11434/v1/chat/completions",
+          "configured": true, "reachable": true},
+  "schemaGen": {"enabled": true, "provider": "noop", "model": null,
+                "endpoint": null, "configured": false, "reachable": null}
+}
+```
 
 ### Bring-your-own LLM (saiku#1431)
 
@@ -1280,8 +1349,13 @@ BYOLLM shapes:
 | Shape                    | Provider          | Endpoint                                                                              | Auth header               |
 |--------------------------|-------------------|---------------------------------------------------------------------------------------|---------------------------|
 | Azure OpenAI Service     | `azure-openai`    | `https://<resource>.openai.azure.com/openai/deployments/<deployment>/chat/completions?api-version=<v>` | `api-key: <key>`         |
-| Self-hosted / OpenAI-compat proxy (vLLM, Ollama, LiteLLM, Together) | `openai`          | any URL that speaks OpenAI's Chat Completions API                                     | `Authorization: Bearer …` |
+| Local/self-hosted Ollama (saiku#904) | `ollama`          | `http://<host>:11434/v1/chat/completions` (default: localhost)                       | none required             |
+| Self-hosted / OpenAI-compat proxy (vLLM, LiteLLM, Together) | `openai`          | any URL that speaks OpenAI's Chat Completions API                                     | `Authorization: Bearer …` |
 | AWS Bedrock              | `openai` via [LiteLLM](https://docs.litellm.ai/) proxy | LiteLLM in front of Bedrock (`https://litellm.internal/v1/chat/completions`) | `Authorization: Bearer …` (LiteLLM handles SigV4 upstream) |
+
+`ollama` uses the same request-building code path as `openai` (Ollama's
+`/v1/chat/completions` is OpenAI-compatible) but skips the API-key
+requirement, since a local instance has nothing to check it against.
 
 The native `azure-openai` adapter takes care of the two Azure-specific
 things (deployment-name-in-URL and `api-key` header) so operators don't

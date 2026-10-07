@@ -1,0 +1,29 @@
+{
+  "issue": 2162,
+  "title": "A signed snapshot reference always carries a real expiry: the Builder no longer defaults to \"never\", validate() refuses an unset or never expiring value, and the token parser no longer invents one",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "a SnapshotReference assembled with the Builder and never calling expiresAtEpochMillis(...)",
+      "then": "the expiry field is the \"unset\" sentinel, not Long.MAX_VALUE, and signing is refused instead of minting a token that never expires"
+    },
+    {
+      "id": "C2",
+      "given": "a reference whose expiry is unset (0), negative, or the old never-expires sentinel",
+      "then": "validate() — called on both sign and verify — refuses it with \"snapshot reference expiry is required\""
+    },
+    {
+      "id": "C3",
+      "given": "a token payload with no 'e=' line, or one carrying e=9223372036854775807",
+      "then": "it fails closed rather than defaulting to a permanent capability: the parser's sentinel is \"unset\" and the expiry guard decides"
+    },
+    {
+      "id": "C4",
+      "given": "a reference with a real future expiry, and one whose expiry has already passed",
+      "then": "the first still signs and verifies, and the second is still refused as expired — the change narrows nothing a legitimate reference relied on"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}

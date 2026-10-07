@@ -7,6 +7,7 @@
 	import { i18n } from '$lib/stores/i18n.svelte';
 	import { platform } from '$lib/stores/platform.svelte';
 	import ConfirmModal from '$lib/modals/ConfirmModal.svelte';
+	import OssieImportModal from '$lib/modals/OssieImportModal.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import { FormField, Skeleton } from '$lib/design-system';
 	import {
@@ -20,6 +21,10 @@
 	let error = $state<string | null>(null);
 	let editing = $state<AdminDatasource | null>(null);
 	let deleting = $state<AdminDatasource | null>(null);
+	// saiku#1730: import a vendor semantic model (LookML / dbt). The import modal
+	// converts + validates and writes the YAML; registering the connection stays
+	// here, so the OSSIE form opens pre-filled with the path it wrote.
+	let importing = $state(false);
 
 	// saiku#1636: on a public demo (SAIKU_DEMO), visitors must not be able to
 	// create / edit / delete datasources — a broken connection string takes down
@@ -58,6 +63,23 @@
 			schemaName: '',
 			ossieYaml: ''
 		};
+	}
+
+	/**
+	 * saiku#1730: the import wrote the Ossie YAML; open the new-datasource form on the
+	 * OSSIE branch with the path (and the model name) already filled in, leaving only the
+	 * warehouse JDBC URL + credentials for the operator.
+	 */
+	function onImported(path: string, modelName: string) {
+		importing = false;
+		startNew();
+		if (!editing) return;
+		editing.type = 'OSSIE';
+		editing.connectiontype = 'OSSIE';
+		editing.driver = '';
+		editing.ossieYaml = path;
+		editing.schemaName = modelName;
+		editing.name = modelName;
 	}
 
 	/**
@@ -145,7 +167,14 @@
 		{#if demoMode}
 			<span class="text-xs text-fg-muted">Read-only in demo mode</span>
 		{:else}
-			<Button onclick={startNew}>{i18n.t('admin.addDatasource')}</Button>
+			<div class="flex gap-2">
+				<Button
+					variant="outline"
+					onclick={() => (importing = true)}
+					data-testid="import-model-button">Import model</Button
+				>
+				<Button onclick={startNew}>{i18n.t('admin.addDatasource')}</Button>
+			</div>
 		{/if}
 	</header>
 	{#if error}<p class="callout callout--danger">{error}</p>{/if}
@@ -256,6 +285,8 @@
 		<Button onclick={save}>Save</Button>
 	{/snippet}
 </Modal>
+
+<OssieImportModal open={importing} onRegistered={onImported} onCancel={() => (importing = false)} />
 
 <ConfirmModal
 	title="Delete datasource"
