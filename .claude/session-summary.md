@@ -79,6 +79,10 @@ pushed down; normal sessions append and the history stays useful.
 **Was doing:** merged development at 4fb7b66c1, retained every changelog entry, applied Spotless formatting, and fixed the 403 response that leaked a datasource name in CI.
 **Now:** check PR #2057 CI after the fix; local Maven verification cannot reach the authenticated GitHub Packages dependencies.
 **Refs:** #1393, #2057
+## 2026-10-07 — feature/measure-lineage-view — merged development for PR #2056
+**Was doing:** merged development into the existing lineage branch, retaining both lineage and role-admin bean wiring.
+**Now:** check PR #2056 CI after the push; local Java tests could not compile because GitHub Packages returned 401 for custom dependencies.
+**Refs:** #1120, #2056
 ## 2026-10-07 — feature/1103-embed-chart-dashboard-split — merged latest development for PR #2051
 **Was doing:** merged development at 4fb7b66c1, retaining every handoff entry; embed type check, lint, 71 focused tests, bundle builds, and package staging passed.
 **Now:** check PR #2051 CI after the push.
