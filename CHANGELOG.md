@@ -5,7 +5,41 @@ All notable changes to Saiku are documented here. This project follows
 
 ## Unreleased
 
+### Known issues
+
+- **MySQL / MariaDB on the Calcite SQL path** (saiku#1886, reported against
+  `pentaho:mondrian:4.8.1.33`/`.34` on MySQL 8.3). Two independent causes,
+  **both in the `spiculedata/mondrian-saiku` fork** — Saiku only consumes the
+  published `pentaho:mondrian` artifact, so a fix needs a new fork build and a
+  `saiku-bom` version bump here:
+
+  1. a `<View>` whose SQL uses MySQL's JSON operators (`->>`, `->`) fails to
+     parse on the Calcite path with `ParseException: Encountered "->"`, even
+     with `dialect="generic"` on a statement MySQL itself will execute;
+  2. `CalciteDialectMap.forceQuoting()` rebuilds a bare ANSI `SqlDialect` and
+     drops the auto-detected product dialect, so generated SQL carries `"`
+     quoting (and ANSI `ORDER BY … NULLS LAST`) that MySQL rejects with a
+     bare `SQLSyntaxErrorException`.
+
+  Workarounds: `-Dmondrian.calcite.strict=false` (global and blunt) or
+  `-Dmondrian.backend=legacy` (per-process).
+
+  The documentation previously listed MySQL/MariaDB, Oracle and MSSQL as
+  natively mapped dialects. They are not — only a Tier-1 subset in
+  `CalciteDialectMap` is; the rest go through `forceQuoting()` and lose their
+  product dialect. `docs/mondrian-fork.md` and `AGENTS.md` now document the
+  tiers and the defect.
+
 ### Added
+
+- **`POST /ai/describe-query` — AI-suggested tile titles and descriptions**
+  (Tier-1, schema-only; saiku#909). Given a query's structure — selected
+  measures, row/column axes, slicer — but no data values, suggests a short
+  title and one-line description for the dashboard tile it will render as.
+  Gated at the `schema-only` policy tier (the least-trusted, default tier);
+  respects saiku#902 PII annotations by redacting member captions on any
+  PII-flagged level before they reach the prompt. 503s with a clear message
+  when no LLM upstream is configured.
 
 - **`ai.provider=ollama` — local/self-hosted model support for the AI ask layer
   and schema-generation enrichment.** Both now accept `ollama` as a first-class
@@ -45,6 +79,42 @@ All notable changes to Saiku are documented here. This project follows
   headers differ. (saiku#1950)
 
 ### Security
+
+- **`sql-serve` no longer exposes an unauthenticated SQL proxy on every interface**
+  (CWE-306 / CWE-1327, saiku#1910). The Avatica and Postgres-wire endpoints now
+  bind to `127.0.0.1` by default; a new `--bind` option moves them, and a
+  non-loopback bind is refused unless `--auth-user` plus a password
+  (`--auth-password-file` or `SAIKU_SQL_AUTH_PASSWORD`) is set. With it, Avatica
+  requires HTTP basic auth and PG-wire requires SCRAM-SHA-256.
+  `--allow-unauthenticated-remote` overrides the refusal for isolated networks
+  and prints a warning banner. The warehouse password can now come from
+  `--jdbc-password-file` or `SAIKU_SQL_JDBC_PASSWORD`; `--jdbc-password` still
+  works but warns, because it is visible in the process list. Neither endpoint
+  speaks TLS, so put a TLS-terminating proxy in front of a network-facing one.
+
+  **Upgrade action:** clients that reached `sql-serve` from another host stop
+  connecting. Add `--bind 0.0.0.0 --auth-user <name>` with a password file, and
+  give clients those credentials (`authentication=BASIC;avatica_user=…;avatica_password=…`
+  for Avatica, the normal user/password for Postgres clients).
+- **The default-credential boot gate now checks the password, not the hash**
+  (CWE-1392 / CWE-521, saiku#1915). `enforceDefaultCredentialPolicy` compared
+  the stored bcrypt **string** against the two shipped defaults, so any
+  password supplied through `SAIKU_ADMIN_PASSWORD` sailed past the gate: bcrypt
+  salts are random, so `SAIKU_ADMIN_PASSWORD=admin` produced a new hash,
+  `isDefaultAdminValue` returned false, the boot proceeded with `admin`/`admin`
+  and the post-boot warning was silenced — defeating the control with the exact
+  credential it claims to block. A re-encoded `admin` hash (in the WAR or in an
+  external `users.properties`) is now recognised as the default, and a supplied
+  password must additionally clear a strength policy: **≥ 12 characters**, not
+  a well-known weak password (`admin`, `password`, `changeme`, `12345678`, …)
+  and not equal to the username. The hash-side denylist is matched with bcrypt
+  `matches` against an operators-supplied `users.properties`, where length
+  cannot be asserted. New `SAIKU_ADMIN_PASSWORD_FILE` reads the password from a
+  secret-manager mount (trailing newline stripped). Escape hatches, unchanged in
+  spirit: `SAIKU_ALLOW_WEAK_ADMIN_PASSWORD=true`, plus the existing
+  `SAIKU_ALLOW_DEFAULT_ADMIN=true` / `SAIKU_DEMO=true` (so the local IT harness
+  and demo installs are unaffected). Refused boots print the same `FATAL:` fix-it
+  block and exit non-zero.
 
 - **Bare saved-query embeds scope guest slicer overrides to the saved
   query's own FILTER axis (CWE-863, presentation scope, saiku#1946).** A
@@ -154,6 +224,39 @@ All notable changes to Saiku are documented here. This project follows
   `securityContext: { runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001 }` on
   the pod so the mounted volume is group-owned by the runtime user.
 
+- **Secret files under `saiku-home` are now created 0600 and written
+  atomically** (CWE-732 / CWE-377, saiku#1919 item 18c). `conf/secret.key`
+  (the per-install AES key), `mail-config.json` (encrypted SMTP password),
+  `mail-consent.json` and the Jetty `sessions/` store (serialised
+  `SecurityContext` — a session file is a bearer credential) were written with
+  default permissions and, in the key's case, tightened *after* the write, so
+  on a default-umask host they were world-readable for at least the duration of
+  the write and forever where the umask was wide. A new `SecretFileStore`
+  creates every one of them already owner-only (POSIX `0600`, or an owner-only
+  ACL on Windows) and moves a restricted temp sibling into place, so a reader
+  never sees a half-written file. The `sessions/` directory itself is now
+  `0700`.
+
+  **Behaviour change — a key that exists but cannot be used now stops startup
+  instead of rotating silently.** Previously an unreadable or corrupt
+  `conf/secret.key` (e.g. a `saiku-home` that changed owner) was quietly
+  replaced with a fresh random key, which made every stored `v2:` datasource
+  password permanently undecryptable with no log line. Startup now fails with an
+  ERROR naming the file, and a key that cannot be *persisted* (read-only home)
+  is fatal for the same reason. Fix the ownership/permissions of `saiku-home`,
+  or restore `conf/secret.key` from backup. Set `-Dsaiku.home` (or
+  `SAIKU_DS_ENCRYPTION_KEY`) in production: with `saiku.home` unset the key
+  still falls back to `java.io.tmpdir` — now a WARN instead of silence.
+### Added
+
+- **Role management for Mondrian role-based security** (saiku#779). A new
+  **Roles** admin tab and `/rest/saiku/admin/roles` API show which Spring role
+  grants which Mondrian role on which datasource, and who holds it. You can
+  preview what a user, or an arbitrary set of roles, gets on every datasource
+  ("test as"). The preview runs the same resolution code as enforcement,
+  including the saiku#1968 fail-closed rule. Grants on `lookup`-mode
+  datasources can be edited in place. See `docs/ROLE-SECURITY.md`.
+
 ## 4.8.0 — 2026-09-15
 
 Minor release, and a **security release** — nine hardening fixes close an
@@ -257,6 +360,12 @@ Two changes are visible behaviour changes for API clients — see **Breaking**.
 
 ### Added
 
+- **Hierarchy-aware drill down / drill up on the pivot grid.** Clicking the caret
+  on a row header now injects that member's children as nested rows directly
+  beneath it — `GET /rest/saiku/api/query/{name}/drill/{rowIndex}` — instead of
+  the old "zoom in" behaviour of replacing the whole level. Clicking again
+  (`GET .../drillup/{rowIndex}`) collapses just that member's children, leaving
+  any other independently drilled-down rows expanded. (saiku#776)
 - **Cube Designer — query preview.** "Try a query" now runs against the schema
   you are editing, before it is saved. The proposed XML is held in memory and the
   connection reuses the datasource's own JDBC settings, so the preview hits the

@@ -49,6 +49,7 @@ import org.saiku.olap.dto.SimpleCubeElement;
 import org.saiku.olap.dto.resultset.AbstractBaseCell;
 import org.saiku.olap.dto.resultset.CellDataSet;
 import org.saiku.olap.dto.resultset.MemberCell;
+import org.saiku.olap.query2.ThinNamedSet;
 import org.saiku.olap.query2.ThinQuery;
 import org.saiku.olap.result.ArrowCellsetWriter;
 import org.saiku.olap.result.ArrowDrillthroughWriter;
@@ -155,6 +156,73 @@ public class Query2Resource {
         } catch (Exception e) {
             log.error("Cannot delete query (" + queryName + ")", e);
             throw new WebApplicationException(e);
+        }
+    }
+
+    /**
+     * List the named sets defined on a query's model.
+     * @summary List named sets.
+     * @param queryName The query name
+     * @return the named sets currently on the query model, or HTTP 404 if the query is unknown.
+     */
+    @GET
+    @Produces({"application/json"})
+    @Path("/{queryname}/sets")
+    public Response getNamedSets(@PathParam("queryname") String queryName) {
+        try {
+            return Response.ok(thinQueryService.getNamedSets(queryName)).build();
+        } catch (SaikuServiceException e) {
+            return Response.status(Status.NOT_FOUND)
+                    .entity(Map.of("error", e.getMessage()))
+                    .build();
+        }
+    }
+
+    /**
+     * Add a named set to a query's model (saiku#824).
+     * @summary Add named set.
+     * @param queryName The query name
+     * @param namedSet The named set to append
+     * @return the appended named set (HTTP 201), HTTP 400 on a validation failure,
+     *         or HTTP 404 if the query is unknown.
+     */
+    @POST
+    @Consumes({"application/json"})
+    @Produces({"application/json"})
+    @Path("/{queryname}/sets")
+    public Response addNamedSet(@PathParam("queryname") String queryName, ThinNamedSet namedSet) {
+        try {
+            ThinNamedSet added = thinQueryService.addNamedSet(queryName, namedSet);
+            return Response.status(Status.CREATED).entity(added).build();
+        } catch (IllegalArgumentException e) {
+            return Response.status(Status.BAD_REQUEST)
+                    .entity(Map.of("error", e.getMessage()))
+                    .build();
+        } catch (SaikuServiceException e) {
+            return Response.status(Status.NOT_FOUND)
+                    .entity(Map.of("error", e.getMessage()))
+                    .build();
+        }
+    }
+
+    /**
+     * Remove a named set from a query's model by name (saiku#824).
+     * @summary Remove named set.
+     * @param queryName The query name
+     * @param setName The named set's name
+     * @return HTTP 410 (Gone) on success, or HTTP 404 if the query or named set is unknown.
+     */
+    @DELETE
+    @Produces({"application/json"})
+    @Path("/{queryname}/sets/{setName}")
+    public Response deleteNamedSet(@PathParam("queryname") String queryName, @PathParam("setName") String setName) {
+        try {
+            thinQueryService.removeNamedSet(queryName, setName);
+            return Response.status(Status.GONE).build();
+        } catch (SaikuServiceException e) {
+            return Response.status(Status.NOT_FOUND)
+                    .entity(Map.of("error", e.getMessage()))
+                    .build();
         }
     }
 
@@ -882,6 +950,62 @@ public class Query2Resource {
         } catch (Exception e) {
             log.error("Cannot zoom in on query (" + queryName + ")", e);
             throw new WebApplicationException(e);
+        }
+    }
+
+    /**
+     * Drill down into a single row: injects the clicked member's children as nested rows
+     * directly beneath it and re-runs the query, leaving every other row untouched.
+     * @summary Drill down
+     * @param queryName The query name
+     * @param rowIndex The index of the row (on the last executed result's ROWS axis) to drill into
+     * @return The re-executed query result, with the member's children inserted beneath it
+     */
+    @GET
+    @Produces({"application/json"})
+    @Path("/{queryname}/drill/{rowindex}")
+    public Response drillDown(@PathParam("queryname") String queryName, @PathParam("rowindex") int rowIndex) {
+        if (log.isDebugEnabled()) {
+            log.debug("TRACK\t" + "\t/query/" + queryName + "/drill/" + rowIndex + "\tGET");
+        }
+        try {
+            QueryResult qr = RestUtil.convert(thinQueryService.drillDown(queryName, rowIndex));
+            org.saiku.service.util.QueryContext ctx = thinQueryService.getContext(queryName);
+            if (ctx != null) {
+                qr.setQuery(ctx.getOlapQuery());
+            }
+            return Response.ok(qr).type(MediaType.APPLICATION_JSON).build();
+        } catch (Exception e) {
+            log.error("Cannot drill down on query (" + queryName + ") row (" + rowIndex + ")", e);
+            return queryFailure(e);
+        }
+    }
+
+    /**
+     * Drill up: collapses a row previously expanded via {@link #drillDown}, removing the rows
+     * that were injected for its children.
+     * @summary Drill up
+     * @param queryName The query name
+     * @param rowIndex The index of the previously drilled-down parent row to collapse
+     * @return The re-executed query result, with the drilled-down children removed
+     */
+    @GET
+    @Produces({"application/json"})
+    @Path("/{queryname}/drillup/{rowindex}")
+    public Response drillUp(@PathParam("queryname") String queryName, @PathParam("rowindex") int rowIndex) {
+        if (log.isDebugEnabled()) {
+            log.debug("TRACK\t" + "\t/query/" + queryName + "/drillup/" + rowIndex + "\tGET");
+        }
+        try {
+            QueryResult qr = RestUtil.convert(thinQueryService.drillUp(queryName, rowIndex));
+            org.saiku.service.util.QueryContext ctx = thinQueryService.getContext(queryName);
+            if (ctx != null) {
+                qr.setQuery(ctx.getOlapQuery());
+            }
+            return Response.ok(qr).type(MediaType.APPLICATION_JSON).build();
+        } catch (Exception e) {
+            log.error("Cannot drill up on query (" + queryName + ") row (" + rowIndex + ")", e);
+            return queryFailure(e);
         }
     }
 

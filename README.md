@@ -40,9 +40,12 @@ mode ships a self-contained H2 + FoodMart cube — drag fields onto rows, column
 or filters and the SPA writes MDX for you.
 
 > **For a real deployment**, drop `SAIKU_DEMO=true` and set an admin password:
-> `-e SAIKU_ADMIN_PASSWORD='a-strong-password'`. Saiku **refuses to start** on the
-> default `admin`/`admin` once it's network-reachable, so one of those two is
-> required.
+> `-e SAIKU_ADMIN_PASSWORD='a-strong-password'` (or
+> `-e SAIKU_ADMIN_PASSWORD_FILE=/run/secrets/saiku-admin-password`). Saiku
+> **refuses to start** on the default `admin`/`admin` once it's network-reachable,
+> so one of those two is required — and the password must itself clear the policy
+> (≥ 12 characters, not a well-known weak password), so `SAIKU_ADMIN_PASSWORD=admin`
+> is refused too.
 
 > **Demo fixtures follow demo mode** (saiku#1953). A boot without `SAIKU_DEMO=true`
 > stages **no** demo content: no FoodMart/Bank/TPC-DS/Flights schemas, no H2

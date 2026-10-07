@@ -32,6 +32,7 @@ import org.saiku.olap.util.exception.SaikuOlapException;
 import org.saiku.service.ISessionService;
 import org.saiku.service.user.UserService;
 import org.saiku.service.util.exception.SaikuAccessDeniedException;
+import org.saiku.service.util.security.MondrianRolePolicy;
 import org.saiku.service.util.security.Usernames;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -306,66 +307,36 @@ public class SecurityAwareConnectionManager extends AbstractConnectionManager im
             throw new IllegalArgumentException("Cannot apply Security to NULL connection object");
         }
 
-        if (isDatasourceSecurity(datasource, ISaikuConnection.SECURITY_TYPE_SPRING2MONDRIAN_VALUE)) {
-            List<String> springRoles = getSpringRoles();
-            List<String> conRoles = getConnectionRoles(con);
-            String roleName = null;
-
-            for (String sprRole : springRoles) {
-                if (conRoles.contains(sprRole)) {
-                    if (roleName == null) {
-                        roleName = sprRole;
-                    } else {
-                        roleName += "," + sprRole;
-                    }
-                }
-            }
+        // saiku#779: resolution lives in MondrianRolePolicy so the admin role preview
+        // (/saiku/admin/roles/preview) runs exactly the code enforced here.
+        MondrianRolePolicy.Mode mode = MondrianRolePolicy.modeOf(datasource);
+        if (mode == MondrianRolePolicy.Mode.ONE2ONE || mode == MondrianRolePolicy.Mode.LOOKUP) {
+            List<String> resolved = MondrianRolePolicy.resolveMondrianRoles(
+                    mode,
+                    getSpringRoles(),
+                    mode == MondrianRolePolicy.Mode.ONE2ONE ? getConnectionRoles(con) : null,
+                    MondrianRolePolicy.mappingOf(datasource));
+            String roleName = String.join(",", resolved);
 
             if (StringUtils.isBlank(roleName)) {
-                // saiku#1968 (CWE-863): no Spring authority intersected the cube's roles. Deny a
-                // non-admin instead of falling through to setRoleName(null) = Mondrian root.
+                // saiku#1968 (CWE-863): no Spring authority intersected the cube's roles (one2one)
+                // or mapped to a Mondrian role (lookup). Deny a non-admin instead of falling
+                // through to setRoleName(null) = Mondrian root.
                 // saiku#1972: a blank name is no role too.
                 roleName = null;
                 enforceRoleResolvedOrAdmin(datasource);
             }
 
+            // saiku#1972 / saiku#779: setRole fails closed (SaikuAccessDeniedException, admins
+            // included) when Mondrian rejects the resolved role, e.g. a mapping typo or a role
+            // renamed in the schema, so a role that resolved but cannot be applied never leaves
+            // the connection at Mondrian root.
             if (setRole(con, roleName, datasource)) {
                 return con;
             }
-
-        } else if (isDatasourceSecurity(datasource, ISaikuConnection.SECURITY_TYPE_SPRINGLOOKUPMONDRIAN_VALUE)) {
-            Map<String, List<String>> mapping = getRoleMapping(datasource);
-            List<String> springRoles = getSpringRoles();
-            String roleName = null;
-            for (String sprRole : springRoles) {
-                if (mapping.containsKey(sprRole)) {
-                    List<String> roles = mapping.get(sprRole);
-                    for (String role : roles) {
-                        if (roleName == null) {
-                            roleName = role;
-                        } else {
-                            roleName += "," + role;
-                        }
-                    }
-                }
-            }
-
-            if (StringUtils.isBlank(roleName)) {
-                // saiku#1968 (CWE-863): no authority mapped to a Mondrian role. Deny a non-admin
-                // instead of falling through to setRoleName(null) = Mondrian root.
-                // saiku#1972: a blank name is no role too.
-                roleName = null;
-                enforceRoleResolvedOrAdmin(datasource);
-            }
-
-            if (setRole(con, roleName, datasource)) {
-                return con;
-            }
-
-        } else if (isDatasourceSecurityEnabled(datasource)
-                && !isDatasourceSecurity(datasource, ISaikuConnection.SECURITY_TYPE_PASSTHROUGH_VALUE)) {
+        } else if (mode == MondrianRolePolicy.Mode.UNKNOWN) {
             // saiku#1972 (CWE-863): security is on but security.type is missing or unrecognised, so
-            // neither branch above sets a role and the connection would stay at Mondrian root. Treat
+            // no branch above sets a role and the connection would stay at Mondrian root. Treat
             // it as "no role resolved": admin keeps full access, anyone else is denied.
             log.warn(
                     "saiku#1972: datasource \"{}\" has {}=true but an unrecognised {} \"{}\"; "
@@ -512,27 +483,6 @@ public class SecurityAwareConnectionManager extends AbstractConnectionManager im
             }
         }
         return new ArrayList<>();
-    }
-
-    private Map<String, List<String>> getRoleMapping(SaikuDatasource datasource) {
-        Map<String, List<String>> result = new HashMap<>();
-        if (datasource.getProperties().containsKey(ISaikuConnection.SECURITY_LOOKUP_KEY)) {
-            String mappings = datasource.getProperties().getProperty(ISaikuConnection.SECURITY_LOOKUP_KEY);
-            if (mappings != null) {
-                String[] maps = mappings.split(";");
-                for (String map : maps) {
-                    String[] m = map.split("=");
-                    // saiku#1972: a blank value (ROLE_X= ) maps to no role, not to a role named " ".
-                    if (m.length == 2 && StringUtils.isNotBlank(m[1])) {
-                        if (!result.containsKey(m[0])) {
-                            result.put(m[0], new ArrayList<String>());
-                        }
-                        result.get(m[0]).add(m[1]);
-                    }
-                }
-            }
-        }
-        return result;
     }
 
     /**

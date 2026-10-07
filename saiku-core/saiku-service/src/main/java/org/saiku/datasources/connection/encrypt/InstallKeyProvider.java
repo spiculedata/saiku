@@ -7,13 +7,13 @@ package org.saiku.datasources.connection.encrypt;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.attribute.PosixFilePermission;
 import java.security.SecureRandom;
 import java.util.Base64;
-import java.util.EnumSet;
-import java.util.Set;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
+import org.saiku.service.security.SecretFileStore;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Resolves the per-install AES-256 key used to encrypt stored datasource passwords.
@@ -28,8 +28,11 @@ import javax.crypto.spec.SecretKeySpec;
  *       {@code <saiku.home>/conf/secret.key} (Base64). Subsequent calls read it back.
  * </ol>
  *
- * <p>The key file is created with best-effort owner-only permissions (POSIX 0600); on platforms
- * without POSIX (e.g. Windows) the permission tightening is skipped silently.
+ * <p>The key file is written with owner-only permissions and atomically (create-0600 + move, see
+ * {@link SecretFileStore}) — there is no window in which the key is readable by other accounts, and
+ * on Windows an owner-only ACL is applied. A key that EXISTS but cannot be read, or that exists and
+ * cannot be parsed, is fatal: silently rotating it would orphan every stored {@code v2:} password
+ * with no trace. Likewise a key that cannot be persisted is a hard error, not a warning.
  *
  * <p>This class is intentionally self-contained within saiku-service and is loaded lazily so that
  * test code and callers that never touch encryption pay no cost.
@@ -40,10 +43,13 @@ final class InstallKeyProvider {
     static final String KEY_FILE_NAME = "secret.key";
     static final String CONF_DIR_NAME = "conf";
 
+    private static final Logger log = LoggerFactory.getLogger(InstallKeyProvider.class);
+
     private static final int KEY_BYTES = 32; // AES-256
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private static volatile SecretKey cachedKey;
+    private static volatile boolean warnedAboutTmpdirFallback;
 
     private InstallKeyProvider() {}
 
@@ -107,8 +113,16 @@ final class InstallKeyProvider {
 
     private static SecretKey loadOrCreatePersistedKey() {
         Path keyFile = resolveKeyFilePath();
-        try {
-            if (Files.isReadable(keyFile)) {
+        boolean present = Files.exists(keyFile);
+        if (present && !Files.isReadable(keyFile)) {
+            throw new IllegalStateException(
+                    "Install key '"
+                            + keyFile
+                            + "' exists but is not readable by this process. Booting anyway would mint a NEW key and make every stored datasource password unreadable. Fix the ownership/ACL of saiku.home (chown to the runtime user) or remove the file to start over.",
+                    null);
+        }
+        if (present) {
+            try {
                 String existing =
                         new String(Files.readAllBytes(keyFile), java.nio.charset.StandardCharsets.UTF_8).trim();
                 if (!existing.isEmpty()) {
@@ -116,10 +130,18 @@ final class InstallKeyProvider {
                     if (decoded.length == KEY_BYTES) {
                         return new SecretKeySpec(decoded, "AES");
                     }
+                    throw new IllegalStateException("Install key '" + keyFile + "' is not a 32-byte Base64 AES key");
                 }
+                throw new IllegalStateException("Install key '" + keyFile + "' is empty");
+            } catch (IllegalArgumentException malformed) {
+                throw new IllegalStateException(
+                        "Install key '" + keyFile
+                                + "' is not valid Base64. Refusing to overwrite it: booting with a new key would orphan every stored datasource password. Restore the key from backup, or delete the file to start over.",
+                        malformed);
+            } catch (java.io.IOException readFailure) {
+                throw new IllegalStateException(
+                        "Could not read the install key '" + keyFile + "': " + readFailure.getMessage(), readFailure);
             }
-        } catch (Exception readFailure) {
-            // Could not read an existing key; fall through and create a fresh one.
         }
 
         byte[] fresh = new byte[KEY_BYTES];
@@ -128,35 +150,43 @@ final class InstallKeyProvider {
         return new SecretKeySpec(fresh, "AES");
     }
 
+    /**
+     * Persists the key atomically with 0600-from-creation permissions ({@link SecretFileStore}).
+     *
+     * <p>Failure here is FATAL and logged at ERROR: the alternative (keeping the in-memory key and
+     * carrying on) means the next restart mints a different key, and every stored {@code v2:}
+     * datasource password silently becomes undecryptable with no log line anywhere (#1919 18c).
+     */
     private static void persistKey(Path keyFile, byte[] keyBytes) {
         try {
-            Path parent = keyFile.getParent();
-            if (parent != null) {
-                Files.createDirectories(parent);
-            }
             String encoded = Base64.getEncoder().encodeToString(keyBytes);
-            Files.write(keyFile, encoded.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            tightenPermissions(keyFile);
+            SecretFileStore.writeOwnerOnly(keyFile, encoded.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         } catch (Exception persistFailure) {
-            // Best-effort persistence. If we cannot write the key file (read-only home, etc.) the
-            // in-memory key is still returned for this JVM lifetime; it just won't survive a restart.
+            log.error(
+                    "Could not persist the install key to '{}'. Refusing to start: on the next restart a"
+                            + " different key would be generated and every stored datasource password would"
+                            + " become unreadable. Make saiku.home writable by the Saiku process.",
+                    keyFile,
+                    persistFailure);
+            throw new IllegalStateException("Could not persist the install key to '" + keyFile + "'", persistFailure);
         }
     }
 
-    private static void tightenPermissions(Path keyFile) {
-        try {
-            Set<PosixFilePermission> perms =
-                    EnumSet.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE);
-            Files.setPosixFilePermissions(keyFile, perms);
-        } catch (Exception nonPosixOrDenied) {
-            // Windows / non-POSIX filesystems (UnsupportedOperationException) or denied; ignore.
-        }
-    }
-
-    /** {@code <saiku.home>/conf/secret.key}, falling back to {@code java.io.tmpdir} if unset. */
+    /**
+     * {@code <saiku.home>/conf/secret.key}. When {@code saiku.home} is unset the key lands in the
+     * shared temp directory, where the file is 0600 but any local account could pre-create
+     * {@code conf/secret.key} to pin a key it knows (CWE-377). That is not a reason to break a
+     * working deployment on boot, so the fallback is kept and warned about loudly, once.
+     */
     static Path resolveKeyFilePath() {
         String home = System.getProperty("saiku.home");
         if (home == null || home.trim().isEmpty()) {
+            if (!warnedAboutTmpdirFallback) {
+                warnedAboutTmpdirFallback = true;
+                log.warn(
+                        "saiku.home is not set — the install key will be persisted under java.io.tmpdir,"
+                                + " a world-readable shared directory. Set saiku.home (or SAIKU_DS_ENCRYPTION_KEY) in production.");
+            }
             home = System.getProperty("java.io.tmpdir");
         }
         return Paths.get(home, CONF_DIR_NAME, KEY_FILE_NAME);
