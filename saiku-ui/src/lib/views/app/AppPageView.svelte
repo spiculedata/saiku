@@ -15,7 +15,10 @@
 	 *
 	 * Per-page URL state: `?p=<pageId>` reflects the active page and
 	 * `f~<pageId>=…` carries each page's filters (urlFilterState.ts). Switching
-	 * pages preserves each page's filters and the URL round-trips.
+	 * pages preserves each page's filters and the URL round-trips. `?p=` is
+	 * applied by the load that opens the app (AppEditor → appDoc.loadApp) and
+	 * mirrored back out of here; the per-page filter memory below is seeded from
+	 * `f~` on mount.
 	 *
 	 * Editable write-back: when `editable`, in-grid edits (drag / resize / tile
 	 * edit) mutate `dashboardStore.current`; a guarded effect projects them back
@@ -122,25 +125,21 @@
 	}
 
 	// ------------------------------------------------------------------
-	// Mount: seed per-page filters + active page from the URL (deep-link
-	// restore) BEFORE the first hydrate runs.
+	// Mount: seed per-page filters from the URL (deep-link restore) BEFORE the
+	// first hydrate runs. The page selection itself is NOT restored here: the
+	// store picks the `?p=` page as part of the load (see AppDocStore.loadApp),
+	// which is the only place that can be sure — a restore here ran once, at
+	// mount, and was silently undone by any later load of the same app
+	// (saiku#1766).
 	// ------------------------------------------------------------------
 	onMount(() => {
 		if (typeof window === 'undefined') return;
 		// Demo-only, anonymous: record that an app page was opened (no app id, just
 		// the coarse fact — inert off the hosted demo). See demoAnalytics.ts.
 		trackDemo('app', 'open', editable ? 'edit' : 'view');
-		const { activePageId, filtersByPage } = decodeAppFilterState(
-			new URL(window.location.href).searchParams
-		);
+		const { filtersByPage } = decodeAppFilterState(new URL(window.location.href).searchParams);
 		for (const [id, filters] of Object.entries(filtersByPage)) {
 			pageFilters[id] = filters;
-		}
-		// Honour ?p= only when it names a real page in the loaded app and differs
-		// from the current selection — the store validates the rest.
-		if (activePageId && activePageId !== appDoc.activePageId) {
-			const known = appDoc.current?.pages.some((pg) => pg.id === activePageId);
-			if (known) appDoc.setActivePage(activePageId);
 		}
 	});
 

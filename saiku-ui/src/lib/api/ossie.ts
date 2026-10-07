@@ -507,3 +507,122 @@ export function newOssieQueryModel(connection: string, modelName: string): Ossie
 		sorts: []
 	};
 }
+
+// ---------------------------------------------------------------------------
+// Vendor model import (saiku#1730) — `/saiku/api/ossie/import`
+//
+// Three calls, deliberately separate: list what can be imported, convert+validate the
+// upload (which persists nothing), then save the YAML the user confirmed. The datasource
+// itself is registered through the existing admin datasource API, which the admin
+// Datasources view pre-fills with the path the save step returns.
+// ---------------------------------------------------------------------------
+
+const IMPORT_BASE = '/rest/saiku/api/ossie/import';
+
+/** One entry of the "source format" picker. */
+export interface OssieImportFormat {
+	id: string;
+	displayName: string;
+	description: string;
+	fileExtensions: string[];
+}
+
+/** A degraded / dropped / failed element, anchored by element name. */
+export interface OssieImportDiagnostic {
+	severity: 'ERROR' | 'WARNING' | 'INFO';
+	code: string;
+	element?: string;
+	message: string;
+}
+
+/** Per-dataset line of the preview table. */
+export interface OssieImportDatasetSummary {
+	name: string;
+	source?: string;
+	fieldCount: number;
+	primaryKeyCount: number;
+}
+
+/** The validation report: element counts + the per-element findings. */
+export interface OssieImportValidation {
+	datasetCount: number;
+	fieldCount: number;
+	metricCount: number;
+	relationshipCount: number;
+	errorCount: number;
+	warningCount: number;
+	infoCount: number;
+	datasets: OssieImportDatasetSummary[];
+	diagnostics: OssieImportDiagnostic[];
+}
+
+/** Response of `POST /saiku/api/ossie/import` — the model, its YAML, and the report. */
+export interface OssieImportResult {
+	formatId: string;
+	modelName: string;
+	yaml: string;
+	validation: OssieImportValidation;
+}
+
+/** Formats this deployment can import. */
+export async function listOssieImportFormats(): Promise<OssieImportFormat[]> {
+	const res = await fetch(`${IMPORT_BASE}/formats`, {
+		credentials: 'include',
+		headers: { Accept: 'application/json' }
+	});
+	if (!res.ok) throw new Error(`Could not list import formats (${res.status})`);
+	return (await res.json()) as OssieImportFormat[];
+}
+
+/**
+ * Convert + validate an upload. Nothing is written to the server's disk until
+ * {@link saveOssieImport} is called with the returned YAML.
+ */
+export async function importOssieModel(request: {
+	format: string;
+	modelName?: string;
+	files: { name: string; content: string }[];
+}): Promise<OssieImportResult> {
+	const res = await fetch(IMPORT_BASE, {
+		method: 'POST',
+		credentials: 'include',
+		headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+		body: JSON.stringify({
+			format: request.format,
+			modelName: request.modelName,
+			files: request.files
+		})
+	});
+	if (!res.ok) {
+		const text = await res.text();
+		throw new Error(text || `Import failed (${res.status})`);
+	}
+	return (await res.json()) as OssieImportResult;
+}
+
+/**
+ * Persist the confirmed YAML and return the path to hand the OSSIE datasource form.
+ * The server re-validates before writing, so a model with errors is rejected here even
+ * if the client's copy of the report said otherwise.
+ */
+export async function saveOssieImport(request: {
+	modelName: string;
+	yaml: string;
+	overwrite?: boolean;
+}): Promise<{ path: string }> {
+	const res = await fetch(`${IMPORT_BASE}/save`, {
+		method: 'POST',
+		credentials: 'include',
+		headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+		body: JSON.stringify({
+			modelName: request.modelName,
+			yaml: request.yaml,
+			overwrite: request.overwrite ?? false
+		})
+	});
+	if (!res.ok) {
+		const text = await res.text();
+		throw new Error(text || `Save failed (${res.status})`);
+	}
+	return (await res.json()) as { path: string };
+}

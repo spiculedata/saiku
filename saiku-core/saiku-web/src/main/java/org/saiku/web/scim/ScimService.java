@@ -61,12 +61,7 @@ public class ScimService {
      * scope to admin or infrastructure authorities.
      */
     private static final java.util.Set<String> PRIVILEGED_ROLES = java.util.Set.of(
-            "ROLE_ADMIN",
-            "ROLE_SCIM",
-            "ROLE_ACTUATOR",
-            "ROLE_EMBED_GUEST",
-            "ROLE_SHARE_GUEST",
-            "ROLE_ANONYMOUS");
+            "ROLE_ADMIN", "ROLE_SCIM", "ROLE_ACTUATOR", "ROLE_EMBED_GUEST", "ROLE_SHARE_GUEST", "ROLE_ANONYMOUS");
 
     private final UserService userService;
     private final ScimGroupStore groupStore;

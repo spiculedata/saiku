@@ -572,7 +572,7 @@ public class ScimServiceTest {
     /** saiku#2065: a SCIM token must not be able to grant ROLE_ADMIN or any other privileged role. */
     @Test
     public void groupCreateRejectsPrivilegedRoleNames() {
-        for (String reserved : new String[]{"ROLE_ADMIN", "ROLE_SCIM", "ROLE_ACTUATOR", "role_admin"}) {
+        for (String reserved : new String[] {"ROLE_ADMIN", "ROLE_SCIM", "ROLE_ACTUATOR", "role_admin"}) {
             ScimGroup g = new ScimGroup();
             g.displayName = reserved;
             try {

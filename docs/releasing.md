@@ -27,8 +27,29 @@ Plus, since saiku#1990 / saiku#1992, the supply-chain material:
 | npm provenance for both embed packages | npm / Sigstore |
 
 The design-system npm package (`@concepttocloud/saiku-design-system`) is
-released by its **own** workflow (`design-system.yml`) on its own cadence — not
-covered here.
+released by its **own** workflow (`design-system.yml`) on its own cadence. It
+publishes with `npm publish --provenance` like the embed packages (see
+[npm packages](#npm-packages)); nothing else here applies to it.
+
+## Credential scoping: no write token during a build (saiku#1993)
+
+The `jar` job is the *untrusted* job: it runs `mvn verify` (the full test
+suite) and, through `saiku-webapp`'s frontend-maven-plugin, `npm ci` +
+`npm run build` over saiku-ui's transitive dependency tree — install and
+`postinstall` scripts from packages we do not control execute there. It
+therefore runs with **`contents: read` only**: no `packages: write`, and no
+`github-saiku-self` entry in its `~/.m2/settings.xml`.
+
+Publishing module jars to GitHub Packages lives in its own publish-only job,
+`deploy-packages` (`needs: jar`), which holds `packages: write` and writes the
+ephemeral `GITHUB_TOKEN` entry into `settings.xml`. That job runs `mvn deploy`
+with `-Dmaven.test.skip=true -Dskip.npm=true -Dskip.installnodenpm=true`, so
+while the write-scoped credential is on disk no test, Maven test plugin, or
+npm lifecycle script from the dependency tree can execute. The fat JAR, dist
+zip and SBOM that the release attaches are built in `jar` and never touch this
+job.
+
+Same rule as the embed npm split: *build untrusted, publish trusted.*
 
 ## SBOM generation
 
@@ -163,12 +184,14 @@ docker buildx imagetools inspect ghcr.io/spiculedata/saiku:<version> \
 
 ### npm packages
 
-Both embed packages publish with `npm publish --provenance`, so npm hosts a
-verifiable provenance statement:
+Both embed packages, and the design-system package (from `design-system.yml`),
+publish with `npm publish --provenance`, so npm hosts a verifiable provenance
+statement:
 
 ```bash
 npm audit signatures                       # in a project that installed them
 npm view @concepttocloud/saiku-embed dist.attestations
+npm view @concepttocloud/saiku-design-system dist.attestations
 ```
 
 ## SLSA level
