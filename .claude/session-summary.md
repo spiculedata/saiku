@@ -75,6 +75,10 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-10-07 — feature/mdx-workbench — merged development for PR #2054
+**Was doing:** merged development at 4fb7b66c1, retaining every changelog entry; UI check, tests, lint, and build passed.
+**Now:** monitor PR #2054 CI after the push.
+**Refs:** #1106, #2054
 ## 2026-10-07 — feature/1427-semantic-layer-sync — merged development for PR #2062
 **Was doing:** merged development at 4fb7b66c1, keeping the semantic export guidance and both newer AGENTS.md entries; the exporter tests and Spotless passed.
 **Now:** check PR #2062 CI after the push; local Maven test could not resolve private GitHub Packages dependencies (HTTP 401).
