@@ -75,6 +75,13 @@ case "${1:-serve}" in
     if [[ -n "${SAIKU_DEMO:-}" ]]; then
       JAVA_OPTS+=("-Dsaiku.demo=${SAIKU_DEMO}")
     fi
+    # saiku#1953: SAIKU_SEED gates the demo fixtures (FoodMart/Bank/TPC-DS/Flights).
+    # Unset means "follow demo mode", so the common cases need nothing here; passed
+    # through for the operator who wants fixtures without demo mode (SAIKU_SEED=true)
+    # or the demo login against their own cubes (SAIKU_DEMO=true SAIKU_SEED=false).
+    if [[ -n "${SAIKU_SEED:-}" ]]; then
+      JAVA_OPTS+=("-Dsaiku.seed=${SAIKU_SEED}")
+    fi
     if [[ -n "${SAIKU_MCP_URL:-}" ]]; then
       JAVA_OPTS+=("-Dsaiku.mcp.url=${SAIKU_MCP_URL}")
     fi
