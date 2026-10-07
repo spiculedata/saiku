@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 /*
  * Stage the contents of `embed-npm/` for `npm publish` by:
- *   1. Copying the built bundle (dist/saiku-embed.js[.map]) in.
+ *   1. Copying the built bundles (dist/{saiku-embed,saiku-chart,
+ *      saiku-dashboard}.js[.map] — issue #1103 split the latter two off
+ *      the original all-in-one element) in.
  *   2. Copying the user-facing README from src/embed/README.md.
  *   3. Rewriting the version in package.json to match the root
  *      saiku-ui version, so the npm release tracks the launcher
  *      release one-to-one without a separate manual bump.
  *
- * Run after `build:embed` so the bundle exists. The release.yml
+ * Run after `build:embed` so the bundles exist. The release.yml
  * workflow then runs `npm publish embed-npm --access public` from
  * this dir on tag push.
  */
@@ -30,8 +32,11 @@ function copy(src, dst) {
 }
 
 console.log('staging embed-npm/');
-copy(resolve(dist, 'saiku-embed.js'), resolve(pkg, 'saiku-embed.js'));
-copy(resolve(dist, 'saiku-embed.js.map'), resolve(pkg, 'saiku-embed.js.map'));
+// Keep in sync with the ENTRIES list in scripts/build-embed.mjs.
+for (const bundle of ['saiku-embed', 'saiku-chart', 'saiku-dashboard']) {
+	copy(resolve(dist, `${bundle}.js`), resolve(pkg, `${bundle}.js`));
+	copy(resolve(dist, `${bundle}.js.map`), resolve(pkg, `${bundle}.js.map`));
+}
 copy(resolve(root, 'src/embed/README.md'), resolve(pkg, 'README.md'));
 
 const rootPkg = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'));

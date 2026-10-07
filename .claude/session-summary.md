@@ -75,6 +75,15 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-10-07 — feature/1103-embed-chart-dashboard-split — merged latest development for PR #2051
+**Was doing:** merged development at 4fb7b66c1, retaining every handoff entry; embed type check, lint, 71 focused tests, bundle builds, and package staging passed.
+**Now:** check PR #2051 CI after the push.
+**Refs:** #1103, #2051
+
+## 2026-10-06 — feature/1103-embed-chart-dashboard-split — merged development for PR #2051
+**Was doing:** merged development, preserving the PR's new embed tags and the base branch's updated iframe guidance in the quickstart; UI checks, lint, targeted tests, and embed bundle builds passed.
+**Now:** check PR #2051 CI after the push.
+**Refs:** #1103, #2051
 ## 2026-10-06 — feature/837-query2-returns-resolution — merged latest development for PR #2047
 **Was doing:** merged development into the existing PR branch, preserving both session-summary entries and the earlier `firstRowset` CI fix.
 **Now:** check PR #2047 CI after the push; this workspace has no JDK or Maven.
