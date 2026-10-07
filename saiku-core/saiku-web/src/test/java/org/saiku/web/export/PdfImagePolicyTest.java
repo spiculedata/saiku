@@ -24,9 +24,13 @@ public class PdfImagePolicyTest {
     public void queryResultMarkupIsEscapedBeforeHtmlParsing() throws Exception {
         QueryResult result = new QueryResult(
                 List.of(
-                        new Cell[] {new Cell("Year", Cell.Type.COLUMN_HEADER), new Cell("Sales", Cell.Type.COLUMN_HEADER)},
-                        new Cell[] {new Cell("1997", Cell.Type.ROW_HEADER),
-                            new Cell("<img src=\"http://127.0.0.1/private\">", Cell.Type.DATA_CELL)}),
+                        new Cell[] {
+                            new Cell("Year", Cell.Type.COLUMN_HEADER), new Cell("Sales", Cell.Type.COLUMN_HEADER)
+                        },
+                        new Cell[] {
+                            new Cell("1997", Cell.Type.ROW_HEADER),
+                            new Cell("<img src=\"http://127.0.0.1/private\">", Cell.Type.DATA_CELL)
+                        }),
                 0,
                 2,
                 1);
