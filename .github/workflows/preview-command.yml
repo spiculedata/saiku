@@ -4,7 +4,9 @@ name: preview command
 # a PR. Ported from spiculedata/saiku-cloud .github/workflows/preview-command.yml
 # (saiku-cloud#1379); see docs/decisions/ci-preview-environments.md. Used e.g. after it was torn down for idle or when the PR is
 # not Hive-authored and unlabelled. `/preview restart` also rebuilds a running one.
-# Any `/preview` also extends the 24h idle window.
+# Any `/preview` also extends the 24h idle window. If the PR has no image (its last push
+# predates per-PR image builds, or its build was cancelled) this command starts the
+# docker build itself, says so on the PR, and brings the preview up when it lands.
 #
 # Decisions live in .github/scripts/preview-command.mjs (who may ask, on what) and
 # preview-lifecycle.mjs (what happens); this file is glue. See
@@ -47,6 +49,10 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      # Only to dispatch docker.yml for a PR that has no image yet (--ensure-build
+      # below). preview-env and the reaper deliberately do NOT get this: a normal push
+      # already starts the docker build, and only an explicit /preview should start one.
+      actions: write
     concurrency:
       group: preview-pr-${{ github.event.issue.number }}
       cancel-in-progress: false
@@ -109,6 +115,7 @@ jobs:
             --host ssh \
             --github-event "$RUNNER_TEMP/preview-request.json" \
             --sync-root "$GITHUB_WORKSPACE" \
+            --ensure-build github \
             --out "$RUNNER_TEMP/preview-result.json" \
             --summary "$GITHUB_STEP_SUMMARY"
 
