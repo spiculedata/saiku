@@ -21,13 +21,14 @@ import { appendFileSync, readFileSync, realpathSync, writeFileSync } from 'node:
 import { pathToFileURL } from 'node:url';
 
 import { GhActivity } from './preview-activity.mjs';
-import { deliverCredentials, parseCredentials } from './preview-creds.mjs';
+import { deliverCredentials, maskCommands, parseCredentials } from './preview-creds.mjs';
 import { SELFCHECK_TIMEOUT_SECONDS, assertPrNumber, assertSha, parseProject, projectForPr } from './preview-guard.mjs';
 import { buildsImage } from './preview-images.mjs';
 import { FakeHost, SshHost } from './preview-host.mjs';
 import {
   COMMENT_MARKER,
   DEFAULTS,
+  announcement,
   apply,
   comment,
   diskVerdict,
@@ -206,6 +207,39 @@ function post(commenter, pr, body, log, failures) {
 }
 
 /**
+ * The login for a running preview, or undefined (posting disabled, or the host would not say).
+ * The password is masked in the workflow log BEFORE anything else touches it. A failure here only
+ * costs the login line; the comment falls back to "fetch it from the host".
+ */
+function loginFor(ctx, pr) {
+  if (ctx.config.postCredentials === false) return undefined;
+  try {
+    const found = parseCredentials(ctx.host.readCredentials({ pr }));
+    for (const line of maskCommands(found)) ctx.log(line);
+    return { user: found.PREVIEW_ADMIN_USER, password: found.SAIKU_ADMIN_PASSWORD };
+  } catch (err) {
+    ctx.log(`could not read the login for #${pr}: ${firstLine(err)}`);
+    return undefined;
+  }
+}
+
+/** The sticky "UP" comment, with the login when it is enabled. */
+function upComment(ctx, d, registry) {
+  return comment({ ...d, credentials: loginFor(ctx, d.pr) }, { config: ctx.config, registry });
+}
+
+/** Ping the PR with a NEW comment when a preview comes up (a push refresh only edits the sticky one). */
+function announceUp(ctx, d) {
+  if (d.reason === 'refresh') return;
+  try {
+    ctx.commenter.notify?.(d.pr, announcement(d, { config: ctx.config }));
+  } catch (err) {
+    ctx.failures.push(d.pr);
+    ctx.log(`could not announce the preview on #${d.pr}: ${err.message}`);
+  }
+}
+
+/**
  * Bring PR `pr` up on the host. The registry claim is written FIRST so a crash
  * or cancellation leaves a tracked stack the reaper will remove, not an orphan.
  * On failure the half-built stack is destroyed and the claim dropped.
@@ -282,7 +316,8 @@ function promote(ctx, registry, open) {
     current = result.registry;
     if (result.ok) {
       promoted.push(pick.pr);
-      post(commenter, pick.pr, comment({ ...d, image: result.image }, { config, registry: current }), log, failures);
+      post(commenter, pick.pr, upComment(ctx, { ...d, image: result.image }, current), log, failures);
+      announceUp(ctx, { ...d, image: result.image });
     } else if (result.failure.benign) {
       // Nothing to run for this PR (e.g. a docs-only change): say so, do not count a failure.
       post(commenter, pick.pr, comment({ action: 'unbuilt', pr: pick.pr, reason: result.failure.reason }, { config, registry: current }), log, failures);
@@ -337,7 +372,8 @@ export function handleEvent({ host, commenter, event, config = DEFAULTS, now, lo
             reason: 'refreshed by /preview',
             image: registry.envs[String(d.pr)]?.image,
           };
-          post(commenter, d.pr, comment(refreshed, { config, registry }), log, failures);
+          post(commenter, d.pr, upComment(ctx, refreshed, registry), log, failures);
+          announceUp(ctx, refreshed);
         }
         break;
       case 'queued':
@@ -363,7 +399,8 @@ export function handleEvent({ host, commenter, event, config = DEFAULTS, now, lo
         registry = result.registry;
         if (result.ok) {
           d = { ...d, image: result.image };
-          post(commenter, d.pr, comment(d, { config, registry }), log, failures);
+          post(commenter, d.pr, upComment(ctx, d, registry), log, failures);
+          announceUp(ctx, d);
         } else if (result.failure.benign) {
           log(`#${d.pr}: ${result.failure.message}`);
           post(commenter, d.pr, comment({ action: 'unbuilt', pr: d.pr, reason: result.failure.reason }, { config, registry }), log, failures);
@@ -524,6 +561,15 @@ export class GhCommenter {
     const res = this.run(args, { input: payload });
     if (res.status !== 0) throw new Error(`posting comment failed: ${res.stderr}`);
   }
+
+  /** A NEW comment (so GitHub notifies subscribers), unlike the sticky one, which is edited in place. */
+  notify(pr, body) {
+    assertPrNumber(pr);
+    const res = this.run(['gh', 'api', '-X', 'POST', `repos/${this.repo}/issues/${pr}/comments`, '--input', '-'], {
+      input: JSON.stringify({ body }),
+    });
+    if (res.status !== 0) throw new Error(`posting comment failed: ${res.stderr}`);
+  }
 }
 
 const FILE_LIST_CAP = 4000;
@@ -618,6 +664,12 @@ export class RecordingCommenter {
     this.comments.push({ pr, body });
     this.log(`[comment #${pr}] ${body.split('\n').slice(3, 5).join(' ')}`);
   }
+
+  notify(pr, body) {
+    this.announcements ??= [];
+    this.announcements.push({ pr, body });
+    this.log(`[announce #${pr}] ${body.split('\n')[0]}`);
+  }
 }
 
 function ghRun(argv, { input } = {}) {
@@ -640,6 +692,10 @@ export function loadConfig(env, path) {
     baseDomain: env.SAIKU_PREVIEW_BASE_DOMAIN || raw.baseDomain || DEFAULTS.baseDomain,
     imageWaitMinutes: num(env.SAIKU_PREVIEW_IMAGE_WAIT_MINUTES, raw.imageWaitMinutes ?? DEFAULTS.imageWaitMinutes),
     previewLabel: env.SAIKU_PREVIEW_LABEL || raw.previewLabel || DEFAULTS.previewLabel,
+    // Only an explicit "false" turns the login off; unset or empty keeps the default (shown).
+    postCredentials: String(env.SAIKU_PREVIEW_POST_CREDENTIALS ?? '').trim().toLowerCase() === 'false'
+      ? false
+      : (raw.postCredentials ?? DEFAULTS.postCredentials),
     authors: env.SAIKU_PREVIEW_AUTHORS
       ? env.SAIKU_PREVIEW_AUTHORS.split(',').map((a) => a.trim()).filter(Boolean)
       : (raw.authors ?? DEFAULTS.authors),

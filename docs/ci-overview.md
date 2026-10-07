@@ -199,6 +199,7 @@ Names only; never put a value in the repo or in a PR.
 | `PREVIEW_SSH_KNOWN_HOSTS` | same | pinned host key line(s) | the host-access step has no pinned key and fails when a target is set |
 | `PREVIEW_BASE_DOMAIN` | same | base domain for `oss-pr-<n>.<domain>` | defaults to `preview.saiku.bi` in the lifecycle and env renderer |
 | `PREVIEW_AUTHORS` | same | comma-separated bot logins that get a preview automatically | defaults to `spicule-hive[bot]` |
+| `PREVIEW_POST_CREDENTIALS` | same | `false` stops the throwaway admin login being posted in the sticky preview comment | defaults to shown (test-only, tailnet-only environments) |
 | `PREVIEW_MAX_ENVS`, `PREVIEW_IDLE_HOURS` | same | concurrent preview cap, idle teardown | defaults 3 and 24 |
 
 Why the acceptance values are what they are: the cutoff makes the gate apply only to issues

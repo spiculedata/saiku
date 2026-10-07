@@ -105,6 +105,26 @@ lifecycle removes the stack and says why. The two negative probes catch the fail
 look like success: a launcher that still accepts `admin/admin`, or one that loaded the
 demo accounts.
 
+## The PR comments, and the login
+
+When a preview comes up the lifecycle posts two things on the PR:
+
+* a **new comment**, "Preview is running", with the URL, so the author and subscribers are
+  pinged. (The status comment below is edited in place, and GitHub sends no notification for an
+  edit.) It is posted for a new preview, a promotion from the queue, `/preview restart` and a
+  `/preview` on a running one, not for a push that just refreshes it.
+* the **sticky status comment** (one per PR, updated in place) with the app link
+  (`https://oss-pr-<n>.preview.saiku.bi/ui/`: the bare root answers 500, the engine has no
+  landing page), the image, and the **throwaway admin login**.
+
+The login is shown on purpose: these are test-only, tailnet-only environments with sample
+data, and a person testing a PR needs it. The repository is public, so anyone who can read the
+PR can read it, but it only works on the private preview and changes when the environment is
+torn down and rebuilt. The password is masked in the workflow log before it is used, and is
+rendered only if it has the exact shape the host writes. To stop posting it, set the repository
+variable `PREVIEW_POST_CREDENTIALS` to `false`; the comment then says how to fetch it
+(`ssh saiku-preview "grep SAIKU_ADMIN_PASSWORD /var/lib/saiku-preview-oss/env/saiku-oss-pr-<n>.env"`).
+
 ## Credentials for validators
 
 A validation job is a trusted base-branch workflow with tailnet and ssh access. It fetches
@@ -119,8 +139,9 @@ node .github/scripts/preview-ctl.mjs creds --pr 1234 --host ssh --out "$RUNNER_T
   (a fixed `grep`), each value is validated against a strict character set, and the
   password is masked with `::add-mask::` **before** anything is written;
 * the result is `PREVIEW_BASE_URL`, `PREVIEW_ADMIN_USER`, `PREVIEW_ADMIN_PASSWORD` in a
-  0600 file and/or step outputs. Nothing is printed, put in a summary or posted in a
-  comment, and the PR comment only links here;
+  0600 file and/or step outputs. This hand-off never prints the credentials, puts them in a
+  summary or posts them: it is separate from the sticky PR comment, which shows the login
+  (see below);
 * use them from a **later step of the same job**: GitHub drops job outputs that contain a
   registered secret, and artifacts are readable by anyone with repo read access.
 
@@ -153,6 +174,7 @@ also provisioned there.
 | variable | `PREVIEW_SSH_KNOWN_HOSTS` | the pinned host key line(s): `ssh-keyscan -t ed25519 100.78.167.101` run from a trusted tailnet machine |
 | variable | `PREVIEW_BASE_DOMAIN` | `preview.saiku.bi` (the default) |
 | variable, optional | `PREVIEW_AUTHORS` | comma-separated Hive logins (default `spicule-hive[bot]`) |
+| variable, optional | `PREVIEW_POST_CREDENTIALS` | `false` stops the throwaway admin login being shown in the sticky PR comment (default: shown) |
 | variable, optional | `PREVIEW_MAX_ENVS`, `PREVIEW_IDLE_HOURS` | defaults 3 and 24 |
 | label | `preview` | opts any same-repo PR in |
 
