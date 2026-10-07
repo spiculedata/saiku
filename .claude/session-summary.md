@@ -79,6 +79,10 @@ pushed down; normal sessions append and the history stays useful.
 **Was doing:** merged development at 4fb7b66c1, keeping the semantic export guidance and both newer AGENTS.md entries; the exporter tests and Spotless passed.
 **Now:** check PR #2062 CI after the push; local Maven test could not resolve private GitHub Packages dependencies (HTTP 401).
 **Refs:** #1427, #2062
+## 2026-10-07 — feature/scim-2-provisioning — merged development for PR #2065
+**Was doing:** merged development at 4fb7b66c1, kept SCIM wiring alongside the base security chains and all changelog entries, and formatted the privileged-role guard and test.
+**Now:** check PR #2065 CI after the push; local focused Maven tests stopped before compilation because GitHub Packages returned 401 for required artifacts.
+**Refs:** #1438, #2065
 ## 2026-10-07 — feature/repository-hardening-followups — merged development for PR #2072
 **Was doing:** merged development at 4fb7b66c1; the sole conflict was Java imports, resolved by retaining the base Path/Paths imports and this PR's Normalizer import.
 **Now:** check PR #2072 CI after the push; local focused Maven tests stopped before compilation because GitHub Packages returned 401 for private Mondrian and olap4j dependencies. Spotless passed.
