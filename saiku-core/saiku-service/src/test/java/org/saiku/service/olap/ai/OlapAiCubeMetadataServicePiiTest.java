@@ -185,9 +185,10 @@ public class OlapAiCubeMetadataServicePiiTest {
                 SaikuCube cube, String hierarchyName, String levelName, String q, int limit) {
             if ("Full Name".equals(levelName)) {
                 fullNameCalls.incrementAndGet();
-                return Arrays.asList(new SimpleCubeElement("Wanda Maximoff", "[Customer].[Customer].[Full Name].&[W]"));
+                return Arrays.asList(new SimpleCubeElement(
+                        "Wanda Maximoff", "[Customer].[Customer].[Full Name].&[W]", "Wanda Maximoff"));
             }
-            return Arrays.asList(new SimpleCubeElement("USA", "[Customer].[Customer].[Country].&[USA]"));
+            return Arrays.asList(new SimpleCubeElement("USA", "[Customer].[Customer].[Country].&[USA]", "USA"));
         }
     }
 }

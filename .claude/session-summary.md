@@ -76,8 +76,8 @@ pushed down; normal sessions append and the history stays useful.
 ## Log
 
 ## 2026-10-07 — feature/ai-surface-hardening-1918 — merged development for PR #2070
-**Was doing:** merged development at 4fb7b66c1, preserving the PR's AI and SMTP hardening, the earlier CI compile fix, and the base's describe-query and member-property changes.
-**Now:** check PR #2070 CI after the push; the local Maven reactor cannot resolve GitHub Packages artifacts (401), while the isolated SMTP and cost-budget tests passed.
+**Was doing:** merged development at 4fb7b66c1, preserving the earlier CI fix and the base's describe-query/member-property changes; then fixed two PII-test fixtures flagged by CI to use the three-argument SimpleCubeElement constructor.
+**Now:** check PR #2070 CI after the test-fixture push; the local Maven reactor cannot resolve GitHub Packages artifacts (401), while the isolated SMTP and cost-budget tests passed.
 **Refs:** #1918, #2070
 
 ## 2026-10-06 — feature/823-drillthrough-firstrowset-toggle — merged latest development for PR #2042
