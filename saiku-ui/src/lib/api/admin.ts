@@ -212,6 +212,22 @@ export const adminSchemas = {
 	list: () => get<AdminSchema[]>('/schema'),
 	get: (id: string) => get<AdminSchema>(`/schema/${encodeURIComponent(id)}`),
 	/**
+	 * Fetch a saved schema's raw XML body.
+	 *
+	 * `AdminResource.getSavedSchema` (`GET /admin/schema/{id}`) sends the file bytes as
+	 * `application/octet-stream` with a `content-disposition: attachment` header, not JSON —
+	 * so this reads the body as text rather than going through the JSON-only {@link get}
+	 * helper above (which would fail `res.json()` on a non-JSON body; that helper has no
+	 * caller today, which is how the mismatch went unnoticed).
+	 */
+	getContent: async (name: string): Promise<string> => {
+		const res = await fetch(`${BASE}/schema/${encodeURIComponent(name)}`, {
+			credentials: 'include'
+		});
+		if (!res.ok) throw new Error(`schema content -> ${res.status}`);
+		return res.text();
+	},
+	/**
 	 * saiku#1655: `AdminResource.uploadSchema` (`POST /admin/schema/{id}`) is
 	 * `@Consumes("multipart/form-data")` and reads `@FormDataParam("file")` (an InputStream —
 	 * the schema XML bytes) plus `@FormDataParam("name")`. The previous urlencoded
@@ -316,6 +332,74 @@ export const adminAgentSpaces = {
 	remove: (id: string) => json<null>('DELETE', `/agent-spaces/${encodeURIComponent(id)}`)
 };
 
+/* ---------------- Mondrian role security (saiku#779) ---------------- */
+
+/** How a datasource resolves Spring roles to Mondrian roles (server `MondrianRolePolicy.Mode`). */
+export type RoleSecurityMode = 'DISABLED' | 'ONE2ONE' | 'LOOKUP' | 'PASSTHROUGH' | 'UNKNOWN';
+
+/** What a caller gets on a datasource (server `MondrianRolePolicy.Access`). */
+export type RoleAccess =
+	'UNSECURED' | 'SCOPED' | 'FULL_ADMIN' | 'DENIED' | 'PASSTHROUGH' | 'UNKNOWN';
+
+export interface RoleGrant {
+	datasource: string;
+	mondrianRoles: string[];
+}
+
+export interface AdminRole {
+	name: string;
+	admin: boolean;
+	/** Users in the Saiku user store holding this role. */
+	users: string[];
+	/** Mondrian roles this role alone resolves to, per datasource. */
+	grants: RoleGrant[];
+}
+
+export interface DatasourceRoleSecurity {
+	name: string;
+	id: string | null;
+	type: string | null;
+	securityEnabled: boolean;
+	mode: RoleSecurityMode;
+	/** Roles the schema declares; `null` when they couldn't be read. */
+	mondrianRoles: string[] | null;
+	/** Parsed `security.mapping`: Spring role -> Mondrian roles. */
+	mapping: Record<string, string[]>;
+}
+
+export interface RoleOverview {
+	adminRoles: string[];
+	roles: AdminRole[];
+	datasources: DatasourceRoleSecurity[];
+}
+
+export interface RolePreview {
+	username: string | null;
+	roles: string[];
+	admin: boolean;
+	datasources: Array<{
+		datasource: string;
+		mode: RoleSecurityMode;
+		access: RoleAccess;
+		mondrianRoles: string[];
+	}>;
+}
+
+export const adminRoles = {
+	overview: () => get<RoleOverview>('/roles'),
+	previewUser: (username: string) =>
+		json<RolePreview>('POST', '/roles/preview', { username }) as Promise<RolePreview>,
+	previewRoles: (roles: string[]) =>
+		json<RolePreview>('POST', '/roles/preview', { roles }) as Promise<RolePreview>,
+	/** Replace a Spring role's Mondrian grants on a `lookup`-mode datasource; `[]` revokes. */
+	setGrants: (role: string, datasource: string, mondrianRoles: string[]) =>
+		json<DatasourceRoleSecurity>(
+			'PUT',
+			`/roles/${encodeURIComponent(role)}/grants/${encodeURIComponent(datasource)}`,
+			{ mondrianRoles }
+		) as Promise<DatasourceRoleSecurity>
+};
+
 /* ---------------- Mondrian statistics ---------------- */
 
 export interface MondrianVersion {
@@ -410,4 +494,21 @@ export const adminStats = {
 		const text = await res.text();
 		return text ? (JSON.parse(text) as MondrianStats) : null;
 	}
+};
+
+/**
+ * saiku#1120 Phase 1 — measure/dimension/hierarchy/level lineage. `kind` mirrors the server's
+ * `LineageDependent#kind` string, and `lastModified` is a Phase-1 proxy (filesystem mtime, `0`
+ * when unknown — schema-level calculated members don't carry a per-member timestamp).
+ */
+export interface LineageDependent {
+	kind: 'dashboard' | 'saved-query' | 'calc-measure';
+	name: string;
+	path: string;
+	lastModified: number;
+}
+
+export const adminLineage = {
+	find: (uniqueName: string) =>
+		get<LineageDependent[]>(`/lineage?measure=${encodeURIComponent(uniqueName)}`)
 };

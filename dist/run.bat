@@ -30,5 +30,10 @@ if defined OTEL_EXPORTER_OTLP_ENDPOINT (
     )
 )
 
-java %JAVA_OPTS% -jar "%JAR%" serve --home "%SCRIPT_DIR%saiku-home" %*
+rem JVM safety defaults (saiku#1914, CWE-400): match the image's
+rem JAVA_TOOL_OPTIONS in the Dockerfile so a bare-metal / dist run gets the same
+rem OOM behaviour the container does.
+rem   -XX:+ExitOnOutOfMemoryError  fail fast on OOM instead of limping on a corrupt heap
+rem   -XX:MaxRAMPercentage=75      size the heap from the machine's RAM
+java -XX:+ExitOnOutOfMemoryError -XX:MaxRAMPercentage=75 %JAVA_OPTS% -jar "%JAR%" serve --home "%SCRIPT_DIR%saiku-home" %*
 endlocal

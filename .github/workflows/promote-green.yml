@@ -1,0 +1,186 @@
+name: promote-green
+
+# Moves the `development-green` image tag to a commit whose `ci` workflow passed.
+# The public demo VM pulls ONLY that tag (deploy/demo/), so this workflow is the
+# gate between "an image exists" (docker.yml builds one for every push, in
+# parallel with ci and not gated on it) and "the demo runs it".
+#
+# It is a registry-side retag of the image docker.yml already built
+# (`docker buildx imagetools create`): nothing is rebuilt, no repository code is
+# checked out, and no PR/fork event can reach it. See docs/demo-deployment.md.
+#
+# Triggers:
+#   workflow_run  `ci` finished, on a push to development of THIS repository.
+#                 workflow_run workflows always run from the default branch's
+#                 copy of this file with a write-capable token, so every event
+#                 field below is passed via env and validated, never interpolated
+#                 into a script.
+#   workflow_dispatch  manual promote / ROLLBACK of a previously built
+#                 `sha-<short>` image (input: sha). Only runs from development.
+
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [development]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Commit to promote (7-40 hex chars, optionally prefixed sha-). Must be on development or main and already built by docker.yml. Use for rollback."
+        required: true
+        type: string
+
+# Nothing by default; each job asks for exactly what it needs.
+permissions: {}
+
+# One promotion at a time; a queued run waits rather than cancelling a promote
+# that is mid-flight.
+concurrency:
+  group: promote-green
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: verify ci + image for this commit
+    # Cheap first filter. The shell below re-checks everything against the API
+    # instead of trusting the event payload.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'development' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      actions: read # gh run list / gh api runs (read-only)
+      contents: read # gh api commits / compare / branches (read-only)
+    outputs:
+      sha: ${{ steps.verify.outputs.sha }}
+      short: ${{ steps.verify.outputs.short }}
+    steps:
+      - name: Verify the commit is green and its image was built
+        id: verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_REF: ${{ github.ref }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          INPUT_SHA: ${{ inputs.sha }}
+        run: |
+          set -euo pipefail
+          die() { echo "::error::$*"; exit 1; }
+          skip() { echo "::notice::$*"; echo "sha=" >>"$GITHUB_OUTPUT"; echo "short=" >>"$GITHUB_OUTPUT"; exit 0; }
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            [[ "$WORKFLOW_REF" == "refs/heads/development" ]] || die "manual promotion must be dispatched from development"
+            want="${INPUT_SHA#sha-}"
+            [[ "$want" =~ ^[0-9a-f]{7,40}$ ]] || die "sha must be 7-40 lowercase hex characters"
+            sha="$(gh api "repos/$REPO/commits/$want" --jq .sha)"
+            [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || die "could not resolve $want to a commit"
+            # Only commits that are on development or main may be promoted; sha-*
+            # images are only ever pushed from those two branches.
+            on_branch=false
+            for branch in development main; do
+              status="$(gh api "repos/$REPO/compare/$branch...$sha" --jq .status)"
+              if [[ "$status" == "identical" || "$status" == "behind" ]]; then on_branch=true; fi
+            done
+            [[ "$on_branch" == "true" ]] || die "$sha is not reachable from development or main"
+            echo "::warning::manual promotion of $sha (ci result NOT re-checked; the image must still exist)"
+          else
+            sha="$RUN_SHA"
+            [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || die "malformed head_sha in the event"
+            # Re-read the run from the API: the payload only selects WHICH run.
+            run="$(gh api "repos/$REPO/actions/runs/$RUN_ID")"
+            [[ "$(jq -er .name <<<"$run")" == "ci" ]] || die "run $RUN_ID is not the ci workflow"
+            [[ "$(jq -er .conclusion <<<"$run")" == "success" ]] || die "ci did not succeed"
+            [[ "$(jq -er .event <<<"$run")" == "push" ]] || die "ci run was not a push"
+            [[ "$(jq -er .head_branch <<<"$run")" == "development" ]] || die "ci run was not on development"
+            [[ "$(jq -er .head_sha <<<"$run")" == "$sha" ]] || die "ci head_sha does not match the event"
+            [[ "$(jq -er .head_repository.full_name <<<"$run")" == "$REPO" ]] || die "ci ran for a different repository"
+
+            # Skip if development has moved on: the newer commit's own ci run will
+            # promote it (and ci cancels superseded runs), so an older green must
+            # never overwrite a newer one.
+            tip="$(gh api "repos/$REPO/branches/development" --jq .commit.sha)"
+            [[ "$tip" == "$sha" ]] || skip "development moved on ($tip); not promoting superseded $sha"
+
+            # docker.yml builds for every push, in parallel and ungated. Wait for
+            # the run for THIS sha and require it to have succeeded.
+            deadline=$((SECONDS + 40 * 60))
+            seen=0
+            while true; do
+              runs="$(gh run list --repo "$REPO" --workflow docker.yml --commit "$sha" --event push \
+                --json status,conclusion,headSha --limit 10)"
+              ok="$(jq -r --arg sha "$sha" '[.[] | select(.headSha == $sha and .conclusion == "success")] | length' <<<"$runs")"
+              pending="$(jq -r --arg sha "$sha" '[.[] | select(.headSha == $sha and .status != "completed")] | length' <<<"$runs")"
+              total="$(jq -r --arg sha "$sha" '[.[] | select(.headSha == $sha)] | length' <<<"$runs")"
+              if [[ "$ok" -ge 1 ]]; then break; fi
+              if [[ "$total" -ge 1 && "$pending" -eq 0 ]]; then die "docker workflow for $sha did not succeed"; fi
+              seen=$((seen + 1))
+              if [[ "$total" -eq 0 && "$seen" -ge 10 ]]; then die "no docker workflow run found for $sha"; fi
+              if (( SECONDS > deadline )); then die "timed out waiting for the docker workflow for $sha"; fi
+              echo "waiting for docker workflow for $sha (runs=$total pending=$pending)"
+              sleep 30
+            done
+          fi
+
+          echo "sha=$sha" >>"$GITHUB_OUTPUT"
+          echo "short=${sha:0:7}" >>"$GITHUB_OUTPUT"
+          echo "verified $sha"
+
+  promote:
+    name: retag sha-<short> as development-green
+    needs: gate
+    if: needs.gate.outputs.sha != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The only place packages:write exists. No checkout, no build tooling, no
+    # repository code - just the registry copy.
+    permissions:
+      packages: write
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Retag (registry-side, no rebuild)
+        env:
+          SHA: ${{ needs.gate.outputs.sha }}
+          SHORT: ${{ needs.gate.outputs.short }}
+          REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ && "$SHORT" == "${SHA:0:7}" ]] || { echo "::error::bad sha from gate"; exit 1; }
+          image="ghcr.io/${REPO,,}"
+          src="$image:sha-$SHORT"
+
+          # The image behind sha-<short> must have been built from exactly this commit.
+          revision="$(docker buildx imagetools inspect "$src" --format '{{json .Image}}' |
+            jq -er '.config.Labels["org.opencontainers.image.revision"]')"
+          [[ "$revision" == "$SHA" ]] || { echo "::error::$src was built from $revision, not $SHA"; exit 1; }
+          digest="$(docker buildx imagetools inspect "$src" --format '{{json .Manifest}}' | jq -er .digest)"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::unexpected digest"; exit 1; }
+
+          # Copy by digest so the tag cannot move between the checks and the copy.
+          docker buildx imagetools create --tag "$image:development-green" "$image@$digest"
+
+          after="$(docker buildx imagetools inspect "$image:development-green" --format '{{json .Manifest}}' | jq -er .digest)"
+          [[ "$after" == "$digest" ]] || { echo "::error::development-green is $after, expected $digest"; exit 1; }
+
+          {
+            echo "### development-green promoted"
+            echo "- commit: \`$SHA\`"
+            echo "- image: \`$image@$digest\`"
+            echo "- trigger: \`$EVENT_NAME\` by \`$ACTOR\`"
+          } >>"$GITHUB_STEP_SUMMARY"

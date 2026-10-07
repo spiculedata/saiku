@@ -32,6 +32,8 @@ import org.saiku.olap.util.exception.SaikuOlapException;
 import org.saiku.service.ISessionService;
 import org.saiku.service.user.UserService;
 import org.saiku.service.util.exception.SaikuAccessDeniedException;
+import org.saiku.service.util.security.MondrianRolePolicy;
+import org.saiku.service.util.security.Usernames;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
@@ -46,6 +48,42 @@ public class SecurityAwareConnectionManager extends AbstractConnectionManager im
      * serialisation UID
      */
     private static final long serialVersionUID = -5912836681963684201L;
+
+    /**
+     * saiku#1970 (CWE-178) — the field separator used by {@link #connectionCacheKey(String, String)}.
+     *
+     * <p>ASCII UNIT SEPARATOR (U+001F): a C0 control character that is not a legal character in a
+     * datasource name or in a login, so it cannot occur inside either field of the key.
+     */
+    static final String KEY_FIELD_SEPARATOR = "\u001F";
+
+    /**
+     * saiku#1970 (CWE-178) — an <b>injective</b> composite key for a security-enabled datasource's
+     * cached connection: it pairs the datasource {@code name} with the caller's identity so the two
+     * fields can never be mistaken for one another.
+     *
+     * <p>The historical key was {@code name + "-" + identity}. Both fields are admin-chosen and share
+     * one flat namespace, so a literal {@code "-"} lets two genuinely different (datasource, user)
+     * pairs collapse onto the same key: datasource {@code foo} + user {@code bar-x} and datasource
+     * {@code foo-bar} + user {@code x} both produced {@code "foo-bar-x"}, and the second caller was
+     * handed a live connection built for the <em>other</em> datasource — with the other datasource's
+     * role already applied.
+     *
+     * <p>Rather than guess which characters are impossible in an admin-chosen name, the encoding is
+     * <b>length-prefixed</b>: {@code <len(name)> ":" <name> <SEP> <identity>}. The length prefix
+     * alone makes the mapping injective for <em>arbitrary</em> strings — the name's boundary is fixed
+     * before the identity is read, so no byte of either field can shift it and no choice of
+     * name/username can forge another pair's key. The separator is kept purely for legibility; the
+     * key still reads as {@code 8:foodmart<U+001F>bob} in a log line or a debugger.
+     *
+     * <p>Null-safe: a null field is treated as the empty string, so {@code (null, "x")} and
+     * {@code ("", "x")} share a key rather than one of them producing {@code "null:x"}.
+     */
+    static String connectionCacheKey(String name, String identity) {
+        String ds = (name == null) ? "" : name;
+        String user = (identity == null) ? "" : identity;
+        return ds.length() + ":" + ds + KEY_FIELD_SEPARATOR + user;
+    }
 
     private transient Map<String, ISaikuConnection> connections = new HashMap<>();
 
@@ -98,6 +136,16 @@ public class SecurityAwareConnectionManager extends AbstractConnectionManager im
 
         String newName = resolveConnectionKey(name, datasource);
 
+        // saiku#1969: the cache OWNS these connections. Anything that closes one behind the cache's
+        // back (the XMLA fork's unconditional close() on a shared connection is the historical
+        // case) leaves a closed instance in the map that every later caller would be handed, with
+        // no health check in between — so subsequent queries on that datasource fail until an admin
+        // refresh. Evict a closed OLAP connection and rebuild it instead of serving it.
+        if (connections.containsKey(newName) && isClosedOlapConnection(connections.get(newName))) {
+            log.warn("saiku#1969: cached OLAP connection \"{}\" is closed — evicting and reconnecting", newName);
+            connections.remove(newName);
+        }
+
         if (!connections.containsKey(newName)) {
             con = connect(name, datasource);
             if (con != null) {
@@ -134,6 +182,31 @@ public class SecurityAwareConnectionManager extends AbstractConnectionManager im
     }
 
     /**
+     * Whether a cached connection wraps an {@link OlapConnection} that has been closed underneath
+     * the cache (saiku#1969).
+     *
+     * <p>Only OLAP connections are health-checked: a non-OLAP (JDBC/legacy) connection's lifecycle
+     * is not what this issue is about, and an unrecognised connection type is treated as usable
+     * rather than silently rebuilt. A health check that itself fails is also treated as "can't
+     * prove it's dead" — we hand it out and let the caller fail, exactly as before this change.
+     *
+     * <p>Package-private so the reversion guard can assert the check directly.
+     */
+    boolean isClosedOlapConnection(ISaikuConnection con) {
+        if (con == null) {
+            return false;
+        }
+        try {
+            if (con.getConnection() instanceof OlapConnection) {
+                return ((OlapConnection) con.getConnection()).isClosed();
+            }
+        } catch (Exception e) {
+            log.debug("Could not determine closed state of cached connection {}", con.getName(), e);
+        }
+        return false;
+    }
+
+    /**
      * Compute the cache key under which a security-enabled datasource's connection is stored, so
      * that a per-user connection (and therefore a per-user Mondrian role, applied by {@link
      * #applySecurity}) is isolated to that user.
@@ -165,11 +238,17 @@ public class SecurityAwareConnectionManager extends AbstractConnectionManager im
             Map<String, Object> session = sessionService.getAllSessionObjects();
             String username = session == null ? null : (String) session.get("username");
             if (username != null) {
-                return name + "-" + username;
+                return connectionCacheKey(name, Usernames.canonicalize(username));
             }
+            // saiku#1970: the session "username" is the #1907-canonical (lower-cased) identity, so
+            // the principal fallback is canonicalised the same way — otherwise the SAME user
+            // reaching the SAME datasource via XMLA ("JSmith") and via the UI ("jsmith") got two
+            // separate cached connections. Cosmetic (both slots are scoped to that user's own
+            // authorities, so neither can carry another user's role), but the duplicates are
+            // avoidable and the canonical form is the single identity Saiku compares on elsewhere.
             String principal = currentPrincipalName();
             if (principal != null) {
-                return name + "-" + principal;
+                return connectionCacheKey(name, Usernames.canonicalize(principal));
             }
         }
         return name;
@@ -228,57 +307,45 @@ public class SecurityAwareConnectionManager extends AbstractConnectionManager im
             throw new IllegalArgumentException("Cannot apply Security to NULL connection object");
         }
 
-        if (isDatasourceSecurity(datasource, ISaikuConnection.SECURITY_TYPE_SPRING2MONDRIAN_VALUE)) {
-            List<String> springRoles = getSpringRoles();
-            List<String> conRoles = getConnectionRoles(con);
-            String roleName = null;
+        // saiku#779: resolution lives in MondrianRolePolicy so the admin role preview
+        // (/saiku/admin/roles/preview) runs exactly the code enforced here.
+        MondrianRolePolicy.Mode mode = MondrianRolePolicy.modeOf(datasource);
+        if (mode == MondrianRolePolicy.Mode.ONE2ONE || mode == MondrianRolePolicy.Mode.LOOKUP) {
+            List<String> resolved = MondrianRolePolicy.resolveMondrianRoles(
+                    mode,
+                    getSpringRoles(),
+                    mode == MondrianRolePolicy.Mode.ONE2ONE ? getConnectionRoles(con) : null,
+                    MondrianRolePolicy.mappingOf(datasource));
+            String roleName = String.join(",", resolved);
 
-            for (String sprRole : springRoles) {
-                if (conRoles.contains(sprRole)) {
-                    if (roleName == null) {
-                        roleName = sprRole;
-                    } else {
-                        roleName += "," + sprRole;
-                    }
-                }
-            }
-
-            if (roleName == null) {
-                // saiku#1968 (CWE-863): no Spring authority intersected the cube's roles. Deny a
-                // non-admin instead of falling through to setRoleName(null) = Mondrian root.
+            if (StringUtils.isBlank(roleName)) {
+                // saiku#1968 (CWE-863): no Spring authority intersected the cube's roles (one2one)
+                // or mapped to a Mondrian role (lookup). Deny a non-admin instead of falling
+                // through to setRoleName(null) = Mondrian root.
+                // saiku#1972: a blank name is no role too.
+                roleName = null;
                 enforceRoleResolvedOrAdmin(datasource);
             }
 
+            // saiku#1972 / saiku#779: setRole fails closed (SaikuAccessDeniedException, admins
+            // included) when Mondrian rejects the resolved role, e.g. a mapping typo or a role
+            // renamed in the schema, so a role that resolved but cannot be applied never leaves
+            // the connection at Mondrian root.
             if (setRole(con, roleName, datasource)) {
                 return con;
             }
-
-        } else if (isDatasourceSecurity(datasource, ISaikuConnection.SECURITY_TYPE_SPRINGLOOKUPMONDRIAN_VALUE)) {
-            Map<String, List<String>> mapping = getRoleMapping(datasource);
-            List<String> springRoles = getSpringRoles();
-            String roleName = null;
-            for (String sprRole : springRoles) {
-                if (mapping.containsKey(sprRole)) {
-                    List<String> roles = mapping.get(sprRole);
-                    for (String role : roles) {
-                        if (roleName == null) {
-                            roleName = role;
-                        } else {
-                            roleName += "," + role;
-                        }
-                    }
-                }
-            }
-
-            if (roleName == null) {
-                // saiku#1968 (CWE-863): no authority mapped to a Mondrian role. Deny a non-admin
-                // instead of falling through to setRoleName(null) = Mondrian root.
-                enforceRoleResolvedOrAdmin(datasource);
-            }
-
-            if (setRole(con, roleName, datasource)) {
-                return con;
-            }
+        } else if (mode == MondrianRolePolicy.Mode.UNKNOWN) {
+            // saiku#1972 (CWE-863): security is on but security.type is missing or unrecognised, so
+            // no branch above sets a role and the connection would stay at Mondrian root. Treat
+            // it as "no role resolved": admin keeps full access, anyone else is denied.
+            log.warn(
+                    "saiku#1972: datasource \"{}\" has {}=true but an unrecognised {} \"{}\"; "
+                            + "no Mondrian role can be applied.",
+                    datasource.getName(),
+                    ISaikuConnection.SECURITY_ENABLED_KEY,
+                    ISaikuConnection.SECURITY_TYPE_KEY,
+                    datasource.getProperties().getProperty(ISaikuConnection.SECURITY_TYPE_KEY));
+            enforceRoleResolvedOrAdmin(datasource);
         }
 
         return con;
@@ -358,6 +425,15 @@ public class SecurityAwareConnectionManager extends AbstractConnectionManager im
         }
     }
 
+    /**
+     * Applies {@code roleName} to the connection.
+     *
+     * <p>saiku#1972 (CWE-863): if Mondrian rejects the role (a mapping typo, trailing whitespace, a
+     * role removed from the schema), the connection's role is not what the configuration asked for
+     * — on a fresh per-principal connection it is still Mondrian root. That used to be logged and
+     * swallowed, handing the caller full access; it now fails closed with an access-denied
+     * exception, for admins too, so the misconfiguration surfaces instead of silently widening.
+     */
     private boolean setRole(ISaikuConnection con, String roleName, SaikuDatasource datasource) {
         if (con.getConnection() instanceof OlapConnection) {
             OlapConnection c = (OlapConnection) con.getConnection();
@@ -374,6 +450,10 @@ public class SecurityAwareConnectionManager extends AbstractConnectionManager im
                 return true;
             } catch (Exception e) {
                 log.error("Error setting role: " + roleName, e);
+                throw new SaikuAccessDeniedException(
+                        "Access denied: role \"" + roleName + "\" could not be applied on datasource \""
+                                + datasource.getName() + "\".",
+                        e);
             }
         }
         return false;
@@ -405,27 +485,12 @@ public class SecurityAwareConnectionManager extends AbstractConnectionManager im
         return new ArrayList<>();
     }
 
-    private Map<String, List<String>> getRoleMapping(SaikuDatasource datasource) {
-        Map<String, List<String>> result = new HashMap<>();
-        if (datasource.getProperties().containsKey(ISaikuConnection.SECURITY_LOOKUP_KEY)) {
-            String mappings = datasource.getProperties().getProperty(ISaikuConnection.SECURITY_LOOKUP_KEY);
-            if (mappings != null) {
-                String[] maps = mappings.split(";");
-                for (String map : maps) {
-                    String[] m = map.split("=");
-                    if (m.length == 2) {
-                        if (!result.containsKey(m[0])) {
-                            result.put(m[0], new ArrayList<String>());
-                        }
-                        result.get(m[0]).add(m[1]);
-                    }
-                }
-            }
-        }
-        return result;
-    }
-
-    private ISaikuConnection connect(String name, SaikuDatasource datasource) {
+    /**
+     * Opens a brand-new connection for {@code datasource}. Protected as a test seam: the
+     * connection cache's behaviour is asserted by injecting fakes here rather than by standing up a
+     * real warehouse.
+     */
+    protected ISaikuConnection connect(String name, SaikuDatasource datasource) {
         try {
             ISaikuConnection con = SaikuConnectionFactory.getConnection(datasource);
             if (con.initialized()) {
