@@ -43,6 +43,7 @@ Plus the long-tail:
 | `GET /saiku/api/ai/query/{queryId}/drillthrough/export/csv` | Same params as the JSON drillthrough (`position`, `returns`, `maxrows`, `firstRowset`); streams `text/csv` with `Content-Disposition: attachment` for direct download (saiku#1051). |
 | `POST /saiku/api/ai/anomaly` | Run a query, then flag anomalous points along a time axis. Returns the typed records response with an `anomaly:{score,expected,direction}` block on each flagged cell, plus an `anomaly` summary (`method`, `threshold`, `anomalyCount`) (saiku#907). |
 | `POST /saiku/api/ai/forecast` | Run a time-series query, then project `horizon` future points with prediction intervals. Returns the typed records response (observed data untouched) plus a `forecast` block keyed by measure (saiku#908). |
+| `POST /saiku/api/ai/describe-query` | Tier-1 (schema-only): suggest a short title + one-line description for a query's structure — measures, rows, columns, slicer. Never executes the query; no data values leave the box (saiku#909). |
 
 All routes require an authenticated session (form login at `POST /login`
 on the launcher; same auth as the regular UI).
@@ -884,6 +885,50 @@ projected point carries the point estimate and the interval bounds:
 `forecast: true` marks projected points (vs observed); `lower`/`upper`
 are the interval bounds at the requested `confidence`. The chart tile
 appends these as a dashed continuation with a shaded confidence band.
+
+---
+
+## Step 8 — tile titles/descriptions: `POST /ai/describe-query` (saiku#909)
+
+Tier-1 (schema-only): suggests a short title and one-sentence description
+for the dashboard tile a query will render as, based purely on the query's
+**structure** — selected measures, row/column axes, slicer — never on data
+values or aggregated results. The query is validated and resolved against
+the live schema exactly like `/ai/query`, but is never executed.
+
+```jsonc
+// POST /ai/describe-query
+{
+  "query": { /* a normal /query request body */ }
+}
+```
+
+```jsonc
+// 200
+{
+  "suggestedTitle": "Sales by region, last 4 quarters",
+  "suggestedDescription": "Compares quarterly sales across geographic regions for the trailing 12 months."
+}
+```
+
+Notes:
+
+- Gated at the `schema-only` policy tier — the least-trusted, default
+  tier — so it stays available under every `ai.policy` setting.
+- Respects saiku#902 PII annotations: any measure or level tagged
+  `saiku.semantic.pii=true` that the query touches has its member captions
+  replaced with `[REDACTED]` before the structure summary is built. The
+  axis/filter shape (dimension, hierarchy, level) is kept so the model
+  still understands "this breaks down by X" — it just never sees which
+  members.
+- `400 VALIDATION_ERROR` on a malformed request or an unresolvable name —
+  same envelope as `/ai/query`.
+- `503` with `{"status":"AI_NOT_CONFIGURED","error":"AI not configured"}`
+  when no LLM upstream is configured.
+- `502` with `{"status":"AI_UPSTREAM_ERROR", ...}` on a transport / upstream
+  failure.
+- Every call is audit-logged (saiku#906), same as the rest of the `/ai/*`
+  surface.
 
 ---
 

@@ -403,10 +403,13 @@ export async function executeQueryAsync(
 
 export async function drillthrough(
 	queryName: string,
-	opts: { maxRows?: number; position?: string; returns?: string[] } = {}
+	opts: { maxRows?: number; firstRowset?: number; position?: string; returns?: string[] } = {}
 ): Promise<QueryResult> {
 	const params = new URLSearchParams();
 	params.set('maxrows', String(opts.maxRows ?? 1000));
+	// saiku#822: warehouse-side short-circuit, an alternative to maxrows'
+	// in-engine cap. The server prefers firstRowset when both are present.
+	if (opts.firstRowset != null) params.set('firstRowset', String(opts.firstRowset));
 	if (opts.position) params.set('position', opts.position);
 	if (opts.returns?.length) params.set('returns', opts.returns.join(','));
 	const url = `${REST_BASE}/${encodeURIComponent(queryName)}/drillthrough?${params.toString()}`;
@@ -426,6 +429,33 @@ export async function drillthrough(
 		return parseArrowDrillthrough(await res.arrayBuffer());
 	}
 	return (await res.json()) as QueryResult;
+}
+
+/** One drillthrough-eligible column, as reported by the discovery endpoint.
+ *  `name` is the MDX-qualified label (e.g. `[Time].[Time].[Year]`) — exactly
+ *  what `?returns=` accepts. */
+export interface DrillthroughColumn {
+	name: string;
+	type: string;
+}
+
+/** GET /rest/saiku/api/query/{queryName}/drillthrough/columns — the Query2
+ *  parity endpoint for the AI Query API's column discovery (saiku#822).
+ *  Lets the DrillthroughModal populate its picker with exactly the columns
+ *  this query can drill through, instead of the full cube dimension/measure
+ *  list. Throws on a non-ok response. */
+export async function drillthroughColumns(queryName: string): Promise<DrillthroughColumn[]> {
+	const url = `${REST_BASE}/${encodeURIComponent(queryName)}/drillthrough/columns`;
+	const res = await fetch(url, {
+		credentials: 'include',
+		headers: { Accept: 'application/json' }
+	});
+	if (!res.ok) {
+		const text = await res.text().catch(() => '');
+		throw new Error(`drillthroughColumns ${res.status}: ${text.slice(0, 200)}`);
+	}
+	const body = (await res.json()) as { columns: DrillthroughColumn[] };
+	return body.columns;
 }
 
 /**
