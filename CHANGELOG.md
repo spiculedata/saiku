@@ -32,6 +32,38 @@ All notable changes to Saiku are documented here. This project follows
 
 ### Added
 
+- **SCIM 2.0 provisioning endpoint for enterprise IdPs** (saiku#1438). Saiku now
+  speaks the SCIM 2.0 core profile (RFC 7643 schema, RFC 7644 protocol) at
+  `/rest/scim/v2`, so Okta, Microsoft Entra ID or OneLogin can own the user
+  lifecycle end to end — create, update, deactivate, reactivate, delete (a soft
+  `active=false`), and group membership — without anyone touching the admin
+  console. `GET/POST/PUT/PATCH/DELETE` on `/Users` and `/Groups`, plus the
+  `ServiceProviderConfig` / `ResourceTypes` / `Schemas` discovery pass both
+  connectors validate before their first create.
+
+  SCIM is kept **isolated** from the Saiku session/Basic surface: it runs on its
+  own Spring Security chain, authenticates only `Authorization: Bearer <token>`,
+  and the principal it establishes carries a single authority no other URL rule
+  grants. Tokens are minted per connector at
+  `POST /rest/saiku/admin/scim/tokens` (admin-only) and stored under
+  `${saiku.home}/scim-tokens/` as a SHA-256 of the secret — the plaintext is
+  shown once and is never persisted, so a leaked home directory yields no usable
+  credential. Revocation takes effect on the connector's next request; SCIM calls
+  are stateless and mint no HTTP session. Each token is rate limited to 100
+  requests/minute (`saiku.scim.rate-limit.per-minute`) and every call is
+  audit-logged with its token label, IdP and operation.
+
+  Mapping: `userName` ⇄ `USERS.USERNAME` (canonicalised, so the IdP's casing
+  can't split one person across two ACL identities), `emails[primary]` ⇄
+  `USERS.EMAIL`, `active` ⇄ `USERS.ENABLED`, `name.*`/`displayName` ⇄ new
+  nullable `GIVEN_NAME`/`FAMILY_NAME`/`DISPLAY_NAME` columns (added by an
+  idempotent `ALTER` at boot), and a group's `displayName` is the role granted to
+  its members. `externalId` and `enterprise:2.0:User` are accepted and dropped —
+  Saiku has no column for them, and refusing a filter on one is more honest than
+  a silent wrong answer. See
+  [`docs/SCIM-PROVISIONING.md`](docs/SCIM-PROVISIONING.md) for the connector
+  walkthrough, the mapping limits and troubleshooting.
+
 - **`POST /ai/describe-query` — AI-suggested tile titles and descriptions**
   (Tier-1, schema-only; saiku#909). Given a query's structure — selected
   measures, row/column axes, slicer — but no data values, suggests a short
@@ -80,6 +112,28 @@ All notable changes to Saiku are documented here. This project follows
 
 ### Security
 
+- **Per-endpoint rate limiters are no longer silently disabled by request-scoped
+  instance state (CWE-837 / CWE-307, saiku#1913).** `AiRateLimiter` kept its
+  fixed-window buckets in an *instance* field, but every consumer held one as
+  `new AiRateLimiter(...)` inside a `scope="request"` resource — a fresh, EMPTY
+  bucket map per HTTP request, so `tryAcquire` always saw count = 1 and returned
+  true. The caps on the public one-click unsubscribe / consent-confirm
+  endpoints, admin mail send / invite / test-send, self-send email, job run-now,
+  and the two AI ask endpoints never tripped. `AiRateLimiter.shared(name)`
+  (plus `sharedFromProperty(name, prop, default)`) now keys the bucket store by
+  name, and `saiku-beans.xml` declares those as singleton beans
+  (`mailUnsubscribeRateLimiter`, `mailConsentRateLimiter`,
+  `mailConsentAddressRateLimiter`, `mailTestSendRateLimiter`,
+  `mailInviteRateLimiter`, `mailSendRateLimiter`, `mailEmailRateLimiter`,
+  `aiQueryAskRateLimiter`, `aiOssieAskRateLimiter`, `jobRunNowRateLimiter`)
+  injected into the request-scoped resources, so one request's spend counts
+  against the next. The bare constructors keep private per-instance storage
+  (what unit tests want), and the shared store is bounded at 50,000 distinct
+  keys per limiter so an attacker-shaped key space (client IP) can't grow it
+  without limit. No configuration change is required; the existing
+  `saiku.*.ratelimit.maxPerMinute` properties still tune each endpoint, and
+  `AiRateLimiterWiringTest` fails if a limiter is ever left unwired.
+
 - **`sql-serve` no longer exposes an unauthenticated SQL proxy on every interface**
   (CWE-306 / CWE-1327, saiku#1910). The Avatica and Postgres-wire endpoints now
   bind to `127.0.0.1` by default; a new `--bind` option moves them, and a
@@ -96,6 +150,7 @@ All notable changes to Saiku are documented here. This project follows
   connecting. Add `--bind 0.0.0.0 --auth-user <name>` with a password file, and
   give clients those credentials (`authentication=BASIC;avatica_user=…;avatica_password=…`
   for Avatica, the normal user/password for Postgres clients).
+
 - **The default-credential boot gate now checks the password, not the hash**
   (CWE-1392 / CWE-521, saiku#1915). `enforceDefaultCredentialPolicy` compared
   the stored bcrypt **string** against the two shipped defaults, so any

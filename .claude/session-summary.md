@@ -79,6 +79,18 @@ pushed down; normal sessions append and the history stays useful.
 **Was doing:** merged development at 4fb7b66c1, retained every changelog entry, applied Spotless formatting, and fixed the 403 response that leaked a datasource name in CI.
 **Now:** check PR #2057 CI after the fix; local Maven verification cannot reach the authenticated GitHub Packages dependencies.
 **Refs:** #1393, #2057
+## 2026-10-07 — feature/scim-2-provisioning — merged development for PR #2065
+**Was doing:** merged development at 4fb7b66c1, kept SCIM wiring alongside the base security chains and all changelog entries, and formatted the privileged-role guard and test.
+**Now:** check PR #2065 CI after the push; local focused Maven tests stopped before compilation because GitHub Packages returned 401 for required artifacts.
+**Refs:** #1438, #2065
+## 2026-10-07 — feature/repository-hardening-followups — merged development for PR #2072
+**Was doing:** merged development at 4fb7b66c1; the sole conflict was Java imports, resolved by retaining the base Path/Paths imports and this PR's Normalizer import.
+**Now:** check PR #2072 CI after the push; local focused Maven tests stopped before compilation because GitHub Packages returned 401 for private Mondrian and olap4j dependencies. Spotless passed.
+**Refs:** #1933, #2072
+## 2026-10-07 — feature/1913-shared-ai-rate-limiter — merged development for PR #2083
+**Was doing:** merged the latest development, retaining every changelog entry and both session summaries; fixed the test XML placeholder setup behind the CI wiring-test failure. The earlier limiter-budget and Spotless fixes remain.
+**Now:** check PR #2083 CI after the push; direct limiter tests, Spring bean smoke test, and Spotless passed, but the Maven reactor stopped at a GitHub Packages 401 before compilation.
+**Refs:** #1913, #2083
 ## 2026-10-07 — security/1914-query-timeout-result-limits — merged development for PR #2082
 **Was doing:** merged development at 4fb7b66c1, retaining the cell-property columns and bounded Arrow allocator in the sole conflict.
 **Now:** check PR #2082 CI; local focused Maven tests stop before compilation because GitHub Packages returns 401 for Mondrian and olap4j.

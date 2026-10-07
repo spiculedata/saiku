@@ -112,6 +112,10 @@ public class AiQueryResource {
      * saiku#1151: per-caller call-rate cap on the cost-bearing ask endpoint.
      * Default budget; replace via {@link #setAskRateLimiter} (Spring wiring or
      * tests). Size caps live in {@code AiAskGuard}.
+     *
+     * <p>saiku#1913: production injects the {@code aiQueryAskRateLimiter} SINGLETON (a
+     * {@code shared(...)} store) — this per-request bean holding a per-request limiter is exactly
+     * the shape that made the cap silently never trip.
      */
     private org.saiku.web.security.ratelimit.AiRateLimiter askRateLimiter =
             new org.saiku.web.security.ratelimit.AiRateLimiter();
