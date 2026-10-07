@@ -24,6 +24,7 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.olap4j.OlapConnection;
+import org.olap4j.OlapException;
 import org.saiku.datasources.connection.ISaikuConnection;
 import org.saiku.datasources.datasource.SaikuDatasource;
 import org.saiku.service.user.UserService;
@@ -169,6 +170,40 @@ public class SecurityAwareConnectionManagerFailClosedTest {
         assertEquals("non-admin scoped to the mapped Mondrian role", "salesrole", con.role.get());
     }
 
+    /**
+     * saiku#779: a mapping to a Mondrian role the schema doesn't declare (a typo, or a role renamed
+     * in the schema) makes setRoleName throw. applySecurity used to log that and return the
+     * connection with no role applied — Mondrian root, full access. It must deny instead.
+     */
+    @Test
+    public void springlookup_nonAdmin_mappedToUndeclaredRole_denied() {
+        authenticateAs("bob", "ROLE_USER");
+        RoleCapturingConnection con = olapConnection("salesrole");
+        SaikuDatasource ds = springlookup("ROLE_USER=Typo");
+
+        try {
+            manager().applySecurity(con.saiku, ds);
+            fail("a role that can't be applied must deny, not fall through to Mondrian root");
+        } catch (SaikuAccessDeniedException expected) {
+            assertFalse("no role was applied", con.roleWasSet.get());
+        }
+    }
+
+    /** Same for an admin: a resolved role that can't be applied is a misconfiguration, not root. */
+    @Test
+    public void springlookup_admin_mappedToUndeclaredRole_denied() {
+        authenticateAs("root", ADMIN_ROLE);
+        RoleCapturingConnection con = olapConnection("salesrole");
+        SaikuDatasource ds = springlookup(ADMIN_ROLE + "=Typo");
+
+        try {
+            manager().applySecurity(con.saiku, ds);
+            fail("a role that can't be applied must deny, even for an admin");
+        } catch (SaikuAccessDeniedException expected) {
+            assertFalse("no role was applied", con.roleWasSet.get());
+        }
+    }
+
     // ---- fail-closed-on-ambiguity ---------------------------------------------------------------
 
     /** No UserService injected -> admin cannot be proven -> DENY (never default-to-full). */
@@ -229,6 +264,133 @@ public class SecurityAwareConnectionManagerFailClosedTest {
         assertEquals("context-free start-up -> preserve prior (non-serving) behaviour", con.saiku, result);
     }
 
+    // ---- saiku#1972: present-but-invalid role names -------------------------------------------
+
+    /** A blank mapping value ({@code ROLE_USER= }) is treated as unmapped -> non-admin DENIED. */
+    @Test
+    public void springlookup_nonAdmin_blankMappingValue_denied() {
+        authenticateAs("bob", "ROLE_USER");
+        RoleCapturingConnection con = olapConnection("salesrole");
+        SecurityAwareConnectionManager mgr = manager();
+
+        try {
+            mgr.applySecurity(con.saiku, springlookup("ROLE_USER= "));
+            fail("a blank mapped role must fold into the no-role deny path, not reach Mondrian root");
+        } catch (SaikuAccessDeniedException expected) {
+            // fail-closed
+        }
+        assertFalse(con.roleWasSet.get());
+    }
+
+    /** A blank mapping value alongside a real one is skipped; the real role still applies. */
+    @Test
+    public void springlookup_nonAdmin_blankAndRealMapping_scopedToReal() {
+        authenticateAs("bob", "ROLE_USER");
+        RoleCapturingConnection con = olapConnection("salesrole");
+        SecurityAwareConnectionManager mgr = manager();
+
+        ISaikuConnection result = mgr.applySecurity(con.saiku, springlookup("ROLE_USER= ;ROLE_USER=salesrole"));
+
+        assertEquals(con.saiku, result);
+        assertEquals("salesrole", con.role.get());
+    }
+
+    /**
+     * A mapping to a role the schema doesn't define (typo, trailing whitespace, removed role) makes
+     * Mondrian's setRoleName throw. That used to be swallowed, leaving the connection at root.
+     */
+    @Test
+    public void springlookup_nonAdmin_unknownMondrianRole_denied() {
+        for (String mapping : new String[] {"ROLE_USER=salesrol", "ROLE_USER=salesrole "}) {
+            authenticateAs("bob", "ROLE_USER");
+            RoleCapturingConnection con = olapConnection("salesrole");
+            SecurityAwareConnectionManager mgr = manager();
+
+            try {
+                mgr.applySecurity(con.saiku, springlookup(mapping));
+                fail("unknown Mondrian role [" + mapping + "] must deny, not leave the connection at root");
+            } catch (SaikuAccessDeniedException expected) {
+                // fail-closed
+            }
+            assertFalse(con.roleWasSet.get());
+        }
+    }
+
+    /**
+     * A role-application failure denies an admin too: the resolved role could not be applied, so the
+     * connection's role is not what the configuration asked for. Surfacing the error beats silently
+     * widening to root.
+     */
+    @Test
+    public void springlookup_admin_unknownMondrianRole_denied() {
+        authenticateAs("root", ADMIN_ROLE);
+        RoleCapturingConnection con = olapConnection("salesrole");
+        SecurityAwareConnectionManager mgr = manager();
+
+        try {
+            mgr.applySecurity(con.saiku, springlookup(ADMIN_ROLE + "=nosuchrole"));
+            fail("a failed role application must not fall back to root");
+        } catch (SaikuAccessDeniedException expected) {
+            // fail-closed
+        }
+    }
+
+    /** security.enabled=true with an unrecognised security.type -> non-admin DENIED. */
+    @Test
+    public void unknownSecurityType_nonAdmin_denied() {
+        authenticateAs("bob", "ROLE_USER");
+        RoleCapturingConnection con = olapConnection("ROLE_USER");
+        SecurityAwareConnectionManager mgr = manager();
+
+        try {
+            mgr.applySecurity(con.saiku, securityEnabledWithType("one-to-one"));
+            fail("an unrecognised security.type must deny a non-admin, not leave the connection at root");
+        } catch (SaikuAccessDeniedException expected) {
+            // fail-closed
+        }
+        assertFalse(con.roleWasSet.get());
+    }
+
+    /** security.enabled=true with no security.type at all -> non-admin DENIED. */
+    @Test
+    public void missingSecurityType_nonAdmin_denied() {
+        authenticateAs("bob", "ROLE_USER");
+        RoleCapturingConnection con = olapConnection("ROLE_USER");
+        SecurityAwareConnectionManager mgr = manager();
+
+        try {
+            mgr.applySecurity(con.saiku, securityEnabledWithType(null));
+            fail("a missing security.type must deny a non-admin, not leave the connection at root");
+        } catch (SaikuAccessDeniedException expected) {
+            // fail-closed
+        }
+        assertFalse(con.roleWasSet.get());
+    }
+
+    /** Unrecognised security.type keeps admin at full access, as with the no-role case. */
+    @Test
+    public void unknownSecurityType_admin_getsFull() {
+        authenticateAs("root", ADMIN_ROLE);
+        RoleCapturingConnection con = olapConnection("ROLE_USER");
+        SecurityAwareConnectionManager mgr = manager();
+
+        ISaikuConnection result = mgr.applySecurity(con.saiku, securityEnabledWithType("bogus"));
+
+        assertEquals(con.saiku, result);
+    }
+
+    /** Unrecognised security.type during context-free start-up does not throw. */
+    @Test
+    public void unknownSecurityType_noPrincipalNoRequest_notDenied() {
+        RequestContextHolder.resetRequestAttributes();
+        RoleCapturingConnection con = olapConnection("ROLE_USER");
+        SecurityAwareConnectionManager mgr = manager();
+
+        ISaikuConnection result = mgr.applySecurity(con.saiku, securityEnabledWithType("bogus"));
+
+        assertEquals(con.saiku, result);
+    }
+
     // ---- helpers --------------------------------------------------------------------------------
 
     private static SecurityAwareConnectionManager manager() {
@@ -259,6 +421,15 @@ public class SecurityAwareConnectionManagerFailClosedTest {
         props.setProperty(
                 ISaikuConnection.SECURITY_TYPE_KEY, ISaikuConnection.SECURITY_TYPE_SPRINGLOOKUPMONDRIAN_VALUE);
         props.setProperty(ISaikuConnection.SECURITY_LOOKUP_KEY, mapping);
+        return new SaikuDatasource(DS, SaikuDatasource.Type.OLAP, props);
+    }
+
+    private static SaikuDatasource securityEnabledWithType(String type) {
+        Properties props = new Properties();
+        props.setProperty(ISaikuConnection.SECURITY_ENABLED_KEY, "true");
+        if (type != null) {
+            props.setProperty(ISaikuConnection.SECURITY_TYPE_KEY, type);
+        }
         return new SaikuDatasource(DS, SaikuDatasource.Type.OLAP, props);
     }
 
@@ -294,11 +465,16 @@ public class SecurityAwareConnectionManagerFailClosedTest {
             }
 
             @Override
-            public Object invoke(Object proxy, Method method, Object[] args) {
+            public Object invoke(Object proxy, Method method, Object[] args) throws OlapException {
                 switch (method.getName()) {
                     case "getAvailableRoleNames":
                         return availableRoles;
                     case "setRoleName":
+                        String requested = args == null ? null : (String) args[0];
+                        if (requested != null && !availableRoles.contains(requested)) {
+                            // Mirrors MondrianOlap4jConnection.setRoleName on a role the schema lacks.
+                            throw new OlapException("Unknown role '" + requested + "'");
+                        }
                         roleWasSet.set(true);
                         role.set(args == null ? null : (String) args[0]);
                         return null;

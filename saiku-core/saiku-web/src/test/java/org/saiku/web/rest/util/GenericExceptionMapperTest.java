@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.UUID;
 import org.junit.Test;
 import org.saiku.service.olap.ai.AiValidationException;
+import org.saiku.service.util.exception.SaikuAccessDeniedException;
 
 /**
  * saiku#1165 (audit-3) — pin the global error envelope so a resource can never
@@ -131,5 +132,72 @@ public class GenericExceptionMapperTest {
         if (refA.equals(refB)) {
             fail("each unhandled exception must get a distinct correlation id");
         }
+    }
+
+    /**
+     * saiku#1973 — the saiku#1968 fail-closed datasource denial is an
+     * authorization decision, so the global mapper answers 403 rather than
+     * letting it masquerade as one of our internal faults.
+     */
+    @Test
+    public void accessDeniedSurfacesAs403NotAnOpaque500() {
+        Response r = mapper.toResponse(new SaikuAccessDeniedException(
+                "Access denied: your account is not granted any role on datasource \"sales_prod\"."));
+
+        assertEquals(403, r.getStatus());
+        assertEquals(MediaType.APPLICATION_JSON_TYPE, r.getMediaType());
+
+        Map<String, Object> body = bodyOf(r);
+        assertEquals("FORBIDDEN", body.get("status"));
+        assertEquals("Access denied", body.get("error"));
+    }
+
+    /** The denial names the datasource; the denial response must not. */
+    @Test
+    public void theForbiddenBodyNamesNoDatasource() {
+        Response r = mapper.toResponse(new SaikuAccessDeniedException(
+                "Access denied: your account is not granted any role on datasource \"sales_prod\"."));
+
+        String rendered = bodyOf(r).toString();
+        assertFalse("datasource name leaked", rendered.contains("sales_prod"));
+        assertNull(
+                "no correlation ref needed on a 403 — it is not our fault",
+                bodyOf(r).get("ref"));
+    }
+
+    /** A denial that arrives rewrapped (resource, AOP proxy) must not degrade into a 500. */
+    @Test
+    public void aRewrappedAccessDeniedIsStillForbidden() {
+        Response r = mapper.toResponse(new RuntimeException(
+                "outer",
+                new IllegalStateException("middle", new SaikuAccessDeniedException("Access denied: ... sales_prod"))));
+
+        assertEquals(403, r.getStatus());
+        assertFalse("datasource name leaked", bodyOf(r).toString().contains("sales_prod"));
+    }
+
+    /** A self-referencing cause chain must not spin the denial walk forever. */
+    @Test
+    public void aSelfReferentialCauseChainTerminates() {
+        RuntimeException loop = new RuntimeException("boom");
+        SaikuAccessDeniedException denied = new SaikuAccessDeniedException("Access denied");
+        // Force a cause cycle: loop → denied → wrapper → loop.
+        RuntimeException wrapper = new RuntimeException("outer", loop);
+        loop.initCause(denied);
+        denied.initCause(wrapper);
+
+        Response r = mapper.toResponse(loop);
+
+        assertEquals(403, r.getStatus());
+    }
+
+    /** Everything else is unchanged — an ordinary fault is still an opaque 500. */
+    @Test
+    public void anOrdinaryFaultIsStillAnOpaque500() {
+        Response r = mapper.toResponse(new IllegalStateException("jdbc:h2:/srv/saiku;PWD=hunter2"));
+
+        assertEquals(500, r.getStatus());
+        assertEquals("ERROR", bodyOf(r).get("status"));
+        assertNotNull(bodyOf(r).get("ref"));
     }
 }

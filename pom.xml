@@ -44,6 +44,10 @@
         <!-- bi.saiku.ossie:ossie-core — external Ossie/OSI parser library
              (spiculedata/ossie). Track its releases and bump here. -->
         <ossie.version>0.1.0</ossie.version>
+        <!-- CycloneDX SBOM plugin (saiku#1990). Pinned so a plugin auto-update
+             can't silently change the SBOM shape / schema version under us.
+             Bumped by the maven dependabot group like every other plugin. -->
+        <cyclonedx-maven-plugin.version>2.9.1</cyclonedx-maven-plugin.version>
         <!-- saiku#2011: JaCoCo's prepare-agent sets this to its -javaagent flag;
              module surefire configs prepend it as @{argLine}. The empty default
              keeps @{argLine} resolvable when JaCoCo is skipped (-Djacoco.skip). -->
@@ -270,6 +274,102 @@
                 <configuration>
                     <source>1.6</source>
                     <target>1.6</target>
+                </configuration>
+            </plugin>
+            <!-- saiku#1916: Hive/Hadoop are opt-in (drop a Hive JDBC driver into
+                 saiku-home/plugins/). Bundling them dragged ~150 server jars
+                 into the WAR — YARN ResourceManager, LLAP, ZooKeeper 3.4,
+                 Jetty 9.4, a test jar — plus log4j-1.2.x alongside the
+                 log4j-1.2-api bridge (same org.apache.log4j package, so class
+                 resolution depended on jar order) and extra slf4j bindings.
+                 Fail the build if any of that comes back. Hadoop/Hive are
+                 banned in every scope; the logging jars only where they would
+                 ship (compile/runtime). -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>3.5.0</version>
+                <executions>
+                    <execution>
+                        <id>ban-hadoop-and-log4j1</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <bannedDependencies>
+                                    <excludes>
+                                        <exclude>org.apache.hive</exclude>
+                                        <exclude>org.apache.hive.shims</exclude>
+                                        <exclude>org.apache.hadoop</exclude>
+                                        <exclude>org.apache.hadoop.thirdparty</exclude>
+                                        <exclude>org.apache.zookeeper</exclude>
+                                        <exclude>log4j:log4j:*:*:compile</exclude>
+                                        <exclude>log4j:log4j:*:*:runtime</exclude>
+                                        <exclude>ch.qos.reload4j:*:*:*:compile</exclude>
+                                        <exclude>ch.qos.reload4j:*:*:*:runtime</exclude>
+                                        <exclude>org.slf4j:slf4j-log4j12:*:*:compile</exclude>
+                                        <exclude>org.slf4j:slf4j-log4j12:*:*:runtime</exclude>
+                                        <exclude>org.slf4j:slf4j-reload4j:*:*:compile</exclude>
+                                        <exclude>org.slf4j:slf4j-reload4j:*:*:runtime</exclude>
+                                    </excludes>
+                                    <message>saiku#1916: Hive/Hadoop/ZooKeeper and log4j 1.x (and its slf4j bindings) must not ship in Saiku. Hive users drop the driver into saiku-home/plugins/; code on org.apache.log4j uses the log4j-1.2-api bridge. Exclude the artifact from the dependency that pulls it in.</message>
+                                </bannedDependencies>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- saiku#1990: CycloneDX SBOM. `makeAggregateBom` is an aggregator
+                 goal — declared here in the reactor root it runs ONCE at the end
+                 of the build (not per-module) and walks every module in the
+                 current reactor, so the emitted SBOM reflects the flattened
+                 dependency set that the shaded saiku-launcher fat JAR actually
+                 ships. Bound to `package` so `mvn package` (and the release
+                 job's `mvn -pl saiku-launcher -am package`) produce it without
+                 an extra invocation. Output: target/saiku-sbom.json (root
+                 module target/) in CycloneDX 1.6 JSON. Test scope is excluded —
+                 the SBOM describes what ships, not the build/test harness. -->
+            <plugin>
+                <groupId>org.cyclonedx</groupId>
+                <artifactId>cyclonedx-maven-plugin</artifactId>
+                <version>${cyclonedx-maven-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>make-aggregate-sbom</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>makeAggregateBom</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <projectType>application</projectType>
+                    <schemaVersion>1.6</schemaVersion>
+                    <outputFormat>json</outputFormat>
+                    <outputName>saiku-sbom</outputName>
+                    <includeBomSerialNumber>true</includeBomSerialNumber>
+                    <includeCompileScope>true</includeCompileScope>
+                    <includeProvidedScope>true</includeProvidedScope>
+                    <includeRuntimeScope>true</includeRuntimeScope>
+                    <includeSystemScope>true</includeSystemScope>
+                    <includeTestScope>false</includeTestScope>
+                    <includeLicenseText>false</includeLicenseText>
+                    <!-- Emit ONLY the single aggregate BOM at the top of the
+                         reactor, not a per-module BOM in every target/. One
+                         deterministic file (target/saiku-sbom.json) is what the
+                         release job publishes; `find -name saiku-sbom.json` then
+                         resolves unambiguously. -->
+                    <outputReactorProjects>false</outputReactorProjects>
+                    <!-- Do NOT attach the BOM as a Maven artifact. The file is
+                         still written to target/ (that's all the release job
+                         needs), but attaching would make `mvn deploy` push an
+                         UNSIGNED *-cyclonedx.json to GH Packages alongside the
+                         module jars. The SBOM we stand behind is the release
+                         asset — signed by attest-build-provenance — not an
+                         unattested copy in the package registry (SEC N5). -->
+                    <skipAttach>true</skipAttach>
                 </configuration>
             </plugin>
 
