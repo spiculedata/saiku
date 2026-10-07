@@ -441,6 +441,12 @@
         <property name="thinQueryService" ref="thinQueryBean"/>
         <property name="repository" ref="repository2bean"/>
         <property name="asyncQueryService" ref="asyncQueryServiceBean"/>
+        <!-- saiku#837: reuse the AI query surface's cube-metadata service so
+             drillthrough returns= on the Query2 workspace path resolves bare
+             captions to qualified MDX the same way AiQueryResource does
+             (saiku#782). Defined below, but Spring resolves bean refs by id
+             regardless of declaration order. -->
+        <property name="cubeMetadataService" ref="aiCubeMetadataServiceBean"/>
     </bean>
 
     <!-- ====================================================================
@@ -1319,6 +1325,28 @@
         <constructor-arg ref="datasourceServiceBean"/>
         <property name="userService" ref="userServiceBean"/>
         <property name="aiService" ref="cubeDesignerAiService"/>
+    </bean>
+
+    <!-- saiku#1107: SQL workbench — read-only ad-hoc SQL against a datasource's underlying JDBC
+         connection, gated to ROLE_SQL_EXEC/ROLE_ADMIN. Reuses schemaGenConnectionProvider (same
+         JdbcUrlPolicy-guarded connection resolution as the cube/schema designer) and its own
+         append-only audit log at ${saiku.home}/logs/sql-workbench-audit.jsonl. -->
+    <bean id="sqlWorkbenchAuditLog" class="org.saiku.service.sqlworkbench.SqlWorkbenchAuditLog"/>
+
+    <bean id="sqlWorkbenchService" class="org.saiku.service.sqlworkbench.SqlWorkbenchService">
+        <constructor-arg ref="schemaGenConnectionProvider"/>
+        <constructor-arg ref="datasourceServiceBean"/>
+        <constructor-arg ref="sqlWorkbenchAuditLog"/>
+    </bean>
+
+    <bean id="sqlWorkbenchResource" class="org.saiku.web.rest.resources.sqlworkbench.SqlWorkbenchResource">
+        <constructor-arg ref="sqlWorkbenchService"/>
+        <property name="userService" ref="userServiceBean"/>
+    </bean>
+
+    <bean id="sqlWorkbenchAuditResource"
+          class="org.saiku.web.rest.resources.sqlworkbench.SqlWorkbenchAuditResource">
+        <property name="auditLog" ref="sqlWorkbenchAuditLog"/>
     </bean>
 
     <!-- ====================================================================
