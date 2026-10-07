@@ -419,6 +419,22 @@ test('the up comment carries the URL, the image and the sticky marker, and never
   assert.doesNotMatch(body, /prevpw_|password=|PASSWORD=/i);
 });
 
+test('the building comment says a build was started or is running, where it will be served, and when it gives up', () => {
+  const started = comment({ action: 'building', reason: 'build-started', pr: 7 }, { config });
+  assert.match(started, /^<!-- saiku-oss-preview-status -->/);
+  assert.match(started, /\*\*BUILDING IMAGE\*\* \(build-started\)/);
+  assert.match(started, /a `docker` build was started/);
+  assert.match(started, /https:\/\/oss-pr-7\.preview\.saiku\.bi/);
+  assert.match(started, /no need to comment again/);
+  assert.match(started, /20 minutes/);
+  assert.doesNotMatch(started, /prevpw_|password=|PASSWORD=/i);
+
+  const running = comment({ action: 'building', reason: 'build-in-progress', pr: 7 }, { config });
+  assert.match(running, /\(build-in-progress\)/);
+  assert.match(running, /still running/);
+  assert.doesNotMatch(running, /was started/);
+});
+
 test('the queued, failed and down comments say what happened and how to retry', () => {
   const queued = comment({ action: 'queued', reason: 'capacity-full', pr: 5, position: 2 }, { config });
   assert.match(queued, /queued at position 2/);

@@ -500,6 +500,7 @@ const STATUS = {
   down: 'TORN DOWN',
   failed: 'FAILED TO START',
   unbuilt: 'NO PREVIEW',
+  building: 'BUILDING IMAGE',
 };
 
 /** Where validators learn how to fetch credentials. Never the credentials. */
@@ -563,6 +564,20 @@ export function comment(d, { config = DEFAULTS, registry } = {}) {
       'This PR changes nothing the `docker` workflow builds (poms, `saiku-*/`, `lib/`, `Dockerfile`, ' +
         '`docker/`), so no image exists for it and there is nothing to run. ' +
         'Push a change to one of those paths and the preview is created automatically.',
+    );
+  } else if (d.action === 'building') {
+    const started =
+      d.reason === 'build-started'
+        ? 'No image exists for this PR\'s head commit yet, so a `docker` build was started for it.'
+        : 'The `docker` build for this PR\'s head commit is still running.';
+    lines.push(
+      '',
+      `${started} It usually takes 10 to 15 minutes. The preview comes up automatically as soon as the image ` +
+        'is published, and this comment is updated in place; there is no need to comment again.',
+      '',
+      `It will be served at ${url} (private: reachable from the tailnet only).`,
+      '',
+      'If no image appears within 20 minutes this comment turns into **FAILED TO START**; comment `/preview` to retry.',
     );
   } else if (d.action === 'down') {
     lines.push(

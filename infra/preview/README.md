@@ -40,9 +40,19 @@ position and promoted hourly. The sticky PR comment says which state a PR is in.
 A PR that changes nothing `docker.yml` builds (docs, CI, scripts only) has no image and gets a
 quiet **NO PREVIEW** comment instead of a wait; it is created automatically on a push that touches a built path.
 
-If the image for the head commit is not in GHCR yet (the `docker` build is still running)
-the run waits up to 20 minutes, then fails with *"image not ready, comment /preview after
-the docker build for this commit has finished"*.
+If the image for the head commit is not in GHCR yet the run waits up to 20 minutes for it
+(the sticky comment says **BUILDING IMAGE** meanwhile and is updated in place), then fails
+with *"image not ready, comment /preview after the docker build for this commit has
+finished"*.
+
+**A PR with no image at all is built for you.** Per-PR images are only built on a push to the
+PR, so a PR last pushed before that existed (or whose build was cancelled) has none. A
+`/preview` comment (not the automatic flows) then dispatches `docker.yml` with `pr=<n>`: the
+workflow's `target` job re-checks from the API that the PR is open, from this repository,
+targeting `development` and not Dependabot's, builds exactly the PR **head** commit, and
+publishes only `pr-<n>` and the 7-hex SHA (never `:development`, `:main` or `sha-<n>`). If a
+build for that commit or PR is already queued or running, none is started. This is why only
+`preview-command.yml` holds `actions: write`.
 
 ## Bring one up by hand (on a preview host)
 

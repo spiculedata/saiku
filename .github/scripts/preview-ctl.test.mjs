@@ -23,6 +23,7 @@ import { test } from 'node:test';
 import {
   GhChangedFiles,
   GhCommenter,
+  GhImageBuilder,
   ImageNotReadyError,
   NoImageBuildError,
   RecordingCommenter,
@@ -800,4 +801,158 @@ test('a base domain that is not a DNS name stops the bring-up before any host co
   const w = world();
   assert.throws(() => w.event({}, T0, { ...config, baseDomain: 'x; rm -rf /' }), /invalid preview base domain/);
   assert.equal(w.host.state.ops.filter((o) => o.mutating).length, 0);
+});
+
+/* ------------------------------------------------- building a missing image */
+
+test('waitForImage starts a build once when the image is missing, tells the PR, then waits for it', () => {
+  const host = new FakeHost({ images: [], pendingImages: { [tag('f')]: 2 } });
+  const calls = [];
+  const out = waitForImage({
+    host,
+    sha: sha('f'),
+    changedFiles: BUILT,
+    ensureBuild: () => (calls.push('ensure'), { started: true, reason: 'build-started' }),
+    onWait: (info) => calls.push(`wait:${info.tag}:${info.build.reason}`),
+  });
+  assert.deepEqual(out, { tag: tag('f') });
+  assert.deepEqual(calls, ['ensure', `wait:${tag('f')}:build-started`], 'ensureBuild once, then onWait once, before polling');
+  assert.ok(host.state.sleeps.length >= 1, 'it polled for the image after starting the build');
+});
+
+test('waitForImage never starts a build when the image already exists or the PR builds no image', () => {
+  const calls = [];
+  const spy = { ensureBuild: () => calls.push('ensure'), onWait: () => calls.push('wait') };
+  assert.deepEqual(waitForImage({ host: new FakeHost({ images: [tag('a')] }), sha: sha('a'), changedFiles: BUILT, ...spy }), { tag: tag('a') });
+  assert.throws(() => waitForImage({ host: new FakeHost({ images: [] }), sha: sha('a'), changedFiles: DOCS_ONLY, ...spy }), (e) => e instanceof NoImageBuildError);
+  assert.deepEqual(calls, [], 'no build, no waiting comment, for either');
+});
+
+test('a failure to start the build is logged and does not stop the wait', () => {
+  const host = new FakeHost({ images: [], pendingImages: { [tag('c')]: 1 } });
+  const logs = [];
+  const out = waitForImage({
+    host,
+    sha: sha('c'),
+    changedFiles: BUILT,
+    ensureBuild: () => {
+      throw new Error('dispatching docker.yml for #3 failed: HTTP 403\nsecond line');
+    },
+    onWait: (info) => logs.push(`wait:${info.build.reason}`),
+    log: (m) => logs.push(m),
+  });
+  assert.deepEqual(out, { tag: tag('c') });
+  assert.ok(logs.some((l) => /could not start an image build.*HTTP 403/.test(l)));
+  assert.ok(!logs.some((l) => /second line/.test(l)), 'only the first line of the error is logged');
+  assert.ok(logs.includes('wait:waiting-for-build'), 'the PR is still told a build is awaited');
+});
+
+test('/preview on a PR with no image: ensureBuild(pr, headSha) once, a BUILDING comment first, then UP', () => {
+  const host = new FakeHost({ images: [], pendingImages: { [tag('a')]: 2 } });
+  const commenter = new RecordingCommenter();
+  const asked = [];
+  const r = handleEvent({
+    host,
+    commenter,
+    event: ev({ number: 9 }),
+    config,
+    now: T0,
+    changedFiles: BUILT,
+    ensureBuild: (pr, headSha) => (asked.push([pr, headSha]), { started: true, reason: 'build-started' }),
+  });
+  assert.equal(r.exitCode, 0);
+  assert.deepEqual(asked, [[9, sha('a')]]);
+  const bodies = commenter.comments.filter((c) => c.pr === 9).map((c) => c.body);
+  assert.match(bodies[0], /BUILDING IMAGE/);
+  assert.match(bodies.at(-1), /\*\*UP\*\*/);
+  assert.ok(bodies.length >= 2);
+  assert.deepEqual(Object.keys(host.state.stacks).sort(), ['saiku-oss-pr-9']);
+});
+
+test('without ensureBuild (the automatic flows) a missing image is only waited for, and the PR is told so', () => {
+  const host = new FakeHost({ images: [], pendingImages: { [tag('a')]: 1 } });
+  const commenter = new RecordingCommenter();
+  const r = handleEvent({ host, commenter, event: ev({ number: 4 }), config, now: T0, changedFiles: BUILT });
+  assert.equal(r.exitCode, 0);
+  const bodies = commenter.comments.filter((c) => c.pr === 4).map((c) => c.body);
+  assert.match(bodies[0], /BUILDING IMAGE.*waiting-for-build/s);
+  assert.match(bodies.at(-1), /\*\*UP\*\*/);
+});
+
+test('--ensure-build github is parsed, and the fake host ignores it instead of calling the real GitHub', () => {
+  assert.equal(parseArgs(['event', '--ensure-build', 'github', '--host', 'ssh']).flags['ensure-build'], 'github');
+  const dir = mkdtempSync(join(tmpdir(), 'ctl-ensure-'));
+  try {
+    const eventFile = join(dir, 'e.json');
+    const filesFile = join(dir, 'f.json');
+    writeFileSync(filesFile, JSON.stringify(['saiku-core/x.java']));
+    writeFileSync(
+      eventFile,
+      JSON.stringify({
+        action: 'requested',
+        requested_by: 'tom',
+        pull_request: { number: 5, state: 'open', merged: false, user: { login: 'tom' }, labels: [], head: { sha: sha('a'), repo: { full_name: REPO } }, base: { repo: { full_name: REPO } } },
+      }),
+    );
+    const out = [];
+    const code = main(
+      ['event', '--host', 'fake', '--ensure-build', 'github', '--github-event', eventFile, '--changed-files', filesFile],
+      { GITHUB_REPOSITORY: REPO },
+      { out: (s) => out.push(s) },
+    );
+    const log = out.join('');
+    assert.equal(code, 1, 'no image ever appears on the empty fake host, so the wait ends in a failure');
+    assert.match(log, /waiting-for-build/, 'the PR was told a build is awaited');
+    assert.doesNotMatch(log, /build-started|build-in-progress/, 'the fake host never started or found a real build');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+/* ----------------------------------------------------------- GhImageBuilder */
+
+const scripted = (responses) => {
+  const calls = [];
+  const run = (argv, opts) => {
+    calls.push({ argv, input: opts?.input });
+    const next = responses.shift() ?? { status: 0, stdout: '', stderr: '' };
+    return { status: 0, stdout: '', stderr: '', ...next };
+  };
+  return { run, calls };
+};
+
+test('GhImageBuilder dispatches docker.yml from the default branch with pr=<n> when nothing is running', () => {
+  const { run, calls } = scripted([{ stdout: '' }, { stdout: 'development\n' }, { stdout: '' }]);
+  const b = new GhImageBuilder({ repo: REPO, run });
+  assert.deepEqual(b.ensure(2045, sha('a')), { started: true, reason: 'build-started' });
+  assert.equal(calls.length, 3);
+  const [list, branch, dispatch] = calls.map((c) => c.argv);
+  assert.match(list.join(' '), /actions\/workflows\/docker\.yml\/runs\?per_page=50/);
+  assert.match(list.join(' '), new RegExp(`head_sha == "${sha('a')}"`));
+  assert.match(list.join(' '), /PR #2045\( \|\$\)/);
+  assert.deepEqual(branch.slice(0, 3), ['gh', 'api', `repos/${REPO}`]);
+  assert.deepEqual(dispatch, ['gh', 'api', '-X', 'POST', `repos/${REPO}/actions/workflows/docker.yml/dispatches`, '-f', 'ref=development', '-f', 'inputs[pr]=2045']);
+});
+
+test('GhImageBuilder does not start a second build while one is queued or running', () => {
+  const { run, calls } = scripted([{ stdout: '12345\n' }]);
+  const b = new GhImageBuilder({ repo: REPO, run });
+  assert.deepEqual(b.ensure(2045, sha('a')), { started: false, reason: 'build-in-progress' });
+  assert.equal(calls.length, 1, 'only the listing call; nothing dispatched');
+});
+
+test('GhImageBuilder reports API failures instead of pretending a build started', () => {
+  assert.throws(() => new GhImageBuilder({ repo: REPO, run: scripted([{ status: 1, stderr: 'HTTP 500' }]).run }).ensure(1, sha('a')), /listing docker\.yml runs failed: HTTP 500/);
+  assert.throws(() => new GhImageBuilder({ repo: REPO, run: scripted([{ stdout: '' }, { stdout: '$(rm -rf /)\n' }]).run }).ensure(1, sha('a')), /could not read the default branch/);
+  assert.throws(() => new GhImageBuilder({ repo: REPO, run: scripted([{ stdout: '' }, { stdout: 'development\n' }, { status: 1, stderr: 'HTTP 422 Unexpected inputs' }]).run }).ensure(1, sha('a')), /dispatching docker\.yml for #1 failed: HTTP 422/);
+});
+
+test('GhImageBuilder only ever interpolates a validated PR number and 40-hex SHA', () => {
+  const b = new GhImageBuilder({ repo: REPO, run: scripted([]).run });
+  assert.throws(() => b.ensure('1; rm', sha('a')));
+  assert.throws(() => b.ensure(0, sha('a')));
+  assert.throws(() => b.ensure(5, 'abc"; ) | halt_error'));
+  assert.throws(() => b.ensure(5, 'a'.repeat(39)));
+  assert.throws(() => new GhImageBuilder({ repo: 'bad; repo' }), /invalid repository/);
+  assert.throws(() => new GhImageBuilder({ repo: REPO, workflow: '../x' }), /invalid workflow file/);
 });

@@ -51,7 +51,12 @@ implementation, kept structurally identical so a fix there can be ported mechani
 3. It waits up to 20 minutes for `ghcr.io/spiculedata/saiku:<7-hex head sha>` to exist
    (`docker manifest inspect` with the box's own GHCR login). If it never appears the
    run fails with *"image not ready, comment /preview after the docker build for this
-   commit has finished"*; no other image is ever substituted. One exception, to avoid
+   commit has finished"*; no other image is ever substituted. When the request came from
+   a `/preview` comment (`--ensure-build github`) and no `docker` build for the commit or
+   the PR is queued or running, the run first dispatches `docker.yml` with `pr=<n>`
+   (see the `target` job: it re-validates the PR from the API and publishes only
+   `pr-<n>` + the head SHA), and the PR comment says **BUILDING IMAGE** while it waits.
+   One exception, to avoid
    holding the host lock for 20 minutes for nothing: `docker.yml` only builds a PR image
    when the PR touches its `pull_request.paths` ("docs-only PRs do not build one"), so when
    the image is missing the lifecycle asks GitHub for the PR's changed files and, if none

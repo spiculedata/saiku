@@ -5,6 +5,7 @@
 // (spiculedata/saiku-cloud#1379); see docs/decisions/ci-preview-environments.md.
 //
 //   preview-ctl.mjs event --github-event payload.json --host ssh|fake [...]
+//                        [--ensure-build github]  (start the docker build if the PR has no image)
 //   preview-ctl.mjs reap  --open-prs open.json         --host ssh|fake [...]
 //                        [--activity github]   (collaborator reviews extend idle)
 //   preview-ctl.mjs touch --pr N [--at ISO]            --host ssh|fake [...]
@@ -21,7 +22,7 @@ import { pathToFileURL } from 'node:url';
 
 import { GhActivity } from './preview-activity.mjs';
 import { deliverCredentials, parseCredentials } from './preview-creds.mjs';
-import { SELFCHECK_TIMEOUT_SECONDS, assertPrNumber, parseProject, projectForPr } from './preview-guard.mjs';
+import { SELFCHECK_TIMEOUT_SECONDS, assertPrNumber, assertSha, parseProject, projectForPr } from './preview-guard.mjs';
 import { buildsImage } from './preview-images.mjs';
 import { FakeHost, SshHost } from './preview-host.mjs';
 import {
@@ -135,11 +136,28 @@ const positive = (value, fallback) => (Number.isFinite(Number(value)) && Number(
  * would validate the wrong code. `changedFiles()` is only called when the image is
  * missing: a PR that changes nothing docker.yml builds will never get one, and waiting
  * for it would hold the host lock for the whole window.
+ *
+ * `ensureBuild()` (optional) makes sure a docker build for this commit is running or
+ * started: a PR last pushed before per-PR images existed, or whose build was cancelled,
+ * would otherwise just wait out the window. A failure to start one is logged, never
+ * fatal: the wait still runs, because a build may be on its way for another reason.
+ * `onWait(info)` is called once, before the first poll, so the PR can say what is going on.
  */
-export function waitForImage({ host, sha, changedFiles = noChangedFiles, config = DEFAULTS, log = silent }) {
+export function waitForImage({ host, sha, changedFiles = noChangedFiles, ensureBuild, onWait, config = DEFAULTS, log = silent }) {
   const tag = imageTagFor(sha);
   if (host.manifestExists(tag)) return { tag };
   if (!buildsImage(changedFiles())) throw new NoImageBuildError();
+
+  let build = { started: false, reason: 'waiting-for-build' };
+  if (ensureBuild) {
+    try {
+      build = ensureBuild();
+      log(`image ${tag} missing: ${build.reason}`);
+    } catch (err) {
+      log(`could not start an image build (still waiting for one): ${String(err.message).split('\n')[0]}`);
+    }
+  }
+  if (onWait) onWait({ tag, build });
 
   const waitMinutes = positive(config.imageWaitMinutes, DEFAULTS.imageWaitMinutes);
   const pollSeconds = positive(config.imagePollSeconds, DEFAULTS.imagePollSeconds);
@@ -204,6 +222,15 @@ function bringUp(ctx, registry, d) {
       host,
       sha: d.headSha,
       changedFiles: () => ctx.changedFiles(d.pr),
+      ensureBuild: ctx.ensureBuild ? () => ctx.ensureBuild(d.pr, d.headSha) : undefined,
+      onWait: ({ build }) =>
+        post(
+          ctx.commenter,
+          d.pr,
+          comment({ action: 'building', pr: d.pr, reason: build.reason }, { config: ctx.config, registry: next }),
+          log,
+          ctx.failures,
+        ),
       config: ctx.config,
       log,
     });
@@ -276,9 +303,9 @@ function promote(ctx, registry, open) {
  * Handle one pull_request event.
  * @returns {{decision: object, exitCode: number, ...}}
  */
-export function handleEvent({ host, commenter, event, config = DEFAULTS, now, log = silent, syncRoot, changedFiles = noChangedFiles }) {
+export function handleEvent({ host, commenter, event, config = DEFAULTS, now, log = silent, syncRoot, changedFiles = noChangedFiles, ensureBuild }) {
   const failures = [];
-  const ctx = { host, commenter, config, now, log, failures, syncRoot, changedFiles };
+  const ctx = { host, commenter, config, now, log, failures, syncRoot, changedFiles, ensureBuild };
   host.lock();
   try {
     let registry = normaliseRegistry(host.readRegistry());
@@ -401,9 +428,9 @@ function applyActivity(registry, activity, now, log) {
  * image pruning, queue promotion. Exits non-zero (loudly) when the disk is
  * still too full after pruning, so a stuck host shows up as a red run.
  */
-export function runReap({ host, commenter, openPrs, config = DEFAULTS, now, log = silent, syncRoot, activity, changedFiles = noChangedFiles }) {
+export function runReap({ host, commenter, openPrs, config = DEFAULTS, now, log = silent, syncRoot, activity, changedFiles = noChangedFiles, ensureBuild }) {
   const failures = [];
-  const ctx = { host, commenter, config, now, log, failures, syncRoot, changedFiles };
+  const ctx = { host, commenter, config, now, log, failures, syncRoot, changedFiles, ensureBuild };
   host.lock();
   try {
     let registry = normaliseRegistry(host.readRegistry());
@@ -524,6 +551,60 @@ export class GhChangedFiles {
   }
 }
 
+/**
+ * Make sure a docker build exists for a PR's head commit. A build is already there when a
+ * `docker` run for that exact commit (a pull_request run) or a dispatch for that PR is queued
+ * or running; otherwise dispatch `docker.yml` from the DEFAULT branch with `pr=<n>`. The
+ * workflow re-validates the PR itself (open, same repository, targets development, not
+ * Dependabot) and publishes only the per-PR tags, so this class holds no trust: it only
+ * decides whether a second build would be redundant.
+ */
+export class GhImageBuilder {
+  constructor({ repo, workflow = 'docker.yml', run = ghRun }) {
+    if (!REPO_RE.test(repo ?? '')) throw new Error('GhImageBuilder: invalid repository');
+    if (!/^[a-z0-9._-]+\.ya?ml$/i.test(workflow)) throw new Error('GhImageBuilder: invalid workflow file');
+    this.repo = repo;
+    this.workflow = workflow;
+    this.run = run;
+  }
+
+  ensure(pr, sha) {
+    assertPrNumber(pr);
+    assertSha(sha);
+    // pr is an integer and sha is 40 hex (asserted above), so both are safe inside the jq program.
+    const active = this.run([
+      'gh',
+      'api',
+      `repos/${this.repo}/actions/workflows/${this.workflow}/runs?per_page=50`,
+      '--jq',
+      `.workflow_runs[] | select(.status != "completed") | select(.head_sha == "${sha}" or (.event == "workflow_dispatch" and (.display_title | test("PR #${pr}( |$)")))) | .id`,
+    ]);
+    if (active.status !== 0) throw new Error(`listing ${this.workflow} runs failed: ${active.stderr}`);
+    if (active.stdout.split('\n').some((l) => /^\d+$/.test(l.trim()))) {
+      return { started: false, reason: 'build-in-progress' };
+    }
+
+    const branch = this.run(['gh', 'api', `repos/${this.repo}`, '--jq', '.default_branch']);
+    const ref = branch.stdout.trim();
+    if (branch.status !== 0 || !/^[A-Za-z0-9._/-]{1,100}$/.test(ref)) {
+      throw new Error(`could not read the default branch: ${branch.stderr || ref}`);
+    }
+    const sent = this.run([
+      'gh',
+      'api',
+      '-X',
+      'POST',
+      `repos/${this.repo}/actions/workflows/${this.workflow}/dispatches`,
+      '-f',
+      `ref=${ref}`,
+      '-f',
+      `inputs[pr]=${pr}`,
+    ]);
+    if (sent.status !== 0) throw new Error(`dispatching ${this.workflow} for #${pr} failed: ${sent.stderr}`);
+    return { started: true, reason: 'build-started' };
+  }
+}
+
 /** Fixed file list for the fake host (`--changed-files file.json`) and tests. */
 export const staticChangedFiles = (files = []) => () => files;
 
@@ -611,6 +692,13 @@ function buildChangedFiles(flags, env) {
   return (pr) => lister.list(pr);
 }
 
+/** `--ensure-build github` (the /preview command only): start a missing image build via the GitHub API. */
+function buildEnsureBuild(flags, env) {
+  if (flags['ensure-build'] !== 'github' || flags.host === 'fake') return undefined;
+  const builder = new GhImageBuilder({ repo: env.GITHUB_REPOSITORY });
+  return (pr, sha) => builder.ensure(pr, sha);
+}
+
 function summaryMarkdown(command, result) {
   const lines = [`### preview ${command}`, ''];
   if (command === 'touch') {
@@ -656,6 +744,7 @@ export function main(argv, env = process.env, io = { out: (s) => process.stdout.
   const commenter = buildCommenter(flags, env, log);
   const syncRoot = flags['sync-root'] ?? process.cwd();
   const changedFiles = ['event', 'reap'].includes(command) ? buildChangedFiles(flags, env) : undefined;
+  const ensureBuild = ['event', 'reap'].includes(command) ? buildEnsureBuild(flags, env) : undefined;
 
   if (io.installSignalHandlers) {
     // A cancelled run (concurrency, timeout) must not leave the host lock held.
@@ -679,10 +768,10 @@ export function main(argv, env = process.env, io = { out: (s) => process.stdout.
     result = touchPr({ host, pr: Number(flags.pr), at: flags.at, now, log });
   } else if (command === 'event') {
     const event = eventFromGithub(readJson(flags['github-event']));
-    result = handleEvent({ host, commenter, event, config, now, log, syncRoot, changedFiles });
+    result = handleEvent({ host, commenter, event, config, now, log, syncRoot, changedFiles, ensureBuild });
   } else {
     const activity = flags.activity === 'github' ? new GhActivity({ repo: env.GITHUB_REPOSITORY }).lookup : undefined;
-    result = runReap({ host, commenter, openPrs: readJson(flags['open-prs']), config, now, log, syncRoot, activity, changedFiles });
+    result = runReap({ host, commenter, openPrs: readJson(flags['open-prs']), config, now, log, syncRoot, activity, changedFiles, ensureBuild });
   }
 
   if (flags.out) writeFileSync(flags.out, `${JSON.stringify(result, null, 2)}\n`);

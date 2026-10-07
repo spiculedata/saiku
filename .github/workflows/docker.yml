@@ -1,5 +1,10 @@
 name: docker
 
+# Names a PR-targeted dispatch so /preview can tell "already building for this PR"
+# from "needs a build" (preview-ctl.mjs GhImageBuilder). Empty, i.e. GitHub's default
+# title, for every other run.
+run-name: "${{ inputs.pr && format('docker: image for PR #{0}', inputs.pr) || '' }}"
+
 # Rolling demo image. Fires on every push to development (and on
 # workflow_dispatch). Tagged releases are handled by release.yml,
 # which produces stable semver tags + :latest; this workflow gives
@@ -10,6 +15,11 @@ name: docker
 # image (`pr-<n>` + the 7-hex PR head SHA) so a reviewer can pull exactly what
 # a PR built. Fork PRs and Dependabot PRs build only and never push. Tag
 # grammar and retention: docs/ci-images.md.
+#
+# A PR that was last pushed before this trigger existed (or whose build was
+# cancelled) has no image, and /preview cannot run it. So /preview dispatches
+# this workflow with `pr=<n>` (see the `target` job): it builds that PR's head
+# and publishes ONLY pr-<n> + the 7-hex SHA, never a rolling tag.
 on:
   push:
     branches: [development, main]
@@ -25,11 +35,20 @@ on:
       - "docker/**"
       - ".github/workflows/docker.yml"
   workflow_dispatch:
+    inputs:
+      pr:
+        description: >-
+          Optional PR number. Builds and publishes that same-repo PR's HEAD commit
+          under its per-PR tags (pr-<n> + the 7-hex head SHA), exactly as a
+          pull_request run would, for a PR that has no image yet. Sent by the
+          /preview command (preview-command.yml); never publishes a rolling tag.
+        required: false
+        type: string
 
 # A newer push to a PR supersedes the older build; development/main/manual runs
 # are never cancelled (each rolling tag must land).
 concurrency:
-  group: docker-${{ github.event.pull_request.number || github.ref }}
+  group: docker-${{ github.event.pull_request.number || inputs.pr || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Least-privilege default: read-only for the whole workflow. Each job below
@@ -43,6 +62,54 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  target:
+    # Decides WHAT to build. A normal run (push, pull_request, a plain manual
+    # dispatch) builds the triggering commit and this job outputs nothing. A
+    # dispatch with `pr` builds that PR's HEAD commit instead. The input is never
+    # trusted: it reaches the script only through the environment, must be a plain
+    # number, and every property that makes a PR image publishable is re-read from
+    # the API here (open, head in THIS repository, base development, not Dependabot).
+    name: Resolve build target
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      pr: ${{ steps.t.outputs.pr }}
+      sha: ${{ steps.t.outputs.sha }}
+    steps:
+      - name: Resolve the PR head
+        id: t
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_INPUT: ${{ inputs.pr }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PR_INPUT:-}" ]; then
+            echo "pr=" >> "$GITHUB_OUTPUT"
+            echo "sha=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! [[ "$PR_INPUT" =~ ^[0-9]{1,7}$ ]]; then
+            echo "::error::pr must be a plain PR number"
+            exit 1
+          fi
+          pr_json=$(gh api "repos/${REPO}/pulls/${PR_INPUT}")
+          state=$(jq -r '.state' <<<"$pr_json")
+          head_repo=$(jq -r '.head.repo.full_name // ""' <<<"$pr_json")
+          base_ref=$(jq -r '.base.ref' <<<"$pr_json")
+          author=$(jq -r '.user.login' <<<"$pr_json")
+          sha=$(jq -r '.head.sha' <<<"$pr_json")
+          [ "$state" = "open" ] || { echo "::error::PR #${PR_INPUT} is not open"; exit 1; }
+          [ "$head_repo" = "$REPO" ] || { echo "::error::PR #${PR_INPUT} is from a fork; per-PR images are published for same-repo PRs only"; exit 1; }
+          [ "$base_ref" = "development" ] || { echo "::error::PR #${PR_INPUT} does not target development"; exit 1; }
+          [ "$author" != "dependabot[bot]" ] || { echo "::error::PR #${PR_INPUT} is from Dependabot; its builds never publish"; exit 1; }
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::could not read a valid head SHA for PR #${PR_INPUT}"; exit 1; }
+          echo "Building PR #${PR_INPUT} at ${sha}"
+          echo "pr=${PR_INPUT}" >> "$GITHUB_OUTPUT"
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+
   build:
     # Build ONLY. Runs the full Maven + frontend-maven-plugin lifecycle
     # (`npm ci`/build inside saiku-webapp + every Maven plugin) with NO
@@ -51,10 +118,15 @@ jobs:
     # hands the built fat JAR to the push job as an artifact.
     name: Build launcher fat JAR
     runs-on: ubuntu-latest
+    needs: [target]
     permissions:
       contents: read # checkout only
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Empty on every normal run (checkout then uses the triggering commit);
+          # for a dispatch with `pr` it is that PR's head commit.
+          ref: ${{ needs.target.outputs.sha }}
 
       - name: Set up JDK 22
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
@@ -123,8 +195,8 @@ jobs:
     env:
       # On pull_request GITHUB_SHA is the synthetic merge commit, which nobody
       # can map back to a PR head. Tag with the head commit instead.
-      IMAGE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-    needs: [build]
+      IMAGE_SHA: ${{ needs.target.outputs.sha || github.event.pull_request.head.sha || github.sha }}
+    needs: [build, target]
     permissions:
       contents: read # checkout the Docker build context
       packages: write # push the image AND its attestations to GHCR
@@ -132,6 +204,8 @@ jobs:
       attestations: write # record the SLSA provenance attestation on the repo
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.target.outputs.sha }}
 
       # The Dockerfile COPYs a prebuilt build-context/saiku.jar (no Maven runs
       # at image build). Restore exactly that from the build job's artifact.
@@ -181,6 +255,8 @@ jobs:
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          labels: |
+            org.opencontainers.image.revision=${{ env.IMAGE_SHA }}
           # Push:
           #   ghcr.io/spiculedata/saiku:development  (rolling tip)
           #   ghcr.io/spiculedata/saiku:main         (rolling tip of main)
@@ -189,10 +265,10 @@ jobs:
           #   ghcr.io/spiculedata/saiku:pr-123       (moves with the PR)
           #   ghcr.io/spiculedata/saiku:abc1234      (7-hex PR head SHA, bare)
           tags: |
-            type=ref,event=branch
-            type=sha,prefix=sha-,format=short,enable=${{ github.event_name != 'pull_request' }}
-            type=raw,value=pr-${{ github.event.pull_request.number }},enable=${{ github.event_name == 'pull_request' }}
-            type=raw,value=${{ steps.publish.outputs.short_sha }},enable=${{ github.event_name == 'pull_request' }}
+            type=ref,event=branch,enable=${{ needs.target.outputs.pr == '' }}
+            type=sha,prefix=sha-,format=short,enable=${{ github.event_name != 'pull_request' && needs.target.outputs.pr == '' }}
+            type=raw,value=pr-${{ github.event.pull_request.number || needs.target.outputs.pr }},enable=${{ github.event_name == 'pull_request' || needs.target.outputs.pr != '' }}
+            type=raw,value=${{ steps.publish.outputs.short_sha }},enable=${{ github.event_name == 'pull_request' || needs.target.outputs.pr != '' }}
 
       - name: Build & push
         id: build
