@@ -36,7 +36,8 @@ public class EmailResource {
      * Per-user send rate limit for the self-send endpoint (SEC-harden slice,
      * task 2/2). Mirrors {@code AiQueryResource#askRateLimiter}: a direct
      * {@code new} field + Spring/test setter, keyed by the authenticated
-     * principal so one user's abuse can't exhaust another's budget.
+     * principal so one user's abuse can't exhaust another's budget. Production injects the
+     * {@code mailEmailRateLimiter} SINGLETON (saiku#1913) — a per-request limiter never trips.
      */
     private org.saiku.web.security.ratelimit.AiRateLimiter emailRateLimiter =
             new org.saiku.web.security.ratelimit.AiRateLimiter(
