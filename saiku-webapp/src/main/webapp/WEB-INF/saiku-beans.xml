@@ -1321,6 +1321,28 @@
         <property name="aiService" ref="cubeDesignerAiService"/>
     </bean>
 
+    <!-- saiku#1107: SQL workbench — read-only ad-hoc SQL against a datasource's underlying JDBC
+         connection, gated to ROLE_SQL_EXEC/ROLE_ADMIN. Reuses schemaGenConnectionProvider (same
+         JdbcUrlPolicy-guarded connection resolution as the cube/schema designer) and its own
+         append-only audit log at ${saiku.home}/logs/sql-workbench-audit.jsonl. -->
+    <bean id="sqlWorkbenchAuditLog" class="org.saiku.service.sqlworkbench.SqlWorkbenchAuditLog"/>
+
+    <bean id="sqlWorkbenchService" class="org.saiku.service.sqlworkbench.SqlWorkbenchService">
+        <constructor-arg ref="schemaGenConnectionProvider"/>
+        <constructor-arg ref="datasourceServiceBean"/>
+        <constructor-arg ref="sqlWorkbenchAuditLog"/>
+    </bean>
+
+    <bean id="sqlWorkbenchResource" class="org.saiku.web.rest.resources.sqlworkbench.SqlWorkbenchResource">
+        <constructor-arg ref="sqlWorkbenchService"/>
+        <property name="userService" ref="userServiceBean"/>
+    </bean>
+
+    <bean id="sqlWorkbenchAuditResource"
+          class="org.saiku.web.rest.resources.sqlworkbench.SqlWorkbenchAuditResource">
+        <property name="auditLog" ref="sqlWorkbenchAuditLog"/>
+    </bean>
+
     <!-- ====================================================================
          #1809 PR4: periodic-send job scheduler — WIRED LIVE.
 

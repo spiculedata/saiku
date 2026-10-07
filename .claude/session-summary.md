@@ -84,6 +84,10 @@ pushed down; normal sessions append and the history stays useful.
 **Was doing:** merged development, preserving the PR's new embed tags and the base branch's updated iframe guidance in the quickstart; UI checks, lint, targeted tests, and embed bundle builds passed.
 **Now:** check PR #2051 CI after the push.
 **Refs:** #1103, #2051
+## 2026-10-07 — feature/1107-sql-workbench — merged development for PR #2053
+**Was doing:** merged development at 4fb7b66c1, retained all changelog entries, combined test floors, and corrected the SQL workbench JDBC `Long` assertion identified in PR comments.
+**Now:** check PR #2053 CI after the push; local Java tests could not run because this environment has no JDK.
+**Refs:** #1107, #2053
 ## 2026-10-07 — feature/scim-2-provisioning — merged development for PR #2065
 **Was doing:** merged development at 4fb7b66c1, kept SCIM wiring alongside the base security chains and all changelog entries, and formatted the privileged-role guard and test.
 **Now:** check PR #2065 CI after the push; local focused Maven tests stopped before compilation because GitHub Packages returned 401 for required artifacts.
