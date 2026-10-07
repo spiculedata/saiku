@@ -23,8 +23,12 @@ public class CellSetCsvWriterTest {
 
     private static CellDataSet grid(AbstractBaseCell[][] headers, AbstractBaseCell[][] body) {
         CellDataSet cds = new CellDataSet(1, 1);
-        cds.setCellSetHeaders(headers);
-        cds.setCellSetBody(body);
+        if (headers != null) {
+            cds.setCellSetHeaders(headers);
+        }
+        if (body != null) {
+            cds.setCellSetBody(body);
+        }
         return cds;
     }
 
