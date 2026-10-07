@@ -79,6 +79,10 @@ pushed down; normal sessions append and the history stays useful.
 **Was doing:** merged development at 4fb7b66c1, retained every changelog entry, applied Spotless formatting, and fixed the 403 response that leaked a datasource name in CI.
 **Now:** check PR #2057 CI after the fix; local Maven verification cannot reach the authenticated GitHub Packages dependencies.
 **Refs:** #1393, #2057
+## 2026-10-07 — security/1914-query-timeout-result-limits — merged development for PR #2082
+**Was doing:** merged development at 4fb7b66c1, retaining the cell-property columns and bounded Arrow allocator in the sole conflict.
+**Now:** check PR #2082 CI; local focused Maven tests stop before compilation because GitHub Packages returns 401 for Mondrian and olap4j.
+**Refs:** #1914, #2082
 
 ## 2026-10-06 — feature/823-drillthrough-firstrowset-toggle — merged latest development for PR #2042
 **Was doing:** merged development at ccb56fa82, retaining both session-summary entries; UI check and build passed, but local Vitest stalled and Java/Maven are unavailable.
