@@ -79,6 +79,10 @@ pushed down; normal sessions append and the history stays useful.
 **Was doing:** merged development at 4fb7b66c1, keeping the semantic export guidance and both newer AGENTS.md entries; the exporter tests and Spotless passed.
 **Now:** check PR #2062 CI after the push; local Maven test could not resolve private GitHub Packages dependencies (HTTP 401).
 **Refs:** #1427, #2062
+## 2026-10-07 — security/1914-query-timeout-result-limits — merged development for PR #2082
+**Was doing:** merged development at 4fb7b66c1, retaining the cell-property columns and bounded Arrow allocator in the sole conflict.
+**Now:** check PR #2082 CI; local focused Maven tests stop before compilation because GitHub Packages returns 401 for Mondrian and olap4j.
+**Refs:** #1914, #2082
 
 ## 2026-10-06 — feature/823-drillthrough-firstrowset-toggle — merged latest development for PR #2042
 **Was doing:** merged development at ccb56fa82, retaining both session-summary entries; UI check and build passed, but local Vitest stalled and Java/Maven are unavailable.
