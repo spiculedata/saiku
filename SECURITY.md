@@ -70,6 +70,14 @@ short email and we'll reply with it.
   opt-in; the launcher refuses to serve in production while the
   default admin password (`admin/admin`) is unchanged; observability
   is opt-in so no data leaves the box unless configured.
+- **Bounded query execution.** Every OLAP execution path carries a
+  server-enforced statement timeout, drillthrough/export row ceiling,
+  and a byte budget for the Arrow allocators, independent of what a
+  client asks for. Tunable in `saiku.properties` — see
+  `saiku.olap.query.timeout.seconds`, `saiku.olap.max.rows`,
+  `saiku.olap.arrow.max.bytes` — with the deployment-wide backstop in
+  `mondrian.properties` (`mondrian.rolap.queryTimeout`,
+  `mondrian.result.limit`, `mondrian.rolap.iterationLimit`).
 - **Vulnerability triage.** Findings are logged internally with a
   planned fix window; the fix + disclosure ship together per the
   agreed timeline.

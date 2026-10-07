@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import dev.hegel.HegelTest;
 import dev.hegel.TestCase;
 import java.util.List;
+import org.saiku.olap.util.QueryGuardrails;
 import org.saiku.service.olap.DrillthroughMdxBuilder;
 
 /**
@@ -126,9 +127,13 @@ class DrillthroughMdxBuilderPropertyTest {
         assertEquals(Math.min(maxrows, firstRowset), capOf(mdx), "wrong Mondrian cap: " + mdx);
     }
 
-    /** With no positive limit, the statement is uncapped — and carries neither keyword. */
+    /**
+     * saiku#1914: with no positive limit, the server ceiling replaces the absent cap — there
+     * is no longer a bare {@code DRILLTHROUGH} branch. A client that asks for "everything" (<=0)
+     * gets at most {@link QueryGuardrails#DEFAULT_MAX_ROWS} rows.
+     */
     @HegelTest
-    void noPositiveLimitYieldsABareDrillthrough(TestCase tc) {
+    void noPositiveLimitAppliesServerCeiling(TestCase tc) {
         String select = tc.draw(sampledFrom(SELECTS), "select");
         int maxrows = tc.draw(integers().min(-5).max(0), "maxrows");
         // sampledFrom rejects null elements, so the absent case is drawn as a flag.
@@ -139,7 +144,8 @@ class DrillthroughMdxBuilderPropertyTest {
 
         String mdx = DrillthroughMdxBuilder.build(select, maxrows, firstRowset, null, isMondrian);
 
-        assertEquals("DRILLTHROUGH " + select, mdx);
+        int expectedCap = QueryGuardrails.clampMaxRows(maxrows);
+        assertEquals("DRILLTHROUGH MAXROWS " + expectedCap + " " + select, mdx);
     }
 
     /** RETURN is appended exactly when a non-blank returns clause is supplied. */
