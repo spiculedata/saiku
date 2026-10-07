@@ -26,4 +26,12 @@ if [[ -n "${OTEL_EXPORTER_OTLP_ENDPOINT:-}" && -f "$OTEL_AGENT_JAR" ]]; then
 fi
 
 # Default to a saiku-home that lives next to the JAR (not the user's CWD).
-exec java "${JAVA_OPTS[@]}" -jar "$JAR" serve --home "$SCRIPT_DIR/saiku-home" "$@"
+#
+# JVM safety defaults (saiku#1914, CWE-400): match the image's
+# JAVA_TOOL_OPTIONS in the Dockerfile so a bare-metal / dist run gets the same
+# OOM behaviour the container does.
+#   -XX:+ExitOnOutOfMemoryError  fail fast on OOM instead of limping on a corrupt heap
+#   -XX:MaxRAMPercentage=75      size the heap from the machine's RAM
+# Both are overridable by prepending your own flags to JAVA_OPTS.
+exec java -XX:+ExitOnOutOfMemoryError -XX:MaxRAMPercentage=75 "${JAVA_OPTS[@]}" \
+  -jar "$JAR" serve --home "$SCRIPT_DIR/saiku-home" "$@"

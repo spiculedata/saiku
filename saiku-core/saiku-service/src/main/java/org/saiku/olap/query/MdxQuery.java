@@ -40,6 +40,7 @@ import org.olap4j.type.CubeType;
 import org.saiku.olap.dto.SaikuCube;
 import org.saiku.olap.dto.SaikuTag;
 import org.saiku.olap.dto.filter.SaikuFilter;
+import org.saiku.olap.util.QueryGuardrails;
 import org.saiku.olap.util.exception.SaikuOlapException;
 import org.saiku.olap.util.formatter.ICellSetFormatter;
 import org.slf4j.Logger;
@@ -144,6 +145,8 @@ public class MdxQuery implements IQuery {
             OlapConnection con = connection;
             con.setCatalog(getSaikuCube().getCatalog());
             OlapStatement stmt = con.createStatement();
+            // saiku#1914: bound the legacy IQuery MDX execute path too.
+            QueryGuardrails.applyQueryTimeout(stmt);
             this.statement = stmt;
 
             return stmt.executeOlapQuery(mdx);

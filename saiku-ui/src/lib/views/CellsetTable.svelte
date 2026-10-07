@@ -12,6 +12,11 @@
 	import { toasts } from '$lib/stores/toasts.svelte';
 	import { i18n } from '$lib/stores/i18n.svelte';
 	import { buildCellLinkUrl, coordsAtIntersection } from '$lib/cellset/cellLinkUrl';
+	import {
+		cellNumericValue,
+		formatDataCell,
+		readCellConditionalFormat
+	} from '$lib/cellset/cellConditionalFormat';
 
 	interface Props {
 		result: QueryResult;
@@ -612,6 +617,11 @@
 		return Number.isFinite(n) ? n.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—';
 	}
 
+	let cellFormatRules = $derived(readCellConditionalFormat(queryStore.current?.properties));
+	let columnValues = $derived(
+		parsed.columnCategories.map((_, c) => parsed.dataRows.map((row) => cellNumericValue(row[c])))
+	);
+
 	function cellLinkTemplate(): string | null {
 		const raw = selection.cube?.cellLinkUrl ?? queryStore.current?.cube?.cellLinkUrl;
 		if (raw == null) return null;
@@ -673,6 +683,43 @@
 				detail: { row: absRow, col: absCol, clientX: x, clientY: y }
 			})
 		);
+	}
+
+	// --- Hierarchy-aware drill down/up (saiku#776) ---
+	// "Expanded" is derived from the data itself rather than tracked separately: a row is
+	// expanded when the very next row's member (in the same row-header column) sits one level
+	// deeper, i.e. its children are already displayed nested beneath it.
+	function isExpanded(r: number, cIdx: number): boolean {
+		const cur = parsed.bodyRows[r]?.[cIdx];
+		const next = parsed.bodyRows[r + 1]?.[cIdx];
+		if (!cur || !next) return false;
+		return depthOf(next) > depthOf(cur);
+	}
+
+	let drilling = $state<Set<number>>(new Set());
+
+	async function toggleDrill(e: MouseEvent, r: number, cIdx: number) {
+		e.preventDefault();
+		e.stopPropagation();
+		if (drilling.has(r)) return;
+		const expanded = isExpanded(r, cIdx);
+		drilling = new Set(drilling).add(r);
+		try {
+			if (expanded) {
+				await queryStore.drillUp(r);
+			} else {
+				await queryStore.drillDown(r);
+			}
+		} catch (err) {
+			toasts.danger(
+				i18n.t(expanded ? 'toast.drillUpFailed' : 'toast.drillDownFailed'),
+				err instanceof Error ? err.message : String(err)
+			);
+		} finally {
+			const next = new Set(drilling);
+			next.delete(r);
+			drilling = next;
+		}
 	}
 
 	function openCellLink() {
@@ -774,24 +821,38 @@
 								<th class="row_null" role="rowheader" aria-colindex={cIdx + 1}></th>
 							{:else}
 								{@const d = depthOf(c)}
+								{@const expanded = isExpanded(r, cIdx)}
 								<th
 									class={d > 0 ? 'row row--nested' : 'row'}
 									role="rowheader"
 									aria-colindex={cIdx + 1}
 									style={d > 0 ? `padding-left: calc(12px + ${d}em);` : ''}
 									title={c.value}
-									oncontextmenu={(e) => openMenu(e, c, 'ROWS')}>{c.value}</th
+									oncontextmenu={(e) => openMenu(e, c, 'ROWS')}
+									>{#if cIdx === rowCells.length - 1}<button
+											type="button"
+											class="row-drill-caret"
+											class:row-drill-caret--expanded={expanded}
+											disabled={drilling.has(r)}
+											aria-label={i18n.t(expanded ? 'cellset.drillUp' : 'cellset.drillDown')}
+											onclick={(e) => toggleDrill(e, r, cIdx)}>▸</button
+										>{/if}{c.value}</th
 								>
 							{/if}
 						{/each}
 						{#each parsed.dataRows[r] as dc, cIdx}
-							{@const fmt = parseFormattedCell(dc.value)}
+							{@const painted = formatDataCell(
+								cellFormatRules,
+								parsed.columnCategories[cIdx] ?? '',
+								dc,
+								columnValues[cIdx] ?? []
+							)}
 							<!-- saiku#1988: display-only decimals. The cell's
 							     underlying value, the tooltip and every
 							     copy/drillthrough/export path keep the raw
 							     server formatting. -->
-							{@const shown = roundCellDisplay(fmt.display, decimalPlaces.decimals)}
-							{@const num = isNumeric(fmt.display)}
+							{@const shown = roundCellDisplay(painted.display, decimalPlaces.decimals)}
+							{@const num = isNumeric(painted.display)}
 							{@const selected = isSelected(r, cIdx)}
 							{@const hasFocus = isFocused(r, cIdx)}
 							<td
@@ -803,10 +864,11 @@
 								aria-selected={selected ? 'true' : undefined}
 								data-r={r}
 								data-c={cIdx}
-								style={fmt.color ? `color: ${fmt.color}` : undefined}
+								style={painted.style}
 								onmousedown={(e) => onCellMouseDown(e, r, cIdx)}
 								onmouseenter={() => onCellMouseEnter(r, cIdx)}
-								oncontextmenu={(e) => onDataCellContextMenu(e, r, cIdx)}>{shown}</td
+								oncontextmenu={(e) => onDataCellContextMenu(e, r, cIdx)}
+								>{painted.icon ? `${painted.icon} ` : ''}{shown}</td
 							>
 						{/each}
 						{#if spark !== 'none'}
@@ -1041,6 +1103,30 @@
 	}
 	.cellset tbody th.row:hover {
 		background: hsl(var(--bg-subtle));
+	}
+	.row-drill-caret {
+		display: inline-block;
+		width: 1em;
+		margin-right: 0.35em;
+		border: none;
+		background: transparent;
+		padding: 0;
+		font-size: 0.7em;
+		line-height: 1;
+		color: hsl(var(--fg-muted));
+		cursor: pointer;
+		transform: rotate(0deg);
+		transition: transform 0.1s ease-in-out;
+	}
+	.row-drill-caret:hover {
+		color: hsl(var(--fg));
+	}
+	.row-drill-caret:disabled {
+		cursor: wait;
+		opacity: 0.5;
+	}
+	.row-drill-caret--expanded {
+		transform: rotate(90deg);
 	}
 	.cellset tbody th.row_null {
 		background: hsl(var(--bg-muted));

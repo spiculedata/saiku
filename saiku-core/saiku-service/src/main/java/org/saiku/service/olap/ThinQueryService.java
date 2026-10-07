@@ -27,6 +27,8 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -38,6 +40,7 @@ import org.olap4j.Axis;
 import org.olap4j.CellSet;
 import org.olap4j.CellSetAxis;
 import org.olap4j.OlapConnection;
+import org.olap4j.OlapException;
 import org.olap4j.OlapStatement;
 import org.olap4j.Position;
 import org.olap4j.mdx.ParseTreeNode;
@@ -69,6 +72,7 @@ import org.saiku.olap.result.ArrowCellsetWriter;
 import org.saiku.olap.util.ObjectUtil;
 import org.saiku.olap.util.OlapResultSetUtil;
 import org.saiku.olap.util.QueryConverter;
+import org.saiku.olap.util.QueryGuardrails;
 import org.saiku.olap.util.SaikuProperties;
 import org.saiku.olap.util.SaikuUniqueNameComparator;
 import org.saiku.olap.util.formatter.CellSetFormatterFactory;
@@ -399,6 +403,10 @@ public class ThinQueryService implements Serializable {
         }
 
         OlapStatement stmt = con.createStatement();
+        // saiku#1914: bound the main execute path — Mondrian ran with
+        // mondrian.rolap.queryTimeout=0, so a CROSSJOIN over high-cardinality
+        // hierarchies ran unbounded until it exhausted the query pool / heap.
+        QueryGuardrails.applyQueryTimeout(stmt);
         queryContext.store(ObjectKey.STATEMENT, stmt);
 
         query = updateQuery(query);
@@ -666,6 +674,77 @@ public class ThinQueryService implements Serializable {
         }
     }
 
+    /**
+     * List the named sets currently defined on a query's model (saiku#824).
+     * @param queryName The query name
+     * @return the live {@link ThinNamedSet} list backing {@code tq.getQueryModel().getNamedSets()}
+     */
+    public List<ThinNamedSet> getNamedSets(String queryName) {
+        return requireQueryModel(queryName).getNamedSets();
+    }
+
+    /**
+     * Append a named set to a query's model (saiku#824). Validates the same
+     * shape {@code AiSchemaConverter#validateNamedSets} enforces for the AI Query
+     * API's inline {@code namedSets[]}: non-blank {@code name}/{@code expression},
+     * unique {@code name} among the entries already on the model.
+     * @param queryName The query name
+     * @param namedSet The named set to append
+     * @return the appended named set
+     */
+    public ThinNamedSet addNamedSet(String queryName, ThinNamedSet namedSet) {
+        ThinQueryModel qm = requireQueryModel(queryName);
+        if (namedSet == null) {
+            throw new IllegalArgumentException("Named set body must not be null");
+        }
+        String name = namedSet.getName();
+        if (StringUtils.isBlank(name)) {
+            throw new IllegalArgumentException("Named set requires a non-blank 'name'");
+        }
+        if (StringUtils.isBlank(namedSet.getExpression())) {
+            throw new IllegalArgumentException("Named set '" + name + "' requires a non-blank 'expression'");
+        }
+        for (ThinNamedSet existing : qm.getNamedSets()) {
+            if (name.equals(existing.getName())) {
+                throw new IllegalArgumentException(
+                        "Duplicate named-set name '" + name + "'. Each named set on a query must use a unique name.");
+            }
+        }
+        qm.getNamedSets().add(namedSet);
+        return namedSet;
+    }
+
+    /**
+     * Remove a named set from a query's model by name (saiku#824).
+     * @param queryName The query name
+     * @param setName The named set's name
+     */
+    public void removeNamedSet(String queryName, String setName) {
+        ThinQueryModel qm = requireQueryModel(queryName);
+        boolean removed = qm.getNamedSets().removeIf(ns -> setName.equals(ns.getName()));
+        if (!removed) {
+            throw new SaikuServiceException("No named set '" + setName + "' on query: " + queryName);
+        }
+    }
+
+    /**
+     * Resolve {@code queryName}'s {@link ThinQueryModel}, lazily attaching an empty
+     * one if the stored {@link ThinQuery} doesn't carry one yet (the MDX
+     * constructor path leaves {@code queryModel} null — see {@link ThinQuery}).
+     */
+    private ThinQueryModel requireQueryModel(String queryName) {
+        if (!context.containsKey(queryName)) {
+            throw new SaikuServiceException("Cannot get query from context: " + queryName);
+        }
+        ThinQuery tq = context.get(queryName).getOlapQuery();
+        ThinQueryModel qm = tq.getQueryModel();
+        if (qm == null) {
+            qm = new ThinQueryModel();
+            tq.setQueryModel(qm);
+        }
+        return qm;
+    }
+
     public byte[] getExport(String queryName, String type) {
         return getExport(queryName, type, new FlattenedCellSetFormatter());
     }
@@ -768,6 +847,7 @@ public class ThinQueryService implements Serializable {
             final OlapConnection con =
                     olapDiscoverService.getNativeConnection(query.getCube().getConnection());
             stmt = con.createStatement();
+            QueryGuardrails.applyQueryTimeout(stmt);
             // saiku#818 follow-up: Mondrian's MDX parser doesn't define FIRST_ROWSET,
             // so emitting it produced a 500 with an opaque "Error DRILLTHROUGH" message.
             // Route through DrillthroughMdxBuilder which falls back to MAXROWS on Mondrian.
@@ -800,6 +880,7 @@ public class ThinQueryService implements Serializable {
             final OlapConnection con =
                     olapDiscoverService.getNativeConnection(query.getCube().getConnection());
             stmt = con.createStatement();
+            QueryGuardrails.applyQueryTimeout(stmt);
             // MAXROWS 1 is enough to populate the ResultSetMetaData;
             // MAXROWS 0 raises "out of bounds (0,0)" on some Mondrian
             // builds, so we deliberately fetch one row and discard.
@@ -858,7 +939,11 @@ public class ThinQueryService implements Serializable {
             SaikuCube cube = query.getCube();
             final OlapConnection con = olapDiscoverService.getNativeConnection(cube.getConnection());
             stmt = con.createStatement();
-            return stmt.executeQuery(query.getMdx());
+            QueryGuardrails.applyQueryTimeout(stmt);
+            // saiku#1914: the caller supplied raw DRILLTHROUGH MDX with no server cap.
+            // Inject/clamp a MAXROWS bound so the fact-table scan is bounded regardless
+            // of what the request body asked for.
+            return stmt.executeQuery(DrillthroughMdxBuilder.capRawDrillthrough(query.getMdx(), 0));
         } catch (SQLException e) {
             throw new SaikuServiceException(
                     "Error DRILLTHROUGH: " + query.getMdx() + " DRILLTHROUGH MDX:" + query.getMdx(), e);
@@ -925,6 +1010,7 @@ public class ThinQueryService implements Serializable {
             SaikuCube cube = query.getCube();
             final OlapConnection con = olapDiscoverService.getNativeConnection(cube.getConnection());
             stmt = con.createStatement();
+            QueryGuardrails.applyQueryTimeout(stmt);
             SelectNode sn = (new DefaultMdxParserImpl().parseSelect(query.getMdx()));
             String select = null;
             StringBuilder buf = new StringBuilder();
@@ -967,11 +1053,10 @@ public class ThinQueryService implements Serializable {
                 buf.append("WHERE ").append(writer.toString());
             }
             select = buf.toString();
-            if (maxrows > 0) {
-                select = "DRILLTHROUGH MAXROWS " + maxrows + " " + select + "\r\n";
-            } else {
-                select = "DRILLTHROUGH " + select + "\r\n";
-            }
+            // saiku#1914: always emit a server-clamped MAXROWS. A client-supplied
+            // maxrows <= 0 (or one above the ceiling) no longer yields a bare
+            // DRILLTHROUGH, i.e. an unbounded fact-table scan.
+            select = "DRILLTHROUGH MAXROWS " + QueryGuardrails.clampMaxRows(maxrows) + " " + select + "\r\n";
             if (StringUtils.isNotBlank(returns)) {
                 select += "\r\n RETURN " + returns;
             }
@@ -995,12 +1080,9 @@ public class ThinQueryService implements Serializable {
             final OlapConnection con =
                     olapDiscoverService.getNativeConnection(query.getCube().getConnection());
             stmt = con.createStatement();
-            String mdx = query.getMdx();
-            if (maxrows > 0) {
-                mdx = "DRILLTHROUGH MAXROWS " + maxrows + " " + mdx;
-            } else {
-                mdx = "DRILLTHROUGH " + mdx;
-            }
+            QueryGuardrails.applyQueryTimeout(stmt);
+            // saiku#1914: server-clamped cap, no bare-DRILLTHROUGH escape hatch.
+            String mdx = "DRILLTHROUGH MAXROWS " + QueryGuardrails.clampMaxRows(maxrows) + " " + query.getMdx();
 
             ResultSet rs = stmt.executeQuery(mdx);
             return CsvExporter.exportCsv(rs);
@@ -1197,6 +1279,215 @@ public class ThinQueryService implements Serializable {
         } catch (Exception e) {
             throw new SaikuServiceException("Error zoom in on query: " + queryName, e);
         }
+    }
+
+    /**
+     * Hierarchy-aware drill down (saiku#776): expand a single row in place by injecting the
+     * clicked member's children as a nested rows-axis entry, leaving every other row untouched.
+     *
+     * <p>Unlike {@link #zoomIn}, which replaces a whole level's selection, this adds the child
+     * level alongside the member's own level so the query hierarchy ends up with more than one
+     * active level — {@link QueryHierarchy#needsHierarchize()} then makes the MDX generator wrap
+     * the axis in {@code Hierarchize()}, which is what produces the nested "parent row followed by
+     * its children" display instead of a flat replacement.
+     *
+     * @param queryName the query name
+     * @param rowIndex the index of the row (on the last executed result's ROWS axis) to drill into
+     * @return the freshly executed result, with the drilled member's children inserted beneath it
+     */
+    public CellDataSet drillDown(String queryName, int rowIndex) {
+        QueryContext qc = context.get(queryName);
+        if (qc == null) {
+            throw new SaikuServiceException("Cannot get query result from context: " + queryName);
+        }
+        CellSet cs = qc.getOlapResult();
+        ThinQuery old = qc.getOlapQuery();
+        if (cs == null) {
+            throw new SaikuServiceException("Cannot drill down if last cellset is null");
+        }
+        Member target = resolveRowMember(cs, rowIndex);
+        List<SaikuMember> children = olapDiscoverService.getMemberChildren(old.getCube(), target.getUniqueName());
+        if (children == null || children.isEmpty()) {
+            throw new SaikuServiceException("Member " + target.getUniqueName() + " has no children to drill into");
+        }
+        try {
+            Cube cub = olapDiscoverService.getNativeCube(old.getCube());
+            Query q = Fat.convert(old, cub);
+            // Fat.convert only rebuilds hierarchy placement and member selections from a
+            // ThinQuery's structured queryModel. The query this drill starts from is raw MDX
+            // (ThinQuery.Type.MDX, queryModel == null), so at this point every hierarchy in `q`
+            // — including the one we're about to drill into — is still parked on its internal
+            // "unused" pseudo-axis with nothing selected. Rehydrate every axis (not just ROWS:
+            // an empty COLUMNS/measures axis makes Mondrian reject the query with "Axis 0 is
+            // missing") from what the last cellset is actually showing before touching anything.
+            seedQueryFromCellSet(q, cs);
+            QueryHierarchy qh = q.getHierarchy(target.getHierarchy());
+            // With two active levels on the same hierarchy, the MDX generator's default
+            // "consistent" mode wraps every other level in Exists(..., <this level's set>)
+            // so they only keep members related to it. That's right for "expand a whole
+            // level", but here the child level holds just one row's children, so it would
+            // collapse the parent level down to that single ancestor and drop every sibling
+            // row. Disabling it keeps the levels independent: parent rows untouched, children
+            // simply unioned in and nested under their parent by Hierarchize.
+            qh.setConsistent(false);
+            for (SaikuMember child : children) {
+                qh.includeMember(child.getUniqueName());
+            }
+            ThinQuery tqAfter = Thin.convert(q, old.getCube());
+            return execute(tqAfter);
+        } catch (Exception e) {
+            throw new SaikuServiceException("Error drilling down on query: " + queryName, e);
+        }
+    }
+
+    /**
+     * Collapse a row previously expanded by {@link #drillDown}: removes exactly the clicked
+     * member's own children from its level's selection, leaving any other independently
+     * drilled-down rows (siblings or elsewhere in the hierarchy) expanded.
+     *
+     * @param queryName the query name
+     * @param rowIndex the index of the previously drilled-down parent row to collapse
+     * @return the freshly executed result, with the drilled member's children removed
+     */
+    public CellDataSet drillUp(String queryName, int rowIndex) {
+        QueryContext qc = context.get(queryName);
+        if (qc == null) {
+            throw new SaikuServiceException("Cannot get query result from context: " + queryName);
+        }
+        CellSet cs = qc.getOlapResult();
+        ThinQuery old = qc.getOlapQuery();
+        if (cs == null) {
+            throw new SaikuServiceException("Cannot drill up if last cellset is null");
+        }
+        Member target = resolveRowMember(cs, rowIndex);
+        List<SaikuMember> children = olapDiscoverService.getMemberChildren(old.getCube(), target.getUniqueName());
+        if (children == null || children.isEmpty()) {
+            throw new SaikuServiceException("Member " + target.getUniqueName() + " has no drilled-down children");
+        }
+        try {
+            Cube cub = olapDiscoverService.getNativeCube(old.getCube());
+            Query q = Fat.convert(old, cub);
+            // See the matching comment in drillDown: rehydrate every axis from the last
+            // cellset before editing anything, and keep any other still-expanded level on this
+            // hierarchy from being Exists()-narrowed against this member's (former) children.
+            seedQueryFromCellSet(q, cs);
+            QueryHierarchy qh = q.getHierarchy(target.getHierarchy());
+            qh.setConsistent(false);
+            for (SaikuMember child : children) {
+                qh.excludeMember(child.getUniqueName());
+            }
+            // If nothing else on the child level is still expanded, drop the level entirely
+            // rather than leaving an empty active level behind — needsHierarchize() counts
+            // active levels, not populated ones.
+            for (QueryLevel ql : new ArrayList<>(qh.getActiveQueryLevels())) {
+                if (ql.getLevel().getDepth() == target.getLevel().getDepth() + 1
+                        && ql.getInclusions().isEmpty()) {
+                    qh.excludeLevel(ql.getLevel());
+                }
+            }
+            ThinQuery tqAfter = Thin.convert(q, old.getCube());
+            return execute(tqAfter);
+        } catch (Exception e) {
+            throw new SaikuServiceException("Error drilling up on query: " + queryName, e);
+        }
+    }
+
+    /**
+     * Resolves the most specific (deepest, non-ALL) member of the ROWS-axis position at
+     * {@code rowIndex} in the last executed cellset — the member a "drill this row" click refers
+     * to when the row header crosses more than one hierarchy.
+     */
+    private Member resolveRowMember(CellSet cs, int rowIndex) {
+        CellSetAxis rowsAxis = getAxis(cs, Axis.ROWS);
+        if (rowsAxis == null
+                || rowIndex < 0
+                || rowIndex >= rowsAxis.getPositions().size()) {
+            throw new SaikuServiceException("Invalid row index for drill: " + rowIndex);
+        }
+        Position pos = rowsAxis.getPositions().get(rowIndex);
+        Member deepest = null;
+        for (Member m : pos.getMembers()) {
+            if (m == null || Level.Type.ALL.equals(m.getLevel().getLevelType())) {
+                continue;
+            }
+            if (deepest == null || m.getLevel().getDepth() > deepest.getLevel().getDepth()) {
+                deepest = m;
+            }
+        }
+        if (deepest == null) {
+            throw new SaikuServiceException("Cannot resolve a drillable member for row " + rowIndex);
+        }
+        return deepest;
+    }
+
+    /**
+     * Rehydrates {@code q} (freshly returned by {@link Fat#convert}) from what the last executed
+     * cellset is actually showing, axis by axis.
+     *
+     * <p>A brand-new {@link Query} starts every one of the cube's hierarchies parked on an
+     * internal "unused" pseudo-axis, invisible to MDX generation. {@code Fat.convert} only moves
+     * a hierarchy onto ROWS/COLUMNS/FILTER and selects its members when the source ThinQuery
+     * carries a structured queryModel describing that placement — which a query executed
+     * straight from raw MDX (ThinQuery.Type.MDX, queryModel == null, e.g. the query this drill
+     * feature starts from) never has. Without this, every hierarchy drillDown/drillUp didn't
+     * explicitly touch — including the measures on COLUMNS — stays on "unused" and vanishes from
+     * the regenerated MDX entirely, which Mondrian then rejects for leaving a gap in the axis
+     * numbering.
+     *
+     * <p>{@code moveHierarchy}/{@code includeMember} are both no-ops when a hierarchy is already
+     * where it should be, so re-seeding a queryModel-origin query that {@code Fat.convert} already
+     * populated correctly is harmless.
+     */
+    private void seedQueryFromCellSet(Query q, CellSet cs) throws OlapException {
+        // Assign each hierarchy to exactly one axis — whichever axis its members are found on
+        // first. A hierarchy should never legitimately span two axes of the same cellset, but
+        // olap4j's slicer/FILTER axis can carry a context tuple with non-ALL default members
+        // (e.g. the default measure) for hierarchies that are really seated elsewhere; grouping
+        // globally instead of per-axis keeps that from fighting the axis a hierarchy was already
+        // moved to, which QueryAxis#addHierarchy treats as an error rather than a no-op.
+        Map<Hierarchy, Axis> axisByHierarchy = new LinkedHashMap<>();
+        Map<Hierarchy, LinkedHashSet<String>> membersByHierarchy = new LinkedHashMap<>();
+        for (CellSetAxis csAxis : cs.getAxes()) {
+            Axis location = csAxis.getAxisOrdinal();
+            if (location == null) {
+                continue;
+            }
+            for (Position pos : csAxis.getPositions()) {
+                for (Member m : pos.getMembers()) {
+                    if (m == null || Level.Type.ALL.equals(m.getLevel().getLevelType())) {
+                        continue;
+                    }
+                    Hierarchy hierarchy = m.getHierarchy();
+                    Axis assigned = axisByHierarchy.computeIfAbsent(hierarchy, h -> location);
+                    if (assigned.equals(location)) {
+                        membersByHierarchy
+                                .computeIfAbsent(hierarchy, h -> new LinkedHashSet<>())
+                                .add(m.getUniqueName());
+                    }
+                }
+            }
+        }
+        for (Map.Entry<Hierarchy, Axis> entry : axisByHierarchy.entrySet()) {
+            QueryHierarchy qh = q.getHierarchy(entry.getKey());
+            if (qh == null) {
+                continue;
+            }
+            if (qh.getAxis() == null || !entry.getValue().equals(qh.getAxis().getLocation())) {
+                q.moveHierarchy(qh, entry.getValue());
+            }
+            for (String uniqueName : membersByHierarchy.getOrDefault(entry.getKey(), new LinkedHashSet<>())) {
+                qh.includeMember(uniqueName);
+            }
+        }
+    }
+
+    private CellSetAxis getAxis(CellSet cs, Axis axis) {
+        for (CellSetAxis a : cs.getAxes()) {
+            if (a.getAxisOrdinal().equals(axis)) {
+                return a;
+            }
+        }
+        return null;
     }
 
     public ThinQuery drillacross(String queryName, List<Integer> cellPosition, Map<String, List<String>> levels) {
