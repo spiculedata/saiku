@@ -156,6 +156,15 @@ no usable local password. See
 [`docs/SCIM-PROVISIONING.md`](docs/SCIM-PROVISIONING.md) for the connector
 walkthrough, the attribute mapping and its limits.
 
+## Google Sheets add-on
+
+A first-party Sheets add-on (`integrations/google-sheets/`, spiculedata/saiku#1436)
+queries the semantic layer from a spreadsheet sidebar — cube picker, measure
+and dimension shelves, *Insert as table*, and a *Refresh* that rewrites the
+same block in place so your formatting survives. It talks to the same typed
+`/saiku/api/ai/*` surface as the MCP server and the Excel add-in. See
+[`docs/sheets.md`](docs/sheets.md).
+
 ## Observability
 
 Saiku ships **opt-in OpenTelemetry instrumentation** via the OTel Java
