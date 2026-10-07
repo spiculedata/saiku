@@ -100,6 +100,7 @@ import org.saiku.service.util.KeyValue;
 import org.saiku.service.util.QueryContext;
 import org.saiku.service.util.QueryContext.ObjectKey;
 import org.saiku.service.util.QueryContext.Type;
+import org.saiku.service.util.exception.SaikuAccessDeniedException;
 import org.saiku.service.util.exception.SaikuServiceException;
 import org.saiku.service.util.export.CsvExporter;
 import org.saiku.service.util.export.ExcelExporter;
@@ -438,6 +439,10 @@ public class ThinQueryService implements Serializable {
             }
             try {
                 return ossieQueryService.execute(tq);
+            } catch (SaikuAccessDeniedException e) {
+                // saiku#1393 — let the typed access-denial propagate unwrapped so REST/MCP callers
+                // can map it to 403 instead of a generic 500.
+                throw e;
             } catch (Exception e) {
                 throw new SaikuServiceException("Failed to execute OSSIE query: " + tq.getName(), e);
             }
