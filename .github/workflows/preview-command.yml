@@ -110,6 +110,7 @@ jobs:
           SAIKU_PREVIEW_IDLE_HOURS: ${{ vars.PREVIEW_IDLE_HOURS }}
           SAIKU_PREVIEW_BASE_DOMAIN: ${{ vars.PREVIEW_BASE_DOMAIN }}
           SAIKU_PREVIEW_AUTHORS: ${{ vars.PREVIEW_AUTHORS }}
+          SAIKU_PREVIEW_POST_CREDENTIALS: ${{ vars.PREVIEW_POST_CREDENTIALS }}
         run: |
           node .github/scripts/preview-ctl.mjs event \
             --host ssh \

@@ -94,8 +94,15 @@ FoodMart row is the real check either way.
 three keys off the host (`ORIGIN`, `PREVIEW_ADMIN_USER`, `SAIKU_ADMIN_PASSWORD`),
 validates each value, emits `::add-mask::` for the password **before** writing, and
 writes `PREVIEW_BASE_URL`, `PREVIEW_ADMIN_USER`, `PREVIEW_ADMIN_PASSWORD` to a 0600 file
-and/or step outputs. Nothing is printed, summarised or commented. The consumer must be a
-later step in the **same job** (job outputs drop secrets).
+and/or step outputs. This hand-off prints, summarises and comments nothing. The consumer must
+be a later step in the **same job** (job outputs drop secrets).
+
+The sticky PR comment is a separate matter: it shows the same throwaway login on purpose
+(decided 2026-10-07: the environments are test-only and tailnet-only, and a tester needs it;
+the repo is public, so anyone who can read the PR can read it). It is masked in the log first,
+rendered only if it has the exact shape the host writes, and `PREVIEW_POST_CREDENTIALS=false`
+turns it off. A separate new comment announces a preview coming up, because editing the sticky
+one sends no notification.
 
 ## Security model
 

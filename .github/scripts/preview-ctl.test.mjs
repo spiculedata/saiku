@@ -507,9 +507,11 @@ test('/preview on a running env extends the idle window without rebuilding; rest
   const w = world();
   w.event({});
   const before = w.host.state.ops.length;
+  const mutatingBefore = w.host.state.ops.filter((o) => o.mutating).length;
   const r = w.event({ action: 'requested', requestedBy: 'tom' }, HOURS(10));
   assert.equal(r.decision.action, 'keep');
-  assert.equal(w.host.state.ops.length, before);
+  // Nothing is changed on the host (reading the login for the comment is a read-only command).
+  assert.equal(w.host.state.ops.filter((o) => o.mutating).length, mutatingBefore);
   assert.equal(w.registry().envs['1'].lastActivity, HOURS(10));
   assert.match(w.lastComment(1), /refreshed by \/preview/);
   const restart = w.event({ action: 'requested', requestedBy: 'tom', restart: true }, HOURS(11));
@@ -955,4 +957,98 @@ test('GhImageBuilder only ever interpolates a validated PR number and 40-hex SHA
   assert.throws(() => b.ensure(5, 'a'.repeat(39)));
   assert.throws(() => new GhImageBuilder({ repo: 'bad; repo' }), /invalid repository/);
   assert.throws(() => new GhImageBuilder({ repo: REPO, workflow: '../x' }), /invalid workflow file/);
+});
+
+/* ------------------------------------------- login in the comment + announcing */
+
+const FAKE_PW = 'prevpw_0123456789abcdef0123456789abcdef01234567';
+
+test('a new preview shows the login in the sticky comment, masks it in the log first, and announces itself once', () => {
+  const host = new FakeHost({ images: [tag('a')] });
+  const commenter = new RecordingCommenter();
+  const logs = [];
+  const r = handleEvent({ host, commenter, event: ev({ number: 3 }), config, now: T0, changedFiles: BUILT, log: (m) => logs.push(m) });
+  assert.equal(r.exitCode, 0);
+  const sticky = commenter.comments.filter((c) => c.pr === 3).at(-1).body;
+  assert.ok(sticky.includes(`Login: \`admin\` / \`${FAKE_PW}\``));
+  assert.match(sticky, /oss-pr-3\.preview\.saiku\.bi\/ui\//);
+  // Masked in the workflow log before anything else could print it.
+  const mask = logs.findIndex((l) => l === `::add-mask::${FAKE_PW}`);
+  assert.ok(mask >= 0, 'the password is masked');
+  assert.ok(logs.slice(0, mask).every((l) => !l.includes(FAKE_PW)), 'and nothing logged it before the mask');
+  assert.ok(logs.filter((l) => l.includes(FAKE_PW)).every((l) => l.startsWith('::add-mask::')), 'the only log line with it is the mask command');
+  // A separate NEW comment pings people; it holds no password.
+  assert.equal(commenter.announcements.length, 1);
+  assert.equal(commenter.announcements[0].pr, 3);
+  assert.match(commenter.announcements[0].body, /Preview is running/);
+  assert.doesNotMatch(commenter.announcements[0].body, /prevpw_/);
+});
+
+test('a push that refreshes a running preview updates the sticky comment quietly; /preview and a restart announce', () => {
+  const w = world({ images: [tag('a'), tag('b')] });
+  w.event({});
+  assert.equal(w.commenter.announcements.length, 1, 'new -> announced');
+  w.event({ action: 'synchronize', headSha: sha('b') }, HOURS(1));
+  assert.equal(w.commenter.announcements.length, 1, 'refresh -> no new ping');
+  assert.match(w.lastComment(1), /Login: /, 'but the sticky comment still has the login');
+  w.event({ action: 'requested', requestedBy: 'tom', headSha: sha('b') }, HOURS(2));
+  assert.equal(w.commenter.announcements.length, 2, 'an explicit /preview on a running env points at it again');
+  w.event({ action: 'requested', requestedBy: 'tom', restart: true, headSha: sha('b') }, HOURS(3));
+  assert.equal(w.commenter.announcements.length, 3, 'restart -> announced');
+});
+
+test('PREVIEW_POST_CREDENTIALS=false: no login read from the host, none in the comment, the hint instead; still announces', () => {
+  const host = new FakeHost({ images: [tag('a')] });
+  const commenter = new RecordingCommenter();
+  const off = { ...config, postCredentials: false };
+  handleEvent({ host, commenter, event: ev({ number: 3 }), config: off, now: T0, changedFiles: BUILT });
+  const sticky = commenter.comments.filter((c) => c.pr === 3).at(-1).body;
+  assert.doesNotMatch(sticky, /prevpw_|Login: /);
+  assert.match(sticky, /Fetch it with/);
+  assert.ok(!host.state.ops.some((o) => o.argv.includes('grep')), 'the credentials file is never read when posting is off');
+  assert.equal(commenter.announcements.length, 1);
+});
+
+test('if the login cannot be read the preview still comes up, with the fetch hint, and the failure is logged without the value', () => {
+  const host = new FakeHost({ images: [tag('a')], credentials: 'SAIKU_ADMIN_PASSWORD=bad value with spaces' });
+  const commenter = new RecordingCommenter();
+  const logs = [];
+  const r = handleEvent({ host, commenter, event: ev({ number: 3 }), config, now: T0, changedFiles: BUILT, log: (m) => logs.push(m) });
+  assert.equal(r.exitCode, 0);
+  assert.deepEqual(Object.keys(host.state.stacks), ['saiku-oss-pr-3']);
+  assert.match(commenter.comments.filter((c) => c.pr === 3).at(-1).body, /Fetch it with/);
+  assert.ok(logs.some((l) => /could not read the login for #3/.test(l)));
+  assert.ok(!logs.some((l) => l.includes('bad value')), 'the offending value is never logged');
+});
+
+test('a failing announcement is recorded and never undoes the preview', () => {
+  const host = new FakeHost({ images: [tag('a')] });
+  const commenter = new RecordingCommenter();
+  commenter.notify = () => {
+    throw new Error('HTTP 403');
+  };
+  const logs = [];
+  const r = handleEvent({ host, commenter, event: ev({ number: 3 }), config, now: T0, changedFiles: BUILT, log: (m) => logs.push(m) });
+  assert.equal(r.exitCode, 0);
+  assert.deepEqual(Object.keys(host.state.stacks), ['saiku-oss-pr-3']);
+  assert.ok(logs.some((l) => /could not announce the preview on #3: HTTP 403/.test(l)));
+});
+
+test('GhCommenter.notify POSTs a NEW comment (never edits the sticky one) and validates its input', () => {
+  const calls = [];
+  const c = new GhCommenter({ repo: REPO, run: (argv, o) => (calls.push({ argv, input: o?.input }), { status: 0, stdout: '', stderr: '' }) });
+  c.notify(8, 'hello');
+  assert.equal(calls.length, 1, 'no listing, no PATCH');
+  assert.deepEqual(calls[0].argv, ['gh', 'api', '-X', 'POST', `repos/${REPO}/issues/8/comments`, '--input', '-']);
+  assert.deepEqual(JSON.parse(calls[0].input), { body: 'hello' });
+  assert.throws(() => c.notify('8; rm', 'x'));
+  assert.throws(() => new GhCommenter({ repo: REPO, run: () => ({ status: 1, stdout: '', stderr: 'nope' }) }).notify(8, 'x'), /posting comment failed/);
+});
+
+test('loadConfig: login posting is on by default and only an explicit "false" turns it off', () => {
+  assert.equal(loadConfig({}).postCredentials, true);
+  assert.equal(loadConfig({ SAIKU_PREVIEW_POST_CREDENTIALS: '' }).postCredentials, true, 'an unset repo variable arrives as an empty string');
+  assert.equal(loadConfig({ SAIKU_PREVIEW_POST_CREDENTIALS: 'true' }).postCredentials, true);
+  assert.equal(loadConfig({ SAIKU_PREVIEW_POST_CREDENTIALS: 'False' }).postCredentials, false);
+  assert.equal(loadConfig({ SAIKU_PREVIEW_POST_CREDENTIALS: ' false ' }).postCredentials, false);
 });
