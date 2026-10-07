@@ -24,6 +24,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.text.Normalizer;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
@@ -244,6 +245,11 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
         // guard — reject the name here, at the one chokepoint every write below (csv json,
         // workspace mondrian catalog path, and the final .sds descriptor) keys off.
         validateDatasourceName(ds.getName());
+        // saiku#1933: store the NFC spelling. An NFD name (macOS clipboard form) validates fine
+        // once normalized, but persisting the decomposed spelling would key the .sds file and the
+        // in-memory cache on a string that won't byte-match the NFC name a later save, a CSV
+        // catalog path, or a saved query comes back carrying.
+        ds.setName(normalizeNameToNfc(ds.getName()));
 
         // saiku#1864: the load path decorates every name as `<workspace>_<storedName>`
         // (FilesystemRepositoryManager.getAllDataSources). Nothing undid that here, so a client
@@ -345,6 +351,13 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
      * resulting filename is too long for the underlying filesystem. Fail-closed: null,
      * non-matching, or over-length names are all rejected.
      *
+     * <p>saiku#1933: the name is normalized to NFC ({@link #normalizeNameToNfc}) before it is
+     * matched. The allowlist admits Unicode letters ({@code \p{L}}) but not combining marks
+     * ({@code \p{M}}), so an accented name arriving in NFD form -- the decomposed spelling
+     * macOS puts on the clipboard, and what a naive UTF-8 encode/decode round trip preserves --
+     * used to be rejected even though its composed NFC spelling passed. Normalizing first makes
+     * the two spellings interchangeable at the one chokepoint every write funnels through.
+     *
      * <p>saiku#1906 SEC follow-up (data loss): {@link #DATASOURCE_NAME_PATTERN} caps at 128
      * Unicode code points, but {@code saveDataSource} writes the name as UTF-8 bytes in a
      * filename — 128 CJK/astral characters can already be 380+ UTF-8 bytes, past ext4's
@@ -359,11 +372,26 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
      * attacker-supplied name containing a newline would otherwise be log-line injection.
      */
     private static void validateDatasourceName(String name) {
-        if (name == null
-                || !DATASOURCE_NAME_PATTERN.matcher(name).matches()
-                || name.getBytes(StandardCharsets.UTF_8).length > 200) {
+        if (name == null) {
             throw new IllegalArgumentException("Illegal datasource name");
         }
+        String nfc = normalizeNameToNfc(name);
+        if (!DATASOURCE_NAME_PATTERN.matcher(nfc).matches() || nfc.getBytes(StandardCharsets.UTF_8).length > 200) {
+            throw new IllegalArgumentException("Illegal datasource name");
+        }
+    }
+
+    /**
+     * The NFC (canonical-composed) spelling of a datasource name, or {@code null} for {@code null}
+     * input. saiku#1933.
+     *
+     * <p>NFC is the single spelling every downstream step assumes: it carries no combining marks
+     * for {@link #DATASOURCE_NAME_PATTERN}'s {@code \p{M}} exclusion to trip over, and one
+     * canonical form means an accented datasource lands on ONE filename rather than two that
+     * differ only by normalization.
+     */
+    private static String normalizeNameToNfc(String name) {
+        return name == null ? null : Normalizer.normalize(name, Normalizer.Form.NFC);
     }
 
     /**
@@ -393,8 +421,12 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
                 // filesystem impl; a non-filesystem IRepositoryManager (e.g. Saiku Cloud's
                 // Postgres-backed store) wouldn't get it, so validate here too.
                 validateDatasourceName(ds.getName());
+                // saiku#1933: same NFC storage decision as addDatasource() -- the cache key must
+                // match the name the descriptor was written under, or a reload keys the map by a
+                // string that no longer byte-matches what a caller sends.
+                ds.setName(normalizeNameToNfc(ds.getName()));
                 irm.saveDataSource(ds, separator + "datasources" + separator + ds.getName() + ".sds", "fixme");
-                datasourcesForCurrentWorkspace().put(datasource.getName(), datasource);
+                datasourcesForCurrentWorkspace().put(ds.getName(), datasource);
 
             } catch (IllegalArgumentException | RepositoryException e) {
                 log.error("Could not add data source: {}", datasource.getName(), e);

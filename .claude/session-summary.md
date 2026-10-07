@@ -84,12 +84,37 @@ pushed down; normal sessions append and the history stays useful.
 **Was doing:** merged development, retaining the base branch's uniform access-denied handling and the PR's Query2 `returns=` caption resolution; updated tests for the new `firstRowset` signature after CI found a compile error.
 **Now:** check PR #2047 CI after the push; local Maven tests could not run because this environment has no JDK or Maven.
 **Refs:** #837, #2047
+## 2026-10-07 — feature/scim-2-provisioning — merged development for PR #2065
+**Was doing:** merged development at 4fb7b66c1, kept SCIM wiring alongside the base security chains and all changelog entries, and formatted the privileged-role guard and test.
+**Now:** check PR #2065 CI after the push; local focused Maven tests stopped before compilation because GitHub Packages returned 401 for required artifacts.
+**Refs:** #1438, #2065
+## 2026-10-07 — feature/repository-hardening-followups — merged development for PR #2072
+**Was doing:** merged development at 4fb7b66c1; the sole conflict was Java imports, resolved by retaining the base Path/Paths imports and this PR's Normalizer import.
+**Now:** check PR #2072 CI after the push; local focused Maven tests stopped before compilation because GitHub Packages returned 401 for private Mondrian and olap4j dependencies. Spotless passed.
+**Refs:** #1933, #2072
+## 2026-10-07 — feature/1913-shared-ai-rate-limiter — merged development for PR #2083
+**Was doing:** merged the latest development, retaining every changelog entry and both session summaries; fixed the test XML placeholder setup behind the CI wiring-test failure. The earlier limiter-budget and Spotless fixes remain.
+**Now:** check PR #2083 CI after the push; direct limiter tests, Spring bean smoke test, and Spotless passed, but the Maven reactor stopped at a GitHub Packages 401 before compilation.
+**Refs:** #1913, #2083
+## 2026-10-07 — security/1914-query-timeout-result-limits — merged development for PR #2082
+**Was doing:** merged development at 4fb7b66c1, retaining the cell-property columns and bounded Arrow allocator in the sole conflict.
+**Now:** check PR #2082 CI; local focused Maven tests stop before compilation because GitHub Packages returns 401 for Mondrian and olap4j.
+**Refs:** #1914, #2082
+
+## 2026-10-06 — feature/823-drillthrough-firstrowset-toggle — merged latest development for PR #2042
+**Was doing:** merged development at ccb56fa82, retaining both session-summary entries; UI check and build passed, but local Vitest stalled and Java/Maven are unavailable.
+**Now:** check PR #2042 CI and review #822 backend overlap with merged PR #2043.
+**Refs:** #822, #823, #2042, #2043
 
 ## 2026-10-06 — docs/mysql-calcite-dialect-1886 — merged development for PR #2067
 **Was doing:** resolved the changelog conflict, retaining the PR's MySQL known issue and every development entry; the Mondrian docs and AGENTS.md guidance remain intact.
 **Now:** check PR #2067 CI after the push; local Maven build was unavailable because Java and Maven are not installed.
 **Refs:** #1886, #2067
 
+## 2026-10-05 — feature/823-drillthrough-firstrowset-toggle — merged development for PR #2042
+**Was doing:** merged development twice into PR #2042, retaining its drillthrough column discovery alongside the base branch's drillDown/drillUp API and safer Query2Resource error handling.
+**Now:** check PR #2042 CI after the latest push; the first merge passed JDK, UI, and bundle CI, and local UI check, focused tests, build, and lint passed.
+**Refs:** #822, #823, #2042
 ## 2026-10-05 — feature/arrow-cell-property-columns — merged development for PR #2046
 **Was doing:** merged development, keeping both column-header member metadata and the PR's optional cell-property columns; Spotless passed.
 **Now:** check PR #2046 CI after the push; local Maven tests stopped at a GitHub Packages 401 before compilation.
