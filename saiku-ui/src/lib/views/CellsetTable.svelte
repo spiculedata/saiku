@@ -2,6 +2,8 @@
 	import type { CellEntry, QueryResult } from '$lib/api/query';
 	import { parseCellset, rowHeaderDisplay } from '$lib/views/cellsetUtils';
 	import { parseFormattedCell } from '$lib/cellset/cellFormat';
+	import { roundCellDisplay } from '$lib/cellset/decimalFormat';
+	import { decimalPlaces } from '$lib/stores/decimalPlaces.svelte';
 	import { query as queryStore } from '$lib/stores/query.svelte';
 	import { datasources } from '$lib/stores/datasources.svelte';
 	import { selection } from '$lib/stores/selection.svelte';
@@ -9,6 +11,12 @@
 	import { listLevelMembers, listRootMembers } from '$lib/api/discover';
 	import { toasts } from '$lib/stores/toasts.svelte';
 	import { i18n } from '$lib/stores/i18n.svelte';
+	import { buildCellLinkUrl, coordsAtIntersection } from '$lib/cellset/cellLinkUrl';
+	import {
+		cellNumericValue,
+		formatDataCell,
+		readCellConditionalFormat
+	} from '$lib/cellset/cellConditionalFormat';
 
 	interface Props {
 		result: QueryResult;
@@ -113,6 +121,7 @@
 	}
 	interface MenuState {
 		open: boolean;
+		kind: 'member' | 'data';
 		x: number;
 		y: number;
 		cell: CellEntry | null;
@@ -125,9 +134,14 @@
 		memberCaption: string | null;
 		levels: LevelItem[];
 		sub: 'include' | 'remove' | 'keep' | null;
+		dataRow: number | null;
+		dataCol: number | null;
+		dataAbsRow: number | null;
+		dataAbsCol: number | null;
 	}
 	let menu = $state<MenuState>({
 		open: false,
+		kind: 'member',
 		x: 0,
 		y: 0,
 		cell: null,
@@ -139,7 +153,11 @@
 		memberUniqueName: null,
 		memberCaption: null,
 		levels: [],
-		sub: null
+		sub: null,
+		dataRow: null,
+		dataCol: null,
+		dataAbsRow: null,
+		dataAbsCol: null
 	});
 
 	async function openMenu(event: MouseEvent, cell: CellEntry, axis: 'ROWS' | 'COLUMNS') {
@@ -183,6 +201,7 @@
 
 		menu = {
 			open: true,
+			kind: 'member',
 			x: event.clientX,
 			y: event.clientY,
 			cell,
@@ -194,7 +213,11 @@
 			memberUniqueName: memberUn,
 			memberCaption: cell.value ?? memberUn,
 			levels,
-			sub: null
+			sub: null,
+			dataRow: null,
+			dataCol: null,
+			dataAbsRow: null,
+			dataAbsCol: null
 		};
 	}
 
@@ -594,6 +617,18 @@
 		return Number.isFinite(n) ? n.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—';
 	}
 
+	let cellFormatRules = $derived(readCellConditionalFormat(queryStore.current?.properties));
+	let columnValues = $derived(
+		parsed.columnCategories.map((_, c) => parsed.dataRows.map((row) => cellNumericValue(row[c])))
+	);
+
+	function cellLinkTemplate(): string | null {
+		const raw = selection.cube?.cellLinkUrl ?? queryStore.current?.cube?.cellLinkUrl;
+		if (raw == null) return null;
+		const t = raw.trim();
+		return t.length > 0 ? t : null;
+	}
+
 	function onDataCellContextMenu(e: MouseEvent, row: number, col: number) {
 		e.preventDefault();
 		e.stopPropagation();
@@ -601,12 +636,104 @@
 		// absolute row = headerRowCount + row ; absolute col = rowHeaderColCount + col
 		const absRow = parsed.headerRowCount + row;
 		const absCol = parsed.rowHeaderColCount + col;
+		const template = cellLinkTemplate();
+		if (!template) {
+			wrapperEl?.dispatchEvent(
+				new CustomEvent('saiku-drillthrough', {
+					bubbles: true,
+					detail: { row: absRow, col: absCol, clientX: e.clientX, clientY: e.clientY }
+				})
+			);
+			return;
+		}
+		menu = {
+			open: true,
+			kind: 'data',
+			x: e.clientX,
+			y: e.clientY,
+			cell: null,
+			axis: null,
+			hierarchyUniqueName: null,
+			dimensionName: null,
+			levelName: null,
+			levelCaption: null,
+			memberUniqueName: null,
+			memberCaption: parsed.dataRows[row]?.[col]
+				? parseFormattedCell(parsed.dataRows[row][col].value).display
+				: '',
+			levels: [],
+			sub: null,
+			dataRow: row,
+			dataCol: col,
+			dataAbsRow: absRow,
+			dataAbsCol: absCol
+		};
+	}
+
+	function drillFromDataMenu() {
+		const absRow = menu.dataAbsRow;
+		const absCol = menu.dataAbsCol;
+		const x = menu.x;
+		const y = menu.y;
+		closeMenu();
+		if (absRow == null || absCol == null) return;
 		wrapperEl?.dispatchEvent(
 			new CustomEvent('saiku-drillthrough', {
 				bubbles: true,
-				detail: { row: absRow, col: absCol, clientX: e.clientX, clientY: e.clientY }
+				detail: { row: absRow, col: absCol, clientX: x, clientY: y }
 			})
 		);
+	}
+
+	// --- Hierarchy-aware drill down/up (saiku#776) ---
+	// "Expanded" is derived from the data itself rather than tracked separately: a row is
+	// expanded when the very next row's member (in the same row-header column) sits one level
+	// deeper, i.e. its children are already displayed nested beneath it.
+	function isExpanded(r: number, cIdx: number): boolean {
+		const cur = parsed.bodyRows[r]?.[cIdx];
+		const next = parsed.bodyRows[r + 1]?.[cIdx];
+		if (!cur || !next) return false;
+		return depthOf(next) > depthOf(cur);
+	}
+
+	let drilling = $state<Set<number>>(new Set());
+
+	async function toggleDrill(e: MouseEvent, r: number, cIdx: number) {
+		e.preventDefault();
+		e.stopPropagation();
+		if (drilling.has(r)) return;
+		const expanded = isExpanded(r, cIdx);
+		drilling = new Set(drilling).add(r);
+		try {
+			if (expanded) {
+				await queryStore.drillUp(r);
+			} else {
+				await queryStore.drillDown(r);
+			}
+		} catch (err) {
+			toasts.danger(
+				i18n.t(expanded ? 'toast.drillUpFailed' : 'toast.drillDownFailed'),
+				err instanceof Error ? err.message : String(err)
+			);
+		} finally {
+			const next = new Set(drilling);
+			next.delete(r);
+			drilling = next;
+		}
+	}
+
+	function openCellLink() {
+		const template = cellLinkTemplate();
+		const row = menu.dataRow;
+		const col = menu.dataCol;
+		closeMenu();
+		if (!template || row == null || col == null) return;
+		const url = buildCellLinkUrl(
+			template,
+			coordsAtIntersection(parsed, row, col, queryStore.current?.queryModel)
+		);
+		if (!url) return;
+		window.open(url, '_blank', 'noopener,noreferrer');
 	}
 
 	function onDocumentClick(e: MouseEvent) {
@@ -694,19 +821,38 @@
 								<th class="row_null" role="rowheader" aria-colindex={cIdx + 1}></th>
 							{:else}
 								{@const d = depthOf(c)}
+								{@const expanded = isExpanded(r, cIdx)}
 								<th
 									class={d > 0 ? 'row row--nested' : 'row'}
 									role="rowheader"
 									aria-colindex={cIdx + 1}
 									style={d > 0 ? `padding-left: calc(12px + ${d}em);` : ''}
 									title={c.value}
-									oncontextmenu={(e) => openMenu(e, c, 'ROWS')}>{c.value}</th
+									oncontextmenu={(e) => openMenu(e, c, 'ROWS')}
+									>{#if cIdx === rowCells.length - 1}<button
+											type="button"
+											class="row-drill-caret"
+											class:row-drill-caret--expanded={expanded}
+											disabled={drilling.has(r)}
+											aria-label={i18n.t(expanded ? 'cellset.drillUp' : 'cellset.drillDown')}
+											onclick={(e) => toggleDrill(e, r, cIdx)}>▸</button
+										>{/if}{c.value}</th
 								>
 							{/if}
 						{/each}
 						{#each parsed.dataRows[r] as dc, cIdx}
-							{@const fmt = parseFormattedCell(dc.value)}
-							{@const num = isNumeric(fmt.display)}
+							{@const painted = formatDataCell(
+								cellFormatRules,
+								parsed.columnCategories[cIdx] ?? '',
+								dc,
+								columnValues[cIdx] ?? []
+							)}
+							<!-- saiku#1988: display-only decimals. The cell's
+							     underlying value, the tooltip and every
+							     copy/drillthrough/export path keep the raw
+							     server formatting. -->
+							{@const shown = roundCellDisplay(painted.display, decimalPlaces.decimals)}
+							{@const num = isNumeric(painted.display)}
 							{@const selected = isSelected(r, cIdx)}
 							{@const hasFocus = isFocused(r, cIdx)}
 							<td
@@ -718,10 +864,11 @@
 								aria-selected={selected ? 'true' : undefined}
 								data-r={r}
 								data-c={cIdx}
-								style={fmt.color ? `color: ${fmt.color}` : undefined}
+								style={painted.style}
 								onmousedown={(e) => onCellMouseDown(e, r, cIdx)}
 								onmouseenter={() => onCellMouseEnter(r, cIdx)}
-								oncontextmenu={(e) => onDataCellContextMenu(e, r, cIdx)}>{fmt.display}</td
+								oncontextmenu={(e) => onDataCellContextMenu(e, r, cIdx)}
+								>{painted.icon ? `${painted.icon} ` : ''}{shown}</td
 							>
 						{/each}
 						{#if spark !== 'none'}
@@ -799,62 +946,84 @@
 
 {#if menu.open}
 	<div class="cellset-ctx-menu" style="left:{menu.x}px;top:{menu.y}px" role="menu">
-		<div
-			class="max-w-[320px] overflow-hidden px-3 py-1 font-semibold text-ellipsis whitespace-nowrap text-fg-muted"
-		>
-			{menu.memberCaption}
-		</div>
-		<div class="cellset-ctx-menu__sep"></div>
-		<button
-			type="button"
-			class="cellset-ctx-menu__item"
-			disabled={!menu.memberUniqueName}
-			onclick={keepOnly}>{i18n.t('cellset.menu.keepOnly')}</button
-		>
-		{#if menu.dimensionName && menu.dimensionName !== 'Measures'}
-			<div class="cellset-ctx-menu__item cellset-ctx-menu__item--parent">
-				<button
-					type="button"
-					onclick={() => (menu.sub = menu.sub === 'include' ? null : 'include')}
+		{#if menu.kind === 'data'}
+			{#if menu.memberCaption}
+				<div
+					class="max-w-[320px] overflow-hidden px-3 py-1 font-semibold text-ellipsis whitespace-nowrap text-fg-muted"
 				>
-					{i18n.t('cellset.menu.includeLevel')} ▸
-				</button>
-				{#if menu.sub === 'include'}
-					<div class="cellset-ctx-menu__sub">
-						{#each menu.levels as lvl}
-							<button
-								type="button"
-								class="cellset-ctx-menu__item"
-								disabled={lvl.used}
-								onclick={() => includeLevel(lvl)}>{lvl.caption}</button
-							>
-						{/each}
-						{#if menu.levels.length === 0}
-							<div class="px-3 py-1 text-fg-subtle">{i18n.t('cellset.menu.noLevels')}</div>
-						{/if}
-					</div>
-				{/if}
+					{menu.memberCaption}
+				</div>
+				<div class="cellset-ctx-menu__sep"></div>
+			{/if}
+			<button type="button" class="cellset-ctx-menu__item" onclick={drillFromDataMenu}
+				>{i18n.t('toolbar.drillthrough')}</button
+			>
+			<button type="button" class="cellset-ctx-menu__item" onclick={openCellLink}
+				>{i18n.t('toolbar.cellLink')}</button
+			>
+		{:else}
+			<div
+				class="max-w-[320px] overflow-hidden px-3 py-1 font-semibold text-ellipsis whitespace-nowrap text-fg-muted"
+			>
+				{menu.memberCaption}
 			</div>
-			<div class="cellset-ctx-menu__item cellset-ctx-menu__item--parent">
-				<button type="button" onclick={() => (menu.sub = menu.sub === 'remove' ? null : 'remove')}>
-					{i18n.t('cellset.menu.removeLevel')} ▸
+			<div class="cellset-ctx-menu__sep"></div>
+			<button
+				type="button"
+				class="cellset-ctx-menu__item"
+				disabled={!menu.memberUniqueName}
+				onclick={keepOnly}>{i18n.t('cellset.menu.keepOnly')}</button
+			>
+			{#if menu.dimensionName && menu.dimensionName !== 'Measures'}
+				<div class="cellset-ctx-menu__item cellset-ctx-menu__item--parent">
+					<button
+						type="button"
+						onclick={() => (menu.sub = menu.sub === 'include' ? null : 'include')}
+					>
+						{i18n.t('cellset.menu.includeLevel')} ▸
+					</button>
+					{#if menu.sub === 'include'}
+						<div class="cellset-ctx-menu__sub">
+							{#each menu.levels as lvl}
+								<button
+									type="button"
+									class="cellset-ctx-menu__item"
+									disabled={lvl.used}
+									onclick={() => includeLevel(lvl)}>{lvl.caption}</button
+								>
+							{/each}
+							{#if menu.levels.length === 0}
+								<div class="px-3 py-1 text-fg-subtle">{i18n.t('cellset.menu.noLevels')}</div>
+							{/if}
+						</div>
+					{/if}
+				</div>
+				<div class="cellset-ctx-menu__item cellset-ctx-menu__item--parent">
+					<button
+						type="button"
+						onclick={() => (menu.sub = menu.sub === 'remove' ? null : 'remove')}
+					>
+						{i18n.t('cellset.menu.removeLevel')} ▸
+					</button>
+					{#if menu.sub === 'remove'}
+						<div class="cellset-ctx-menu__sub">
+							{#each menu.levels.filter((l) => l.used) as lvl}
+								<button
+									type="button"
+									class="cellset-ctx-menu__item"
+									onclick={() => removeLevel(lvl)}>{lvl.caption}</button
+								>
+							{/each}
+							{#if menu.levels.filter((l) => l.used).length === 0}
+								<div class="px-3 py-1 text-fg-subtle">{i18n.t('cellset.menu.nothingToRemove')}</div>
+							{/if}
+						</div>
+					{/if}
+				</div>
+				<button type="button" class="cellset-ctx-menu__item" onclick={filterLevel}>
+					{i18n.t('cellset.menu.filterLevel')}
 				</button>
-				{#if menu.sub === 'remove'}
-					<div class="cellset-ctx-menu__sub">
-						{#each menu.levels.filter((l) => l.used) as lvl}
-							<button type="button" class="cellset-ctx-menu__item" onclick={() => removeLevel(lvl)}
-								>{lvl.caption}</button
-							>
-						{/each}
-						{#if menu.levels.filter((l) => l.used).length === 0}
-							<div class="px-3 py-1 text-fg-subtle">{i18n.t('cellset.menu.nothingToRemove')}</div>
-						{/if}
-					</div>
-				{/if}
-			</div>
-			<button type="button" class="cellset-ctx-menu__item" onclick={filterLevel}>
-				{i18n.t('cellset.menu.filterLevel')}
-			</button>
+			{/if}
 		{/if}
 	</div>
 {/if}
@@ -934,6 +1103,30 @@
 	}
 	.cellset tbody th.row:hover {
 		background: hsl(var(--bg-subtle));
+	}
+	.row-drill-caret {
+		display: inline-block;
+		width: 1em;
+		margin-right: 0.35em;
+		border: none;
+		background: transparent;
+		padding: 0;
+		font-size: 0.7em;
+		line-height: 1;
+		color: hsl(var(--fg-muted));
+		cursor: pointer;
+		transform: rotate(0deg);
+		transition: transform 0.1s ease-in-out;
+	}
+	.row-drill-caret:hover {
+		color: hsl(var(--fg));
+	}
+	.row-drill-caret:disabled {
+		cursor: wait;
+		opacity: 0.5;
+	}
+	.row-drill-caret--expanded {
+		transform: rotate(90deg);
 	}
 	.cellset tbody th.row_null {
 		background: hsl(var(--bg-muted));
