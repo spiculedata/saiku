@@ -45,8 +45,9 @@ import org.saiku.service.olap.ThinQueryService;
 /**
  * Round-trip test for drillthrough Arrow IPC serialisation.
  *
- * Stubs {@link ThinQueryService#drillthrough(String, Integer, String)} with
- * a fake {@link ResultSet} of 3 rows and 3 columns (string, integer, double)
+ * Stubs both {@link ThinQueryService#drillthrough(String, int, String)} and
+ * {@link ThinQueryService#drillthrough(String, int, Integer, String)} (saiku#822's
+ * firstRowset overload) with a fake {@link ResultSet} of 3 rows and 3 columns (string, integer, double)
  * and asserts the Arrow output matches.
  */
 public class DrillthroughArrowTest {

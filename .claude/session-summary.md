@@ -75,11 +75,32 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-10-07 — fix/1949-terminal-catchall — merged latest development for PR #2078
+**Was doing:** resolved the session-summary conflict, retaining both branches' entries; development's seeded IT harness and this PR's security XML and dispatcher guard are preserved.
+**Now:** check PR #2078 CI, especially TerminalCatchAllIT and LoginJspIT, after the merge push.
+**Watch out:** local JDK 22 and Maven are available, but the focused build stops before compilation because private GitHub Packages dependencies return 401.
+**Refs:** #1949, #2078
+
 ## 2026-10-06 — fix/1949-terminal-catchall — merged development for PR #2078
 **Was doing:** resolved the Spring Security XML conflict, keeping development's ant-matched public chains and XMLA changes alongside the PR's bare-path permits, dispatcher guard, and terminal catch-all.
 **Now:** check PR #2078 CI after the push, especially TerminalCatchAllIT and RestNoneChainAuthIT.
 **Watch out:** this environment has no Java or Maven, and the private olap4j artifact is absent from the local cache; only XML parsing and static security-chain checks ran locally.
 **Refs:** #1949, #2078
+
+## 2026-10-06 — feature/823-drillthrough-firstrowset-toggle — merged latest development for PR #2042
+**Was doing:** merged development at ccb56fa82, retaining both session-summary entries; UI check and build passed, but local Vitest stalled and Java/Maven are unavailable.
+**Now:** check PR #2042 CI and review #822 backend overlap with merged PR #2043.
+**Refs:** #822, #823, #2042, #2043
+
+## 2026-10-06 — docs/mysql-calcite-dialect-1886 — merged development for PR #2067
+**Was doing:** resolved the changelog conflict, retaining the PR's MySQL known issue and every development entry; the Mondrian docs and AGENTS.md guidance remain intact.
+**Now:** check PR #2067 CI after the push; local Maven build was unavailable because Java and Maven are not installed.
+**Refs:** #1886, #2067
+
+## 2026-10-05 — feature/823-drillthrough-firstrowset-toggle — merged development for PR #2042
+**Was doing:** merged development twice into PR #2042, retaining its drillthrough column discovery alongside the base branch's drillDown/drillUp API and safer Query2Resource error handling.
+**Now:** check PR #2042 CI after the latest push; the first merge passed JDK, UI, and bundle CI, and local UI check, focused tests, build, and lint passed.
+**Refs:** #822, #823, #2042
 
 ## 2026-10-05 — feature/arrow-cell-property-columns — merged development for PR #2046
 **Was doing:** merged development, keeping both column-header member metadata and the PR's optional cell-property columns; Spotless passed.

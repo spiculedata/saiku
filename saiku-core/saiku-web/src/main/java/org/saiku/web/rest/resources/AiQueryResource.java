@@ -150,6 +150,15 @@ public class AiQueryResource {
         this.kAnonymityFilter = f;
     }
 
+    /** saiku#909 — Tier-1 tile-title/description suggestion. {@code null} (default)
+     *  means the feature is unwired; {@link #describeQuery} then 503s with a clear
+     *  "not configured" message rather than NPEing. */
+    private org.saiku.service.olap.ai.describe.TileDescriber describeService;
+
+    public void setDescribeService(org.saiku.service.olap.ai.describe.TileDescriber s) {
+        this.describeService = s;
+    }
+
     /**
      * saiku#905 / #1324 — apply k-anonymity small-cell suppression to a
      * records-format payload using an in-result count measure (a measure column
@@ -594,6 +603,80 @@ public class AiQueryResource {
             if (!dims.contains(d)) dims.add(d);
         }
         return dims;
+    }
+
+    /**
+     * saiku#909 — Tier-1 (schema-only) tile-naming assistant. Given the same
+     * {@link AiQueryRequest} body {@code /ai/query} accepts, suggests a short
+     * title + one-line description for the dashboard tile it will render as.
+     *
+     * <p>Body: {@code {"query": {...AiQueryRequest...}}}. The request is
+     * validated and resolved against the live schema exactly like {@code
+     * /ai/query} (same shape validator + {@link AiSchemaConverter}), but the
+     * query is never executed — no cell values or aggregated results are
+     * computed or sent anywhere. Only the query's *structure* (measures, row /
+     * column axes, slicer) leaves the box, via
+     * {@link org.saiku.service.olap.ai.describe.QueryStructureSummarizer}, which
+     * redacts member captions on any saiku#902 PII-flagged level before they
+     * reach the prompt.
+     *
+     * <p>Gated at {@link org.saiku.service.olap.ai.AiDataKind#SCHEMA_METADATA} —
+     * the lowest tier, so it stays available whenever any AI policy is active.
+     * When no LLM upstream is configured ({@link #describeService} unwired or
+     * {@link org.saiku.service.olap.ai.describe.TileDescribeService#isConfigured()}
+     * false), returns 503 with a clear "AI not configured" message rather than a
+     * 500. An upstream failure (transport error, bad response shape) maps to 502.
+     */
+    @POST
+    @Path("/describe-query")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response describeQuery(org.saiku.service.olap.ai.describe.DescribeQueryApiRequest body) {
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.SCHEMA_METADATA);
+        if (body == null || body.getQuery() == null) {
+            return badRequest("query", "query body required", null);
+        }
+        AiQueryRequest req = body.getQuery();
+        AiSchema schema;
+        try {
+            schemaValidator.assertValid(MAPPER.valueToTree(req));
+            if (req.getCube() == null) {
+                return badRequest("cube", "cube ref required", null);
+            }
+            schema = cubeMetadataService.getSchema(req.getCube());
+            // Validates every name resolves against the live schema — same check
+            // /ai/query runs before execution. The returned ThinQuery is discarded:
+            // this endpoint never executes the query.
+            converter.convert(req, schema);
+        } catch (AiValidationException e) {
+            return badRequest(e.getField(), e.getMessage(), e.getAvailable());
+        } catch (RuntimeException e) {
+            log.error("AI describe-query validation failed", e);
+            return error("validation failed");
+        }
+
+        if (describeService == null || !describeService.isConfigured()) {
+            return Response.status(Response.Status.SERVICE_UNAVAILABLE)
+                    .entity(java.util.Map.of("status", "AI_NOT_CONFIGURED", "error", "AI not configured"))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+
+        String structureJson = org.saiku.service.olap.ai.describe.QueryStructureSummarizer.summarize(req, schema);
+        org.saiku.service.olap.ai.describe.DescribeQueryResult result = describeService.describe(structureJson);
+        if (result.degraded()) {
+            log.warn("AI describe-query upstream degraded: {}", result.reason());
+            return Response.status(Response.Status.BAD_GATEWAY)
+                    .entity(java.util.Map.of("status", "AI_UPSTREAM_ERROR", "error", "AI describe-query failed"))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+
+        org.saiku.service.olap.ai.describe.DescribeQueryApiResponse resp =
+                new org.saiku.service.olap.ai.describe.DescribeQueryApiResponse();
+        resp.setSuggestedTitle(result.title());
+        resp.setSuggestedDescription(result.description());
+        return Response.ok(resp).type(MediaType.APPLICATION_JSON).build();
     }
 
     /**
