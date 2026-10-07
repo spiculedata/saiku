@@ -75,6 +75,10 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-10-07 — feature/certified-query-catalog — merged development for PR #2064
+**Was doing:** merged development, combined both increases to the Java test floors, and corrected the certified resource test's ask request and response type assumptions after CI feedback.
+**Now:** check PR #2064 CI; this workspace has no Java or Maven installation, so the Java build must run in CI.
+**Refs:** #1430, #2064
 ## 2026-10-07 — feature/910-dashboard-narrative-summary — merged latest development for PR #2049
 **Was doing:** merged development into the existing PR branch, retaining both AI API documentation sections and all changelog entries; preserved the earlier Spotless and Prettier fixes.
 **Now:** check PR #2049 CI after the push; local UI checks passed, but Java/Maven are absent from this workspace.

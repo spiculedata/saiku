@@ -1751,3 +1751,40 @@ Fresh launcher installs stage two personas:
 
 See `saiku-launcher/src/main/resources/seed/agent-spaces/`. A fresh
 demo has personas ready to click without any operator authoring.
+
+---
+
+## Certified queries — admin-approved answers run verbatim (saiku#1430)
+
+Where spaces decide *who* is answering, **certified queries** decide
+*what* the answer is. Each entry pairs a `ThinQuery` — the exact saved
+query — with the `matchIntent` phrasings that should reach it, so an
+operator can say "when the user asks about monthly revenue, always run
+this exact query, never re-derive it". Persisted as JSON under
+`saiku-home/certified/`. Full reference:
+[docs/CERTIFIED-QUERIES-SPEC.md](./CERTIFIED-QUERIES-SPEC.md).
+
+- `GET /rest/saiku/api/ai/certified` — the catalogue. Summaries only
+  (id, description, intents); the approved MDX is deliberately not
+  listed, so an embed can't scrape and run it around the agent. Pass
+  `?errors=true` to see why a file was rejected.
+- `GET /rest/saiku/api/ai/certified/{id}` — one entry in full,
+  including the query body, for reviewing an approval.
+- `POST /rest/saiku/api/ai/certified/{id}/run` — execute verbatim.
+  Returns the standard query response plus `"source": "certified"` and
+  `"certifiedId"`. No body, no filters: the query cannot be edited in
+  flight.
+- `POST /rest/saiku/api/ai/certified/refresh` — force a rescan.
+
+`POST /ai/ask` prefers a certified answer over a re-derived one. The
+routing decision is made **before** the provider call, so on a match
+the model is never asked at all. It fires only for a genuine data ask:
+no cellset digest on screen, no explicit non-query intent, no slash
+command, and the same cube the query was approved for. The response
+carries `response.source = "certified"` with `request` left null —
+there is no model-authored query, and one in hand would invite an edit
+that silently de-certifies the numbers.
+
+Matching is deterministic token comparison over the authored
+`matchIntent` phrasings, not an LLM decision — that is what makes the
+approval a guarantee rather than a request.

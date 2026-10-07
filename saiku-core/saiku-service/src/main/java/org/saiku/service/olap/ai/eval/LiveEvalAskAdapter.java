@@ -113,6 +113,11 @@ public final class LiveEvalAskAdapter implements EvalAskAdapter {
                 // silently mis-scoring so a suite run makes the gap visible.
             case EMAIL_DRAFT -> EvalAskResult.forDegraded(
                     outcome.model(), "email-draft intent not yet supported by the eval harness");
+                // saiku#1430: a certified ask is executed server-side and carries no model-authored
+                // query, so there is nothing here to diff against a reference query. Reported as
+                // degraded rather than silently mis-scored, so a suite run makes the gap visible.
+            case CERTIFIED -> EvalAskResult.forDegraded(
+                    outcome.model(), "certified intent not yet supported by the eval harness");
                 // saiku#1425: outbound MCP tool calls are an intermediate step askChained dispatches
                 // and loops past internally — a lone MCP_TOOL_CALL outcome reaching here means the
                 // chain never reached a terminal step (e.g. it hit the step cap). Same "not yet
