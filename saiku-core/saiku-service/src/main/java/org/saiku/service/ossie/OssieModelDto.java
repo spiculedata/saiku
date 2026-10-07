@@ -4,6 +4,7 @@
  */
 package org.saiku.service.ossie;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -125,12 +126,26 @@ public class OssieModelDto {
         @JsonInclude(JsonInclude.Include.NON_EMPTY)
         private List<CustomExtensionDto> customExtensions = new ArrayList<>();
 
+        // saiku#1393 — row-level-security predicates authored on this dataset's own
+        // `saiku.roles.row_predicates` custom_extensions. Never serialised to the workbench/AI
+        // schema: it's raw SQL scoped by role, not something a client should see or act on.
+        @JsonIgnore
+        private List<RowPredicate> rowPredicates = new ArrayList<>();
+
         public List<CustomExtensionDto> getCustomExtensions() {
             return customExtensions;
         }
 
         public void setCustomExtensions(List<CustomExtensionDto> v) {
             this.customExtensions = v == null ? new ArrayList<>() : v;
+        }
+
+        public List<RowPredicate> getRowPredicates() {
+            return rowPredicates;
+        }
+
+        public void setRowPredicates(List<RowPredicate> v) {
+            this.rowPredicates = v == null ? new ArrayList<>() : v;
         }
 
         public String getName() {
@@ -485,6 +500,40 @@ public class OssieModelDto {
 
         public void setToColumns(List<String> v) {
             this.toColumns = v == null ? new ArrayList<>() : v;
+        }
+    }
+
+    /**
+     * One row-level-security predicate on a {@link Dataset} (saiku#1393): the Spring {@code
+     * GrantedAuthority} it applies to, and the raw ANSI SQL WHERE-conjunction {@link
+     * OssieRoleContext} injects for a caller holding that role. See {@link
+     * SaikuWellKnownExtensions.Roles} for the parse/enforcement contract.
+     */
+    public static class RowPredicate {
+        private String role;
+        private String expression;
+
+        public RowPredicate() {}
+
+        public RowPredicate(String role, String expression) {
+            this.role = role;
+            this.expression = expression;
+        }
+
+        public String getRole() {
+            return role;
+        }
+
+        public void setRole(String v) {
+            this.role = v;
+        }
+
+        public String getExpression() {
+            return expression;
+        }
+
+        public void setExpression(String v) {
+            this.expression = v;
         }
     }
 }

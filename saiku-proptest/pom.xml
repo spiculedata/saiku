@@ -95,7 +95,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
-        <version>3.5.2</version>
+        <version>3.6.0</version>
         <configuration>
           <!-- Hegel calls native code via FFM; silence the JVM native-access warning. -->
           <argLine>@{argLine} --enable-native-access=ALL-UNNAMED</argLine>
