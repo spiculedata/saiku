@@ -79,6 +79,32 @@ pushed down; normal sessions append and the history stays useful.
 **Was doing:** merged development at 4fb7b66c1, keeping the semantic export guidance and both newer AGENTS.md entries; the exporter tests and Spotless passed.
 **Now:** check PR #2062 CI after the push; local Maven test could not resolve private GitHub Packages dependencies (HTTP 401).
 **Refs:** #1427, #2062
+## 2026-10-07 — feature/measure-lineage-view — merged development for PR #2056
+**Was doing:** merged development into the existing lineage branch, retaining both lineage and role-admin bean wiring.
+**Now:** check PR #2056 CI after the push; local Java tests could not compile because GitHub Packages returned 401 for custom dependencies.
+**Refs:** #1120, #2056
+## 2026-10-07 — feature/1103-embed-chart-dashboard-split — merged latest development for PR #2051
+**Was doing:** merged development at 4fb7b66c1, retaining every handoff entry; embed type check, lint, 71 focused tests, bundle builds, and package staging passed.
+**Now:** check PR #2051 CI after the push.
+**Refs:** #1103, #2051
+
+## 2026-10-06 — feature/1103-embed-chart-dashboard-split — merged development for PR #2051
+**Was doing:** merged development, preserving the PR's new embed tags and the base branch's updated iframe guidance in the quickstart; UI checks, lint, targeted tests, and embed bundle builds passed.
+**Now:** check PR #2051 CI after the push.
+**Refs:** #1103, #2051
+## 2026-10-06 — feature/837-query2-returns-resolution — merged latest development for PR #2047
+**Was doing:** merged development into the existing PR branch, preserving both session-summary entries and the earlier `firstRowset` CI fix.
+**Now:** check PR #2047 CI after the push; this workspace has no JDK or Maven.
+**Refs:** #837, #2047
+
+## 2026-10-05 — feature/837-query2-returns-resolution — merged development for PR #2047
+**Was doing:** merged development, retaining the base branch's uniform access-denied handling and the PR's Query2 `returns=` caption resolution; updated tests for the new `firstRowset` signature after CI found a compile error.
+**Now:** check PR #2047 CI after the push; local Maven tests could not run because this environment has no JDK or Maven.
+**Refs:** #837, #2047
+## 2026-10-07 — feature/1107-sql-workbench — merged development for PR #2053
+**Was doing:** merged development at 4fb7b66c1, retained all changelog entries, combined test floors, and corrected the SQL workbench JDBC `Long` assertion identified in PR comments.
+**Now:** check PR #2053 CI after the push; local Java tests could not run because this environment has no JDK.
+**Refs:** #1107, #2053
 ## 2026-10-07 — feature/scim-2-provisioning — merged development for PR #2065
 **Was doing:** merged development at 4fb7b66c1, kept SCIM wiring alongside the base security chains and all changelog entries, and formatted the privileged-role guard and test.
 **Now:** check PR #2065 CI after the push; local focused Maven tests stopped before compilation because GitHub Packages returned 401 for required artifacts.
@@ -114,7 +140,6 @@ pushed down; normal sessions append and the history stays useful.
 **Was doing:** merged development, keeping both column-header member metadata and the PR's optional cell-property columns; Spotless passed.
 **Now:** check PR #2046 CI after the push; local Maven tests stopped at a GitHub Packages 401 before compilation.
 **Refs:** #828, #2046
-
 ## 2026-10-05 — feature/issue-776-hierarchy-drill — merged development for PR #2040
 **Was doing:** merged development into PR #2040's branch, retaining the drill caret and the base branch's cell link action in CellsetTable.
 **Now:** check PR #2040 CI, especially `Query2AdvancedIT`; the Java test could not run locally because GitHub Packages artifacts require credentials.

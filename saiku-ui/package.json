@@ -11,7 +11,7 @@
 	"scripts": {
 		"dev": "vite dev",
 		"build:app": "vite build",
-		"build:embed": "vite build --config vite.config.embed.ts",
+		"build:embed": "node scripts/build-embed.mjs",
 		"build:embed-npm": "node scripts/stage-embed-npm.mjs",
 		"build:embed-react-npm": "node scripts/stage-embed-react-npm.mjs",
 		"build": "npm run build:app && npm run build:embed && npm run build:embed-npm && npm run build:embed-react-npm",
