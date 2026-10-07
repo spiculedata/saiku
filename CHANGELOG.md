@@ -5,7 +5,41 @@ All notable changes to Saiku are documented here. This project follows
 
 ## Unreleased
 
+### Known issues
+
+- **MySQL / MariaDB on the Calcite SQL path** (saiku#1886, reported against
+  `pentaho:mondrian:4.8.1.33`/`.34` on MySQL 8.3). Two independent causes,
+  **both in the `spiculedata/mondrian-saiku` fork** — Saiku only consumes the
+  published `pentaho:mondrian` artifact, so a fix needs a new fork build and a
+  `saiku-bom` version bump here:
+
+  1. a `<View>` whose SQL uses MySQL's JSON operators (`->>`, `->`) fails to
+     parse on the Calcite path with `ParseException: Encountered "->"`, even
+     with `dialect="generic"` on a statement MySQL itself will execute;
+  2. `CalciteDialectMap.forceQuoting()` rebuilds a bare ANSI `SqlDialect` and
+     drops the auto-detected product dialect, so generated SQL carries `"`
+     quoting (and ANSI `ORDER BY … NULLS LAST`) that MySQL rejects with a
+     bare `SQLSyntaxErrorException`.
+
+  Workarounds: `-Dmondrian.calcite.strict=false` (global and blunt) or
+  `-Dmondrian.backend=legacy` (per-process).
+
+  The documentation previously listed MySQL/MariaDB, Oracle and MSSQL as
+  natively mapped dialects. They are not — only a Tier-1 subset in
+  `CalciteDialectMap` is; the rest go through `forceQuoting()` and lose their
+  product dialect. `docs/mondrian-fork.md` and `AGENTS.md` now document the
+  tiers and the defect.
+
 ### Added
+
+- **`POST /ai/describe-query` — AI-suggested tile titles and descriptions**
+  (Tier-1, schema-only; saiku#909). Given a query's structure — selected
+  measures, row/column axes, slicer — but no data values, suggests a short
+  title and one-line description for the dashboard tile it will render as.
+  Gated at the `schema-only` policy tier (the least-trusted, default tier);
+  respects saiku#902 PII annotations by redacting member captions on any
+  PII-flagged level before they reach the prompt. 503s with a clear message
+  when no LLM upstream is configured.
 
 - **`ai.provider=ollama` — local/self-hosted model support for the AI ask layer
   and schema-generation enrichment.** Both now accept `ollama` as a first-class
@@ -67,6 +101,23 @@ All notable changes to Saiku are documented here. This project follows
   without limit. No configuration change is required; the existing
   `saiku.*.ratelimit.maxPerMinute` properties still tune each endpoint, and
   `AiRateLimiterWiringTest` fails if a limiter is ever left unwired.
+
+- **`sql-serve` no longer exposes an unauthenticated SQL proxy on every interface**
+  (CWE-306 / CWE-1327, saiku#1910). The Avatica and Postgres-wire endpoints now
+  bind to `127.0.0.1` by default; a new `--bind` option moves them, and a
+  non-loopback bind is refused unless `--auth-user` plus a password
+  (`--auth-password-file` or `SAIKU_SQL_AUTH_PASSWORD`) is set. With it, Avatica
+  requires HTTP basic auth and PG-wire requires SCRAM-SHA-256.
+  `--allow-unauthenticated-remote` overrides the refusal for isolated networks
+  and prints a warning banner. The warehouse password can now come from
+  `--jdbc-password-file` or `SAIKU_SQL_JDBC_PASSWORD`; `--jdbc-password` still
+  works but warns, because it is visible in the process list. Neither endpoint
+  speaks TLS, so put a TLS-terminating proxy in front of a network-facing one.
+
+  **Upgrade action:** clients that reached `sql-serve` from another host stop
+  connecting. Add `--bind 0.0.0.0 --auth-user <name>` with a password file, and
+  give clients those credentials (`authentication=BASIC;avatica_user=…;avatica_password=…`
+  for Avatica, the normal user/password for Postgres clients).
 
 - **The default-credential boot gate now checks the password, not the hash**
   (CWE-1392 / CWE-521, saiku#1915). `enforceDefaultCredentialPolicy` compared

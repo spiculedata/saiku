@@ -75,11 +75,25 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
-## 2026-10-06 — feature/1913-shared-ai-rate-limiter — merged development for PR #2083
-**Was doing:** resolved the changelog conflict, preserving all entries, and corrected the limiter XML to pass configured budgets to `shared` with a 60-second window.
-**Now:** check PR #2083 CI after the push; local focused limiter tests and Spotless passed, but the Maven reactor stopped at a GitHub Packages 401 before compilation.
+## 2026-10-07 — feature/1913-shared-ai-rate-limiter — merged development for PR #2083
+**Was doing:** merged the latest development, retaining every changelog entry and both session summaries; fixed the test XML placeholder setup behind the CI wiring-test failure. The earlier limiter-budget and Spotless fixes remain.
+**Now:** check PR #2083 CI after the push; direct limiter tests, Spring bean smoke test, and Spotless passed, but the Maven reactor stopped at a GitHub Packages 401 before compilation.
 **Refs:** #1913, #2083
 
+## 2026-10-06 — feature/823-drillthrough-firstrowset-toggle — merged latest development for PR #2042
+**Was doing:** merged development at ccb56fa82, retaining both session-summary entries; UI check and build passed, but local Vitest stalled and Java/Maven are unavailable.
+**Now:** check PR #2042 CI and review #822 backend overlap with merged PR #2043.
+**Refs:** #822, #823, #2042, #2043
+
+## 2026-10-06 — docs/mysql-calcite-dialect-1886 — merged development for PR #2067
+**Was doing:** resolved the changelog conflict, retaining the PR's MySQL known issue and every development entry; the Mondrian docs and AGENTS.md guidance remain intact.
+**Now:** check PR #2067 CI after the push; local Maven build was unavailable because Java and Maven are not installed.
+**Refs:** #1886, #2067
+
+## 2026-10-05 — feature/823-drillthrough-firstrowset-toggle — merged development for PR #2042
+**Was doing:** merged development twice into PR #2042, retaining its drillthrough column discovery alongside the base branch's drillDown/drillUp API and safer Query2Resource error handling.
+**Now:** check PR #2042 CI after the latest push; the first merge passed JDK, UI, and bundle CI, and local UI check, focused tests, build, and lint passed.
+**Refs:** #822, #823, #2042
 ## 2026-10-05 — feature/arrow-cell-property-columns — merged development for PR #2046
 **Was doing:** merged development, keeping both column-header member metadata and the PR's optional cell-property columns; Spotless passed.
 **Now:** check PR #2046 CI after the push; local Maven tests stopped at a GitHub Packages 401 before compilation.

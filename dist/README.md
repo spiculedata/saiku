@@ -33,6 +33,12 @@ Open <http://localhost:8080/ui/> and sign in with `admin` / `admin`.
 > — because Saiku **refuses to start** on the default `admin`/`admin` (see
 > "Setting the admin password" below).
 
+> Without `SAIKU_DEMO=true` nothing demo-related is staged: no FoodMart/Bank
+> schemas, no H2 fixtures, no datasource descriptors (saiku#1953). A non-demo
+> home starts with an empty datasource list. Set `SAIKU_SEED=true` to install
+> the fixtures without demo mode, or `SAIKU_DEMO=true SAIKU_SEED=false` for the
+> demo login against your own cubes. Seeding never overwrites an existing home.
+
 A `foodmart` cube list appears on first query (initial load of the H2
 fixture takes ~30 s — subsequent launches reuse the file).
 
@@ -127,7 +133,7 @@ java -jar saiku-<version>.jar <command> --help
 | Command | Purpose |
 |---------|---------|
 | `serve` | Start the Saiku web server (see CLI options above). |
-| `sql-serve` | Serve an Ossie/SQL semantic model without the full OLAP stack. |
+| `sql-serve` | Serve an Ossie/SQL semantic model without the full OLAP stack. Listens on `127.0.0.1` only unless `--bind` is given; a non-loopback bind needs `--auth-user` + `--auth-password-file`. |
 | `eval` | Run the agent-eval accuracy suites against a running server and report pass-rate. Exit `0` = all passed, `1` = a suite regressed, `2` = transport/config error. See `docs/EVAL-SPEC.md`. |
 
 `eval` is the CI/cron entry point for the AI accuracy monitor. It POSTs to

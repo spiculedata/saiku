@@ -12,6 +12,9 @@
        xsi:schemaLocation="http://www.springframework.org/schema/beans
        http://www.springframework.org/schema/beans/spring-beans.xsd">
 
+    <!-- Resolve the ${...:default} budgets just as the production context does. -->
+    <bean class="org.springframework.context.support.PropertySourcesPlaceholderConfigurer"/>
+
     <!-- ==== shared limiter singletons (mirror of saiku-beans.xml) ==== -->
 
     <bean id="aiQueryAskRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
