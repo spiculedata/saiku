@@ -292,6 +292,14 @@ All notable changes to Saiku are documented here. This project follows
   `securityContext: { runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001 }` on
   the pod so the mounted volume is group-owned by the runtime user.
 
+- **AI dashboard narrative summary — `POST /ai/narrate-dashboard`** (Tier-2,
+  aggregated; saiku#910). A 2-4 sentence plain-English summary of a
+  dashboard's current state. Requires `ai.policy=aggregated` or `full`. The
+  server re-executes each posted tile's query itself, applies k-anonymity
+  small-cell suppression (saiku#905) and redacts PII-tagged member captions
+  (saiku#902) before the digest reaches the LLM. An empty/all-zero-row
+  dashboard returns a fixed "No data to summarise." message without calling
+  the LLM. See [docs/AI-QUERY-API.md](docs/AI-QUERY-API.md#dashboard-narrative-summary--post-ainarrate-dashboard-saiku910).
 - **Secret files under `saiku-home` are now created 0600 and written
   atomically** (CWE-732 / CWE-377, saiku#1919 item 18c). `conf/secret.key`
   (the per-install AES key), `mail-config.json` (encrypted SMTP password),
