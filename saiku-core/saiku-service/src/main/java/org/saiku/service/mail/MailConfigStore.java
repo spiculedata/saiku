@@ -12,6 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Optional;
 import org.saiku.datasources.connection.encrypt.CryptoUtil;
+import org.saiku.service.security.SecretFileStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -125,8 +126,10 @@ public class MailConfigStore {
         }
 
         try {
-            Files.createDirectories(file.getParent());
-            MAPPER.writeValue(file.toFile(), f);
+            // Written 0600-from-creation and atomically (#1919 18c): the file holds the encrypted SMTP
+            // password, and a plain write would leave it 0646 world-readable for the duration of the
+            // write — or forever where the umask is wide.
+            SecretFileStore.writeOwnerOnly(file, tmp -> MAPPER.writeValue(tmp.toFile(), f));
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to write " + FILE_NAME, e);
         }

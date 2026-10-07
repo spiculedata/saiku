@@ -410,7 +410,7 @@ public class ExportDeliveryJobHandlerTest {
         }
 
         @Override
-        public Object createQuery(ThinQuery tq) {
+        public ThinQuery createQuery(ThinQuery tq) {
             return tq;
         }
 
