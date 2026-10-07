@@ -532,6 +532,28 @@
         <property name="mailSender" ref="mailSender"/>
     </bean>
 
+    <!-- Vendor semantic-model import (#1730) — convert a LookML / dbt manifest upload into
+         Ossie YAML, validate it, and (on the explicit save call) write it under
+         ${saiku.home}/semantic-models/. The registry is the "converter hub" seam: a new
+         spoke is a VendorModelConverter plus one constructor arg, no REST or UI change. -->
+    <bean id="vendorModelConverterRegistry" class="org.saiku.service.ossie.converter.VendorModelConverterRegistry">
+        <constructor-arg>
+            <list>
+                <bean class="org.saiku.service.ossie.converter.LookmlConverter"/>
+                <bean class="org.saiku.service.ossie.converter.DbtManifestConverter"/>
+            </list>
+        </constructor-arg>
+    </bean>
+    <bean id="vendorModelImportService" class="org.saiku.service.ossie.converter.VendorModelImportService">
+        <constructor-arg ref="vendorModelConverterRegistry"/>
+        <constructor-arg type="java.nio.file.Path"
+                         value="${saiku.home:./saiku-home}/semantic-models"/>
+    </bean>
+    <bean id="ossieImportResource" class="org.saiku.web.rest.resources.OssieImportResource">
+        <property name="importService" ref="vendorModelImportService"/>
+        <property name="userService" ref="userServiceBean"/>
+    </bean>
+
     <!-- Ossie AI Query API (#1394) — parallel to aiQueryResource but for semantic-YAML
          Ossie models. R2 endpoints: GET /ai/ossie/models, GET /ai/ossie/schema/{c}/{m},
          POST /ai/ossie/query (+ ?format=matrix), POST /ai/ossie/query/preview, GET
