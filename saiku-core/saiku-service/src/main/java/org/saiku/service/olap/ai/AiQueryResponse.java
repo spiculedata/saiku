@@ -49,6 +49,11 @@ public class AiQueryResponse {
     private List<java.util.Map<String, AiCell>> matrix = new ArrayList<>();
 
     private int totalRows;
+    /** Provenance tag: "certified" (saiku#1430) or "derived". */
+    private String source;
+    /** Certified-query id when {@link #source} is "certified". */
+    private String certifiedId;
+
     private long runtimeMs;
     /** Populated when status is VALIDATION_ERROR / EXECUTION_ERROR / *_ERROR. */
     private String error;
@@ -143,5 +148,33 @@ public class AiQueryResponse {
 
     public void setAvailable(List<String> v) {
         this.available = v == null ? new ArrayList<>() : v;
+    }
+
+    /**
+     * Provenance of the numbers in this response. {@code "certified"} when the query was an
+     * admin-approved {@link org.saiku.service.olap.ai.ask.CertifiedQuery} executed verbatim
+     * (saiku#1430); {@code "derived"} (the default) when a model authored it from the schema. Null
+     * on the legacy shape — consumers must treat "absent" as "not certified", never infer approval
+     * from its absence.
+     */
+    public String getSource() {
+        return source;
+    }
+
+    public void setSource(String v) {
+        this.source = v;
+    }
+
+    /**
+     * Id of the certified query this response came from, when {@link #getSource()} is {@code
+     * "certified"}. Lets a downstream system audit WHICH approved definition produced the figure,
+     * not merely that some approved definition did.
+     */
+    public String getCertifiedId() {
+        return certifiedId;
+    }
+
+    public void setCertifiedId(String v) {
+        this.certifiedId = v;
     }
 }
