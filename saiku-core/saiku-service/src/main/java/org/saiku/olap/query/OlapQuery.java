@@ -39,6 +39,7 @@ import org.saiku.olap.dto.filter.SaikuFilter;
 import org.saiku.olap.query.QueryProperties.QueryProperty;
 import org.saiku.olap.query.QueryProperties.QueryPropertyFactory;
 import org.saiku.olap.util.QueryConverter;
+import org.saiku.olap.util.QueryGuardrails;
 import org.saiku.olap.util.SaikuProperties;
 import org.saiku.olap.util.exception.SaikuIncompatibleException;
 import org.saiku.olap.util.exception.SaikuOlapException;
@@ -274,6 +275,8 @@ public class OlapQuery implements IQuery {
             final Catalog catalog = query.getCube().getSchema().getCatalog();
             this.connection.setCatalog(catalog.getName());
             OlapStatement stmt = connection.createStatement();
+            // saiku#1914: bound the legacy IQuery slice execute path too.
+            QueryGuardrails.applyQueryTimeout(stmt);
             this.statement = stmt;
             CellSet cellSet = stmt.executeOlapQuery(mdx);
             if (scenario != null && query.getDimension(SCENARIO) != null) {

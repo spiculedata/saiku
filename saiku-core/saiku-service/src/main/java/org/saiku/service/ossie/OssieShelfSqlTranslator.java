@@ -9,6 +9,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import org.saiku.olap.query2.OssieQueryModel;
+import org.saiku.service.util.exception.SaikuAccessDeniedException;
 
 /**
  * Translate an {@link OssieQueryModel} shelf-state payload into the SQL string that the
@@ -35,13 +36,36 @@ import org.saiku.olap.query2.OssieQueryModel;
  */
 public final class OssieShelfSqlTranslator {
 
-    /** Alias used for the column returned by a metric (client uses metric.name as the key). */
+    /**
+     * Convenience overload equivalent to an anonymous caller holding zero granted authorities:
+     * denied on any field/metric with a non-empty {@code allow} list, unaffected by row
+     * predicates or {@code deny} lists (both are role-scoped, so an empty role set never
+     * matches one). Semantic models with no {@code saiku.roles} configured behave exactly as
+     * before saiku#1393.
+     */
     public String translate(OssieQueryModel model, OssieModelDto semantic) {
+        return translate(model, semantic, Set.of());
+    }
+
+    /**
+     * Translate {@code model} into SQL, scoped to {@code callerRoles} (saiku#1393). Beyond the
+     * unscoped {@link #translate(OssieQueryModel, OssieModelDto)}, this:
+     *
+     * <ol>
+     *   <li>Rejects (via {@link SaikuAccessDeniedException}) a shelf state that references a
+     *       field/metric every one of the caller's roles denies.
+     *   <li>Injects each referenced dataset's role-matched row predicates as extra WHERE
+     *       conjunctions, ORed together per dataset and ANDed with the shelf's own filters.
+     * </ol>
+     */
+    public String translate(OssieQueryModel model, OssieModelDto semantic, Set<String> callerRoles) {
         if (semantic == null) throw new IllegalStateException("Ossie semantic model is required");
         if (model.getFactDataset() == null || model.getFactDataset().isBlank()) {
             throw new IllegalArgumentException("OssieQueryModel.factDataset is required");
         }
         String schema = semantic.getName();
+        OssieRoleContext roleContext = OssieRoleContext.resolve(callerRoles, semantic);
+        roleContext.assertShelfVisible(model);
 
         // --- collect referenced datasets ---
         Set<String> datasets = new LinkedHashSet<>();
@@ -100,6 +124,16 @@ public final class OssieShelfSqlTranslator {
         List<String> whereClauses = new ArrayList<>();
         for (OssieQueryModel.FilterExpr f : model.getFilters()) {
             whereClauses.add(filterToSql(f, semantic));
+        }
+        // saiku#1393 — row-level security: every referenced dataset's role-matched predicates,
+        // ORed together per dataset (each role the caller holds opens its own access window),
+        // ANDed in as extra conjunctions alongside the shelf's own filters.
+        for (String ds : datasets) {
+            List<String> rowPredicates = roleContext.rowPredicatesFor(ds);
+            if (rowPredicates.isEmpty()) continue;
+            String combined =
+                    rowPredicates.size() == 1 ? rowPredicates.get(0) : "(" + String.join(" OR ", rowPredicates) + ")";
+            whereClauses.add(combined);
         }
         if (!whereClauses.isEmpty()) {
             sql.append(" WHERE ").append(String.join(" AND ", whereClauses));

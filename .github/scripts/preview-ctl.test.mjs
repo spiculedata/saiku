@@ -23,6 +23,7 @@ import { test } from 'node:test';
 import {
   GhChangedFiles,
   GhCommenter,
+  GhImageBuilder,
   ImageNotReadyError,
   NoImageBuildError,
   RecordingCommenter,
@@ -506,9 +507,11 @@ test('/preview on a running env extends the idle window without rebuilding; rest
   const w = world();
   w.event({});
   const before = w.host.state.ops.length;
+  const mutatingBefore = w.host.state.ops.filter((o) => o.mutating).length;
   const r = w.event({ action: 'requested', requestedBy: 'tom' }, HOURS(10));
   assert.equal(r.decision.action, 'keep');
-  assert.equal(w.host.state.ops.length, before);
+  // Nothing is changed on the host (reading the login for the comment is a read-only command).
+  assert.equal(w.host.state.ops.filter((o) => o.mutating).length, mutatingBefore);
   assert.equal(w.registry().envs['1'].lastActivity, HOURS(10));
   assert.match(w.lastComment(1), /refreshed by \/preview/);
   const restart = w.event({ action: 'requested', requestedBy: 'tom', restart: true }, HOURS(11));
@@ -800,4 +803,252 @@ test('a base domain that is not a DNS name stops the bring-up before any host co
   const w = world();
   assert.throws(() => w.event({}, T0, { ...config, baseDomain: 'x; rm -rf /' }), /invalid preview base domain/);
   assert.equal(w.host.state.ops.filter((o) => o.mutating).length, 0);
+});
+
+/* ------------------------------------------------- building a missing image */
+
+test('waitForImage starts a build once when the image is missing, tells the PR, then waits for it', () => {
+  const host = new FakeHost({ images: [], pendingImages: { [tag('f')]: 2 } });
+  const calls = [];
+  const out = waitForImage({
+    host,
+    sha: sha('f'),
+    changedFiles: BUILT,
+    ensureBuild: () => (calls.push('ensure'), { started: true, reason: 'build-started' }),
+    onWait: (info) => calls.push(`wait:${info.tag}:${info.build.reason}`),
+  });
+  assert.deepEqual(out, { tag: tag('f') });
+  assert.deepEqual(calls, ['ensure', `wait:${tag('f')}:build-started`], 'ensureBuild once, then onWait once, before polling');
+  assert.ok(host.state.sleeps.length >= 1, 'it polled for the image after starting the build');
+});
+
+test('waitForImage never starts a build when the image already exists or the PR builds no image', () => {
+  const calls = [];
+  const spy = { ensureBuild: () => calls.push('ensure'), onWait: () => calls.push('wait') };
+  assert.deepEqual(waitForImage({ host: new FakeHost({ images: [tag('a')] }), sha: sha('a'), changedFiles: BUILT, ...spy }), { tag: tag('a') });
+  assert.throws(() => waitForImage({ host: new FakeHost({ images: [] }), sha: sha('a'), changedFiles: DOCS_ONLY, ...spy }), (e) => e instanceof NoImageBuildError);
+  assert.deepEqual(calls, [], 'no build, no waiting comment, for either');
+});
+
+test('a failure to start the build is logged and does not stop the wait', () => {
+  const host = new FakeHost({ images: [], pendingImages: { [tag('c')]: 1 } });
+  const logs = [];
+  const out = waitForImage({
+    host,
+    sha: sha('c'),
+    changedFiles: BUILT,
+    ensureBuild: () => {
+      throw new Error('dispatching docker.yml for #3 failed: HTTP 403\nsecond line');
+    },
+    onWait: (info) => logs.push(`wait:${info.build.reason}`),
+    log: (m) => logs.push(m),
+  });
+  assert.deepEqual(out, { tag: tag('c') });
+  assert.ok(logs.some((l) => /could not start an image build.*HTTP 403/.test(l)));
+  assert.ok(!logs.some((l) => /second line/.test(l)), 'only the first line of the error is logged');
+  assert.ok(logs.includes('wait:waiting-for-build'), 'the PR is still told a build is awaited');
+});
+
+test('/preview on a PR with no image: ensureBuild(pr, headSha) once, a BUILDING comment first, then UP', () => {
+  const host = new FakeHost({ images: [], pendingImages: { [tag('a')]: 2 } });
+  const commenter = new RecordingCommenter();
+  const asked = [];
+  const r = handleEvent({
+    host,
+    commenter,
+    event: ev({ number: 9 }),
+    config,
+    now: T0,
+    changedFiles: BUILT,
+    ensureBuild: (pr, headSha) => (asked.push([pr, headSha]), { started: true, reason: 'build-started' }),
+  });
+  assert.equal(r.exitCode, 0);
+  assert.deepEqual(asked, [[9, sha('a')]]);
+  const bodies = commenter.comments.filter((c) => c.pr === 9).map((c) => c.body);
+  assert.match(bodies[0], /BUILDING IMAGE/);
+  assert.match(bodies.at(-1), /\*\*UP\*\*/);
+  assert.ok(bodies.length >= 2);
+  assert.deepEqual(Object.keys(host.state.stacks).sort(), ['saiku-oss-pr-9']);
+});
+
+test('without ensureBuild (the automatic flows) a missing image is only waited for, and the PR is told so', () => {
+  const host = new FakeHost({ images: [], pendingImages: { [tag('a')]: 1 } });
+  const commenter = new RecordingCommenter();
+  const r = handleEvent({ host, commenter, event: ev({ number: 4 }), config, now: T0, changedFiles: BUILT });
+  assert.equal(r.exitCode, 0);
+  const bodies = commenter.comments.filter((c) => c.pr === 4).map((c) => c.body);
+  assert.match(bodies[0], /BUILDING IMAGE.*waiting-for-build/s);
+  assert.match(bodies.at(-1), /\*\*UP\*\*/);
+});
+
+test('--ensure-build github is parsed, and the fake host ignores it instead of calling the real GitHub', () => {
+  assert.equal(parseArgs(['event', '--ensure-build', 'github', '--host', 'ssh']).flags['ensure-build'], 'github');
+  const dir = mkdtempSync(join(tmpdir(), 'ctl-ensure-'));
+  try {
+    const eventFile = join(dir, 'e.json');
+    const filesFile = join(dir, 'f.json');
+    writeFileSync(filesFile, JSON.stringify(['saiku-core/x.java']));
+    writeFileSync(
+      eventFile,
+      JSON.stringify({
+        action: 'requested',
+        requested_by: 'tom',
+        pull_request: { number: 5, state: 'open', merged: false, user: { login: 'tom' }, labels: [], head: { sha: sha('a'), repo: { full_name: REPO } }, base: { repo: { full_name: REPO } } },
+      }),
+    );
+    const out = [];
+    const code = main(
+      ['event', '--host', 'fake', '--ensure-build', 'github', '--github-event', eventFile, '--changed-files', filesFile],
+      { GITHUB_REPOSITORY: REPO },
+      { out: (s) => out.push(s) },
+    );
+    const log = out.join('');
+    assert.equal(code, 1, 'no image ever appears on the empty fake host, so the wait ends in a failure');
+    assert.match(log, /waiting-for-build/, 'the PR was told a build is awaited');
+    assert.doesNotMatch(log, /build-started|build-in-progress/, 'the fake host never started or found a real build');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+/* ----------------------------------------------------------- GhImageBuilder */
+
+const scripted = (responses) => {
+  const calls = [];
+  const run = (argv, opts) => {
+    calls.push({ argv, input: opts?.input });
+    const next = responses.shift() ?? { status: 0, stdout: '', stderr: '' };
+    return { status: 0, stdout: '', stderr: '', ...next };
+  };
+  return { run, calls };
+};
+
+test('GhImageBuilder dispatches docker.yml from the default branch with pr=<n> when nothing is running', () => {
+  const { run, calls } = scripted([{ stdout: '' }, { stdout: 'development\n' }, { stdout: '' }]);
+  const b = new GhImageBuilder({ repo: REPO, run });
+  assert.deepEqual(b.ensure(2045, sha('a')), { started: true, reason: 'build-started' });
+  assert.equal(calls.length, 3);
+  const [list, branch, dispatch] = calls.map((c) => c.argv);
+  assert.match(list.join(' '), /actions\/workflows\/docker\.yml\/runs\?per_page=50/);
+  assert.match(list.join(' '), new RegExp(`head_sha == "${sha('a')}"`));
+  assert.match(list.join(' '), /PR #2045\( \|\$\)/);
+  assert.deepEqual(branch.slice(0, 3), ['gh', 'api', `repos/${REPO}`]);
+  assert.deepEqual(dispatch, ['gh', 'api', '-X', 'POST', `repos/${REPO}/actions/workflows/docker.yml/dispatches`, '-f', 'ref=development', '-f', 'inputs[pr]=2045']);
+});
+
+test('GhImageBuilder does not start a second build while one is queued or running', () => {
+  const { run, calls } = scripted([{ stdout: '12345\n' }]);
+  const b = new GhImageBuilder({ repo: REPO, run });
+  assert.deepEqual(b.ensure(2045, sha('a')), { started: false, reason: 'build-in-progress' });
+  assert.equal(calls.length, 1, 'only the listing call; nothing dispatched');
+});
+
+test('GhImageBuilder reports API failures instead of pretending a build started', () => {
+  assert.throws(() => new GhImageBuilder({ repo: REPO, run: scripted([{ status: 1, stderr: 'HTTP 500' }]).run }).ensure(1, sha('a')), /listing docker\.yml runs failed: HTTP 500/);
+  assert.throws(() => new GhImageBuilder({ repo: REPO, run: scripted([{ stdout: '' }, { stdout: '$(rm -rf /)\n' }]).run }).ensure(1, sha('a')), /could not read the default branch/);
+  assert.throws(() => new GhImageBuilder({ repo: REPO, run: scripted([{ stdout: '' }, { stdout: 'development\n' }, { status: 1, stderr: 'HTTP 422 Unexpected inputs' }]).run }).ensure(1, sha('a')), /dispatching docker\.yml for #1 failed: HTTP 422/);
+});
+
+test('GhImageBuilder only ever interpolates a validated PR number and 40-hex SHA', () => {
+  const b = new GhImageBuilder({ repo: REPO, run: scripted([]).run });
+  assert.throws(() => b.ensure('1; rm', sha('a')));
+  assert.throws(() => b.ensure(0, sha('a')));
+  assert.throws(() => b.ensure(5, 'abc"; ) | halt_error'));
+  assert.throws(() => b.ensure(5, 'a'.repeat(39)));
+  assert.throws(() => new GhImageBuilder({ repo: 'bad; repo' }), /invalid repository/);
+  assert.throws(() => new GhImageBuilder({ repo: REPO, workflow: '../x' }), /invalid workflow file/);
+});
+
+/* ------------------------------------------- login in the comment + announcing */
+
+const FAKE_PW = 'prevpw_0123456789abcdef0123456789abcdef01234567';
+
+test('a new preview shows the login in the sticky comment, masks it in the log first, and announces itself once', () => {
+  const host = new FakeHost({ images: [tag('a')] });
+  const commenter = new RecordingCommenter();
+  const logs = [];
+  const r = handleEvent({ host, commenter, event: ev({ number: 3 }), config, now: T0, changedFiles: BUILT, log: (m) => logs.push(m) });
+  assert.equal(r.exitCode, 0);
+  const sticky = commenter.comments.filter((c) => c.pr === 3).at(-1).body;
+  assert.ok(sticky.includes(`Login: \`admin\` / \`${FAKE_PW}\``));
+  assert.match(sticky, /oss-pr-3\.preview\.saiku\.bi\/ui\//);
+  // Masked in the workflow log before anything else could print it.
+  const mask = logs.findIndex((l) => l === `::add-mask::${FAKE_PW}`);
+  assert.ok(mask >= 0, 'the password is masked');
+  assert.ok(logs.slice(0, mask).every((l) => !l.includes(FAKE_PW)), 'and nothing logged it before the mask');
+  assert.ok(logs.filter((l) => l.includes(FAKE_PW)).every((l) => l.startsWith('::add-mask::')), 'the only log line with it is the mask command');
+  // A separate NEW comment pings people; it holds no password.
+  assert.equal(commenter.announcements.length, 1);
+  assert.equal(commenter.announcements[0].pr, 3);
+  assert.match(commenter.announcements[0].body, /Preview is running/);
+  assert.doesNotMatch(commenter.announcements[0].body, /prevpw_/);
+});
+
+test('a push that refreshes a running preview updates the sticky comment quietly; /preview and a restart announce', () => {
+  const w = world({ images: [tag('a'), tag('b')] });
+  w.event({});
+  assert.equal(w.commenter.announcements.length, 1, 'new -> announced');
+  w.event({ action: 'synchronize', headSha: sha('b') }, HOURS(1));
+  assert.equal(w.commenter.announcements.length, 1, 'refresh -> no new ping');
+  assert.match(w.lastComment(1), /Login: /, 'but the sticky comment still has the login');
+  w.event({ action: 'requested', requestedBy: 'tom', headSha: sha('b') }, HOURS(2));
+  assert.equal(w.commenter.announcements.length, 2, 'an explicit /preview on a running env points at it again');
+  w.event({ action: 'requested', requestedBy: 'tom', restart: true, headSha: sha('b') }, HOURS(3));
+  assert.equal(w.commenter.announcements.length, 3, 'restart -> announced');
+});
+
+test('PREVIEW_POST_CREDENTIALS=false: no login read from the host, none in the comment, the hint instead; still announces', () => {
+  const host = new FakeHost({ images: [tag('a')] });
+  const commenter = new RecordingCommenter();
+  const off = { ...config, postCredentials: false };
+  handleEvent({ host, commenter, event: ev({ number: 3 }), config: off, now: T0, changedFiles: BUILT });
+  const sticky = commenter.comments.filter((c) => c.pr === 3).at(-1).body;
+  assert.doesNotMatch(sticky, /prevpw_|Login: /);
+  assert.match(sticky, /Fetch it with/);
+  assert.ok(!host.state.ops.some((o) => o.argv.includes('grep')), 'the credentials file is never read when posting is off');
+  assert.equal(commenter.announcements.length, 1);
+});
+
+test('if the login cannot be read the preview still comes up, with the fetch hint, and the failure is logged without the value', () => {
+  const host = new FakeHost({ images: [tag('a')], credentials: 'SAIKU_ADMIN_PASSWORD=bad value with spaces' });
+  const commenter = new RecordingCommenter();
+  const logs = [];
+  const r = handleEvent({ host, commenter, event: ev({ number: 3 }), config, now: T0, changedFiles: BUILT, log: (m) => logs.push(m) });
+  assert.equal(r.exitCode, 0);
+  assert.deepEqual(Object.keys(host.state.stacks), ['saiku-oss-pr-3']);
+  assert.match(commenter.comments.filter((c) => c.pr === 3).at(-1).body, /Fetch it with/);
+  assert.ok(logs.some((l) => /could not read the login for #3/.test(l)));
+  assert.ok(!logs.some((l) => l.includes('bad value')), 'the offending value is never logged');
+});
+
+test('a failing announcement is recorded and never undoes the preview', () => {
+  const host = new FakeHost({ images: [tag('a')] });
+  const commenter = new RecordingCommenter();
+  commenter.notify = () => {
+    throw new Error('HTTP 403');
+  };
+  const logs = [];
+  const r = handleEvent({ host, commenter, event: ev({ number: 3 }), config, now: T0, changedFiles: BUILT, log: (m) => logs.push(m) });
+  assert.equal(r.exitCode, 0);
+  assert.deepEqual(Object.keys(host.state.stacks), ['saiku-oss-pr-3']);
+  assert.ok(logs.some((l) => /could not announce the preview on #3: HTTP 403/.test(l)));
+});
+
+test('GhCommenter.notify POSTs a NEW comment (never edits the sticky one) and validates its input', () => {
+  const calls = [];
+  const c = new GhCommenter({ repo: REPO, run: (argv, o) => (calls.push({ argv, input: o?.input }), { status: 0, stdout: '', stderr: '' }) });
+  c.notify(8, 'hello');
+  assert.equal(calls.length, 1, 'no listing, no PATCH');
+  assert.deepEqual(calls[0].argv, ['gh', 'api', '-X', 'POST', `repos/${REPO}/issues/8/comments`, '--input', '-']);
+  assert.deepEqual(JSON.parse(calls[0].input), { body: 'hello' });
+  assert.throws(() => c.notify('8; rm', 'x'));
+  assert.throws(() => new GhCommenter({ repo: REPO, run: () => ({ status: 1, stdout: '', stderr: 'nope' }) }).notify(8, 'x'), /posting comment failed/);
+});
+
+test('loadConfig: login posting is on by default and only an explicit "false" turns it off', () => {
+  assert.equal(loadConfig({}).postCredentials, true);
+  assert.equal(loadConfig({ SAIKU_PREVIEW_POST_CREDENTIALS: '' }).postCredentials, true, 'an unset repo variable arrives as an empty string');
+  assert.equal(loadConfig({ SAIKU_PREVIEW_POST_CREDENTIALS: 'true' }).postCredentials, true);
+  assert.equal(loadConfig({ SAIKU_PREVIEW_POST_CREDENTIALS: 'False' }).postCredentials, false);
+  assert.equal(loadConfig({ SAIKU_PREVIEW_POST_CREDENTIALS: ' false ' }).postCredentials, false);
 });

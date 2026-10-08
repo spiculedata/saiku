@@ -95,14 +95,23 @@ test('two runs for the same PR cannot race: one concurrency group per PR, never 
 });
 
 test('token permissions are empty at the top and minimal per job', () => {
-  for (const wf of WORKFLOWS) {
-    assert.match(wf, /^permissions: \{\}$/m);
+  const base = ['contents: read', 'pull-requests: write'];
+  for (const [name, wf] of [['preview-env', ENV_WF], ['preview-reaper', REAPER_WF], ['preview-command', COMMAND_WF]]) {
+    assert.match(wf, /^permissions: \{\}$/m, name);
     const jobPerms = wf.match(/^ {4}permissions:\n((?: {6}.+\n)+)/m)?.[1] ?? '';
-    assert.deepEqual(
-      jobPerms.trim().split('\n').map((l) => l.trim()).sort(),
-      ['contents: read', 'pull-requests: write'],
-    );
+    // Only the explicit /preview command may start a docker build (actions: write, to dispatch
+    // docker.yml); the automatic flows get the base set, because a push already triggers the build.
+    const expected = name === 'preview-command' ? [...base, 'actions: write'] : base;
+    assert.deepEqual(jobPerms.trim().split('\n').map((l) => l.trim()).sort(), [...expected].sort(), name);
   }
+});
+
+test('only the /preview command asks for a missing image to be built', () => {
+  assert.match(COMMAND_WF, /--ensure-build github/);
+  assert.doesNotMatch(ENV_WF, /--ensure-build/);
+  assert.doesNotMatch(REAPER_WF, /--ensure-build/);
+  // The only workflow it may start is the PR image build, and the input stays out of any shell.
+  assert.doesNotMatch(COMMAND_WF, /gh workflow run|workflows\/[^/\s]+\/dispatches/, 'dispatching happens in preview-ctl.mjs, not in the workflow file');
 });
 
 test('previews use their own SSH identity, never a deploy key', () => {

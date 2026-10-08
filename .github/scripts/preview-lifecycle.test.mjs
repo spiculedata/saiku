@@ -15,6 +15,7 @@ import { test } from 'node:test';
 import {
   DEFAULTS,
   EMPTY_REGISTRY,
+  announcement,
   activePrs,
   apply,
   applyReap,
@@ -417,6 +418,71 @@ test('the up comment carries the URL, the image and the sticky marker, and never
   assert.match(body, /ghcr\.io\/spiculedata\/saiku:abcdef0/);
   assert.match(body, /README\.md#credentials-for-validators/);
   assert.doesNotMatch(body, /prevpw_|password=|PASSWORD=/i);
+});
+
+const LOGIN = { user: 'admin', password: 'prevpw_0123456789abcdef0123456789abcdef01234567' };
+
+test('the up comment links the app under /ui/ and shows the throwaway login when one is given', () => {
+  const body = comment({ action: 'up', reason: 'new', pr: 5, image: { tag: 'abcdef0' }, credentials: LOGIN }, { config });
+  assert.match(body, /Saiku: https:\/\/oss-pr-5\.preview\.saiku\.bi\/ui\/ /, 'the bare root is a 500, so link /ui/');
+  assert.ok(body.includes(`Login: \`admin\` / \`${LOGIN.password}\``));
+  assert.match(body, /throwaway/);
+  assert.match(body, /anyone who can read this PR can read it/);
+  assert.match(body, /\*\*UP\*\* \(new\)/);
+  assert.doesNotMatch(body, /Fetch it with/, 'no fetch hint when the login is shown');
+});
+
+test('without a login (disabled, or the host would not say) the comment says how to fetch it and never invents one', () => {
+  const none = comment({ action: 'up', reason: 'new', pr: 7, image: { tag: 'abcdef0' } }, { config });
+  assert.match(none, /Fetch it with `ssh saiku-preview "grep SAIKU_ADMIN_PASSWORD \/var\/lib\/saiku-preview-oss\/env\/saiku-oss-pr-7\.env"`/);
+  assert.match(none, /README\.md#credentials-for-validators/);
+  assert.doesNotMatch(none, /prevpw_|Login: /);
+
+  // PREVIEW_POST_CREDENTIALS=false wins even when a login was passed in.
+  const off = comment({ action: 'up', reason: 'new', pr: 7, credentials: LOGIN }, { config: { ...config, postCredentials: false } });
+  assert.doesNotMatch(off, /prevpw_|Login: /);
+  assert.match(off, /Fetch it with/);
+});
+
+test('only a login with the exact shape the host writes is rendered', () => {
+  for (const bad of [
+    { user: 'admin', password: 'x y' },
+    { user: 'admin', password: 'pw`; rm -rf /' },
+    { user: 'ad min', password: 'prevpw_ab' },
+    { user: 'admin', password: '' },
+    { user: undefined, password: 'prevpw_ab' },
+    { password: 'prevpw_ab' },
+    'prevpw_ab',
+  ]) {
+    const body = comment({ action: 'up', reason: 'new', pr: 5, credentials: bad }, { config });
+    assert.doesNotMatch(body, /Login: /, JSON.stringify(bad));
+    assert.match(body, /Fetch it with/);
+  }
+});
+
+test('the announcement pings with the URL, points at the sticky comment, and carries no credential or sticky marker', () => {
+  const body = announcement({ pr: 12 }, { config });
+  assert.match(body, /^\*\*Preview is running\*\* for this PR: https:\/\/oss-pr-12\.preview\.saiku\.bi\/ui\//);
+  assert.match(body, /\*\*Preview environment\*\* comment/);
+  assert.doesNotMatch(body, /prevpw_|password/i);
+  assert.ok(!body.includes('saiku-oss-preview-status'), 'must not be mistaken for the sticky comment');
+  assert.throws(() => announcement({ pr: 'x; rm' }, { config }));
+});
+
+test('the building comment says a build was started or is running, where it will be served, and when it gives up', () => {
+  const started = comment({ action: 'building', reason: 'build-started', pr: 7 }, { config });
+  assert.match(started, /^<!-- saiku-oss-preview-status -->/);
+  assert.match(started, /\*\*BUILDING IMAGE\*\* \(build-started\)/);
+  assert.match(started, /a `docker` build was started/);
+  assert.match(started, /https:\/\/oss-pr-7\.preview\.saiku\.bi/);
+  assert.match(started, /no need to comment again/);
+  assert.match(started, /20 minutes/);
+  assert.doesNotMatch(started, /prevpw_|password=|PASSWORD=/i);
+
+  const running = comment({ action: 'building', reason: 'build-in-progress', pr: 7 }, { config });
+  assert.match(running, /\(build-in-progress\)/);
+  assert.match(running, /still running/);
+  assert.doesNotMatch(running, /was started/);
 });
 
 test('the queued, failed and down comments say what happened and how to retry', () => {

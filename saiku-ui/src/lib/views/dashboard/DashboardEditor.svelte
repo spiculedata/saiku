@@ -14,11 +14,15 @@
 	import { activeFilters } from '$lib/stores/activeFilters.svelte';
 	import { tileSelection } from '$lib/stores/tileSelection.svelte';
 	import { presentation } from '$lib/stores/presentation.svelte';
+	import { schemaCache } from '$lib/stores/schemaCache.svelte';
+	import { i18n } from '$lib/stores/i18n.svelte';
 	import { newTileId, type TileType } from '$lib/api/dashboards';
 	import { isEnterPresentationKey } from '$lib/dashboard/presentationHotkeys';
 	import { isUndoKey, isRedoKey } from '$lib/dashboard/historyHotkeys';
 	import { panelDiffersFromDefaults } from '$lib/dashboard/filterDefaults';
-	import { Minimize2 } from '@lucide/svelte';
+	import { resolveNarrativeTiles } from '$lib/dashboard/narrativeTiles';
+	import type { SchemaLike } from '$lib/dashboard/effectiveQuery';
+	import { Minimize2, Sparkles } from '@lucide/svelte';
 	import { buildTile } from '$lib/dashboard/tilePlacement';
 	import { decodeFilterParams, encodeActiveFilters } from '$lib/dashboard/urlFilterState';
 	import DashboardToolbar from '$lib/views/dashboard/DashboardToolbar.svelte';
@@ -27,6 +31,7 @@
 	import DashboardGrid from '$lib/views/dashboard/DashboardGrid.svelte';
 	import DashboardBulkActionsBar from '$lib/views/dashboard/DashboardBulkActionsBar.svelte';
 	import EmptyDashboardGuidance from '$lib/views/dashboard/EmptyDashboardGuidance.svelte';
+	import NarrativeTile from '$lib/views/dashboard/tiles/NarrativeTile.svelte';
 
 	interface Props {
 		dashboardPath: string;
@@ -182,6 +187,37 @@
 	let showEmptyGuidance = $derived(
 		!readOnly && (dashboardStore.current?.layout?.tiles?.length ?? 0) === 0
 	);
+
+	/* --------------------- saiku#910: dashboard narrative -------------------- */
+
+	// Not persisted — an ephemeral display preference for this viewing session,
+	// same posture as presentation mode. Resets to off on navigating to a
+	// different dashboard.
+	let showNarrative = $state(false);
+
+	// Prime the schema cache for every candidate tile's cube (mirrors ChartTile's
+	// own per-tile priming effect) so resolveNarrativeTiles below can merge
+	// active filters once each schema resolves.
+	$effect(() => {
+		if (!showNarrative) return;
+		const tiles = dashboardStore.current?.layout?.tiles ?? [];
+		for (const tile of tiles) {
+			if (tile.cube && !schemaCache.peek(tile.cube)) {
+				void schemaCache.get(tile.cube).catch(() => {});
+			}
+		}
+	});
+
+	let narrativeTiles = $derived.by(() => {
+		if (!showNarrative) return [];
+		void schemaCache.version; // re-derive once a primed schema resolves
+		const tiles = dashboardStore.current?.layout?.tiles ?? [];
+		return resolveNarrativeTiles(
+			tiles,
+			activeFilters.all,
+			(cube) => schemaCache.peek(cube) as SchemaLike | null
+		);
+	});
 </script>
 
 <div class="dashboard-editor" class:presentation={presentation.active}>
@@ -218,6 +254,26 @@
 			{/if}
 			<DashboardFilterPanel {readOnly} />
 			<DashboardFilterBar {readOnly} />
+			<!-- saiku#910: dashboard narrative summary toggle. Ephemeral (not
+			     persisted) — hidden entirely once the dashboard is empty since
+			     there is nothing to summarise. -->
+			{#if !showEmptyGuidance}
+				<button
+					type="button"
+					class="narrative-toggle"
+					class:active={showNarrative}
+					onclick={() => (showNarrative = !showNarrative)}
+					aria-pressed={showNarrative}
+				>
+					<Sparkles size={14} aria-hidden="true" />
+					{i18n.t('dashboard.narrative.toggle', 'Show narrative')}
+				</button>
+			{/if}
+		{/if}
+		{#if showNarrative && !presentation.active && !showEmptyGuidance}
+			<div class="narrative-slot">
+				<NarrativeTile dashboardTitle={dashboardStore.current.name} tiles={narrativeTiles} />
+			</div>
 		{/if}
 		{#if showEmptyGuidance && !presentation.active}
 			<EmptyDashboardGuidance onAddTile={handleAddTile} />
@@ -266,6 +322,33 @@
 		color: hsl(var(--danger));
 		border-radius: 4px;
 		font-size: 0.875rem;
+	}
+	/* saiku#910: dashboard narrative toggle + slot. */
+	.narrative-toggle {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.375rem;
+		align-self: flex-start;
+		padding: 0.25rem 0.625rem;
+		font-size: 0.8125rem;
+		border: 1px solid hsl(var(--border));
+		border-radius: 999px;
+		background: transparent;
+		color: hsl(var(--fg-muted));
+		cursor: pointer;
+	}
+	.narrative-toggle:hover {
+		background: hsl(var(--bg-subtle));
+	}
+	.narrative-toggle.active {
+		border-color: hsl(var(--primary));
+		color: hsl(var(--primary));
+		background: color-mix(in srgb, hsl(var(--primary)) 10%, transparent);
+	}
+	.narrative-slot {
+		border: 1px solid hsl(var(--border));
+		border-radius: 6px;
+		background: hsl(var(--bg-subtle));
 	}
 	/* Presentation mode (saiku#928): full-bleed tiles, no editor padding, and
      flatten per-tile chrome (borders, shadows, edit affordances) for a clean

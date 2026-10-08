@@ -194,6 +194,13 @@ public final class AiAskApi {
          * {@code /email/self}, never here.
          */
         private AiEmailDraft emailDraft;
+        /**
+         * saiku#1425: the outbound MCP tool call the chained-ask loop made and fed back to the
+         * model on this step. Present only on a {@code MCP_TOOL_CALL} step of a {@code
+         * POST /saiku/api/ai/ask/chain} response — the classic single-shot ask never advertises
+         * outbound tools, so this is always null there.
+         */
+        private McpToolCallDto mcpToolCall;
 
         public boolean isDegraded() {
             return degraded;
@@ -273,6 +280,57 @@ public final class AiAskApi {
 
         public void setEmailDraft(AiEmailDraft v) {
             this.emailDraft = v;
+        }
+
+        public McpToolCallDto getMcpToolCall() {
+            return mcpToolCall;
+        }
+
+        public void setMcpToolCall(McpToolCallDto v) {
+            this.mcpToolCall = v;
+        }
+    }
+
+    /**
+     * Wire shape for {@link AiAskService.McpToolCallSummary} (saiku#1425) — the outbound tool call +
+     * result a {@code MCP_TOOL_CALL} chain step carries.
+     */
+    public static class McpToolCallDto {
+        private String qualifiedName;
+        private String argumentsJson;
+        private String resultDigest;
+        private boolean error;
+
+        public String getQualifiedName() {
+            return qualifiedName;
+        }
+
+        public void setQualifiedName(String v) {
+            this.qualifiedName = v;
+        }
+
+        public String getArgumentsJson() {
+            return argumentsJson;
+        }
+
+        public void setArgumentsJson(String v) {
+            this.argumentsJson = v;
+        }
+
+        public String getResultDigest() {
+            return resultDigest;
+        }
+
+        public void setResultDigest(String v) {
+            this.resultDigest = v;
+        }
+
+        public boolean isError() {
+            return error;
+        }
+
+        public void setError(boolean v) {
+            this.error = v;
         }
     }
 }
