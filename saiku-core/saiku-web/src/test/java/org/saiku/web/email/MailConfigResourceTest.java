@@ -165,13 +165,13 @@ public class MailConfigResourceTest {
     }
 
     @Test
-    public void save_stripsCrlfFromHost_noHeaderInjection() {
+    public void save_crlfInHost_isRefused_andNothingIsStored() {
         MailConfigRequest b = req(SECRET);
         b.setHost("smtp.example.com\r\nInjected: x");
         Response resp = resource().save(b);
-        assertEquals(200, resp.getStatus());
-        assertFalse(store.read().orElseThrow().getHost().contains("\r"));
-        assertFalse(store.read().orElseThrow().getHost().contains("\n"));
+        // An injection attempt is refused outright, never rewritten into another hostname.
+        assertEquals(400, resp.getStatus());
+        assertFalse(store.exists());
     }
 
     /* ------------------------------ stubs ------------------------------ */

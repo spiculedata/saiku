@@ -84,6 +84,42 @@
       <security:anonymous/>
     </security:http>
 
+    <!-- saiku#1438: SCIM 2.0 provisioning surface (/rest/scim/v2), on its OWN chain so it is
+         genuinely isolated from the Saiku session/Basic surface.
+
+         Why a dedicated chain rather than two intercept-urls on the main chain:
+         - Auth conventions differ. A SCIM connector presents `Authorization: Bearer <token>`
+           and nothing else; http-basic is deliberately NOT enabled here, so a Saiku account
+           (admin/admin included) can never be used to drive provisioning.
+         - CSRF is off, correctly: an IdP connector is a stateless machine client with no
+           ambient cookie, and demanding a CSRF token would break every connector.
+         - create-session="stateless": no HttpSession is minted per SCIM call. The bearer is
+           re-validated from disk on every request, so revoking a token takes effect on the
+           very next call and there is no session to invalidate or hijack.
+         - permitAll at the URL layer is intentional — the scimAuthFilter IS the authentication
+           boundary here and answers 401 itself, in SCIM's own error body, before Jersey is
+           reached. Letting the main chain answer instead produces a bodyless 401 that
+           Okta/Entra surface as an unhelpful generic "SCIM error".
+         - ant-matched, declared BEFORE the security="none" chains, for the same reason the
+           /xmla chain above is: a bare /rest/scim/v2 must not be claimed by a permissive chain.
+         The filter additionally rate-limits per token (100 req/min by default) and
+         audit-logs every call with the token label, its IdP and the operation. -->
+    <security:http pattern="/rest/scim/v2" request-matcher="ant" use-expressions="true"
+                   create-session="stateless" entry-point-ref="basicAuth401NoChallenge">
+      <security:csrf disabled="true"/>
+      <security:intercept-url pattern="/**" access="permitAll" />
+      <security:custom-filter ref="scimAuthFilter" before="FIRST"/>
+      <security:anonymous/>
+    </security:http>
+
+    <security:http pattern="/rest/scim/v2/**" request-matcher="ant" use-expressions="true"
+                   create-session="stateless" entry-point-ref="basicAuth401NoChallenge">
+      <security:csrf disabled="true"/>
+      <security:intercept-url pattern="/**" access="permitAll" />
+      <security:custom-filter ref="scimAuthFilter" before="FIRST"/>
+      <security:anonymous/>
+    </security:http>
+
     <!-- saiku#1951: the two legacy `security="none"` chains for "/rest/saiku/info" and
          "/rest/saiku/info/ui-settings" were DEAD and have been DELETED. Those patterns
          ("/rest/...") are ABSOLUTE-path shapes, but the none chains match the
@@ -123,9 +159,17 @@
          SecurityContext. That is the correct shape for a theme-CSS overlay, and the only
          prefix-mapped servlet under a none-chain pattern besides /rest/* and /xmla/* (both of
          which have their own dedicated ant-matched chains declared above). -->
+    <!-- saiku#1949: bare directory URLs need their own public chains so the terminal
+         catch-all does not intercept the container's trailing-slash redirects. -->
+    <security:http pattern="/repository" request-matcher="ant" security="none">
+    </security:http>
     <security:http pattern="/repository/**" request-matcher="ant" security="none">
     </security:http>
+    <security:http pattern="/ui" request-matcher="ant" security="none">
+    </security:http>
     <security:http pattern="/ui/**" request-matcher="ant" security="none">
+    </security:http>
+    <security:http pattern="/images" request-matcher="ant" security="none">
     </security:http>
     <!-- Static showcase SPA (saiku-ui/static/showcase/) — public, same-origin so its
          fetches to /rest/saiku/api/* ride the visitor's own auth session (or the
@@ -157,6 +201,8 @@
     </security:http>
     <security:http pattern="/index.jsp" request-matcher="ant" security="none">
     </security:http>
+    <security:http pattern="/index.html" request-matcher="ant" security="none">
+    </security:http>
     <security:http pattern="/style.css" request-matcher="ant" security="none">
     </security:http>
     <security:http pattern="/images/**" request-matcher="ant" security="none">
@@ -166,8 +212,15 @@
          "mvc"/PathPattern matching which subtly changed `*` behaviour and
          broke the existing `/rest/saiku/session*` rule, sending the SPA's
          anonymous login POST to the catch-all `/rest/**` =
-         isFullyAuthenticated() rule and 302-redirecting to /login. -->
-    <security:http auto-config='true' use-expressions="true" request-matcher="ant">
+         isFullyAuthenticated() rule and 302-redirecting to /login.
+         filter-all-dispatcher-types="false": restrict Spring Security's AuthorizationFilter
+         to REQUEST dispatches only (Spring Security 6.x default is all dispatchers). Without
+         this, the saiku#1949 terminal catch-all (/**) intercepts ERROR dispatches from the
+         container's error-page mechanism (e.g. Jasper returning a 404 for a non-existent
+         *.jsp), which re-challenges authentication in the ERROR context → loop → 500.
+         Security is unchanged for direct requests: the catch-all blocks all unmapped REQUEST
+         dispatches as intended. -->
+    <security:http auto-config='true' use-expressions="true" request-matcher="ant" filter-all-dispatcher-types="false">
       <!--access-denied-page="/login.jsp"-->
       <!--
         CSRF: enforced on state-changing /rest/** methods.
@@ -273,6 +326,11 @@
            (more specific first); ant matcher — `*` matches the single {username} segment. -->
       <security:intercept-url pattern="/rest/saiku/statistics/**" access="hasRole('ADMIN')" />
       <security:intercept-url pattern="/rest/saiku/*/org.saiku.datasources/**" access="hasRole('ADMIN')" />
+      <!-- saiku#1107: SQL workbench — belt-and-braces alongside SqlWorkbenchResource's
+           @RolesAllowed({"ROLE_ADMIN","ROLE_SQL_EXEC"}). Must precede /rest/** (more specific
+           first); the audit read endpoint lives under /saiku/admin/** and is already covered
+           above. -->
+      <security:intercept-url pattern="/rest/saiku/sql-workbench/**" access="hasRole('ADMIN') or hasRole('SQL_EXEC')" />
       <!-- NOTE (saiku#1905): the /xmla SOAP endpoint is NOT gated by an
            intercept-url in this chain. It is prefix-mapped /xmla/* (web.xml), and
            the security="none" chains above match MVC-style (servlet-path-relative),
@@ -290,6 +348,37 @@
       <security:intercept-url pattern="/rest/**" access="isFullyAuthenticated()" />
       <security:intercept-url pattern="/json/**" access="isFullyAuthenticated()" />
       <security:intercept-url pattern="/WEB-INF/classes/legacy-schema" access="isAnonymous()" />
+      <!-- saiku#1949: favicon probes. A browser on the root landing page (/, which index.jsp
+           meta-refreshes to /ui/) requests /favicon.ico at the site root. There is no such file
+           (the SPA's icons are served from /ui/), so this 404s — but with the terminal
+           catch-all below an unmatched /favicon.ico would instead 401, which reads as an
+           auth problem in the browser console. Explicitly permit the two conventional
+           favicon names so the catch-all stays invisible to a plain browser. -->
+      <security:intercept-url pattern="/favicon.ico" access="permitAll" />
+      <security:intercept-url pattern="/favicon.svg" access="permitAll" />
+      <!-- saiku#1949: TERMINAL CATCH-ALL — fail closed, not open.
+           Without a last rule, the XML namespace's RequestMatcherDelegatingAuthorizationManager
+           returns a NULL decision for a request matching no intercept-url, and Spring Security
+           treats a null decision as GRANTED. Every URL not explicitly listed above was therefore
+           anonymous BY OMISSION — a standing footgun: any servlet path or handler added later
+           (that isn't claimed by a security="none" chain above) is reachable with no
+           credentials, which is exactly how /xmla was anonymous before saiku#1905.
+
+           This rule must stay LAST: every intentional anonymous surface above
+           (/serverdocs/**, /rest/saiku/session*, /rest/saiku/info**, /rest/saiku/demo/gate/**,
+           the one-click mail unsubscribe/consent-confirm, the share/embed guest read prefixes,
+           /WEB-INF/classes/legacy-schema, the favicon probes) is matched BEFORE it, and the
+           security="none" chains at the top of this file claim their own paths ahead of this
+           chain entirely, so the static SPA (/ui and /ui/**), the public demo pages
+           (/embed-demo**, /aqvira-demo**), /repository and /images, /index.jsp, /style.css and the
+           dedicated /xmla/** chain are all unaffected.
+
+           isFullyAuthenticated() (not hasRole('ADMIN')) — this is a plain "you must be logged
+           in" gate, matching the /rest/** rule; authorization beyond that stays with each
+           resource's own annotations. 401 (anonymous) / 403 (authenticated but unprivileged)
+           is the fail-closed answer for anything not deliberately opened above. Terminal
+           catch-all regression guard: saiku-launcher .../it/TerminalCatchAllIT. -->
+      <security:intercept-url pattern="/**" access="isFullyAuthenticated()" />
       <security:logout logout-url="/logout"/>
       <!-- HTTP Basic re-enabled (saiku#878) so the native MCP endpoint
            and any other stateless agent / DXT-shim client can authenticate

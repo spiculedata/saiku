@@ -28,7 +28,7 @@
 //     `entitlement: 'collaborator'` marker that outlives later pushes, but never
 //     overrides the fork rule.
 
-import { assertBaseDomain, assertPrNumber, assertSha, hostLabelForPr, parseProject, projectForPr } from './preview-guard.mjs';
+import { ENV_DIR, assertBaseDomain, assertPrNumber, assertSha, hostLabelForPr, parseProject, projectForPr } from './preview-guard.mjs';
 import { describeImage, prImageTag } from './preview-images.mjs';
 
 const GIB = 1024 ** 3;
@@ -39,6 +39,15 @@ export const DEFAULTS = {
   /** An environment with no push for this long is torn down (design: 24h). */
   idleHours: 24,
   baseDomain: 'preview.saiku.bi',
+  /**
+   * Show the admin login in the sticky PR comment. These are throwaway, tailnet-only test
+   * environments, so by default the random per-environment password is posted; set
+   * PREVIEW_POST_CREDENTIALS=false to go back to "fetch it from the host" (the repo is public,
+   * so anyone who can read the PR can read the comment).
+   */
+  postCredentials: true,
+  /** The tailnet name of the preview host, only used in the "how to fetch the login" hint. */
+  sshHostHint: 'saiku-preview',
   previewLabel: 'preview',
   /** Logins treated as Hive-authored (case-insensitive); override with PREVIEW_AUTHORS. */
   authors: ['spicule-hive[bot]'],
@@ -500,11 +509,37 @@ const STATUS = {
   down: 'TORN DOWN',
   failed: 'FAILED TO START',
   unbuilt: 'NO PREVIEW',
+  building: 'BUILDING IMAGE',
 };
 
 /** Where validators learn how to fetch credentials. Never the credentials. */
 export const CREDENTIALS_DOC_URL =
   'https://github.com/spiculedata/saiku/blob/development/infra/preview/README.md#credentials-for-validators';
+
+/** A login is rendered only if it has the exact shape the host writes (never arbitrary text). */
+const LOGIN_USER_RE = /^[A-Za-z0-9][A-Za-z0-9_.@-]{0,63}$/;
+const LOGIN_PASSWORD_RE = /^[A-Za-z0-9_.-]{1,128}$/;
+function validLogin(credentials) {
+  const user = credentials?.user;
+  const password = credentials?.password;
+  return LOGIN_USER_RE.test(user ?? '') && LOGIN_PASSWORD_RE.test(password ?? '') ? { user, password } : null;
+}
+
+/**
+ * The comment that PINGS people when a preview comes up. The sticky status comment is edited in
+ * place and GitHub sends no notification for an edit, so a new comment is the only way to tell
+ * the author and subscribers. It repeats no credential: the login (if shown at all) is only in
+ * the sticky comment, in one place.
+ */
+export function announcement(d, { config = DEFAULTS } = {}) {
+  const pr = assertPrNumber(Number(d?.pr));
+  const { url } = urlsFor(pr, config.baseDomain);
+  return [
+    `**Preview is running** for this PR: ${url}/ui/ (private: reachable from the tailnet only).`,
+    '',
+    'The login and status are in the **Preview environment** comment on this PR, which is updated in place on every push.',
+  ].join('\n');
+}
 
 /** The sticky PR comment. Built only from numbers, enums and config. */
 export function comment(d, { config = DEFAULTS, registry } = {}) {
@@ -515,15 +550,28 @@ export function comment(d, { config = DEFAULTS, registry } = {}) {
   lines.push(`**${STATUS[d.action] ?? 'UNKNOWN'}** (${d.reason})`);
 
   if (d.action === 'up') {
-    lines.push('', `Saiku: ${url} (private: reachable from the tailnet only)`);
+    // The app lives under /ui/; the bare root answers 500 (the engine has no landing page).
+    lines.push('', `Saiku: ${url}/ui/ (private: reachable from the tailnet only)`);
     const image = describeImage(d.image);
     if (image) lines.push('', `Image: \`ghcr.io/spiculedata/saiku:${image.tag}\` (this PR's build)`);
-    lines.push(
-      '',
-      'Login as `admin` with a random per-environment password. Validators fetch it as described in ' +
-        `[the preview README](${CREDENTIALS_DOC_URL}); no credential is ever posted here. ` +
-        'The bundled FoodMart sample data is loaded.',
-    );
+    const login = config.postCredentials === false ? null : validLogin(d.credentials);
+    if (login) {
+      lines.push(
+        '',
+        `Login: \`${login.user}\` / \`${login.password}\``,
+        '',
+        'This is a throwaway password for this test environment, shown here on purpose: anyone who can read ' +
+          'this PR can read it, and it only works on the private preview. It stays the same while the ' +
+          'environment is up and changes if it is torn down and rebuilt. The bundled FoodMart sample data is loaded.',
+      );
+    } else {
+      lines.push(
+        '',
+        'Login as `admin` with a random per-environment password. Fetch it with ' +
+          `\`ssh ${config.sshHostHint ?? DEFAULTS.sshHostHint} "grep SAIKU_ADMIN_PASSWORD ${ENV_DIR}/${projectForPr(pr)}.env"\` ` +
+          `(validators: [the preview README](${CREDENTIALS_DOC_URL})). The bundled FoodMart sample data is loaded.`,
+      );
+    }
     lines.push(
       '',
       `Torn down when this PR closes or merges, or after ${idle}h without activity ` +
@@ -563,6 +611,20 @@ export function comment(d, { config = DEFAULTS, registry } = {}) {
       'This PR changes nothing the `docker` workflow builds (poms, `saiku-*/`, `lib/`, `Dockerfile`, ' +
         '`docker/`), so no image exists for it and there is nothing to run. ' +
         'Push a change to one of those paths and the preview is created automatically.',
+    );
+  } else if (d.action === 'building') {
+    const started =
+      d.reason === 'build-started'
+        ? 'No image exists for this PR\'s head commit yet, so a `docker` build was started for it.'
+        : 'The `docker` build for this PR\'s head commit is still running.';
+    lines.push(
+      '',
+      `${started} It usually takes 10 to 15 minutes. The preview comes up automatically as soon as the image ` +
+        'is published, and this comment is updated in place; there is no need to comment again.',
+      '',
+      `It will be served at ${url} (private: reachable from the tailnet only).`,
+      '',
+      'If no image appears within 20 minutes this comment turns into **FAILED TO START**; comment `/preview` to retry.',
     );
   } else if (d.action === 'down') {
     lines.push(

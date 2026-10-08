@@ -26,6 +26,7 @@ PRs use the bare hex. Only the bare form is ever eligible for deletion.
 |---|---|---|
 | push to `development` / `main` | yes | yes (unchanged) |
 | `workflow_dispatch` | yes | yes (branch tag) |
+| `workflow_dispatch` with `pr=<n>` (sent by `/preview`) | yes (that PR's head commit) | yes (`pr-<n>` + head SHA **only**; same-repo, open, targets `development`, not Dependabot) |
 | `pull_request` from a branch in this repo | yes | yes (`pr-<n>` + head SHA) |
 | `pull_request` from a fork | yes (best effort) | **no** |
 | `pull_request` opened by Dependabot | yes (best effort) | **no** |

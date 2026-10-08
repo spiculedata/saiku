@@ -74,7 +74,8 @@ public class MailConfigResource {
      * Per-admin rate limit for the test-send endpoint (saiku#943, P0-C). A test send reaches an
      * external SMTP transport, so an unbounded frequency is a probe/abuse vector even behind the
      * admin gate — cap it low (default 5/min). Mirrors {@code EmailResource#emailRateLimiter}: a
-     * direct {@code new} field + setter, keyed by the authenticated principal.
+     * direct {@code new} field + setter, keyed by the authenticated principal. Production injects
+     * the {@code mailTestSendRateLimiter} SINGLETON (saiku#1913) — a per-request limiter never trips.
      */
     private AiRateLimiter testSendRateLimiter =
             new AiRateLimiter(Integer.getInteger("saiku.mail.test.ratelimit.maxPerMinute", 5), 60_000L);
@@ -138,6 +139,12 @@ public class MailConfigResource {
                     .build();
         }
 
+        // CR/LF in the host is an injection attempt, not a typo: refuse it outright rather than
+        // rewriting it into a different hostname and saving that. Other fields are still stripped.
+        if (containsCrlf(body.getHost())) {
+            log.warn("Refused SMTP host containing CR/LF on save");
+            return badRequest(SMTP_HOST_REJECTED);
+        }
         String host = stripCrlf(body.getHost());
         String username = stripCrlf(body.getUsername());
         String from = validatedAddressOrNull(body.getFrom(), "from");
@@ -153,27 +160,27 @@ public class MailConfigResource {
         // (org.saiku.service.mail.SmtpHostValidator), plus an SMTP port allowlist.
         // A blank host is not a rejection: it clears the setting, which is how an admin turns SMTP
         // off. Only a host that was supplied AND fails the gate is a 400.
-        String clearedHost = null;
-        int clearedPort = body.getPort();
-        if (host != null) {
-            SmtpHostValidator.ValidatedHost validated = validateSmtpHost(host, clearedPort);
-            if (validated == null) {
-                return badRequest(SMTP_HOST_REJECTED);
-            }
-            clearedHost = validated.host();
-            clearedPort = validated.port();
+        if (host == null) {
+            // Turning SMTP off: drop the whole stored config, encrypted password included.
+            MailConfigView cleared = mailConfigStore.clear();
+            log.info("Admin {} cleared the mail configuration", currentUser());
+            return Response.ok(cleared).build();
+        }
+        SmtpHostValidator.ValidatedHost validated = validateSmtpHost(host, body.getPort());
+        if (validated == null) {
+            return badRequest(SMTP_HOST_REJECTED);
         }
 
         MailConfigView view = mailConfigStore.save(
-                clearedHost,
-                clearedPort,
+                validated.host(),
+                validated.port(),
                 username,
                 body.getPassword(), // plaintext in; encrypted at rest by the store; never returned
                 from,
                 body.isStartTls(),
                 body.isSsl(),
                 selfTo);
-        log.info("Admin {} updated mail configuration (host set={})", currentUser(), host != null);
+        log.info("Admin {} updated mail configuration", currentUser());
         // Returns the redacted view — never the password.
         return Response.ok(view).build();
     }
@@ -336,6 +343,10 @@ public class MailConfigResource {
         return Response.status(Response.Status.BAD_REQUEST)
                 .entity(Map.of("error", msg))
                 .build();
+    }
+
+    private static boolean containsCrlf(String s) {
+        return s != null && (s.indexOf('\r') >= 0 || s.indexOf('\n') >= 0);
     }
 
     /** Strip CR/LF so a config value can't smuggle SMTP/log header injection (mirrors EmailMessageAssembler). */

@@ -62,8 +62,15 @@ test('SHA_TAG_LENGTH is the length docker.yml tags PR head builds with (${IMAGE_
   assert.ok(m, 'docker.yml no longer derives a short_sha from IMAGE_SHA: update preview-images.mjs and this test');
   assert.equal(Number(m[1]), SHA_TAG_LENGTH);
   // The tag is the PR HEAD sha, not the merge commit GITHUB_SHA points at on pull_request events.
-  assert.match(workflow, /IMAGE_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/);
-  assert.match(workflow, /type=raw,value=\$\{\{ steps\.publish\.outputs\.short_sha \}\},enable=\$\{\{ github\.event_name == 'pull_request' \}\}/);
+  // (A /preview-dispatched build of a PR head resolves it in the `target` job and tags it the same way.)
+  assert.match(
+    workflow,
+    /IMAGE_SHA: \$\{\{ needs\.target\.outputs\.sha \|\| github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/,
+  );
+  assert.match(
+    workflow,
+    /type=raw,value=\$\{\{ steps\.publish\.outputs\.short_sha \}\},enable=\$\{\{ github\.event_name == 'pull_request' \|\| needs\.target\.outputs\.pr != '' \}\}/,
+  );
 });
 
 test('the image prune label is one docker.yml stamps on every image (docker/metadata-action labels)', () => {

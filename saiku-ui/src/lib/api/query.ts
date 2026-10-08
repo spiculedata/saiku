@@ -43,6 +43,18 @@ export interface ThinDetails {
 	measures: ThinMeasure[];
 }
 
+/** Mirrors the backend `ThinNamedSet` DTO (saiku#775 / PR #820) — a
+ *  reusable MDX set an analyst defines once and references across
+ *  rows / columns / filters within the same query. `caption` is optional
+ *  display text; `properties` carries through backend-recognised set
+ *  properties (currently unused by the panel but preserved on round-trip). */
+export interface ThinNamedSet {
+	name: string;
+	expression: string;
+	caption?: string;
+	properties?: Record<string, unknown>;
+}
+
 export interface ThinQueryModel {
 	axes: Record<AxisLocation, ThinAxis>;
 	visualTotals: boolean;
@@ -51,6 +63,7 @@ export interface ThinQueryModel {
 	details: ThinDetails;
 	calculatedMeasures: unknown[];
 	calculatedMembers: unknown[];
+	namedSets: ThinNamedSet[];
 }
 
 export interface ThinQuery {
@@ -160,7 +173,8 @@ export function newQueryModel(): ThinQueryModel {
 		lowestLevelsOnly: false,
 		details: { axis: 'COLUMNS', location: 'BOTTOM', measures: [] },
 		calculatedMeasures: [],
-		calculatedMembers: []
+		calculatedMembers: [],
+		namedSets: []
 	};
 }
 
