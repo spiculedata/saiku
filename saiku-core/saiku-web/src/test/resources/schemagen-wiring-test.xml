@@ -105,6 +105,22 @@
         <constructor-arg ref="schemaSink"/>
     </bean>
 
+    <!-- ==== quickstart beans (mirror of saiku-beans.xml, saiku#1117) ==== -->
+
+    <!-- Wiring-smoke only — this context never calls ingest(), so the path need not exist nor
+         be writable; a literal value (rather than the production ${saiku.home:...} placeholder,
+         which this minimal standalone context has no PropertyPlaceholderConfigurer to resolve)
+         keeps the test independent of the full webapp context. -->
+    <bean id="quickstartIngestService"
+          class="org.saiku.service.schema.generate.quickstart.QuickstartIngestService">
+        <constructor-arg type="java.nio.file.Path" value="target/quickstart-wiring-smoke-home"/>
+    </bean>
+
+    <bean id="quickstartResource"
+          class="org.saiku.web.rest.resources.quickstart.QuickstartResource">
+        <constructor-arg ref="quickstartIngestService"/>
+    </bean>
+
     <!-- One-click Ossie generation beans (saiku#1439). Mirror of saiku-beans.xml. -->
     <bean id="ossieGenerationJobStore"
           class="org.saiku.service.ossie.generate.OssieGenerationJobStore">

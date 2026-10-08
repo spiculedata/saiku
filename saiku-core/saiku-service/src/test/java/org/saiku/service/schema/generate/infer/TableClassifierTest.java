@@ -118,12 +118,34 @@ public class TableClassifierTest {
 
     @Test
     public void classifyReturnsEntryForEveryTable() {
+        // saiku#1117: a model with exactly one table has nothing else it could be a dimension
+        // of, so it is always FACT — see the lone-table special case in TableClassifier's class
+        // doc. This is the shape a flat CSV/Parquet upload always takes (no FK metadata at all).
         DbTable lone = new DbTable(
                 "public", "lone", Collections.singletonList(pk("id")), Collections.<DbForeignKey>emptyList(), 0L);
         DbModel model = DbModel.of(Collections.singletonList(lone));
         Map<DbTable, TableClassification> result = new TableClassifier().classify(model);
         assertEquals(1, result.size());
-        assertEquals(TableClassification.Kind.ORPHAN, result.get(lone).kind());
+        assertEquals(TableClassification.Kind.FACT, result.get(lone).kind());
+    }
+
+    @Test
+    public void loneTableIsFactRegardlessOfForeignKeysOrRowCount() {
+        // The CSV/Parquet-upload shape: one flat table, no FK metadata, modest row count (a demo
+        // CSV, not a 1000+-row production table). Would be ORPHAN under the general FK/row-count
+        // rule and silently dropped, leaving the quickstart pipeline with zero cubes.
+        DbTable sales = new DbTable(
+                "public",
+                "sales",
+                Arrays.asList(pk("id"), col("amount"), col("quantity")),
+                Collections.<DbForeignKey>emptyList(),
+                42L);
+        DbModel model = DbModel.of(Collections.singletonList(sales));
+
+        Map<DbTable, TableClassification> result = new TableClassifier().classify(model);
+
+        assertEquals(TableClassification.Kind.FACT, result.get(sales).kind());
+        assertTrue(result.get(sales).reason().toLowerCase().contains("only table"));
     }
 
     @Test

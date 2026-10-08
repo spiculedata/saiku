@@ -1470,6 +1470,26 @@
         <property name="userService" ref="userServiceBean"/>
     </bean>
 
+    <!-- ==========================================================================
+         Quickstart CSV upload (saiku#1117): the missing first step of the schema-gen
+         pipeline above — turns an uploaded CSV into a dedicated H2 table under
+         ${saiku.home}/data/quickstart/<table>/. The client registers the returned
+         JDBC info as a Saiku datasource itself (POST /admin/datasources) and drives
+         the existing schema-generator endpoints above from there; this resource never
+         touches the datasource repository. Exposes POST /rest/saiku/admin/quickstart/upload
+         via the same @Path auto-scan as schemaGeneratorResource.
+         ========================================================================== -->
+
+    <bean id="quickstartIngestService"
+          class="org.saiku.service.schema.generate.quickstart.QuickstartIngestService">
+        <constructor-arg type="java.nio.file.Path" value="${saiku.home:./saiku-home}"/>
+    </bean>
+
+    <bean id="quickstartResource"
+          class="org.saiku.web.rest.resources.quickstart.QuickstartResource">
+        <constructor-arg ref="quickstartIngestService"/>
+    </bean>
+
     <!-- One-click Ossie model generation (saiku#1439). Reuses the whole schema-gen graph above
          — same introspector, inferrer, enricher, op-applier, connection provider and sidecar
          store — and adds the hop that was missing: draft → Mondrian → Ossie YAML, validated and
