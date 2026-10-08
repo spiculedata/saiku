@@ -1117,6 +1117,23 @@
         <property name="sessionService" ref="sessionService"/>
     </bean>
 
+    <!-- Notebook CRUD (org.saiku.web.rest.resources.notebooks.NotebookResource
+         @ /saiku/api/notebooks, issue #1108). Another direct clone of the
+         dashboards resource: notebooks persist as opaque .saikunb JSON blobs
+         under the existing repo via the same JCR file primitives, inheriting
+         the permission model + path conventions. The document is opaque —
+         the UI owns the schema; the backend never interprets it. -->
+    <bean id="notebookResource"
+          class="org.saiku.web.rest.resources.notebooks.NotebookResource">
+        <property name="datasourceService" ref="datasourceServiceBean"/>
+        <property name="sessionService" ref="sessionService"/>
+        <!-- POST /saiku/api/notebooks/run (issue #1108): resolves an MDX
+             cell's AiCubeRef against the live schema and executes via
+             queryResource2 — see NotebookCubeResolver's javadoc. -->
+        <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
+        <property name="query2Resource" ref="queryResource2"/>
+    </bean>
+
     <!-- Tile plugin catalogue (App Builder Phase 2, saiku#1441). Admin-installed
          self-contained HTML tile widgets under saiku-home/tile-plugins/<id>/ are
          scanned lazily (mtime signature) and served over REST so the App Builder
@@ -1202,6 +1219,21 @@
         <property name="datasourceService" ref="datasourceServiceBean"/>
         <property name="sessionService" ref="sessionService"/>
         <property name="aiQueryResource" ref="aiQueryResource"/>
+    </bean>
+
+    <!-- Notebook counterpart of shareViewResource (issue #1108), sitting under
+         the same /rest/saiku/share/view/ prefix shareTokenAuthFilter already
+         scopes to ROLE_SHARE_GUEST — no filter or intercept-url change needed.
+         Re-runs a shared notebook's MDX cells via queryResource2#execute
+         (raw-MDX path, not the AI Query API dashboards use) under the owner's
+         identity via sessionService.runAs. -->
+    <bean id="notebookShareViewResource" scope="request"
+          class="org.saiku.web.rest.resources.share.NotebookShareViewResource">
+        <aop:scoped-proxy/>
+        <property name="datasourceService" ref="datasourceServiceBean"/>
+        <property name="sessionService" ref="sessionService"/>
+        <property name="query2Resource" ref="queryResource2"/>
+        <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
     </bean>
 
     <!-- ====================================================================
