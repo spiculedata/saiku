@@ -120,6 +120,23 @@
         <property name="logExtractor" ref="logwriterbean"/>
     </bean>
 
+    <!-- saiku#1120: measure/dimension/hierarchy/level lineage — GET /saiku/admin/lineage?measure=...
+         scans saved queries, dashboards and schema calculated members for a reference. -->
+    <bean id="measureLineageServiceBean" class="org.saiku.web.rest.resources.lineage.MeasureLineageService">
+        <property name="datasourceService" ref="datasourceServiceBean"/>
+    </bean>
+    <bean id="lineageResourceBean" class="org.saiku.web.rest.resources.lineage.LineageResource">
+        <property name="lineageService" ref="measureLineageServiceBean"/>
+        <property name="userService" ref="userServiceBean"/>
+    </bean>
+
+    <!-- saiku#779: role inventory, "test as" preview and lookup-mode grant editing
+         (GET/POST/PUT/DELETE /saiku/admin/roles). Admin-gated. -->
+    <bean id="roleAdminResource" class="org.saiku.web.rest.resources.RoleAdminResource">
+        <property name="userService" ref="userServiceBean"/>
+        <property name="datasourceService" ref="datasourceServiceBean"/>
+    </bean>
+
     <bean id="olapDiscoverServiceBean" class="org.saiku.service.olap.OlapDiscoverService">
         <property name="datasourceService" ref="datasourceServiceBean"/>
     </bean>
@@ -243,6 +260,8 @@
         <aop:scoped-proxy/>
         <property name="mailSender" ref="mailSender"/>
         <property name="mailConfig" ref="mailConfig"/>
+        <!-- saiku#1913: singleton limiter — a per-request instance never trips. -->
+        <property name="emailRateLimiter" ref="mailEmailRateLimiter"/>
     </bean>
 
     <!-- saiku#943 Phase 0 (mail-setup wizard). Writable, encrypted-at-rest,
@@ -269,6 +288,8 @@
         <property name="mailConfigStore" ref="mailConfigStore"/>
         <property name="mailConfigResolver" ref="mailConfigResolver"/>
         <property name="userService" ref="userServiceBean"/>
+        <!-- saiku#1913: singleton limiter — a per-request instance never trips. -->
+        <property name="testSendRateLimiter" ref="mailTestSendRateLimiter"/>
     </bean>
 
     <!-- saiku#1811 PR1 (recipient-trust model). Writable, file-backed recipient
@@ -315,6 +336,8 @@
         <aop:scoped-proxy/>
         <property name="suppressionStore" ref="suppressionStore"/>
         <property name="unsubscribeTokens" ref="unsubscribeTokens"/>
+        <!-- saiku#1913: singleton limiter — a per-request instance never trips. -->
+        <property name="rateLimiter" ref="mailUnsubscribeRateLimiter"/>
     </bean>
 
     <!-- saiku#1811 PR3 (double-opt-in consent + fail-closed RecipientGate). Writable,
@@ -348,6 +371,9 @@
     <bean id="consentConfirmResource" scope="request" class="org.saiku.web.email.ConsentConfirmResource">
         <aop:scoped-proxy/>
         <property name="consentStore" ref="recipientConsentStore"/>
+        <!-- saiku#1913: singleton limiters — a per-request instance never trips. -->
+        <property name="rateLimiter" ref="mailConsentRateLimiter"/>
+        <property name="addressRateLimiter" ref="mailConsentAddressRateLimiter"/>
     </bean>
     <!-- saiku#1811 PR4 (the send gate — consent invite + multi-recipient send). THIS IS
          THE FIRST CODE THAT CAN MAIL A NON-SELF ADDRESS. Fenced by a default-OFF, ops-only
@@ -402,6 +428,9 @@
         <property name="consentInviteService" ref="consentInviteService"/>
         <property name="mailConfigResolver" ref="mailConfigResolver"/>
         <property name="userService" ref="userServiceBean"/>
+        <!-- saiku#1913: singleton limiters — a per-request instance never trips. -->
+        <property name="inviteRateLimiter" ref="mailInviteRateLimiter"/>
+        <property name="sendRateLimiter" ref="mailSendRateLimiter"/>
     </bean>
 
     <!-- saiku#1029: demo email gate. fromEnvironment() reads WORKOS_API_KEY +
@@ -419,6 +448,12 @@
     <bean id="infoResource" class="org.saiku.web.rest.resources.InfoResource">
         <property name="platformUtilsService" ref="platformBean"/>
         <property name="demoGate" ref="demoGate"/>
+        <!-- saiku#904: /saiku/info/diagnostics reads these factories' resolved config (never the
+             beans they build) so it can report provider/model/endpoint without constructing an
+             HTTP client or making a network call. Defined further down this file, but Spring
+             resolves the dependency graph regardless of declaration order. -->
+        <property name="askProviderFactory" ref="aiAskProviderFactory"/>
+        <property name="schemaGenProviderFactory" ref="llmProviderFactory"/>
     </bean>
 
     <!-- saiku#1868: per-user preferences (/saiku/api/preferences). Gives the UI an account-level
@@ -441,6 +476,12 @@
         <property name="thinQueryService" ref="thinQueryBean"/>
         <property name="repository" ref="repository2bean"/>
         <property name="asyncQueryService" ref="asyncQueryServiceBean"/>
+        <!-- saiku#837: reuse the AI query surface's cube-metadata service so
+             drillthrough returns= on the Query2 workspace path resolves bare
+             captions to qualified MDX the same way AiQueryResource does
+             (saiku#782). Defined below, but Spring resolves bean refs by id
+             regardless of declaration order. -->
+        <property name="cubeMetadataService" ref="aiCubeMetadataServiceBean"/>
     </bean>
 
     <!-- ====================================================================
@@ -504,11 +545,24 @@
         <property name="policyGuard" ref="aiPolicyGuard"/>
     </bean>
 
+    <!-- saiku#909 — Tier-1 tile-title/description suggestion (POST /ai/describe-query).
+         Reuses the ask feature's own credentials (saiku.ai.ask.*) rather than a
+         separate config namespace — same "off by default (no API key), 503 with a
+         clear message until configured" posture as aiAskServiceBean / cubeDesignerAiService. -->
+    <bean id="tileDescribeService"
+          class="org.saiku.service.olap.ai.describe.TileDescribeService">
+        <constructor-arg value="${saiku.ai.ask.apiKey:}"/>
+        <constructor-arg value="${saiku.ai.ask.model:}"/>
+        <constructor-arg value="${saiku.ai.ask.endpoint:}"/>
+        <constructor-arg value="${saiku.ai.ask.timeoutSeconds:60}"/>
+    </bean>
+
     <bean id="aiQueryResource" scope="request"
           class="org.saiku.web.rest.resources.AiQueryResource">
         <aop:scoped-proxy/>
         <property name="aiPolicyGuard" ref="aiPolicyGuard"/>
         <property name="kAnonymityFilter" ref="kAnonymityFilter"/>
+        <property name="describeService" ref="tileDescribeService"/>
         <property name="thinQueryService" ref="thinQueryBean"/>
         <property name="cubeMetadataService" ref="aiCubeMetadataServiceBean"/>
         <property name="asyncQueryService" ref="asyncQueryServiceBean"/>
@@ -524,11 +578,38 @@
              saiku.ai.ask.provider is set to 'anthropic' or 'openai' and the
              matching API key env var is supplied. See aiAskServiceBean below. -->
         <property name="askService" ref="aiAskServiceBean"/>
+        <!-- saiku#1430: certified-query catalogue backing GET /ai/certified and
+             POST /ai/certified/{id}/run (verbatim execution + source/certifiedId attribution). -->
+        <property name="certifiedQueries" ref="certifiedQueryRegistryBean"/>
+        <!-- saiku#1913: singleton limiter — a per-request instance never trips. -->
+        <property name="askRateLimiter" ref="aiQueryAskRateLimiter"/>
         <!-- NL email-draft slice, Task 3: same mailSender bean emailResource uses for its
              health check (above), so /ai/ask's EMAIL_DRAFT outcome refuses honestly
              ("Email isn't set up on this server.") whenever mail delivery isn't configured,
              instead of handing back an un-sendable draft. -->
         <property name="mailSender" ref="mailSender"/>
+    </bean>
+
+    <!-- Vendor semantic-model import (#1730) — convert a LookML / dbt manifest upload into
+         Ossie YAML, validate it, and (on the explicit save call) write it under
+         ${saiku.home}/semantic-models/. The registry is the "converter hub" seam: a new
+         spoke is a VendorModelConverter plus one constructor arg, no REST or UI change. -->
+    <bean id="vendorModelConverterRegistry" class="org.saiku.service.ossie.converter.VendorModelConverterRegistry">
+        <constructor-arg>
+            <list>
+                <bean class="org.saiku.service.ossie.converter.LookmlConverter"/>
+                <bean class="org.saiku.service.ossie.converter.DbtManifestConverter"/>
+            </list>
+        </constructor-arg>
+    </bean>
+    <bean id="vendorModelImportService" class="org.saiku.service.ossie.converter.VendorModelImportService">
+        <constructor-arg ref="vendorModelConverterRegistry"/>
+        <constructor-arg type="java.nio.file.Path"
+                         value="${saiku.home:./saiku-home}/semantic-models"/>
+    </bean>
+    <bean id="ossieImportResource" class="org.saiku.web.rest.resources.OssieImportResource">
+        <property name="importService" ref="vendorModelImportService"/>
+        <property name="userService" ref="userServiceBean"/>
     </bean>
 
     <!-- Ossie AI Query API (#1394) — parallel to aiQueryResource but for semantic-YAML
@@ -548,6 +629,8 @@
         <property name="asyncQueryService" ref="ossieAsyncQueryServiceBean"/>
         <property name="kAnonymityFilter" ref="kAnonymityFilter"/>
         <property name="askService" ref="ossieAiAskServiceBean"/>
+        <!-- saiku#1913: singleton limiter — a per-request instance never trips. -->
+        <property name="askRateLimiter" ref="aiOssieAskRateLimiter"/>
     </bean>
     <!-- R5: Ossie natural-language ask. Reads saiku.ai.ask.provider + API key from env/props;
          disabled by default (health returns configured=false; /ask returns 503). -->
@@ -627,12 +710,55 @@
         <property name="evalsDir" value="${saiku.home:./saiku-home}/evals"/>
     </bean>
 
+    <!-- saiku#1477 (Phase 2b): in-server cron that keeps the eval store populated.
+
+         OFF BY DEFAULT. Nothing is scheduled unless the deployment sets
+         saiku.ai.eval.schedule.cron to a Spring cron expression, e.g.
+
+           saiku.ai.eval.schedule.cron = 0 30 3 * * *      # 03:30 daily
+           # or, from the JVM: -Dsaiku.ai.eval.schedule.cron="0 */6 * * * *"
+
+         An unset (blank) expression logs one INFO line at boot and starts no
+         thread; an unparseable one logs one ERROR and likewise stays inert, so a
+         typo in saiku-beans.properties can never fail the boot. Each fire builds
+         a LiveEvalAskAdapter + ScheduledEvalRunner on the spot and calls
+         runScheduled(), so an inert scheduler constructs no ask adapter and
+         touches no datasource. Self-rescheduling (next fire computed AFTER the
+         sweep) means a sweep that overruns its interval never overlaps itself.
+
+         Cost note: every fire is a real LLM sweep over every *.eval.yaml, so this
+         stays opt-in — the out-of-process `saiku eval` CLI (saiku#1478) remains
+         the CI-facing path.
+
+         evalThinQueryServiceBean is a dedicated SINGLETON ThinQueryService rather
+         than thinQueryBean because the cron thread has no HTTP request and
+         therefore no active 'session' scope to resolve the scoped proxy against
+         (resolving it off-thread throws). Its collaborators are all singletons;
+         only the cron thread ever touches this instance. -->
+    <bean id="evalThinQueryServiceBean" class="org.saiku.service.olap.ThinQueryService">
+        <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
+        <property name="queryCache" ref="saikuQueryCacheBean"/>
+        <property name="userService" ref="userServiceBean"/>
+        <property name="queryCoalescer" ref="queryCoalescerBean"/>
+        <property name="ossieQueryService" ref="ossieQueryServiceBean"/>
+    </bean>
+
+    <bean id="evalScheduler" class="org.saiku.service.olap.ai.eval.EvalCronScheduler"
+          factory-method="forCron" init-method="start" destroy-method="stop">
+        <constructor-arg value="${saiku.ai.eval.schedule.cron:}"/>
+        <constructor-arg value="${saiku.home:./saiku-home}/evals"/>
+        <constructor-arg ref="aiAskServiceBean"/>
+        <constructor-arg ref="aiCubeMetadataServiceBean"/>
+        <constructor-arg ref="evalThinQueryServiceBean"/>
+        <constructor-arg ref="evalResultStoreBean"/>
+    </bean>
+
     <!-- ====================================================================
          Natural-language ask layer (POST /saiku/api/ai/ask).
 
          Off by default. Activate per-deployment by setting:
 
-           saiku.ai.ask.provider = anthropic | openai
+           saiku.ai.ask.provider = anthropic | openai | azure-openai | ollama
            env  ANTHROPIC_API_KEY = sk-...   (for anthropic)
            env  OPENAI_API_KEY    = sk-...   (for openai)
 
@@ -640,6 +766,18 @@
            saiku.ai.ask.model    = claude-sonnet-4-7 | gpt-4o-mini | ...
            saiku.ai.ask.endpoint = https://my.openai-compatible.host/v1/chat/completions
            saiku.ai.ask.apiKey   = sk-... (explicit override of the env var)
+
+         saiku#904 — provider=ollama talks to a local/self-hosted Ollama's
+         OpenAI-compatible endpoint and needs NO api key (Ollama doesn't check
+         one): the two lines above are enough —
+
+           saiku.ai.ask.provider = ollama
+           saiku.ai.ask.model    = llama3.1:8b-instruct-q4_K_M   (optional; defaults to llama3.1)
+           saiku.ai.ask.endpoint = http://my-ollama-host:11434/v1/chat/completions   (optional; defaults to localhost)
+
+         Data never leaves the deployment's own trust boundary with this
+         provider — the operator-visible difference from openai/anthropic is
+         just the URL.
 
          API keys are never logged; a single INFO line at boot records the
          selected provider + model.
@@ -661,6 +799,10 @@
         <constructor-arg ref="aiAskProviderBean"/>
         <property name="skills" ref="agentSkillRegistryBean"/>
         <property name="spaces" ref="agentSpaceRegistryBean"/>
+        <!-- saiku#1430: certified query catalogue. When an ask's intent overlaps a certified
+             matchIntent, the ask service short-circuits to that query and runs it verbatim
+             instead of asking the model to re-derive it. -->
+        <property name="certifiedQueries" ref="certifiedQueryRegistryBean"/>
         <!-- LLM-egress gate: strips the cellset digest from the prompt when
              SAIKU_AI_LLM_EGRESS / ai.llm.egress doesn't permit cell data egress. -->
         <property name="egressGuard" ref="aiLlmEgressGuard"/>
@@ -672,6 +814,10 @@
              before it is digested and fed back to the model — parity with the masking every other
              egress path (records/matrix via AiQueryResource) already applies. -->
         <property name="kAnonymityFilter" ref="kAnonymityFilter"/>
+        <!-- Outbound MCP tool catalogue (saiku#1425) — admin-enabled external tools the chained-ask
+             loop offers alongside the built-in emit_* tools. Optional: null when no servers are
+             registered means the loop simply never advertises any mcp__* tool. -->
+        <property name="mcpOutbound" ref="mcpOutboundToolCatalogBean"/>
     </bean>
 
     <!-- Skill catalogue (saiku#1426). Markdown files with YAML frontmatter under
@@ -695,6 +841,41 @@
          Writes JSON personas through the registry (which rescans on write). Admin-gated. -->
     <bean id="agentSpaceAdminResource" class="org.saiku.web.rest.resources.AgentSpaceAdminResource">
         <property name="registry" ref="agentSpaceRegistryBean"/>
+    </bean>
+
+    <!-- Certified-query catalogue (saiku#1430). JSON entries under saiku-home/certified/ pair an
+         admin-approved ThinQuery with the intent phrasings that should route to it. Exposed at
+         GET /saiku/api/ai/certified and executed verbatim by POST /saiku/api/ai/certified/{id}/run;
+         the ask layer prefers a certified answer over re-deriving when the intent matches. -->
+    <bean id="certifiedQueryRegistryBean"
+          class="org.saiku.service.olap.ai.ask.CertifiedQueryRegistry">
+        <constructor-arg type="java.lang.String" value="${saiku.home:./saiku-home}/certified"/>
+    </bean>
+
+    <!-- ====================================================================
+         Outbound MCP (saiku#1425) — admin-registered external MCP servers DimSum can call
+         mid-conversation. JSON registrations under saiku-home/mcp-servers/*.json, same scan/CRUD
+         model as Agent Spaces. Off by default: a server contributes NOTHING to the ask layer until
+         an admin explicitly enables individual tools (see McpOutboundServer / docs/MCP-OUTBOUND.md).
+         ==================================================================== -->
+    <bean id="mcpOutboundServerRegistryBean"
+          class="org.saiku.service.mcp.outbound.McpOutboundServerRegistry">
+        <constructor-arg type="java.lang.String" value="${saiku.home:./saiku-home}/mcp-servers"/>
+    </bean>
+
+    <bean id="mcpOutboundClientBean" class="org.saiku.service.mcp.outbound.McpOutboundClient"/>
+
+    <bean id="mcpOutboundToolCatalogBean" class="org.saiku.service.mcp.outbound.McpOutboundToolCatalog">
+        <constructor-arg ref="mcpOutboundServerRegistryBean"/>
+        <constructor-arg ref="mcpOutboundClientBean"/>
+    </bean>
+
+    <!-- Admin CRUD (GET/PUT/DELETE /saiku/admin/mcp-servers, GET .../{id}/tools for live
+         discovery). Admin-gated, same posture as agentSpaceAdminResource. -->
+    <bean id="mcpOutboundAdminResource" class="org.saiku.web.rest.resources.McpOutboundAdminResource">
+        <property name="registry" ref="mcpOutboundServerRegistryBean"/>
+        <property name="client" ref="mcpOutboundClientBean"/>
+        <property name="catalog" ref="mcpOutboundToolCatalogBean"/>
     </bean>
 
     <!-- ====================================================================
@@ -728,6 +909,72 @@
          fronted by a proxy you control). -->
     <bean id="loginRateLimiter" class="org.saiku.web.security.ratelimit.LoginRateLimiter"/>
 
+    <!-- saiku#1913: per-endpoint AI/mail rate limiters as SINGLETON beans.
+         Every limiter below used to be `new AiRateLimiter(...)` in a field of a
+         scope="request" resource, so its bucket map was rebuilt (empty) on each
+         request and tryAcquire() always saw count=1 -> the limit never tripped.
+         AiRateLimiter.shared(name) keys its bucket store by name, so every
+         request's resource instance counts in ONE budget. The resources keep a
+         private per-instance limiter as their field default (correct for unit
+         tests, useless in production); the injection below is what makes the
+         cap real, and AiRateLimiterWiringTest fails if one is ever dropped. -->
+    <bean id="aiQueryAskRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="ai.query.ask"/>
+    </bean>
+    <bean id="aiOssieAskRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="ai.ossie.ask"/>
+    </bean>
+    <bean id="mailUnsubscribeRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="mail.unsubscribe"/>
+        <constructor-arg value="${saiku.mail.unsubscribe.ratelimit.maxPerMinute:20}"/>
+        <constructor-arg value="60000"/>
+    </bean>
+    <bean id="mailConsentRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="mail.consent"/>
+        <constructor-arg value="${saiku.mail.consent.ratelimit.maxPerMinute:20}"/>
+        <constructor-arg value="60000"/>
+    </bean>
+    <bean id="mailConsentAddressRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="mail.consent.address"/>
+        <constructor-arg value="${saiku.mail.consent.address.ratelimit.maxPerMinute:10}"/>
+        <constructor-arg value="60000"/>
+    </bean>
+    <bean id="mailTestSendRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="mail.test"/>
+        <constructor-arg value="${saiku.mail.test.ratelimit.maxPerMinute:5}"/>
+        <constructor-arg value="60000"/>
+    </bean>
+    <bean id="mailInviteRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="mail.invite"/>
+        <constructor-arg value="${saiku.mail.invite.ratelimit.maxPerMinute:5}"/>
+        <constructor-arg value="60000"/>
+    </bean>
+    <bean id="mailSendRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="mail.send"/>
+        <constructor-arg value="${saiku.mail.send.ratelimit.maxPerMinute:3}"/>
+        <constructor-arg value="60000"/>
+    </bean>
+    <bean id="mailEmailRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="mail.email"/>
+        <constructor-arg value="${saiku.email.ratelimit.maxPerMinute:10}"/>
+        <constructor-arg value="60000"/>
+    </bean>
+    <bean id="jobRunNowRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="jobs.runNow"/>
+        <constructor-arg value="${saiku.jobs.run.ratelimit.maxPerMinute:10}"/>
+        <constructor-arg value="60000"/>
+    </bean>
+
     <!-- saiku#878 follow-up: replace BasicAuthenticationEntryPoint with
          an entry point that returns 401 without WWW-Authenticate. The
          SPA's XHRs hit 401s during normal "is the user signed in?"
@@ -736,6 +983,30 @@
     <bean id="basicAuth401NoChallenge"
           class="org.springframework.security.web.authentication.HttpStatusEntryPoint">
         <constructor-arg value="UNAUTHORIZED"/>
+    </bean>
+
+    <!-- saiku#1950: a REAL `WWW-Authenticate: Basic realm="..."` entry point, used ONLY by
+         the dedicated stateless /xmla/** chain in applicationContext-saiku.xml.
+
+         WHY THIS EXISTS ALONGSIDE basicAuth401NoChallenge: the bare-401 entry point is right
+         for the SPA — its XHR "is the user signed in?" probes must not pop a native browser
+         auth dialog over /ui/ (saiku#878) — but it strips the challenge header, and
+         challenge-driven XMLA clients only send credentials IN RESPONSE TO a challenge.
+         Excel / MSOLAP over WinHTTP (web.xml ships Source=Excel) negotiate:
+         anonymous request -> 401 + WWW-Authenticate: Basic -> retry with credentials.
+         With the header suppressed those clients can never connect at all. Pre-emptive-Basic
+         clients (olap4j with credentials in the connect string, curl -u, most Python/Java
+         XMLA libraries) work either way, which is why the breakage is invisible to them.
+
+         The two entry points are deliberately NOT merged: sharing one would either
+         re-introduce the browser popup on the SPA or strip the challenge back off /xmla.
+         Splitting by chain is the point — XMLA is a stateless machine protocol where the
+         challenge IS the handshake; the SPA is a cookie-auth browser app where the popup is
+         a defect. The main SPA chain keeps basicAuth401NoChallenge; only /xmla/** points
+         here. Locked by XmlaAuthIT#spaChainStillOmitsBasicChallenge. -->
+    <bean id="xmlaBasicAuthChallenge"
+          class="org.springframework.security.web.authentication.www.BasicAuthenticationEntryPoint">
+        <property name="realmName" value="Saiku XMLA"/>
     </bean>
 
     <!-- saiku#878: short-circuit Basic / form auth attempts from blocked IPs
@@ -1032,12 +1303,24 @@
          saiku-beans.properties). Defaults to 'noop' (offline rule-based).
          Flip to 'anthropic' and supply saiku.schemagen.llm.anthropic.apiKey
          (or set the ANTHROPIC_API_KEY env var) to enable live enrichment.
+
+         saiku#904 — 'openai' and 'ollama' are also supported, sharing one
+         OpenAI-compatible provider: 'openai' talks to the hosted OpenAI API
+         (needs saiku.schemagen.llm.openai.apiKey or OPENAI_API_KEY);
+         'ollama' talks to a local/self-hosted Ollama instance and needs NO
+         key (Ollama doesn't check one) — just
+         saiku.schemagen.llm.provider=ollama. Both accept optional
+         saiku.schemagen.llm.openai.model / .endpoint overrides.
+
          Missing/invalid config falls back to NoopProvider with a WARN log. -->
     <bean id="llmProviderFactory"
           class="org.saiku.service.schema.generate.enrich.provider.LlmProviderFactory">
         <constructor-arg value="${saiku.schemagen.llm.provider:noop}"/>
         <constructor-arg value="${saiku.schemagen.llm.anthropic.apiKey:}"/>
         <constructor-arg value="${saiku.schemagen.llm.anthropic.model:}"/>
+        <constructor-arg value="${saiku.schemagen.llm.openai.apiKey:}"/>
+        <constructor-arg value="${saiku.schemagen.llm.openai.model:}"/>
+        <constructor-arg value="${saiku.schemagen.llm.openai.endpoint:}"/>
     </bean>
 
     <bean id="llmProvider"
@@ -1123,6 +1406,28 @@
         <constructor-arg ref="datasourceServiceBean"/>
         <property name="userService" ref="userServiceBean"/>
         <property name="aiService" ref="cubeDesignerAiService"/>
+    </bean>
+
+    <!-- saiku#1107: SQL workbench — read-only ad-hoc SQL against a datasource's underlying JDBC
+         connection, gated to ROLE_SQL_EXEC/ROLE_ADMIN. Reuses schemaGenConnectionProvider (same
+         JdbcUrlPolicy-guarded connection resolution as the cube/schema designer) and its own
+         append-only audit log at ${saiku.home}/logs/sql-workbench-audit.jsonl. -->
+    <bean id="sqlWorkbenchAuditLog" class="org.saiku.service.sqlworkbench.SqlWorkbenchAuditLog"/>
+
+    <bean id="sqlWorkbenchService" class="org.saiku.service.sqlworkbench.SqlWorkbenchService">
+        <constructor-arg ref="schemaGenConnectionProvider"/>
+        <constructor-arg ref="datasourceServiceBean"/>
+        <constructor-arg ref="sqlWorkbenchAuditLog"/>
+    </bean>
+
+    <bean id="sqlWorkbenchResource" class="org.saiku.web.rest.resources.sqlworkbench.SqlWorkbenchResource">
+        <constructor-arg ref="sqlWorkbenchService"/>
+        <property name="userService" ref="userServiceBean"/>
+    </bean>
+
+    <bean id="sqlWorkbenchAuditResource"
+          class="org.saiku.web.rest.resources.sqlworkbench.SqlWorkbenchAuditResource">
+        <property name="auditLog" ref="sqlWorkbenchAuditLog"/>
     </bean>
 
     <!-- ====================================================================
@@ -1258,9 +1563,84 @@
         <constructor-arg ref="mailLinkBuilder"/>
     </bean>
 
+    <!-- ====================================================================
+         #1099: WEBHOOK_DIGEST handler — Slack / Microsoft Teams channel digests.
+
+         Webhooks only, NO OAuth: an admin pastes a Slack or Teams incoming-webhook
+         URL into the job payload (SSRF-validated at parse time, same
+         WebhookUrlValidator saiku#1098 built), and on its cadence this handler
+         reads the SAME small set of key measures as the email digest (again via
+         aiMeasureValueReader — a fresh ThinQueryService per run, safe off-request)
+         and POSTs a Slack Block Kit / Teams MessageCard summary plus a deep link
+         to the LIVE dashboard (mailLinkBuilder — SSRF-safe, no request-controlled
+         host).
+
+         *** LEAN, LINK-BASED. *** Same posture as #943's DASHBOARD_DIGEST: no
+         dashboard renderer, no headless browser, no PNG attachment — the renderer
+         (#1810) is out of scope. The OAuth-bot / Graph one-click install variant
+         is explicitly out of scope for this repo (saiku-cloud#1210).
+
+         There is no "self" fallback here (a chat webhook has no self-address
+         equivalent) — a delivery failure simply fails the run.
+         ==================================================================== -->
+
+    <!-- Generic SSRF-hardened JSON POST sender, shared shape with webhookAlertChannel's transport
+         (validated-resolve + DNS-rebind re-check immediately before send). -->
+    <bean id="webhookJsonSender" class="org.saiku.service.schedule.alert.WebhookJsonSender"/>
+
+    <bean id="channelDigestJobHandler" class="org.saiku.service.schedule.digest.ChannelDigestJobHandler">
+        <constructor-arg ref="aiMeasureValueReader"/>
+        <constructor-arg ref="webhookJsonSender"/>
+        <constructor-arg ref="mailLinkBuilder"/>
+    </bean>
+
+    <!-- ====================================================================
+         #1810: headless dashboard snapshot renderer (PDF/PNG) — WIRED, NOT
+         YET CONSUMED.
+
+         A dashboard renders server-side with no browser attached: PDF via
+         OpenPDF, PNG via headless AWT. The unit of work is a SIGNED,
+         SELF-ORIGIN reference (dashboardPath + panels + owner + expiry, HMAC'd
+         under a key derived from the per-install key) — never a URL. There is
+         no field in which a caller could name a fetch target, the dashboard is
+         resolved locally, and the renderer issues NO outbound request, so there
+         is nothing to redirect off-origin. Verification happens BEFORE any
+         measure is read, and the signed owner must equal the caller's
+         authenticated name.
+
+         Renders run on the bounded pool below under a wall-clock timeout with a
+         panel cap and an output byte cap, all fail-closed, so a pathological
+         dashboard is abandoned rather than wedging a scheduler thread.
+
+         This bean is the dependency #943 (PDF subscriptions) and #1099 (PNG
+         digests) will consume; the DASHBOARD_DIGEST handler above remains the
+         lean link-based version and does NOT call it yet.
+         ==================================================================== -->
+    <bean id="snapshotReferenceSigner" class="org.saiku.service.snapshot.SnapshotReferenceSigner"/>
+
+    <!-- The renderer owns its own small, fixed, bounded render pool (the same shape JobScheduler uses)
+         rather than borrowing a Spring one: a render is a short CPU-bound job, and the service needs a
+         non-queueing rejection policy to fail cleanly under load. destroy-method="shutdown" interrupts
+         in-flight renders on context close. -->
+    <bean id="snapshotRenderService" class="org.saiku.service.snapshot.SnapshotRenderService"
+          destroy-method="shutdown">
+        <constructor-arg ref="snapshotReferenceSigner"/>
+        <!-- The SAME off-request measure seam the alert + digest handlers use, so a snapshot reads
+             exactly the values the owner would see interactively, under the owner's SecurityContext. -->
+        <constructor-arg ref="aiMeasureValueReader"/>
+        <constructor-arg>
+            <bean class="org.saiku.service.snapshot.SnapshotLimits">
+                <constructor-arg value="64"/>
+                <constructor-arg value="30000"/>
+                <constructor-arg value="8388608"/>
+            </bean>
+        </constructor-arg>
+    </bean>
+
     <!-- The live engine. init-method="start" starts the ticker at boot; destroy-method="shutdown"
          stops both the ticker and worker pools cleanly on context close. Registered handlers: the
-         no-op ("NOOP") and the threshold-alert ("THRESHOLD_ALERT", #1098). -->
+         no-op ("NOOP"), the threshold-alert ("THRESHOLD_ALERT", #1098), the email dashboard digest
+         ("DASHBOARD_DIGEST", #943), and the Slack/Teams channel digest ("WEBHOOK_DIGEST", #1099). -->
     <bean id="jobScheduler" class="org.saiku.service.schedule.JobScheduler"
           init-method="start" destroy-method="shutdown">
         <constructor-arg ref="jobStore"/>
@@ -1271,6 +1651,7 @@
                 <entry key="NOOP" value-ref="noOpJobHandler"/>
                 <entry key="THRESHOLD_ALERT" value-ref="thresholdAlertJobHandler"/>
                 <entry key="DASHBOARD_DIGEST" value-ref="dashboardDigestJobHandler"/>
+                <entry key="WEBHOOK_DIGEST" value-ref="channelDigestJobHandler"/>
             </map>
         </property>
     </bean>
@@ -1284,6 +1665,63 @@
         <aop:scoped-proxy/>
         <property name="jobStore" ref="jobStore"/>
         <property name="jobScheduler" ref="jobScheduler"/>
+        <property name="userService" ref="userServiceBean"/>
+        <!-- saiku#1913: singleton limiter — a per-request instance never trips. -->
+        <property name="runNowRateLimiter" ref="jobRunNowRateLimiter"/>
+    </bean>
+
+    <!-- ====================================================================
+         SCIM 2.0 provisioning for enterprise IdPs (issue #1438).
+         Mounted at /rest/scim/v2 (Jersey is prefix-mapped /rest/*, so the URL an
+         IdP is configured with is https://host/rest/scim/v2). Deliberately kept
+         parallel to — and isolated from — /rest/saiku/api/*: it authenticates with
+         its own bearer tokens, never with a Saiku session or HTTP Basic, and a SCIM
+         principal's only authority is ROLE_SCIM, which no other URL rule grants.
+         - scimTokenStore: file-backed at ${saiku.home}/scim-tokens/<sha256>.json.
+           Only the SHA-256 of a bearer is persisted; the plaintext is shown once at mint.
+         - scimGroupStore: file-backed at ${saiku.home}/scim-groups/<uuid>.json. A SCIM
+           group owns one Saiku role name (its displayName); membership is applied to
+           USER_ROLES by scimService.
+         - scimRateLimiter: 100 requests/minute per token (saiku.scim.rate-limit.per-minute).
+         - scimAuthFilter: Spring Security custom filter on /rest/scim/v2 — validates the
+           bearer, enforces the rate limit, sets a request-scoped ROLE_SCIM principal and
+           audit-logs every call with token label + IdP + operation.
+         - scimTokenResource (@ /saiku/admin/scim/tokens): admin mint/list/revoke. Inherits
+           the /rest/saiku/admin/** hasRole('ADMIN') URL gate plus a @RolesAllowed.
+         ==================================================================== -->
+    <bean id="scimTokenStore" class="org.saiku.web.scim.ScimTokenStore"/>
+    <bean id="scimGroupStore" class="org.saiku.web.scim.ScimGroupStore"/>
+    <bean id="scimRateLimiter" class="org.saiku.web.scim.ScimRateLimiter"/>
+
+    <bean id="scimService" class="org.saiku.web.scim.ScimService">
+        <constructor-arg ref="userServiceBean"/>
+        <constructor-arg ref="scimGroupStore"/>
+        <constructor-arg value="${saiku.scim.default-workspace:}"/>
+    </bean>
+
+    <bean id="scimAuthFilter" class="org.saiku.web.security.scim.ScimAuthFilter">
+        <constructor-arg ref="scimTokenStore"/>
+        <constructor-arg ref="scimRateLimiter"/>
+    </bean>
+
+    <bean id="scimDiscoveryResource"
+          class="org.saiku.web.rest.resources.scim.ScimDiscoveryResource">
+        <property name="scimService" ref="scimService"/>
+    </bean>
+
+    <bean id="scimUsersResource"
+          class="org.saiku.web.rest.resources.scim.ScimUsersResource">
+        <property name="scimService" ref="scimService"/>
+    </bean>
+
+    <bean id="scimGroupsResource"
+          class="org.saiku.web.rest.resources.scim.ScimGroupsResource">
+        <property name="scimService" ref="scimService"/>
+    </bean>
+
+    <bean id="scimTokenResource"
+          class="org.saiku.web.rest.resources.scim.ScimTokenResource">
+        <property name="tokenStore" ref="scimTokenStore"/>
         <property name="userService" ref="userServiceBean"/>
     </bean>
 

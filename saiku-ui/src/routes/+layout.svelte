@@ -10,7 +10,16 @@
 	import { presentation } from '$lib/stores/presentation.svelte';
 	import ToastStack from '$lib/components/ToastStack.svelte';
 	import UpgradeBanner from '$lib/components/UpgradeBanner.svelte';
-	import { LogOut, Shield, Table2, LayoutDashboard, AppWindow, UserRound } from '@lucide/svelte';
+	import {
+		LogOut,
+		Shield,
+		Table2,
+		LayoutDashboard,
+		AppWindow,
+		UserRound,
+		Braces,
+		Database
+	} from '@lucide/svelte';
 	import SessionExpiredBanner from '$lib/components/SessionExpiredBanner.svelte';
 	import { i18n } from '$lib/stores/i18n.svelte';
 	import { installAuthInterceptor, onAuthFailure } from '$lib/api/http';
@@ -63,6 +72,29 @@
 			icon: AppWindow,
 			active: page.url.pathname.startsWith(`${base}/apps`)
 		},
+		// saiku#1106: MDX workbench — promoted out of the toolbar's MDXModal
+		// into its own route. Always present, same posture as Dashboards/Apps
+		// (no role gate — any authenticated user who can already open the MDX
+		// modal from the workspace toolbar can reach this).
+		{
+			href: `${base}/workbench`,
+			label: i18n.t('topbar.workbench', 'MDX Workbench'),
+			icon: Braces,
+			active: page.url.pathname.startsWith(`${base}/workbench`)
+		},
+		// saiku#1107: SQL workbench — same permission-not-navigation-state posture as Admin.
+		// hasRole() treats ROLE_ADMIN as a superset, so admins see this without being granted
+		// ROLE_SQL_EXEC explicitly.
+		...(session.hasRole('ROLE_SQL_EXEC')
+			? [
+					{
+						href: `${base}/sql-workbench`,
+						label: i18n.t('topbar.sqlWorkbench', 'SQL Workbench'),
+						icon: Database,
+						active: page.url.pathname.startsWith(`${base}/sql-workbench`)
+					}
+				]
+			: []),
 		...(session.isAdmin
 			? [
 					{
