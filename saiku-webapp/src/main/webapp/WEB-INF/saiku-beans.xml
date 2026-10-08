@@ -1539,6 +1539,90 @@
     </bean>
 
     <!-- ====================================================================
+         saiku#1987: export destination SPI + Google Drive as the first connector.
+
+         ExportDestination is the file-delivery sibling of AlertChannel: an
+         exporter produces the BYTES, a destination decides where they LAND. Be
+         ans registered in this map are the delivery channels available to the
+         EXPORT_DELIVERY job and to the admin API. Adding a channel (S3,
+         OneDrive, a custom HTTP sink) is a one-bean change here, with no
+         change to any exporter.
+
+         This is NOT the tile-plugin surface (#1441): those are sandboxed viz
+         iframes with connect-src 'none' and cannot upload a file. Do not
+         overload either API.
+         ==================================================================== -->
+
+    <!-- The first-party Google Drive connector. Service-account OAuth only
+         (scope drive.file, uploads pinned to one folderId) — the threat model
+         is documented on DriveAccessTokenSupplier.ServiceAccountTokenSupplier
+         and in docs/EXPORT-DESTINATIONS.md. It is inert until an admin saves
+         a config for it via /saiku/admin/export-destinations. -->
+    <bean id="googleDriveExportDestination"
+          class="org.saiku.service.export.destination.google.GoogleDriveExportDestination"/>
+
+    <!-- Admin-side config + credential storage under ${saiku.home}/export-destinations.
+         Plain settings go to <ID>.json; every destination's credentials go to a single
+         owner-read/write secrets.json, so a secret never lands in a settings file, a
+         job payload, or an API response. -->
+    <bean id="exportDestinationConfigStore"
+          class="org.saiku.service.export.destination.ExportDestinationConfigStore"
+          factory-method="forSaikuHome">
+        <constructor-arg value="${saiku.home:./saiku-home}"/>
+    </bean>
+
+    <bean id="exportDestinationRegistry"
+          class="org.saiku.service.export.destination.ExportDestinationRegistry">
+        <property name="destinations">
+            <map>
+                <entry key="GOOGLE_DRIVE" value-ref="googleDriveExportDestination"/>
+            </map>
+        </property>
+    </bean>
+
+    <!-- The MVP artifact producer: execute a saved .saiku query off-request (fresh
+         ThinQueryService from the SAME singleton collaborators saiku-beans.xml wires
+         into thinQueryBean — it must never touch the session-scoped proxy on a
+         scheduler thread) and flatten the cell set to CSV. -->
+    <bean id="savedQueryCsvArtifactProducer"
+          class="org.saiku.service.schedule.delivery.SavedQueryCsvArtifactProducer">
+        <constructor-arg ref="datasourceServiceBean"/>
+        <constructor-arg ref="olapDiscoverServiceBean"/>
+        <constructor-arg ref="saikuQueryCacheBean"/>
+        <constructor-arg ref="userServiceBean"/>
+        <constructor-arg ref="queryCoalescerBean"/>
+        <constructor-arg ref="ossieQueryServiceBean"/>
+    </bean>
+
+    <!-- The EXPORT_DELIVERY job handler. Runs as the job owner (the owner-identity
+         runner has already established the owner's SecurityContext — it does NOT
+         re-impersonate). The payload names a destination id and a source; every
+         credential is resolved from exportDestinationConfigStore at delivery time,
+         so a job file in saiku-home/jobs/ never contains a secret. -->
+    <bean id="exportDeliveryJobHandler"
+          class="org.saiku.service.schedule.delivery.ExportDeliveryJobHandler">
+        <constructor-arg ref="exportDestinationRegistry"/>
+        <constructor-arg ref="exportDestinationConfigStore"/>
+        <constructor-arg>
+            <map>
+                <entry key="SAVED_QUERY_CSV" value-ref="savedQueryCsvArtifactProducer"/>
+            </map>
+        </constructor-arg>
+    </bean>
+
+    <!-- Admin CRUD over export destinations: GET/POST/DELETE
+         /saiku/admin/export-destinations/{id} plus GET (list) and POST /{id}/test
+         (a constant, server-generated probe — never an arbitrary upload). Admin-only
+         (@RolesAllowed + the /rest/saiku/admin/** URL gate). Secrets are WRITE-ONLY:
+         the API returns the names of the secrets that are set, never their values. -->
+    <bean id="exportDestinationAdminResource"
+          class="org.saiku.web.rest.resources.ExportDestinationAdminResource">
+        <property name="registry" ref="exportDestinationRegistry"/>
+        <property name="configStore" ref="exportDestinationConfigStore"/>
+        <property name="userService" ref="userServiceBean"/>
+    </bean>
+
+    <!-- ====================================================================
          #1099: WEBHOOK_DIGEST handler — Slack / Microsoft Teams channel digests.
 
          Webhooks only, NO OAuth: an admin pastes a Slack or Teams incoming-webhook
@@ -1615,7 +1699,8 @@
     <!-- The live engine. init-method="start" starts the ticker at boot; destroy-method="shutdown"
          stops both the ticker and worker pools cleanly on context close. Registered handlers: the
          no-op ("NOOP"), the threshold-alert ("THRESHOLD_ALERT", #1098), the email dashboard digest
-         ("DASHBOARD_DIGEST", #943), and the Slack/Teams channel digest ("WEBHOOK_DIGEST", #1099). -->
+         ("DASHBOARD_DIGEST", #943), the Slack/Teams channel digest
+         ("WEBHOOK_DIGEST", #1099), and export delivery ("EXPORT_DELIVERY", #1987). -->
     <bean id="jobScheduler" class="org.saiku.service.schedule.JobScheduler"
           init-method="start" destroy-method="shutdown">
         <constructor-arg ref="jobStore"/>
@@ -1626,6 +1711,7 @@
                 <entry key="NOOP" value-ref="noOpJobHandler"/>
                 <entry key="THRESHOLD_ALERT" value-ref="thresholdAlertJobHandler"/>
                 <entry key="DASHBOARD_DIGEST" value-ref="dashboardDigestJobHandler"/>
+                <entry key="EXPORT_DELIVERY" value-ref="exportDeliveryJobHandler"/>
                 <entry key="WEBHOOK_DIGEST" value-ref="channelDigestJobHandler"/>
             </map>
         </property>

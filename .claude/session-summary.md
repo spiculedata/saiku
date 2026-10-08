@@ -75,6 +75,10 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-10-07 — feature/1987-export-destination-spi — merged development for PR #2080
+**Was doing:** merged development, retaining both export delivery and webhook digest wiring, corrected the export test stub's `createQuery` return type, and fixed a null-data test helper exposed by CI.
+**Now:** check PR #2080 CI; local focused Maven tests stop at GitHub Packages 401 before compilation, while Spotless and XML parsing pass.
+**Refs:** #1987, #2080
 ## 2026-10-07 — fix/1949-terminal-catchall — merged latest development for PR #2078
 **Was doing:** resolved the session-summary conflict, retaining both branches' entries; development's seeded IT harness and this PR's security XML and dispatcher guard are preserved.
 **Now:** check PR #2078 CI, especially TerminalCatchAllIT and LoginJspIT, after the merge push.
