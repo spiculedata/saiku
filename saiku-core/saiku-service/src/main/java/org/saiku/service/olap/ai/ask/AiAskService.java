@@ -1292,8 +1292,14 @@ public class AiAskService {
     /** Allowlisted dashboard tile kinds (MVP). Unknown values coerce to {@code table}. */
     private static final java.util.Set<String> TILE_TYPES = java.util.Set.of("chart", "table", "kpi");
 
-    /** Allowlisted chart subtypes for chart tiles. Unknown values coerce to {@code bar}. */
-    private static final java.util.Set<String> CHART_TYPES = java.util.Set.of("bar", "line", "pie", "area", "scatter");
+    /**
+     * Allowlisted chart subtypes for chart tiles — the canonical catalog
+     * ({@link AiViewChangeCatalog#CHART_TYPE_IDS}), i.e. every type the dashboard tile renderer can
+     * draw. It was a five-id MVP set (bar/line/pie/area/scatter) until issue #1481, which silently
+     * downgraded eleven renderable chart types to {@code bar} whenever a model picked one. Unknown
+     * values still coerce to {@code bar}.
+     */
+    private static final java.util.Set<String> CHART_TYPES = AiViewChangeCatalog.CHART_TYPE_IDS;
 
     private static final int DASHBOARD_TITLE_MAX = 120;
     private static final int TILE_TITLE_MAX = 80;
