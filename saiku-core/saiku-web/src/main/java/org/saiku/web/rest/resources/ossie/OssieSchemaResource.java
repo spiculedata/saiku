@@ -16,7 +16,6 @@ import jakarta.ws.rs.core.Response;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.Map;
 import org.saiku.datasources.connection.ISaikuConnection;
 import org.saiku.datasources.datasource.SaikuDatasource;
@@ -79,7 +78,7 @@ public class OssieSchemaResource {
         if (forbidden != null) {
             return forbidden;
         }
-        Path yamlPath;
+        java.nio.file.Path yamlPath;
         try {
             yamlPath = resolveYamlPath(datasourceId);
         } catch (IllegalArgumentException e) {
@@ -124,7 +123,7 @@ public class OssieSchemaResource {
         } catch (IOException e) {
             return badRequest("invalid Ossie YAML: " + e.getMessage());
         }
-        Path yamlPath;
+        java.nio.file.Path yamlPath;
         try {
             yamlPath = resolveYamlPath(datasourceId);
         } catch (IllegalArgumentException e) {
@@ -164,7 +163,7 @@ public class OssieSchemaResource {
 
     /** Resolve + validate the datasource's underlying YAML file path (same lookup rules as
      *  {@code OssieDiscoverService.readDocument}). */
-    private Path resolveYamlPath(String datasourceId) {
+    private java.nio.file.Path resolveYamlPath(String datasourceId) {
         SaikuDatasource ds = datasourceService.getDatasource(datasourceId);
         if (ds == null) {
             throw new IllegalArgumentException("No datasource named '" + datasourceId + "'");
@@ -175,11 +174,10 @@ public class OssieSchemaResource {
         }
         String yamlPath = ds.getProperties().getProperty(ISaikuConnection.OSSIE_YAML_KEY);
         if (yamlPath == null || yamlPath.isBlank()) {
-            throw new IllegalArgumentException(
-                    "Ossie datasource '" + datasourceId + "' has no '" + ISaikuConnection.OSSIE_YAML_KEY
-                            + "' property");
+            throw new IllegalArgumentException("Ossie datasource '" + datasourceId + "' has no '"
+                    + ISaikuConnection.OSSIE_YAML_KEY + "' property");
         }
-        return Path.of(yamlPath);
+        return java.nio.file.Path.of(yamlPath);
     }
 
     private Response adminGuard() {

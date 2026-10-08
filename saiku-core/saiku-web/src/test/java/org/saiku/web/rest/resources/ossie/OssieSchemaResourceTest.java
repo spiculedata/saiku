@@ -142,8 +142,7 @@ public class OssieSchemaResourceTest {
     @Test
     public void save_rejectsNonOssieDatasource() {
         FakeDs ds2 = new FakeDs();
-        ds2.byName.put(
-                "mdx-ds", new SaikuDatasource("mdx-ds", SaikuDatasource.Type.OLAP, new Properties()));
+        ds2.byName.put("mdx-ds", new SaikuDatasource("mdx-ds", SaikuDatasource.Type.OLAP, new Properties()));
         OssieSchemaResource mdxResource = new OssieSchemaResource();
         mdxResource.setDatasourceService(ds2);
         mdxResource.setHistoryService(historyService);
