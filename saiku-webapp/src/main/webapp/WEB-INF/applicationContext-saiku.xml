@@ -265,6 +265,12 @@
 	         /info itself is the plugin-list endpoint the SPA pings on boot. -->
 	    <security:intercept-url pattern="/rest/saiku/info" access="permitAll" />
 	    <security:intercept-url pattern="/rest/saiku/info/**" access="permitAll" />
+	    <!-- saiku#879: OAuth protected-resource discovery metadata (RFC 9728) for
+	         the MCP endpoint. A client fetches this BEFORE it has any token, so it
+	         must be anonymous-accessible; the resource itself 404s when
+	         saiku.oauth.issuerUri isn't configured, so an un-opted-in deployment
+	         advertises nothing here. -->
+	    <security:intercept-url pattern="/rest/saiku/mcp/.well-known/**" access="permitAll" />
 	    <!-- saiku#1029: the demo email-gate endpoints run before login (they
 	         unlock the login form), so they're anonymous-accessible. They're
 	         inert unless demo mode + WorkOS are configured. -->
@@ -399,10 +405,22 @@
            IP gets a clean 429 without ever waking the AuthenticationProvider.
            LoginRateLimiter is shared with SessionResource (form-login)
            and is fed success / failure events via SpringSecurityAuditListener. -->
-      <security:custom-filter ref="loginRateLimitFilter" before="BASIC_AUTH_FILTER"/>
+      <security:custom-filter ref="loginRateLimitFilter" before="BEARER_TOKEN_AUTH_FILTER"/>
+      <!-- saiku#879: alternative authentication for the native MCP endpoint.
+           Runs before BASIC_AUTH_FILTER, in the slot just after
+           loginRateLimitFilter (which sits before BEARER_TOKEN_AUTH_FILTER) so
+           rate-limiting still applies first. Spring Security rejects two custom
+           filters declared in the same slot, so they must not share one and acts
+           ONLY on /rest/saiku/api/mcp/** requests carrying an
+           Authorization: Bearer header — every other request (Basic,
+           session cookie, no credentials) falls through untouched, so an
+           existing #878 HTTP-Basic-only deployment is unaffected. Inert
+           (Bearer header rejected with a 401 challenge) unless
+           -Dsaiku.oauth.issuerUri is configured. -->
+      <security:custom-filter ref="oauthBearerAuthFilter" before="BASIC_AUTH_FILTER"/>
       <!-- saiku#941: establish a request-scoped ROLE_SHARE_GUEST for valid
            share tokens on /share/view/**. Placed at PRE_AUTH_FILTER (a distinct
-           slot from loginRateLimitFilter's BASIC_AUTH_FILTER) and after the
+           slot from oauthBearerAuthFilter's BASIC_AUTH_FILTER) and after the
            security-context filter, so the guest auth is set before the
            authorization check and never persisted to the session. -->
       <security:custom-filter ref="shareTokenAuthFilter" before="PRE_AUTH_FILTER"/>

@@ -903,6 +903,55 @@
         <property name="sessionStore" ref="mcpSessionStore"/>
     </bean>
 
+    <!-- ====================================================================
+         MCP OAuth 2.0 resource-server — bearer-token passthrough auth
+         (saiku#879, long-term follow-up to #878's HTTP Basic passthrough).
+         Inert unless -Dsaiku.oauth.issuerUri is set; see
+         OAuthResourceServerProperties for the full config surface.
+
+         - oauthResourceServerProperties: reads the saiku.oauth.* system
+           properties once at context start-up.
+         - oauthJwtDecoder: null when OAuth isn't configured; otherwise a
+           JwtDecoder that defers OIDC discovery to the first bearer request
+           so an unreachable IdP never blocks webapp start-up.
+         - oauthRoleMapper: claims -> Saiku ROLE_* authorities, reusing the
+           #878 SecurityAwareConnectionManager role-propagation hook as-is.
+         - oauthBearerAuthFilter: Spring Security custom filter, wired before
+           BASIC_AUTH_FILTER in applicationContext-saiku.xml — acts only on
+           /rest/saiku/api/mcp/** requests carrying an Authorization: Bearer
+           header; every other request (Basic, session, no bearer at all)
+           falls through unchanged.
+         - mcpOAuthProtectedResourceResource (@ /saiku/mcp/.well-known/
+           oauth-protected-resource): RFC 9728 discovery metadata; permitAll
+           in the security chain since a client has no token yet when it
+           fetches this. 404s when OAuth isn't configured.
+         ==================================================================== -->
+    <bean id="oauthResourceServerProperties"
+          class="org.saiku.web.security.oauth.OAuthResourceServerProperties"
+          factory-method="fromSystemProperties"/>
+
+    <bean id="oauthJwtDecoder"
+          class="org.saiku.web.security.oauth.OAuthJwtDecoderFactory"
+          factory-method="create">
+        <constructor-arg ref="oauthResourceServerProperties"/>
+    </bean>
+
+    <bean id="oauthRoleMapper" class="org.saiku.web.security.oauth.OAuthRoleMapper">
+        <constructor-arg ref="oauthResourceServerProperties"/>
+    </bean>
+
+    <bean id="oauthBearerAuthFilter"
+          class="org.saiku.web.security.oauth.OAuthBearerAuthenticationFilter">
+        <constructor-arg ref="oauthResourceServerProperties"/>
+        <constructor-arg ref="oauthJwtDecoder"/>
+        <constructor-arg ref="oauthRoleMapper"/>
+    </bean>
+
+    <bean id="mcpOAuthProtectedResourceResource"
+          class="org.saiku.web.rest.resources.mcp.McpOAuthProtectedResourceResource">
+        <property name="properties" ref="oauthResourceServerProperties"/>
+    </bean>
+
     <!-- Tier-1 auth hardening: shared login rate-limiter.
          5 failures per 15 minutes per client IP. Default: do NOT trust
          X-Forwarded-For (set saiku.auth.trustForwardedFor=true only when
