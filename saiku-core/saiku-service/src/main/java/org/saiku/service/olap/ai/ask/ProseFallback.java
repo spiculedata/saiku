@@ -60,7 +60,7 @@ final class ProseFallback {
             case VIEW_CHANGE -> AbstractNlAskProvider.VIEW_CHANGE_TOOL_NAME;
             case EMAIL_DRAFT -> AbstractNlAskProvider.EMAIL_DRAFT_TOOL_NAME;
             case DASHBOARD -> AbstractNlAskProvider.DASHBOARD_TOOL_NAME;
-            case REFUSAL -> null;
+            case REFUSAL, MCP_TOOL -> null;
         };
     }
     /**

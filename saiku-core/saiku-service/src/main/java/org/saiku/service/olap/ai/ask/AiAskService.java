@@ -513,7 +513,7 @@ public class AiAskService {
             String cellsetDigest,
             NlAskRequest.ForceTool forceTool,
             AiQueryRequest currentQuery) {
-        return askInSpace(spaceId, ref, question, history, cellsetDigest, forceTool, currentQuery, null);
+        return askInSpaceStreaming(spaceId, ref, question, history, cellsetDigest, forceTool, currentQuery, null);
     }
 
     /**

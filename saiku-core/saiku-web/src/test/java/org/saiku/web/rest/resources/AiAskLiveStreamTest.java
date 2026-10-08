@@ -74,7 +74,9 @@ public class AiAskLiveStreamTest {
         for (String line : frame.split("\n")) {
             if (line.startsWith("data: {\"delta\":")) {
                 try {
-                    prose.append(mapper.readValue(line.substring("data: ".length()), String.class));
+                    prose.append(mapper.readTree(line.substring("data: ".length()))
+                            .get("delta")
+                            .asText());
                 } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
                     throw new AssertionError("unparseable chunk payload: " + line, e);
                 }

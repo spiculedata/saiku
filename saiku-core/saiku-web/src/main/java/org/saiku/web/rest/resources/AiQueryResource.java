@@ -1420,14 +1420,14 @@ public class AiQueryResource {
         }
         org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool force = parseForceTool(body.getForceTool());
         return streamAsk(
-                sse -> askService.askStreaming(
+                (sse, live) -> askService.askStreaming(
                         body.getCube(),
                         body.getQuestion(),
                         body.historyAsMessages(),
                         body.getCellsetDigest(),
                         force,
                         body.getCurrentQuery(),
-                        new SseTokenStream(sse)),
+                        live),
                 "AI ask (streaming)");
     }
 
@@ -1461,7 +1461,7 @@ public class AiQueryResource {
         }
         org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool force = parseForceTool(body.getForceTool());
         return streamAsk(
-                sse -> askService.askInSpaceStreaming(
+                (sse, live) -> askService.askInSpaceStreaming(
                         spaceId,
                         body.getCube(),
                         body.getQuestion(),
@@ -1469,7 +1469,7 @@ public class AiQueryResource {
                         body.getCellsetDigest(),
                         force,
                         body.getCurrentQuery(),
-                        new SseTokenStream(sse)),
+                        live),
                 "AI ask-in-space (streaming)");
     }
 
@@ -1495,14 +1495,14 @@ public class AiQueryResource {
         }
         org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool force = parseForceTool(body.getForceTool());
         return streamChain(
-                sse -> askService.askChained(
+                (sse, live) -> askService.askChained(
                         body.getCube(),
                         body.getQuestion(),
                         body.historyAsMessages(),
                         body.getCellsetDigest(),
                         force,
                         body.getCurrentQuery(),
-                        new SseTokenStream(sse)),
+                        live),
                 "AI ask (chained, streaming)");
     }
 
@@ -3938,7 +3938,8 @@ public class AiQueryResource {
      *       {@code final} event, matching the documented wire contract (saiku#1456).
      * </ul>
      */
-    private Response streamAsk(java.util.function.Function<SseWriter, AiAskService.AskOutcome> ask, String logLabel) {
+    private Response streamAsk(
+            java.util.function.BiFunction<SseWriter, SseTokenStream, AiAskService.AskOutcome> ask, String logLabel) {
         jakarta.ws.rs.core.StreamingOutput stream = outputStream -> {
             java.io.Writer writer =
                     new java.io.OutputStreamWriter(outputStream, java.nio.charset.StandardCharsets.UTF_8);
@@ -3947,7 +3948,8 @@ public class AiQueryResource {
                 // The token stream writes model / intent / chunk events as the provider emits them;
                 // the outcome is only known once the turn is over, and carries the terminal
                 // envelope (final, or error + a degraded final).
-                streamOutcomeAsSse(ask.apply(sse), sse, new SseTokenStream(sse));
+                SseTokenStream live = new SseTokenStream(sse);
+                streamOutcomeAsSse(ask.apply(sse, live), sse, live);
             } catch (com.fasterxml.jackson.core.JsonProcessingException jpe) {
                 // Serialising the outcome failed — the client is still connected. Surface an error
                 // (NOT the disconnect branch below, which JsonProcessingException would fall into
@@ -3978,13 +3980,15 @@ public class AiQueryResource {
      * runtime failure emits the terminal error/final pair so a client keying completion on {@code
      * final} never hangs.
      */
-    private Response streamChain(java.util.function.Function<SseWriter, AiAskService.AskChain> ask, String logLabel) {
+    private Response streamChain(
+            java.util.function.BiFunction<SseWriter, SseTokenStream, AiAskService.AskChain> ask, String logLabel) {
         jakarta.ws.rs.core.StreamingOutput stream = outputStream -> {
             java.io.Writer writer =
                     new java.io.OutputStreamWriter(outputStream, java.nio.charset.StandardCharsets.UTF_8);
             SseWriter sse = new SseWriter(writer);
             try {
-                streamChainAsSse(ask.apply(sse), sse, new SseTokenStream(sse));
+                SseTokenStream live = new SseTokenStream(sse);
+                streamChainAsSse(ask.apply(sse, live), sse, live);
             } catch (com.fasterxml.jackson.core.JsonProcessingException jpe) {
                 log.warn("{}: failed to serialise SSE payload", logLabel, jpe);
                 emitStreamError(sse);
