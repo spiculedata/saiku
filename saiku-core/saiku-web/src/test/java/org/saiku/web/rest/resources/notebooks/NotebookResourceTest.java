@@ -99,9 +99,8 @@ public class NotebookResourceTest {
         assertEquals(200, r.getStatus());
         @SuppressWarnings("unchecked")
         List<IRepositoryObject> files = (List<IRepositoryObject>) r.getEntity();
-        assertTrue(
-                "list must include the saved .saikunb",
-                files.stream().anyMatch(f -> "homes/admin/sales.saikunb".equals(f.getName())));
+        assertTrue("list must include the saved .saikunb", files.stream().anyMatch(f -> "homes/admin/sales.saikunb"
+                .equals(f.getName())));
         // The listing must be scoped to the .saikunb extension only.
         assertEquals(List.of(".saikunb"), stubDs.lastListType);
     }
@@ -309,7 +308,8 @@ public class NotebookResourceTest {
             }
             List<IRepositoryObject> out = new ArrayList<>();
             for (String path : stored.keySet()) {
-                boolean matches = type == null || type.isEmpty() || type.stream().anyMatch(path::endsWith);
+                boolean matches =
+                        type == null || type.isEmpty() || type.stream().anyMatch(path::endsWith);
                 if (matches) {
                     out.add(new RepositoryFileObject(path, "#" + path, "saikunb", path, List.of()));
                 }

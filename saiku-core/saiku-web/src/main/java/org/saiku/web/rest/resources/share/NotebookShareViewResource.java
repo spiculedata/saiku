@@ -125,11 +125,7 @@ public class NotebookShareViewResource {
                 break;
             }
         }
-        if (cell == null
-                || !"mdx".equals(cell.type)
-                || cell.mdx == null
-                || cell.mdx.isBlank()
-                || cell.cube == null) {
+        if (cell == null || !"mdx".equals(cell.type) || cell.mdx == null || cell.mdx.isBlank() || cell.cube == null) {
             return harden(Response.status(Response.Status.NOT_FOUND)
                     .entity(Map.of("status", "NOT_FOUND", "error", "No such runnable cell"))
                     .type(MediaType.APPLICATION_JSON)

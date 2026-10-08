@@ -60,8 +60,7 @@ public class NotebookCubeResolverTest {
     @Test
     public void resolve_returnsNullWhenNoCubeMatches() {
         OlapDiscoverService svc = fixedCatalogue(List.of(cube("FoodMart", "FoodMart", "FoodMart", "Sales")));
-        assertNull(NotebookCubeResolver.resolve(
-                svc, new AiCubeRef("FoodMart", "FoodMart", "FoodMart", "NoSuchCube")));
+        assertNull(NotebookCubeResolver.resolve(svc, new AiCubeRef("FoodMart", "FoodMart", "FoodMart", "NoSuchCube")));
     }
 
     @Test
