@@ -1937,7 +1937,9 @@ public class AiAskServiceTest {
 
             assertFalse("degraded for chartType " + id, spec.degraded());
             assertEquals(
-                    "chartType " + id + " must not be coerced", id, spec.tiles().get(0).chartType());
+                    "chartType " + id + " must not be coerced",
+                    id,
+                    spec.tiles().get(0).chartType());
         }
     }
 
