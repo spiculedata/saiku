@@ -15,9 +15,14 @@ export default defineConfig({
 	testDir: './e2e',
 	fullyParallel: true,
 	forbidOnly: !!process.env.CI,
-	retries: process.env.CI ? 2 : 0,
+	// One retry in CI, not two: a test that needs a second chance is a flake, and the flake
+	// policy (docs/ci-flakes.md) records it from the JSON report below. Playwright marks a
+	// fail-then-pass test `flaky` itself, which is the evidence the policy needs.
+	retries: process.env.CI ? 1 : 0,
 	workers: process.env.CI ? 1 : undefined,
-	reporter: process.env.CI ? 'list' : 'html',
+	reporter: process.env.CI
+		? [['list'], ['json', { outputFile: 'test-results/flake-report.json' }]]
+		: 'html',
 	// Ignore the live spec unless RUN_LIVE_E2E=1 is set. The live spec assumes a running
 	// launcher — we don't want CI to pick it up accidentally.
 	testIgnore: runLive ? undefined : /live\.spec\.ts$/,

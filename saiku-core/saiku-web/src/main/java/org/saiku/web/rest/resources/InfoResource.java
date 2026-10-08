@@ -30,13 +30,18 @@ import jakarta.xml.bind.annotation.XmlAccessType;
 import jakarta.xml.bind.annotation.XmlAccessorType;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.Socket;
 import java.net.URI;
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 import org.saiku.service.PlatformUtilsService;
+import org.saiku.service.olap.ai.ask.NlAskProviderFactory;
+import org.saiku.service.schema.generate.enrich.provider.LlmProviderFactory;
 import org.saiku.service.util.dto.Plugin;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -52,6 +57,8 @@ public class InfoResource {
 
     private PlatformUtilsService platformService;
     private org.saiku.web.demo.DemoGate demoGate;
+    private NlAskProviderFactory askProviderFactory;
+    private LlmProviderFactory schemaGenProviderFactory;
 
     // @Autowired
     public void setPlatformUtilsService(PlatformUtilsService ps) {
@@ -64,6 +71,23 @@ public class InfoResource {
      */
     public void setDemoGate(org.saiku.web.demo.DemoGate demoGate) {
         this.demoGate = demoGate;
+    }
+
+    /**
+     * The same factory {@code aiAskServiceBean} is built from (saiku#904) — wired here purely so
+     * {@link #getDiagnostics()} can describe its resolved config. Optional: null in unit runs, in
+     * which case the ask section reports {@code enabled:false}.
+     */
+    public void setAskProviderFactory(NlAskProviderFactory askProviderFactory) {
+        this.askProviderFactory = askProviderFactory;
+    }
+
+    /**
+     * The same factory the schema-generation enrichment pipeline is built from (saiku#904). Optional:
+     * null in unit runs, in which case the schemaGen section reports {@code enabled:false}.
+     */
+    public void setSchemaGenProviderFactory(LlmProviderFactory schemaGenProviderFactory) {
+        this.schemaGenProviderFactory = schemaGenProviderFactory;
     }
 
     /**
@@ -173,6 +197,91 @@ public class InfoResource {
         demoAnalytics.put("endpoint", demoAnalyticsEndpoint());
         body.put("demoAnalytics", demoAnalytics);
         return Response.ok(body).build();
+    }
+
+    /**
+     * AI upstream diagnostics (saiku#904): reports the configured provider, model and endpoint for
+     * each of the two AI stacks that support an OpenAI-compatible / Ollama upstream today — the
+     * natural-language ask layer and the schema-generation enrichment pipeline — plus a fast
+     * reachability probe so an operator can confirm the wiring without running a real query.
+     *
+     * <p>Never reports API keys. {@code reachable} is a plain TCP connect to the endpoint's
+     * host:port with a short timeout — it proves network reachability, not that the model actually
+     * answers, and is {@code null} for {@code noop} (nothing configured to reach).
+     *
+     * <p>Either section reports {@code enabled:false} when its factory bean wasn't wired (e.g. unit
+     * runs) — this happens before any provider is selected, so it's distinct from a configured
+     * provider that's merely unreachable.
+     */
+    @GET
+    @Path("/diagnostics")
+    @Produces({"application/json"})
+    public Response getDiagnostics() {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put(
+                "ask", askProviderFactory == null ? disabledAiStack() : describeAiStack(askProviderFactory.describe()));
+        body.put(
+                "schemaGen",
+                schemaGenProviderFactory == null
+                        ? disabledAiStack()
+                        : describeAiStack(schemaGenProviderFactory.describe()));
+        return Response.ok(body).build();
+    }
+
+    /** One AI stack's diagnostics section when its factory bean wasn't wired (e.g. unit runs). */
+    private static Map<String, Object> disabledAiStack() {
+        Map<String, Object> section = new LinkedHashMap<>();
+        section.put("enabled", false);
+        return section;
+    }
+
+    /** Package-visible for unit tests. */
+    static Map<String, Object> describeAiStack(NlAskProviderFactory.Descriptor d) {
+        return describeAiStack(d.provider(), d.model(), d.endpoint(), d.configured());
+    }
+
+    /** Package-visible for unit tests. */
+    static Map<String, Object> describeAiStack(LlmProviderFactory.Descriptor d) {
+        return describeAiStack(d.provider(), d.model(), d.endpoint(), d.configured());
+    }
+
+    private static Map<String, Object> describeAiStack(
+            String provider, String model, String endpoint, boolean configured) {
+        Map<String, Object> section = new LinkedHashMap<>();
+        section.put("enabled", true);
+        section.put("provider", provider);
+        section.put("model", model);
+        section.put("endpoint", endpoint);
+        section.put("configured", configured);
+        section.put("reachable", configured && endpoint != null ? probeReachable(endpoint) : null);
+        return section;
+    }
+
+    /**
+     * Best-effort TCP reachability probe for an HTTP(S) endpoint URL. Short timeout so a misrouted
+     * or firewalled upstream fails the diagnostics call fast rather than hanging it; any failure
+     * (bad URL, connect refused, timeout) reports {@code false} rather than throwing. Package-visible
+     * for unit tests.
+     */
+    static boolean probeReachable(String endpointUrl) {
+        try {
+            URI uri = URI.create(endpointUrl);
+            String host = uri.getHost();
+            if (host == null) {
+                return false;
+            }
+            int port = uri.getPort();
+            if (port < 0) {
+                port = "https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80;
+            }
+            try (Socket socket = new Socket()) {
+                socket.connect(new InetSocketAddress(host, port), (int)
+                        Duration.ofSeconds(2).toMillis());
+                return true;
+            }
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     /**

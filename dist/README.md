@@ -33,6 +33,12 @@ Open <http://localhost:8080/ui/> and sign in with `admin` / `admin`.
 > — because Saiku **refuses to start** on the default `admin`/`admin` (see
 > "Setting the admin password" below).
 
+> Without `SAIKU_DEMO=true` nothing demo-related is staged: no FoodMart/Bank
+> schemas, no H2 fixtures, no datasource descriptors (saiku#1953). A non-demo
+> home starts with an empty datasource list. Set `SAIKU_SEED=true` to install
+> the fixtures without demo mode, or `SAIKU_DEMO=true SAIKU_SEED=false` for the
+> demo login against your own cubes. Seeding never overwrites an existing home.
+
 A `foodmart` cube list appears on first query (initial load of the H2
 fixture takes ~30 s — subsequent launches reuse the file).
 
@@ -48,13 +54,27 @@ docker run -d -p 8080:8080 -e SAIKU_ADMIN_PASSWORD='a-strong-password' ghcr.io/s
 
 # dist zip / fat-jar
 SAIKU_ADMIN_PASSWORD='a-strong-password' ./run.sh
+
+# from a secret-manager mount (Docker/Kubernetes secret, systemd LoadCredential)
+SAIKU_ADMIN_PASSWORD_FILE=/run/secrets/saiku-admin-password ./run.sh
 ```
 
+Saiku **validates the password, not just its absence from the defaults**: the
+supplied password must be at least 12 characters and must not be a
+well-known weak password (`admin`, `password`, `changeme`, `12345678`, …) or
+equal to the username. `-e SAIKU_ADMIN_PASSWORD=admin` — the shortcut this
+guard exists to stop — is refused with the same `FATAL:` message and a non-zero
+exit, exactly as the untouched default is. On a lab host that accepts the risk,
+`SAIKU_ALLOW_WEAK_ADMIN_PASSWORD=true` (or `SAIKU_ALLOW_DEFAULT_ADMIN=true`, or
+`SAIKU_DEMO=true`) opts out. Precedence is
+**`SAIKU_ADMIN_PASSWORD_FILE` > `SAIKU_ADMIN_PASSWORD` > an existing
+`<saiku-home>/users.properties` > the WAR's baked default**.
+
 On boot Saiku bcrypt-hashes it and writes `<saiku-home>/users.properties`,
-persisted on the volume. Precedence is **`SAIKU_ADMIN_PASSWORD` > an existing
-`<saiku-home>/users.properties` > the WAR's baked default**, so while the
-variable is set it is enforced on *every* boot: it rewrites the `admin` row and
-overrides whatever that file already contains.
+persisted on the volume, so while the variable is set it is enforced on *every*
+boot: it rewrites the `admin` row and overrides whatever that file already
+contains. A `SAIKU_ADMIN_PASSWORD_FILE` value is stripped, so the trailing
+newline a secret file always carries does not become part of the password.
 
 That makes the variable the rotation mechanism — change its value and restart,
 and the old password stops working. It also means that while the variable stays
@@ -113,7 +133,7 @@ java -jar saiku-<version>.jar <command> --help
 | Command | Purpose |
 |---------|---------|
 | `serve` | Start the Saiku web server (see CLI options above). |
-| `sql-serve` | Serve an Ossie/SQL semantic model without the full OLAP stack. |
+| `sql-serve` | Serve an Ossie/SQL semantic model without the full OLAP stack. Listens on `127.0.0.1` only unless `--bind` is given; a non-loopback bind needs `--auth-user` + `--auth-password-file`. |
 | `eval` | Run the agent-eval accuracy suites against a running server and report pass-rate. Exit `0` = all passed, `1` = a suite regressed, `2` = transport/config error. See `docs/EVAL-SPEC.md`. |
 
 `eval` is the CI/cron entry point for the AI accuracy monitor. It POSTs to

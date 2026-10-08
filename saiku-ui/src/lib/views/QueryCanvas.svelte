@@ -53,7 +53,11 @@
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import { listLevelMembers, listRootMembers, type SaikuMember } from '$lib/api/discover';
 	import { datasources } from '$lib/stores/datasources.svelte';
-	import { drillthrough as fetchDrillthrough, type QueryResult } from '$lib/api/query';
+	import {
+		drillthrough as fetchDrillthrough,
+		drillthroughColumns as fetchDrillthroughColumns,
+		type QueryResult
+	} from '$lib/api/query';
 	import { toasts } from '$lib/stores/toasts.svelte';
 	import { i18n } from '$lib/stores/i18n.svelte';
 
@@ -1045,6 +1049,7 @@
 		dimensions: string[];
 		measures: string[];
 		maxRows: number;
+		firstRowset?: number;
 	}) {
 		drillModalOpen = false;
 		if (!query.current) return;
@@ -1058,6 +1063,7 @@
 			// currently drill through the whole cellset and let the user filter by `returns`.
 			drillResult = await fetchDrillthrough(query.current.name, {
 				maxRows: opts.maxRows,
+				firstRowset: opts.firstRowset,
 				returns
 			});
 		} catch (err) {
@@ -1590,6 +1596,8 @@
 	measures={cubeMetadata?.measures ?? []}
 	maxRows={1000}
 	open={drillModalOpen}
+	discoverColumns={() =>
+		query.current ? fetchDrillthroughColumns(query.current.name) : Promise.resolve([])}
 	onRun={runDrillthrough}
 	onExportCsv={(opts) => {
 		drillModalOpen = false;
@@ -1599,6 +1607,10 @@
 		if (drillPosition) params.set('position', drillPosition);
 		const returns = [...opts.dimensions, ...opts.measures];
 		if (returns.length) params.set('returns', returns.join(','));
+		// NOTE: the CSV export endpoint doesn't accept firstRowset (saiku#822
+		// scoped that param to the JSON drillthrough endpoint only) — the
+		// export always uses the maxrows cap above regardless of the modal's
+		// row-bound toggle.
 		window.open(
 			`/rest/saiku/api/query/${encodeURIComponent(query.current.name)}/drillthrough/export/csv?${params.toString()}`,
 			'_blank'
