@@ -12,11 +12,19 @@ import static org.junit.Assert.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sun.net.httpserver.HttpServer;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.Test;
@@ -25,6 +33,9 @@ import org.saiku.olap.dto.resultset.CellDataSet;
 import org.saiku.olap.dto.resultset.DataCell;
 import org.saiku.olap.dto.resultset.MemberCell;
 import org.saiku.olap.query2.ThinQuery;
+import org.saiku.service.mcp.outbound.McpOutboundServer;
+import org.saiku.service.mcp.outbound.McpOutboundServerRegistry;
+import org.saiku.service.mcp.outbound.McpOutboundToolCatalog;
 import org.saiku.service.olap.ThinQueryService;
 import org.saiku.service.olap.ai.AiCubeMetadataService;
 import org.saiku.service.olap.ai.AiCubeRef;
@@ -833,6 +844,69 @@ public class AiAskServiceTest {
         assertEquals(turn.resultDigest(), secondReq.cellsetDigest());
     }
 
+    /* ---- saiku#1918 (17d): the chain reports what it actually cost ---- */
+
+    @Test
+    public void chainedAskReportsTheTokenUsageOfEveryProviderTurn() {
+        // A chain is one HTTP request and N provider round-trips, each re-sending the cube schema.
+        // If only the request were counted, the most expensive operation on the surface would look
+        // like the cheapest — so the chain has to report the real total for a daily budget to mean
+        // anything.
+        ScriptedProvider provider = new ScriptedProvider(List.of(
+                NlAskResponse.okQuery(fullQueryJson(), "m", 1000, 200, "t1"),
+                NlAskResponse.okInsight(insightJson(), "m", 3000, 400)));
+        AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), provider);
+        svc.setThinQueryService(cannedExecutor(cannedCellDataSet()));
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.AGGREGATED));
+
+        AiAskService.AskChain chain =
+                svc.askChained(CUBE, "build and report", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+
+        assertEquals(2, chain.providerCalls());
+        assertEquals(4000L, chain.inputTokens());
+        assertEquals(600L, chain.outputTokens());
+        assertEquals(4600L, chain.totalTokens());
+    }
+
+    @Test
+    public void aDegradedTurnStillReportsItsUsage() {
+        // The provider was called and billed even though we could not use the answer. Reporting zero
+        // here would make every failure free, which is exactly when an operator least expects it.
+        NlAskResponse degraded = NlAskResponse.degraded("upstream exploded", "m");
+        ScriptedProvider provider = new ScriptedProvider(List.of(degraded));
+        AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), provider);
+        svc.setThinQueryService(cannedExecutor(cannedCellDataSet()));
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.AGGREGATED));
+
+        AiAskService.AskChain chain =
+                svc.askChained(CUBE, "build and report", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+
+        assertEquals(1, chain.providerCalls());
+        assertTrue(chain.steps().get(0).degraded());
+    }
+
+    @Test
+    public void singleTurnOutcomeCarriesTheProvidersTokenUsage() {
+        // The sync /ask path charges the same budget, so AskOutcome has to carry usage too.
+        ScriptedProvider provider = new ScriptedProvider(List.of(NlAskResponse.okInsight(insightJson(), "m", 120, 45)));
+        AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), provider);
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.AGGREGATED));
+
+        AiAskService.AskOutcome out = svc.ask(CUBE, "spot the trend", List.of());
+
+        assertEquals(120, out.inputTokens());
+        assertEquals(45, out.outputTokens());
+        assertEquals(165L, out.totalTokens());
+    }
+
+    @Test
+    public void anOutcomeWithNoReportedUsageReportsZeroRatherThanNegative() {
+        // -1 is the "provider didn't report" sentinel. Summing it naively would make totalTokens()
+        // negative and read as a credit against the budget.
+        AiAskService.AskOutcome out = AiAskService.AskOutcome.degraded("no provider", "m");
+        assertEquals(0L, out.totalTokens());
+    }
+
     @Test
     public void chainedAskForcesInsightOnContinuationTurnByDefault() {
         // OPT-1: the continuation (report) turn is asked with forceTool=INSIGHT so the provider
@@ -1053,6 +1127,157 @@ public class AiAskServiceTest {
         assertTrue(chain.steps().get(0).degraded());
         assertEquals("not configured", chain.steps().get(0).reason());
         assertFalse(chain.hitStepLimit());
+    }
+
+    /* ---- saiku#1425: outbound MCP tool calls inside the chained-ask loop ---- */
+
+    @Test
+    public void mcpToolCallIsDispatchedFedBackAndNeverTouchesCellsetDigest() throws Exception {
+        HttpServer fakeServer = startFakeMcpServer(
+                "{\"name\":\"lookup_ticket\",\"description\":\"Look up a support ticket\","
+                        + "\"inputSchema\":{\"type\":\"object\"}}",
+                "Ticket 123: open, priority high");
+        try {
+            McpOutboundToolCatalog catalog = catalogWithOneServer(fakeServer, Set.of("lookup_ticket"));
+            String qualifiedName = catalog.tools().get(0).qualifiedName();
+
+            ScriptedProvider provider = new ScriptedProvider(List.of(
+                    NlAskResponse.okMcpTool(qualifiedName, "{\"id\":\"123\"}", "m", 10, 5, "call1"),
+                    NlAskResponse.okInsight(insightJson(), "m", 10, 5)));
+            AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), provider);
+            svc.setThinQueryService(cannedExecutor(cannedCellDataSet()));
+            svc.setEgressGuard(new AiPolicyGuard(AiPolicy.AGGREGATED));
+            svc.setMcpOutbound(catalog);
+
+            AiAskService.AskChain chain = svc.askChained(
+                    CUBE, "look up ticket 123 then summarise", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+
+            assertEquals(2, chain.steps().size());
+            assertFalse(chain.hitStepLimit());
+
+            AiAskService.AskOutcome mcpStep = chain.steps().get(0);
+            assertEquals(AiAskService.AskOutcome.Kind.MCP_TOOL_CALL, mcpStep.kind());
+            assertFalse(mcpStep.degraded());
+            assertNotNull(mcpStep.mcpToolCall());
+            assertEquals(qualifiedName, mcpStep.mcpToolCall().qualifiedName());
+            assertFalse(mcpStep.mcpToolCall().error());
+            assertEquals(
+                    "Ticket 123: open, priority high", mcpStep.mcpToolCall().resultDigest());
+
+            assertEquals(
+                    AiAskService.AskOutcome.Kind.INSIGHT, chain.steps().get(1).kind());
+
+            // The tool result rode the transcript back to the model...
+            assertEquals(2, provider.seen().size());
+            NlAskRequest secondReq = provider.seen().get(1);
+            assertEquals(1, secondReq.toolTranscript().size());
+            ToolTurn turn = secondReq.toolTranscript().get(0);
+            assertEquals("call1", turn.toolCallId());
+            assertEquals(qualifiedName, turn.toolName());
+            assertEquals("Ticket 123: open, priority high", turn.resultDigest());
+            // ...but NEVER as the cellset digest — that channel is reserved for executed cube
+            // queries (unlocks emit_insight over the GRID, which an external tool result is not).
+            assertNull("an mcp tool result must not masquerade as a cellset digest", secondReq.cellsetDigest());
+        } finally {
+            fakeServer.stop(0);
+        }
+    }
+
+    @Test
+    public void mcpToolCallForStaleOrUnknownNameFeedsErrorBackAndContinuesTheChain() throws Exception {
+        // Bind then immediately stop a server to get a URL nothing is listening on.
+        HttpServer deadServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        int deadPort = deadServer.getAddress().getPort();
+        deadServer.start();
+        deadServer.stop(0);
+
+        Path root = Files.createTempDirectory("mcp-servers-test");
+        McpOutboundServerRegistry registry = new McpOutboundServerRegistry(root);
+        registry.save(new McpOutboundServer(
+                "dead",
+                "Dead server",
+                "http://127.0.0.1:" + deadPort + "/mcp",
+                null,
+                null,
+                Set.of("lookup_ticket"),
+                "dead.json"));
+        McpOutboundToolCatalog catalog =
+                new McpOutboundToolCatalog(registry, new org.saiku.service.mcp.outbound.McpOutboundClient());
+
+        // Discovery itself fails (nothing listening) — the catalogue is empty, so in real use the
+        // model would never even be offered an mcp__ tool this turn. Script the provider to call
+        // one anyway (a stale/hallucinated tool name) to exercise AiAskService#dispatchMcpTool's
+        // "unknown tool" path — McpOutboundToolCatalog#callTool re-validates against the live
+        // (still-empty) catalogue and fails cleanly rather than attempting a network call.
+        assertTrue(
+                "dead server must contribute nothing to discovery",
+                catalog.tools().isEmpty());
+
+        ScriptedProvider provider = new ScriptedProvider(List.of(
+                NlAskResponse.okMcpTool("mcp__dead__lookup_ticket", "{}", "m", 10, 5, "call1"),
+                NlAskResponse.okInsight(insightJson(), "m", 10, 5)));
+        AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), provider);
+        svc.setThinQueryService(cannedExecutor(cannedCellDataSet()));
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.AGGREGATED));
+        svc.setMcpOutbound(catalog);
+
+        AiAskService.AskChain chain =
+                svc.askChained(CUBE, "look up ticket 123", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+
+        assertEquals(2, chain.steps().size());
+        assertFalse("an unreachable tool must not abort the chain", chain.hitStepLimit());
+        AiAskService.AskOutcome mcpStep = chain.steps().get(0);
+        assertEquals(AiAskService.AskOutcome.Kind.MCP_TOOL_CALL, mcpStep.kind());
+        assertTrue(mcpStep.mcpToolCall().error());
+        assertNotNull(mcpStep.mcpToolCall().resultDigest());
+        // The loop must still continue to the report turn with an honest error digest, not stall.
+        assertEquals(AiAskService.AskOutcome.Kind.INSIGHT, chain.steps().get(1).kind());
+    }
+
+    /** Starts a minimal in-process fake MCP server implementing {@code initialize} / {@code
+     *  tools/list} (advertising exactly one tool, {@code toolJson}) / {@code tools/call} (always
+     *  returning {@code callResultText} as a single text content block). Caller stops it. */
+    private static HttpServer startFakeMcpServer(String toolJson, String callResultText) throws IOException {
+        ObjectMapper mapper = new ObjectMapper();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/mcp", exchange -> {
+            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            JsonNode req = mapper.readTree(body);
+            String method = req.path("method").asText();
+            String id = req.path("id").asText();
+            String respBody;
+            if ("initialize".equals(method)) {
+                respBody = "{\"jsonrpc\":\"2.0\",\"id\":\"" + id + "\",\"result\":{"
+                        + "\"protocolVersion\":\"2025-03-26\",\"capabilities\":{\"tools\":{}},"
+                        + "\"serverInfo\":{\"name\":\"fake\",\"version\":\"1\"}}}";
+            } else if ("tools/list".equals(method)) {
+                respBody = "{\"jsonrpc\":\"2.0\",\"id\":\"" + id + "\",\"result\":{\"tools\":[" + toolJson + "]}}";
+            } else if ("tools/call".equals(method)) {
+                respBody = "{\"jsonrpc\":\"2.0\",\"id\":\"" + id + "\",\"result\":{\"content\":["
+                        + "{\"type\":\"text\",\"text\":\"" + callResultText + "\"}]}}";
+            } else {
+                respBody = "{\"jsonrpc\":\"2.0\",\"id\":\"" + id
+                        + "\",\"error\":{\"code\":-32601,\"message\":\"unknown\"}}";
+            }
+            byte[] out = respBody.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("content-type", "application/json");
+            exchange.sendResponseHeaders(200, out.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(out);
+            }
+        });
+        server.start();
+        return server;
+    }
+
+    private static McpOutboundToolCatalog catalogWithOneServer(HttpServer server, Set<String> enabledTools)
+            throws Exception {
+        int port = server.getAddress().getPort();
+        Path root = Files.createTempDirectory("mcp-servers-test");
+        McpOutboundServerRegistry registry = new McpOutboundServerRegistry(root);
+        registry.save(new McpOutboundServer(
+                "fake", "Fake MCP server", "http://127.0.0.1:" + port + "/mcp", null, null, enabledTools, "fake.json"));
+        return new McpOutboundToolCatalog(registry, new org.saiku.service.mcp.outbound.McpOutboundClient());
     }
 
     /* ---- OPT-3: bounded rate-limit paced retry in askChained ---- */

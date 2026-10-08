@@ -7,6 +7,7 @@ package org.saiku.sql.server.pgwire;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -22,6 +23,7 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.saiku.sql.server.SqlServerCredentials;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,9 +35,10 @@ import org.slf4j.LoggerFactory;
  * <p>What ships:
  *
  * <ul>
- *   <li><b>Startup + trust auth.</b> SSL requests are refused (server replies {@code 'N'}); the
- *       client falls back to plaintext. Trust auth means we accept any username; SCRAM comes in
- *       a follow-up.
+ *   <li><b>Startup + auth.</b> SSL requests are refused (server replies {@code 'N'}); the
+ *       client falls back to plaintext. With {@link SqlServerCredentials} the server demands
+ *       SCRAM-SHA-256 for that one user; without them it runs in trust mode (any username),
+ *       which callers must only combine with a loopback bind address (saiku#1910).
  *   <li><b>Simple query mode</b> ({@code Q} messages). Every SQL statement dispatches to a fresh
  *       Calcite {@link Statement} via a pooled JDBC connection.
  *   <li><b>Extended query mode</b> ({@code P}/{@code B}/{@code D}/{@code E}/{@code S} messages).
@@ -54,7 +57,6 @@ import org.slf4j.LoggerFactory;
  *       common types but breaks binary-only encodings.
  *   <li>Portal suspension (server never returns PortalSuspended; Execute runs all rows).
  *   <li>SSL/TLS. We answer 'N' to SSL requests; clients configured to REQUIRE SSL fail.
- *   <li>SCRAM-SHA-256 auth.
  *   <li>COPY protocol, cursors as first-class portals.
  * </ul>
  *
@@ -71,16 +73,39 @@ public class PgWireServer implements AutoCloseable {
     /** SSL-request magic — 80877103 = {@code 1234} × 65536 + {@code 5679}. */
     private static final int SSL_REQUEST = 80877103;
 
+    /** Upper bound on any message read before the client has authenticated. */
+    private static final int MAX_PREAUTH_MESSAGE = 10_000;
+
+    /** Unauthenticated clients get this long to finish startup + auth before we hang up. */
+    private static final int AUTH_TIMEOUT_MILLIS = 30_000;
+
     private final ServerSocket serverSocket;
     private final ExecutorService pool;
     private final AtomicBoolean running = new AtomicBoolean(true);
     private final String jdbcConnectString;
+    private final SqlServerCredentials credentials;
+    private final ScramSha256 scram;
 
+    /** Trust-mode server bound to loopback only. */
     public PgWireServer(int port, String jdbcConnectString) throws IOException {
+        this(SqlServerCredentials.DEFAULT_BIND_HOST, port, jdbcConnectString, null);
+    }
+
+    /**
+     * @param bindHost address to listen on; {@code null} means {@link
+     *     SqlServerCredentials#DEFAULT_BIND_HOST}
+     * @param credentials the user clients must authenticate as via SCRAM-SHA-256, or {@code null}
+     *     for trust mode
+     */
+    public PgWireServer(String bindHost, int port, String jdbcConnectString, SqlServerCredentials credentials)
+            throws IOException {
         this.jdbcConnectString = jdbcConnectString;
+        this.credentials = credentials;
+        this.scram = credentials == null ? null : new ScramSha256(credentials.getPassword());
+        String host = bindHost == null ? SqlServerCredentials.DEFAULT_BIND_HOST : bindHost;
         this.serverSocket = new ServerSocket();
         this.serverSocket.setReuseAddress(true);
-        this.serverSocket.bind(new InetSocketAddress(port));
+        this.serverSocket.bind(new InetSocketAddress(InetAddress.getByName(host), port));
         this.pool = Executors.newCachedThreadPool(r -> {
             Thread t = new Thread(r, "pgwire-conn");
             t.setDaemon(true);
@@ -90,7 +115,11 @@ public class PgWireServer implements AutoCloseable {
         Thread acceptLoop = new Thread(this::runAcceptLoop, "pgwire-accept");
         acceptLoop.setDaemon(true);
         acceptLoop.start();
-        log.info("PgWireServer listening on {}", getPort());
+        log.info(
+                "PgWireServer listening on {}:{} ({})",
+                host,
+                getPort(),
+                credentials == null ? "trust auth" : "SCRAM-SHA-256");
     }
 
     public int getPort() {
@@ -112,71 +141,151 @@ public class PgWireServer implements AutoCloseable {
     private void handleClient(Socket socket) {
         try (socket;
                 DataInputStream in = new DataInputStream(socket.getInputStream());
-                DataOutputStream out = new DataOutputStream(socket.getOutputStream());
-                Connection calcite = DriverManager.getConnection(jdbcConnectString)) {
+                DataOutputStream out = new DataOutputStream(socket.getOutputStream())) {
 
             // Startup phase — client may first send an SSL request. We reject and continue on
-            // the same socket in plaintext.
-            if (!doStartup(in, out)) return;
+            // the same socket in plaintext. Bounded by a timeout so unauthenticated sockets
+            // can't be held open indefinitely.
+            socket.setSoTimeout(AUTH_TIMEOUT_MILLIS);
+            Map<String, String> startupParams = doStartup(in, out);
+            if (startupParams == null) return;
+            if (!authenticate(startupParams.get("user"), in, out)) return;
+            socket.setSoTimeout(0);
 
-            // Reply with AuthenticationOk + BackendKeyData + a couple of ParameterStatus messages
-            // + ReadyForQuery. This is the canonical "ready to receive queries" sequence.
-            sendAuthenticationOk(out);
-            sendParameterStatus(out, "server_version", "14.0 (Saiku Ossie 4.6.0)");
-            sendParameterStatus(out, "client_encoding", "UTF8");
-            sendParameterStatus(out, "DateStyle", "ISO, MDY");
-            sendReadyForQuery(out);
-
-            // Per-connection state for extended query mode. Portals hold the fully-substituted
-            // SQL text for a Bound statement plus the client's requested result-format codes.
-            // Both maps use an empty string as the "unnamed" statement/portal — Postgres protocol
-            // convention for the anonymous slot pgjdbc uses by default.
-            Map<String, String> statements = new HashMap<>();
-            Map<String, Portal> portals = new HashMap<>();
-
-            // Query loop. Read one message at a time until Terminate or connection close.
-            while (running.get()) {
-                int msgType = in.read();
-                if (msgType < 0) return; // client closed
-                int length = in.readInt(); // includes the length field itself
-                byte[] payload = in.readNBytes(length - 4);
-                switch (msgType) {
-                    case 'Q': // Simple query
-                        handleSimpleQuery(payload, out, calcite);
-                        sendReadyForQuery(out);
-                        break;
-                    case 'P': // Parse
-                        handleParse(payload, out, statements);
-                        break;
-                    case 'B': // Bind
-                        handleBind(payload, out, statements, portals);
-                        break;
-                    case 'D': // Describe (statement 'S' or portal 'P')
-                        handleDescribe(payload, out, calcite, statements, portals);
-                        break;
-                    case 'E': // Execute
-                        handleExecute(payload, out, calcite, portals);
-                        break;
-                    case 'C': // Close (statement 'S' or portal 'P')
-                        handleClose(payload, out, statements, portals);
-                        break;
-                    case 'H': // Flush — no-op, we flush after each message anyway
-                        out.flush();
-                        break;
-                    case 'S': // Sync — end extended-mode transaction group
-                        sendReadyForQuery(out);
-                        break;
-                    case 'X': // Terminate
-                        return;
-                    default:
-                        sendErrorResponse(
-                                out, "0A000", "message type '" + (char) msgType + "' not supported in this slice");
-                        sendReadyForQuery(out);
-                }
+            // The warehouse-backed connection is opened only once the client has authenticated.
+            try (Connection calcite = DriverManager.getConnection(jdbcConnectString)) {
+                serveQueries(in, out, calcite);
             }
         } catch (Exception e) {
             log.debug("Connection handler ended: {}", e.getMessage());
         }
+    }
+
+    private void serveQueries(DataInputStream in, DataOutputStream out, Connection calcite) throws IOException {
+        // Reply with AuthenticationOk + BackendKeyData + a couple of ParameterStatus messages
+        // + ReadyForQuery. This is the canonical "ready to receive queries" sequence.
+        sendAuthenticationOk(out);
+        sendParameterStatus(out, "server_version", "14.0 (Saiku Ossie 4.6.0)");
+        sendParameterStatus(out, "client_encoding", "UTF8");
+        sendParameterStatus(out, "DateStyle", "ISO, MDY");
+        sendReadyForQuery(out);
+
+        // Per-connection state for extended query mode. Portals hold the fully-substituted
+        // SQL text for a Bound statement plus the client's requested result-format codes.
+        // Both maps use an empty string as the "unnamed" statement/portal — Postgres protocol
+        // convention for the anonymous slot pgjdbc uses by default.
+        Map<String, String> statements = new HashMap<>();
+        Map<String, Portal> portals = new HashMap<>();
+
+        // Query loop. Read one message at a time until Terminate or connection close.
+        while (running.get()) {
+            int msgType = in.read();
+            if (msgType < 0) return; // client closed
+            int length = in.readInt(); // includes the length field itself
+            byte[] payload = in.readNBytes(length - 4);
+            switch (msgType) {
+                case 'Q': // Simple query
+                    handleSimpleQuery(payload, out, calcite);
+                    sendReadyForQuery(out);
+                    break;
+                case 'P': // Parse
+                    handleParse(payload, out, statements);
+                    break;
+                case 'B': // Bind
+                    handleBind(payload, out, statements, portals);
+                    break;
+                case 'D': // Describe (statement 'S' or portal 'P')
+                    handleDescribe(payload, out, calcite, statements, portals);
+                    break;
+                case 'E': // Execute
+                    handleExecute(payload, out, calcite, portals);
+                    break;
+                case 'C': // Close (statement 'S' or portal 'P')
+                    handleClose(payload, out, statements, portals);
+                    break;
+                case 'H': // Flush — no-op, we flush after each message anyway
+                    out.flush();
+                    break;
+                case 'S': // Sync — end extended-mode transaction group
+                    sendReadyForQuery(out);
+                    break;
+                case 'X': // Terminate
+                    return;
+                default:
+                    sendErrorResponse(
+                            out, "0A000", "message type '" + (char) msgType + "' not supported in this slice");
+                    sendReadyForQuery(out);
+            }
+        }
+    }
+
+    /**
+     * Runs the auth exchange after startup. In trust mode this is a no-op; otherwise it drives
+     * SCRAM-SHA-256 and returns false (having sent an ErrorResponse) when the client fails. The
+     * username is checked only after the proof, so a failure never reveals which part was wrong.
+     */
+    private boolean authenticate(String user, DataInputStream in, DataOutputStream out) throws IOException {
+        if (credentials == null) return true;
+        try {
+            ScramSha256.Exchange exchange = scram.newExchange();
+            sendAuthenticationSasl(out);
+
+            byte[] initial = readPasswordMessage(in);
+            int[] cursor = {0};
+            String mechanism = readNullTerminatedString(initial, cursor);
+            if (!ScramSha256.MECHANISM.equals(mechanism)) {
+                throw new ScramSha256.ScramException("unsupported SASL mechanism " + mechanism);
+            }
+            int len = readInt32(initial, cursor);
+            if (len < 0 || cursor[0] + len > initial.length) {
+                throw new ScramSha256.ScramException("malformed SASLInitialResponse");
+            }
+            String clientFirst = new String(initial, cursor[0], len, StandardCharsets.UTF_8);
+            sendAuthenticationSasl(out, 11, exchange.serverFirst(clientFirst));
+
+            String clientFinal = new String(readPasswordMessage(in), StandardCharsets.UTF_8);
+            String serverFinal = exchange.serverFinal(clientFinal);
+            if (!credentials.getUsername().equals(user)) {
+                throw new ScramSha256.ScramException("unknown user");
+            }
+            sendAuthenticationSasl(out, 12, serverFinal);
+            return true;
+        } catch (ScramSha256.ScramException | ArrayIndexOutOfBoundsException e) {
+            log.warn("PG-wire authentication failed for user '{}': {}", user, e.getMessage());
+            sendErrorResponse(out, "28P01", "password authentication failed for user \"" + user + "\"");
+            return false;
+        }
+    }
+
+    /** Reads one PasswordMessage-family ({@code 'p'}) message and returns its payload. */
+    private byte[] readPasswordMessage(DataInputStream in) throws IOException, ScramSha256.ScramException {
+        int type = in.read();
+        if (type != 'p') throw new ScramSha256.ScramException("expected password message");
+        int length = in.readInt();
+        if (length < 4 || length > MAX_PREAUTH_MESSAGE) throw new ScramSha256.ScramException("bad message length");
+        return in.readNBytes(length - 4);
+    }
+
+    /** AuthenticationSASL: advertise the one mechanism we support. */
+    private void sendAuthenticationSasl(DataOutputStream out) throws IOException {
+        byte[] mech = ScramSha256.MECHANISM.getBytes(StandardCharsets.UTF_8);
+        out.writeByte('R');
+        out.writeInt(4 + 4 + mech.length + 1 + 1);
+        out.writeInt(10);
+        out.write(mech);
+        out.writeByte(0);
+        out.writeByte(0); // end of mechanism list
+        out.flush();
+    }
+
+    /** AuthenticationSASLContinue (11) or AuthenticationSASLFinal (12). */
+    private void sendAuthenticationSasl(DataOutputStream out, int code, String data) throws IOException {
+        byte[] bytes = data.getBytes(StandardCharsets.UTF_8);
+        out.writeByte('R');
+        out.writeInt(4 + 4 + bytes.length);
+        out.writeInt(code);
+        out.write(bytes);
+        out.flush();
     }
 
     /** Portal state — after Bind, holds the fully substituted SQL and the client's result format
@@ -192,11 +301,11 @@ public class PgWireServer implements AutoCloseable {
     }
 
     /**
-     * Read + respond to the startup message. Returns false only if the client hung up before
-     * completing startup. Handles the SSL-request path: replies with 'N' and reads a fresh
-     * startup message on the same socket.
+     * Read + respond to the startup message. Returns the startup parameters, or null if the
+     * client asked for something we can't serve. Handles the SSL-request path: replies with 'N'
+     * and reads a fresh startup message on the same socket.
      */
-    private boolean doStartup(DataInputStream in, DataOutputStream out) throws IOException {
+    private Map<String, String> doStartup(DataInputStream in, DataOutputStream out) throws IOException {
         int length = in.readInt();
         int firstInt = in.readInt();
         if (firstInt == SSL_REQUEST) {
@@ -211,14 +320,17 @@ public class PgWireServer implements AutoCloseable {
             // Unsupported protocol version — send an ErrorResponse and give up. Kept
             // best-effort; some clients may not read it before disconnecting.
             sendErrorResponse(out, "08P01", "unsupported protocol version: " + firstInt);
-            return false;
+            return null;
+        }
+        if (length < 8 || length > MAX_PREAUTH_MESSAGE) {
+            sendErrorResponse(out, "08P01", "invalid startup packet length");
+            return null;
         }
         // Startup body: null-terminated key=value pairs, terminated by a final null. Read the
         // rest into a byte array — length includes the length field + protocol version (already
         // consumed) + the pairs.
         byte[] body = in.readNBytes(length - 8);
-        parseStartupParams(body); // logged for diagnostics; not used yet
-        return true;
+        return parseStartupParams(body);
     }
 
     private Map<String, String> parseStartupParams(byte[] body) {

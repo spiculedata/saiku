@@ -56,18 +56,34 @@ export function deltaLabelFor(
 	}
 	switch (grainOf(timeLevel?.level)) {
 		case 'day':
-			return { key: 'dashboard.kpi.vsYesterday', fallback: 'vs yesterday' };
+			// saiku#1749 — period-to-date measures the newest period SO FAR against
+			// the same point of the one before it, so "vs yesterday" would be a lie
+			// whenever yesterday is longer. The "same point" wording is what makes
+			// the truncated baseline honest to a reader.
+			return comparison === 'period-to-date'
+				? { key: 'dashboard.kpi.vsSamePointYesterday', fallback: 'vs same point yesterday' }
+				: { key: 'dashboard.kpi.vsYesterday', fallback: 'vs yesterday' };
 		case 'week':
-			return { key: 'dashboard.kpi.vsLastWeek', fallback: 'vs last week' };
+			return comparison === 'period-to-date'
+				? { key: 'dashboard.kpi.vsSamePointLastWeek', fallback: 'vs same point last week' }
+				: { key: 'dashboard.kpi.vsLastWeek', fallback: 'vs last week' };
 		case 'month':
-			return { key: 'dashboard.kpi.vsLastMonth', fallback: 'vs last month' };
+			return comparison === 'period-to-date'
+				? { key: 'dashboard.kpi.vsSamePointLastMonth', fallback: 'vs same point last month' }
+				: { key: 'dashboard.kpi.vsLastMonth', fallback: 'vs last month' };
 		case 'quarter':
-			return { key: 'dashboard.kpi.vsLastQuarter', fallback: 'vs last quarter' };
+			return comparison === 'period-to-date'
+				? { key: 'dashboard.kpi.vsSamePointLastQuarter', fallback: 'vs same point last quarter' }
+				: { key: 'dashboard.kpi.vsLastQuarter', fallback: 'vs last quarter' };
 		case 'year':
-			return { key: 'dashboard.kpi.vsLastYear', fallback: 'vs last year' };
+			return comparison === 'period-to-date'
+				? { key: 'dashboard.kpi.vsSamePointLastYear', fallback: 'vs same point last year' }
+				: { key: 'dashboard.kpi.vsLastYear', fallback: 'vs last year' };
 		default:
 			// No time level configured — nothing to name, so stay generic.
-			return { key: 'dashboard.kpi.vsPrior', fallback: 'vs prior' };
+			return comparison === 'period-to-date'
+				? { key: 'dashboard.kpi.vsSamePoint', fallback: 'vs same point' }
+				: { key: 'dashboard.kpi.vsPrior', fallback: 'vs prior' };
 	}
 }
 

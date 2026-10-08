@@ -8,8 +8,8 @@
  * pin that contract.
  */
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { appDoc } from './appDoc.svelte';
-import type { SaikuApp } from '$lib/api/apps';
+import { appDoc, initialPageId } from './appDoc.svelte';
+import type { AppPage, SaikuApp } from '$lib/api/apps';
 
 function jsonResponse(body: unknown, status = 200): Response {
 	return new Response(JSON.stringify(body), {
@@ -201,6 +201,69 @@ describe('appDoc store', () => {
 			await appDoc.loadApp('homes/admin/missing.saikuapp');
 			expect(appDoc.current).toBeNull();
 			expect(appDoc.error).toBeTruthy();
+		});
+
+		// --------------------------------------------------------------
+		// saiku#1766 — `?p=` deep link. The active page is chosen by the LOAD,
+		// not by a view's mount hook, so a shared page link survives no matter
+		// how many loads of the same app race (the old double load reset the
+		// app to page 0 after the restore, and the URL mirror then rewrote
+		// `?p=` to page 1's id — the link was both ignored and destroyed).
+		// --------------------------------------------------------------
+		test('opens the page named by the ?p= deep link', async () => {
+			globalThis.fetch = vi.fn().mockImplementation(() => jsonResponse(rawApp('Deep linked')));
+
+			await appDoc.loadApp('homes/admin/demo.saikuapp', { pageId: 'p-b' });
+
+			expect(appDoc.activePageId).toBe('p-b');
+		});
+
+		test('a re-load of the same app keeps the deep-linked page', async () => {
+			globalThis.fetch = vi.fn().mockImplementation(() => jsonResponse(rawApp('Deep linked')));
+
+			// The second load is the one that used to land last and win.
+			await appDoc.loadApp('homes/admin/demo.saikuapp', { pageId: 'p-b' });
+			await appDoc.loadApp('homes/admin/demo.saikuapp', { pageId: 'p-b' });
+
+			expect(appDoc.activePageId).toBe('p-b');
+		});
+
+		test('two concurrent loads of the same deep link both land on the page', async () => {
+			globalThis.fetch = vi.fn().mockImplementation(() => jsonResponse(rawApp('Deep linked')));
+
+			await Promise.all([
+				appDoc.loadApp('homes/admin/demo.saikuapp', { pageId: 'p-b' }),
+				appDoc.loadApp('homes/admin/demo.saikuapp', { pageId: 'p-b' })
+			]);
+
+			expect(appDoc.activePageId).toBe('p-b');
+		});
+
+		test('falls back to page 0 when ?p= is absent, unknown, or blank', async () => {
+			globalThis.fetch = vi.fn().mockImplementation(() => jsonResponse(rawApp('Deep linked')));
+			const first = () => appDoc.current!.pages[0].id;
+
+			await appDoc.loadApp('homes/admin/demo.saikuapp');
+			expect(appDoc.activePageId).toBe(first());
+
+			await appDoc.loadApp('homes/admin/demo.saikuapp', { pageId: 'p-gone' });
+			expect(appDoc.activePageId).toBe(first());
+
+			await appDoc.loadApp('homes/admin/demo.saikuapp', { pageId: '' });
+			expect(appDoc.activePageId).toBe(first());
+
+			await appDoc.loadApp('homes/admin/demo.saikuapp', { pageId: null });
+			expect(appDoc.activePageId).toBe(first());
+		});
+	});
+
+	describe('initialPageId', () => {
+		test('prefers a known deep-linked page, else the first, else null', () => {
+			const pages = [{ id: 'p-a' }, { id: 'p-b' }] as unknown as AppPage[];
+			expect(initialPageId(pages, 'p-b')).toBe('p-b');
+			expect(initialPageId(pages, 'nope')).toBe('p-a');
+			expect(initialPageId(pages, null)).toBe('p-a');
+			expect(initialPageId([], 'p-b')).toBeNull();
 		});
 	});
 

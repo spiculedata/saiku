@@ -1,0 +1,138 @@
+{
+ "config": {
+  "projects": [
+   {
+    "name": "chromium"
+   }
+  ]
+ },
+ "suites": [
+  {
+   "title": "sample.spec.mjs",
+   "file": "sample.spec.mjs",
+   "column": 0,
+   "line": 0,
+   "specs": [],
+   "suites": [
+    {
+     "title": "Workbench measures",
+     "file": "sample.spec.mjs",
+     "line": 2,
+     "column": 6,
+     "specs": [
+      {
+       "title": "always passes",
+       "ok": true,
+       "tags": [],
+       "tests": [
+        {
+         "timeout": 30000,
+         "annotations": [],
+         "expectedStatus": "passed",
+         "projectId": "chromium",
+         "projectName": "chromium",
+         "results": [
+          {
+           "status": "passed",
+           "errors": [],
+           "retry": 0,
+           "annotations": []
+          }
+         ],
+         "status": "expected"
+        }
+       ],
+       "id": "cb5cc50af8949d2cc51f-2f0f95498800bee5901c",
+       "file": "sample.spec.mjs",
+       "line": 3,
+       "column": 2
+      },
+      {
+       "title": "flaky: fails first attempt only",
+       "ok": true,
+       "tags": [],
+       "tests": [
+        {
+         "timeout": 30000,
+         "annotations": [],
+         "expectedStatus": "passed",
+         "projectId": "chromium",
+         "projectName": "chromium",
+         "results": [
+          {
+           "status": "failed",
+           "error": {
+            "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeGreaterThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m"
+           },
+           "errors": [],
+           "retry": 0,
+           "annotations": []
+          },
+          {
+           "status": "passed",
+           "errors": [],
+           "retry": 1,
+           "annotations": []
+          }
+         ],
+         "status": "flaky"
+        }
+       ],
+       "id": "cb5cc50af8949d2cc51f-75db47288c4af2075289",
+       "file": "sample.spec.mjs",
+       "line": 7,
+       "column": 2
+      },
+      {
+       "title": "always fails",
+       "ok": false,
+       "tags": [],
+       "tests": [
+        {
+         "timeout": 30000,
+         "annotations": [],
+         "expectedStatus": "passed",
+         "projectId": "chromium",
+         "projectName": "chromium",
+         "results": [
+          {
+           "status": "failed",
+           "error": {
+            "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed"
+           },
+           "errors": [],
+           "retry": 0,
+           "annotations": []
+          },
+          {
+           "status": "failed",
+           "error": {
+            "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed"
+           },
+           "errors": [],
+           "retry": 1,
+           "annotations": []
+          }
+         ],
+         "status": "unexpected"
+        }
+       ],
+       "id": "cb5cc50af8949d2cc51f-c5ceabf109a782debff1",
+       "file": "sample.spec.mjs",
+       "line": 11,
+       "column": 2
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "errors": [],
+ "stats": {
+  "duration": 2514.685,
+  "expected": 1,
+  "skipped": 0,
+  "unexpected": 1,
+  "flaky": 1
+ }
+}

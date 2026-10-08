@@ -46,7 +46,7 @@ public class ObjectUtil {
 
     @NotNull
     public static SaikuCube convert(String connection, @NotNull Cube c) {
-        return new SaikuCube(
+        SaikuCube sc = new SaikuCube(
                 connection,
                 c.getUniqueName(),
                 c.getName(),
@@ -54,6 +54,17 @@ public class ObjectUtil {
                 c.getSchema().getCatalog().getName(),
                 c.getSchema().getName(),
                 c.isVisible());
+        sc.setCellLinkUrl(cellLinkUrlFrom(c));
+        return sc;
+    }
+
+    /** Cube annotation {@code saiku.cellLink.url}, or {@code null} when absent. */
+    @Nullable
+    public static String cellLinkUrlFrom(@Nullable Cube c) {
+        if (c == null) {
+            return null;
+        }
+        return CellLinkUrl.fromAnnotationMap(annotationsAsStringMap(c));
     }
 
     @NotNull
