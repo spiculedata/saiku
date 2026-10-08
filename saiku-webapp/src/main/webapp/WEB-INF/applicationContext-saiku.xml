@@ -201,6 +201,8 @@
     </security:http>
     <security:http pattern="/index.jsp" request-matcher="ant" security="none">
     </security:http>
+    <security:http pattern="/index.html" request-matcher="ant" security="none">
+    </security:http>
     <security:http pattern="/style.css" request-matcher="ant" security="none">
     </security:http>
     <security:http pattern="/images/**" request-matcher="ant" security="none">
