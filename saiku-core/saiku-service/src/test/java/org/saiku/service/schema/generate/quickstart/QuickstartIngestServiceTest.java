@@ -33,7 +33,8 @@ public class QuickstartIngestServiceTest {
 
     @Test
     public void ingestsCsvIntoAQueryableTable() throws Exception {
-        QuickstartIngestService service = new QuickstartIngestService(tmp.getRoot().toPath());
+        QuickstartIngestService service =
+                new QuickstartIngestService(tmp.getRoot().toPath());
 
         QuickstartUploadResult result =
                 service.ingest("sales", "sales.csv", stream("amount,region\n10,east\n20,west\n"));
@@ -56,7 +57,8 @@ public class QuickstartIngestServiceTest {
 
     @Test
     public void blankRequestedNameFallsBackToTheUploadedFileName() throws Exception {
-        QuickstartIngestService service = new QuickstartIngestService(tmp.getRoot().toPath());
+        QuickstartIngestService service =
+                new QuickstartIngestService(tmp.getRoot().toPath());
 
         QuickstartUploadResult result = service.ingest("  ", "Q3 Sales.csv", stream("a\n1\n"));
 
@@ -65,21 +67,24 @@ public class QuickstartIngestServiceTest {
 
     @Test
     public void aSecondUploadWithTheSameNameIsRejected() throws Exception {
-        QuickstartIngestService service = new QuickstartIngestService(tmp.getRoot().toPath());
+        QuickstartIngestService service =
+                new QuickstartIngestService(tmp.getRoot().toPath());
         service.ingest("sales", "sales.csv", stream("a\n1\n"));
 
-        CsvIngestException e = assertThrows(
-                CsvIngestException.class, () -> service.ingest("sales", "sales.csv", stream("a\n1\n")));
+        CsvIngestException e =
+                assertThrows(CsvIngestException.class, () -> service.ingest("sales", "sales.csv", stream("a\n1\n")));
         assertTrue(e.getMessage().contains("already exists"));
     }
 
     @Test
     public void malformedCsvLeavesNoDatabaseDirectoryBehind() throws Exception {
-        QuickstartIngestService service = new QuickstartIngestService(tmp.getRoot().toPath());
+        QuickstartIngestService service =
+                new QuickstartIngestService(tmp.getRoot().toPath());
 
         assertThrows(CsvIngestException.class, () -> service.ingest("bad", "bad.csv", stream("")));
 
-        Path expectedDir = tmp.getRoot().toPath().resolve("data").resolve("quickstart").resolve("bad");
+        Path expectedDir =
+                tmp.getRoot().toPath().resolve("data").resolve("quickstart").resolve("bad");
         assertFalse(Files.exists(expectedDir));
     }
 }

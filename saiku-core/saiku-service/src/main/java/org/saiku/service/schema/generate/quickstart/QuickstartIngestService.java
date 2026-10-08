@@ -88,8 +88,7 @@ public class QuickstartIngestService {
         }
         Files.createDirectories(dbDir);
 
-        String dbPath =
-                dbDir.resolve(H2_DB_NAME).toAbsolutePath().toString().replace('\\', '/');
+        String dbPath = dbDir.resolve(H2_DB_NAME).toAbsolutePath().toString().replace('\\', '/');
         String jdbcUrl = "jdbc:h2:" + dbPath;
 
         int rowCount;

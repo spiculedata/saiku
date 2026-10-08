@@ -67,20 +67,23 @@ public class CsvTableLoaderTest {
 
     @Test
     public void columnNamesWithSpacesAndQuotesAreSafeIdentifiers() throws Exception {
-        // The column header is attacker-controlled text; the identifier-quoting is the injection
-        // defence (see CsvTableLoader's class doc) — this exercises a header containing a quote.
+        // The column header is attacker-controlled text. CsvTable.parse sanitises it first
+        // ("weird name" -> "weird_name"), and the loader double-quotes every identifier as the
+        // second line of defence, so even a table name that needs quoting ("odd table") loads.
         CsvTable table = CsvTable.parse("weird name,another\n1,2\n");
         try (Connection c = newInMemoryConnection()) {
             CsvTableLoader.load(table, "odd table", c);
             DatabaseMetaData meta = c.getMetaData();
             try (ResultSet rs = meta.getColumns(null, null, "odd table", null)) {
-                boolean sawWeird = false;
+                boolean sawSanitised = false;
+                boolean sawRawHeader = false;
                 while (rs.next()) {
-                    if ("weird name".equals(rs.getString("COLUMN_NAME"))) {
-                        sawWeird = true;
-                    }
+                    String name = rs.getString("COLUMN_NAME");
+                    sawSanitised |= "weird_name".equals(name);
+                    sawRawHeader |= "weird name".equals(name);
                 }
-                assertTrue(sawWeird);
+                assertTrue("the sanitised header is the column name", sawSanitised);
+                assertFalse("the raw header text never reaches the schema", sawRawHeader);
             }
         }
     }

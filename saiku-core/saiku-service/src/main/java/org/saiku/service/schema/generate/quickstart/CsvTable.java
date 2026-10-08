@@ -42,8 +42,7 @@ public final class CsvTable {
     public record Column(String name, ColumnType type) {}
 
     private static final Pattern LONG_PATTERN = Pattern.compile("[-+]?\\d+");
-    private static final Pattern DOUBLE_PATTERN =
-            Pattern.compile("[-+]?(\\d+\\.\\d*|\\.\\d+|\\d+)([eE][-+]?\\d+)?");
+    private static final Pattern DOUBLE_PATTERN = Pattern.compile("[-+]?(\\d+\\.\\d*|\\.\\d+|\\d+)([eE][-+]?\\d+)?");
 
     private final List<Column> columns;
     private final List<List<String>> rows;

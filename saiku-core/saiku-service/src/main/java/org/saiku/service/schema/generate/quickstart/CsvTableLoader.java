@@ -47,7 +47,9 @@ final class CsvTableLoader {
 
     private static int insertRows(CsvTable table, String tableName, Connection connection) throws SQLException {
         List<CsvTable.Column> columns = table.columns();
-        StringBuilder insert = new StringBuilder("INSERT INTO ").append(quoteIdentifier(tableName)).append(" (");
+        StringBuilder insert = new StringBuilder("INSERT INTO ")
+                .append(quoteIdentifier(tableName))
+                .append(" (");
         StringBuilder placeholders = new StringBuilder();
         for (int i = 0; i < columns.size(); i++) {
             if (i > 0) {

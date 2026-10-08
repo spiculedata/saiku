@@ -125,8 +125,7 @@ public class CsvTableTest {
 
     @Test
     public void raggedRowIsRejectedWithARowNumber() {
-        CsvIngestException e =
-                assertThrows(CsvIngestException.class, () -> CsvTable.parse("a,b,c\n1,2,3\n4,5\n"));
+        CsvIngestException e = assertThrows(CsvIngestException.class, () -> CsvTable.parse("a,b,c\n1,2,3\n4,5\n"));
         assertTrue(e.getMessage().contains("row 3"));
     }
 }
