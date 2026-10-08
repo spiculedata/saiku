@@ -168,6 +168,7 @@ describe('coordsAtIntersection', () => {
 			lowestLevelsOnly: false,
 			details: { axis: 'COLUMNS', location: 'BOTTOM', measures: [] },
 			calculatedMeasures: [],
+			namedSets: [],
 			calculatedMembers: []
 		});
 		expect(buildCellLinkUrl('https://example.com/ops?barrio={Barrio}&tipo={Tipo}', coords)).toBe(

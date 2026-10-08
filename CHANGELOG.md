@@ -99,6 +99,20 @@ All notable changes to Saiku are documented here. This project follows
   reports each stack's configured provider/model/endpoint plus a live
   reachability probe — never the API key — so an operator can confirm the
   wiring without running a query. (saiku#904)
+- **True per-token LLM streaming behind the existing SSE ask endpoints**
+  (saiku#1484). `/ai/ask/stream` and `/ai/spaces/{id}/ask/stream` used to
+  *replay* a finished response as word-sized deltas, so a client rendered
+  progressively while the first token was still seconds away. The provider
+  call is now a real stream: Anthropic's `input_json_delta` events and
+  OpenAI's `tool_calls[].function.arguments` fragments are decoded on the fly,
+  and each piece of the model's prose is forwarded as a `chunk` event as it is
+  written. The wire shape is unchanged — `model`, then `intent` (as soon as
+  the model commits to a tool), then `chunk`s, then `final` — so no client
+  change is needed, and a provider with no streaming transport (or an
+  OpenAI-compatible gateway that answers a streaming request with a buffered
+  body) still produces exactly the old event sequence. A `QUERY` or dashboard
+  payload streams no `chunk` events: half a JSON query is not something a user
+  should watch being typed.
 
 ### Fixed
 

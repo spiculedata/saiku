@@ -71,6 +71,30 @@ class MailConfigStoreTest {
     }
 
     @Test
+    void clear_removesTheFileAndTheEncryptedPassword(@TempDir Path home) {
+        MailConfigStore s = store(home);
+        saveTypical(s, SECRET);
+        assertTrue(s.exists());
+
+        MailConfigView cleared = s.clear();
+
+        assertFalse(s.exists());
+        assertTrue(s.toMailConfig().isEmpty());
+        assertNull(cleared.host());
+        assertFalse(cleared.passwordSet());
+    }
+
+    @Test
+    void clear_onAnUnsetStore_isANoOp(@TempDir Path home) {
+        MailConfigStore s = store(home);
+
+        MailConfigView cleared = s.clear();
+
+        assertFalse(s.exists());
+        assertNull(cleared.host());
+    }
+
+    @Test
     void save_writesFile_andRoundTripsToPlaintextForTheSender(@TempDir Path home) {
         MailConfigStore s = store(home);
         saveTypical(s, SECRET);
