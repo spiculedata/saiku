@@ -75,6 +75,22 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-10-07 — feature/1987-export-destination-spi — merged development for PR #2080
+**Was doing:** merged development, retaining both export delivery and webhook digest wiring, corrected the export test stub's `createQuery` return type, and fixed a null-data test helper exposed by CI.
+**Now:** check PR #2080 CI; local focused Maven tests stop at GitHub Packages 401 before compilation, while Spotless and XML parsing pass.
+**Refs:** #1987, #2080
+## 2026-10-07 — fix/1949-terminal-catchall — merged latest development for PR #2078
+**Was doing:** resolved the session-summary conflict, retaining both branches' entries; development's seeded IT harness and this PR's security XML and dispatcher guard are preserved.
+**Now:** check PR #2078 CI, especially TerminalCatchAllIT and LoginJspIT, after the merge push.
+**Watch out:** local JDK 22 and Maven are available, but the focused build stops before compilation because private GitHub Packages dependencies return 401.
+**Refs:** #1949, #2078
+
+## 2026-10-06 — fix/1949-terminal-catchall — merged development for PR #2078
+**Was doing:** resolved the Spring Security XML conflict, keeping development's ant-matched public chains and XMLA changes alongside the PR's bare-path permits, dispatcher guard, and terminal catch-all.
+**Now:** check PR #2078 CI after the push, especially TerminalCatchAllIT and RestNoneChainAuthIT.
+**Watch out:** this environment has no Java or Maven, and the private olap4j artifact is absent from the local cache; only XML parsing and static security-chain checks ran locally.
+**Refs:** #1949, #2078
+
 ## 2026-10-07 — feature/certified-query-catalog — merged development for PR #2064
 **Was doing:** merged development, combined both increases to the Java test floors, and corrected the certified resource test's ask request and response type assumptions after CI feedback.
 **Now:** check PR #2064 CI; this workspace has no Java or Maven installation, so the Java build must run in CI.
@@ -153,6 +169,7 @@ pushed down; normal sessions append and the history stays useful.
 **Was doing:** merged development twice into PR #2042, retaining its drillthrough column discovery alongside the base branch's drillDown/drillUp API and safer Query2Resource error handling.
 **Now:** check PR #2042 CI after the latest push; the first merge passed JDK, UI, and bundle CI, and local UI check, focused tests, build, and lint passed.
 **Refs:** #822, #823, #2042
+
 ## 2026-10-05 — feature/arrow-cell-property-columns — merged development for PR #2046
 **Was doing:** merged development, keeping both column-header member metadata and the PR's optional cell-property columns; Spotless passed.
 **Now:** check PR #2046 CI after the push; local Maven tests stopped at a GitHub Packages 401 before compilation.
