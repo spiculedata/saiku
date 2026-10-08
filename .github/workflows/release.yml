@@ -37,6 +37,7 @@ jobs:
       jar_name: ${{ steps.meta.outputs.jar_name }}
       dist_name: ${{ steps.meta.outputs.dist_name }}
       sbom_name: ${{ steps.meta.outputs.sbom_name }}
+      ui_sbom_name: ${{ steps.meta.outputs.ui_sbom_name }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -103,6 +104,12 @@ jobs:
           echo "jar_name=saiku-${VERSION}.jar" >> "$GITHUB_OUTPUT"
           echo "dist_name=saiku-dist-${VERSION}.zip" >> "$GITHUB_OUTPUT"
           echo "sbom_name=saiku-sbom-${VERSION}.cdx.json" >> "$GITHUB_OUTPUT"
+          # saiku#2000: the npm/UI half of the shipped artifact (the
+          # SvelteKit bundle overlaid into the war + the design-system
+          # workspace). Published as its OWN asset next to the Java SBOM
+          # rather than merged into it — one file per ecosystem keeps
+          # `grype sbom:` / `jq` usage obvious for both.
+          echo "ui_sbom_name=saiku-ui-sbom-${VERSION}.cdx.json" >> "$GITHUB_OUTPUT"
 
       - name: "mvn verify (fail-fast: spotless + tests)"
         # Defence in depth — branch protection SHOULD have caught any
@@ -159,6 +166,20 @@ jobs:
             exit 1
           fi
           cp "$SBOM_SRC" "release-assets/saiku-sbom-${VERSION}.cdx.json"
+          # 4) CycloneDX SBOM for the npm/UI tree (saiku#2000). Emitted by
+          #    `npm run sbom` (@cyclonedx/cyclonedx-npm) as the LAST step of
+          #    saiku-ui's `npm run build`, which saiku-webapp's
+          #    frontend-maven-plugin drives from generate-resources — so the
+          #    `mvn verify` above already produced it. Written outside
+          #    dist/ so vite's emptyOutDir can't wipe it; not overlaid into
+          #    the war, so it's not a served /ui/ asset either.
+          UI_SBOM_SRC="saiku-ui/sbom/saiku-ui-sbom.cdx.json"
+          [ -f "$UI_SBOM_SRC" ] || UI_SBOM_SRC="$(find saiku-ui -name 'saiku-ui-sbom*.cdx.json' | head -1)"
+          if [ -z "${UI_SBOM_SRC:-}" ] || [ ! -f "$UI_SBOM_SRC" ]; then
+            echo "::error::no CycloneDX UI SBOM (saiku-ui/sbom/saiku-ui-sbom.cdx.json) was produced by the frontend build"
+            exit 1
+          fi
+          cp "$UI_SBOM_SRC" "release-assets/saiku-ui-sbom-${VERSION}.cdx.json"
           ls -la release-assets/
 
       - name: Upload JAR artifact
@@ -180,6 +201,13 @@ jobs:
         with:
           name: saiku-sbom
           path: release-assets/${{ steps.meta.outputs.sbom_name }}
+          retention-days: 7
+
+      - name: Upload UI SBOM artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: saiku-ui-sbom
+          path: release-assets/${{ steps.meta.outputs.ui_sbom_name }}
           retention-days: 7
 
   deploy-packages:
@@ -362,8 +390,8 @@ jobs:
       attestations: write # record the SLSA provenance attestations on the repo
     steps:
       # Pull the three artifacts the jar job uploaded — the bare versioned JAR,
-      # the runnable saiku-dist zip, and the CycloneDX SBOM. All get attached
-      # to the release.
+      # the runnable saiku-dist zip, and the two CycloneDX SBOMs (Java +
+      # npm/UI). All get attached to the release.
       - name: Download saiku-jar
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -378,6 +406,12 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: saiku-sbom
+          path: release-assets
+      # saiku#2000: the npm/UI CycloneDX SBOM, staged by the same jar job.
+      - name: Download saiku-ui-sbom
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: saiku-ui-sbom
           path: release-assets
       - name: Confirm release assets staged
         run: ls -la release-assets/
@@ -395,6 +429,7 @@ jobs:
             release-assets/${{ needs.jar.outputs.jar_name }}
             release-assets/${{ needs.jar.outputs.dist_name }}
             release-assets/${{ needs.jar.outputs.sbom_name }}
+            release-assets/${{ needs.jar.outputs.ui_sbom_name }}
 
       - name: Generate SHA256SUMS
         # saiku#1992 / saiku#1919 (18b): a plain checksums manifest over every
@@ -411,9 +446,10 @@ jobs:
           JAR_NAME: ${{ needs.jar.outputs.jar_name }}
           DIST_NAME: ${{ needs.jar.outputs.dist_name }}
           SBOM_NAME: ${{ needs.jar.outputs.sbom_name }}
+          UI_SBOM_NAME: ${{ needs.jar.outputs.ui_sbom_name }}
         run: |
           set -euo pipefail
-          sha256sum "$JAR_NAME" "$DIST_NAME" "$SBOM_NAME" > SHA256SUMS
+          sha256sum "$JAR_NAME" "$DIST_NAME" "$SBOM_NAME" "$UI_SBOM_NAME" > SHA256SUMS
           cat SHA256SUMS
 
       - name: Create GitHub release
@@ -425,6 +461,7 @@ jobs:
             release-assets/${{ needs.jar.outputs.jar_name }}
             release-assets/${{ needs.jar.outputs.dist_name }}
             release-assets/${{ needs.jar.outputs.sbom_name }}
+            release-assets/${{ needs.jar.outputs.ui_sbom_name }}
             release-assets/SHA256SUMS
           name: Saiku ${{ needs.jar.outputs.version }}
           body: |
@@ -441,9 +478,10 @@ jobs:
 
             #### Supply-chain
 
-            - `${{ needs.jar.outputs.sbom_name }}` — CycloneDX SBOM covering the launcher's **Java/Maven** dependency set. (The SvelteKit UI npm tree bundled into the war overlay is not yet covered — follow-up planned.)
+            - `${{ needs.jar.outputs.sbom_name }}` — CycloneDX SBOM covering the launcher's **Java/Maven** dependency set.
+            - `${{ needs.jar.outputs.ui_sbom_name }}` — CycloneDX SBOM covering the **npm** dependency set behind the SvelteKit UI bundled into the war (monaco, ECharts, apache-arrow, …) plus the design-system workspace. Both SBOMs together describe the whole shipped artifact.
             - `SHA256SUMS` — checksums for every asset above.
-            - Each asset (JAR, dist zip, SBOM) and the container image carry a **Sigstore-signed SLSA build provenance** attestation (Rekor-logged). Verify with `gh attestation verify` / `cosign`. See [docs/releasing.md](https://github.com/${{ github.repository }}/blob/${{ needs.jar.outputs.ref_tag }}/docs/releasing.md#verifying-release-artifacts).
+            - Each asset (JAR, dist zip, both SBOMs) and the container image carry a **Sigstore-signed SLSA build provenance** attestation (Rekor-logged). Verify with `gh attestation verify` / `cosign`. See [docs/releasing.md](https://github.com/${{ github.repository }}/blob/${{ needs.jar.outputs.ref_tag }}/docs/releasing.md#verifying-release-artifacts).
 
             ### Auto-generated changelog
           # generate_release_notes appends GitHub's auto-generated "What's

@@ -125,6 +125,22 @@ All notable changes to Saiku are documented here. This project follows
 
 ### Security
 
+- **A CycloneDX SBOM now covers the npm/UI half of what we ship (saiku#2000).**
+  The release SBOM added for saiku#1990 is the `cyclonedx-maven-plugin`
+  aggregate — **Java/Maven only**. The SvelteKit bundle that `saiku-webapp`
+  overlays into the war (monaco, ECharts, apache-arrow, …) and the shared
+  `@concepttocloud/saiku-design-system` workspace were in no SBOM at all, and
+  neither Maven nor BuildKit's image SBOM can catalogue a minified JS bundle —
+  so "does this release contain a vulnerable version of X?" was unanswerable
+  for that entire tree. `@cyclonedx/cyclonedx-npm` now emits a CycloneDX 1.6
+  JSON document as the last step of `saiku-ui`'s `npm run build`
+  (`npm run sbom`), which the `saiku-webapp` frontend plugin already drives
+  during `mvn verify`; `release.yml` stages it as a second asset,
+  `saiku-ui-sbom-<version>.cdx.json`, alongside the Java one, and it is attested
+  (SLSA/Sigstore) and listed in `SHA256SUMS` like every other asset. Dev-only
+  deps are omitted, mirroring the Maven SBOM's test-scope exclusion. See
+  [docs/releasing.md](docs/releasing.md#sbom-generation).
+
 - **Per-endpoint rate limiters are no longer silently disabled by request-scoped
   instance state (CWE-837 / CWE-307, saiku#1913).** `AiRateLimiter` kept its
   fixed-window buckets in an *instance* field, but every consumer held one as
