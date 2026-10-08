@@ -23,8 +23,11 @@ jobs:
     name: Build fat JAR + dist zip
     runs-on: ubuntu-latest
     permissions:
-      contents: read # checkout only
-      packages: write # `mvn deploy` publishes module jars to GH Packages
+      contents: read # checkout only — NO packages: write here (saiku#1993).
+      # This job runs the full untrusted lifecycle (`mvn verify` + the
+      # frontend-maven-plugin `npm ci`/`npm run build` over saiku-ui's
+      # transitive tree), so it must not hold a GH Packages write token.
+      # Publishing moved to the dedicated `deploy-packages` job below.
     outputs:
       # ref_tag is the tag as pushed (v-prefixed); version has the v
       # stripped for filenames and headings. Anything addressing GitHub
@@ -34,6 +37,7 @@ jobs:
       jar_name: ${{ steps.meta.outputs.jar_name }}
       dist_name: ${{ steps.meta.outputs.dist_name }}
       sbom_name: ${{ steps.meta.outputs.sbom_name }}
+      ui_sbom_name: ${{ steps.meta.outputs.ui_sbom_name }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -47,16 +51,18 @@ jobs:
       # See ci.yml for the rationale — multi-server settings.xml so the build
       # can resolve mondrian and the spiculedata olap4j / olap4j-xmlaserver
       # artifacts from GitHub Packages.
+      #
+      # GH_PACKAGES_TOKEN is a PAT used for resolving inbound deps
+      # (mondrian-saiku etc) — READ-only resolution, no publish scope
+      # needed. There is deliberately NO `github-saiku-self` server entry
+      # in this job's settings.xml: the ephemeral GITHUB_TOKEN that
+      # publishes THIS repo's artifacts lives only in the
+      # `deploy-packages` job (saiku#1993), so no write-scoped credential
+      # sits on disk while tests / npm lifecycle scripts execute here.
       - name: Configure Maven settings.xml
         env:
           GH_PACKAGES_USER: ${{ github.actor }}
           GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
-          # GH_PACKAGES_TOKEN is a PAT used for resolving inbound deps
-          # (mondrian-saiku etc). For deploying THIS repo's own artifacts we
-          # use the workflow's ephemeral GITHUB_TOKEN under server id
-          # github-saiku-self — 'packages: write' is granted on THIS job (see
-          # the jar job's per-job `permissions:` block), not workflow-wide.
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p ~/.m2
           cat > ~/.m2/settings.xml <<EOF
@@ -66,7 +72,6 @@ jobs:
               <server><id>github-olap4j</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
               <server><id>github-olap4j-xmlaserver</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
               <server><id>github-saiku-query</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
-              <server><id>github-saiku-self</id><username>${GITHUB_ACTOR}</username><password>${GITHUB_TOKEN}</password></server>
             </servers>
           </settings>
           EOF
@@ -99,6 +104,12 @@ jobs:
           echo "jar_name=saiku-${VERSION}.jar" >> "$GITHUB_OUTPUT"
           echo "dist_name=saiku-dist-${VERSION}.zip" >> "$GITHUB_OUTPUT"
           echo "sbom_name=saiku-sbom-${VERSION}.cdx.json" >> "$GITHUB_OUTPUT"
+          # saiku#2000: the npm/UI half of the shipped artifact (the
+          # SvelteKit bundle overlaid into the war + the design-system
+          # workspace). Published as its OWN asset next to the Java SBOM
+          # rather than merged into it — one file per ecosystem keeps
+          # `grype sbom:` / `jq` usage obvious for both.
+          echo "ui_sbom_name=saiku-ui-sbom-${VERSION}.cdx.json" >> "$GITHUB_OUTPUT"
 
       - name: "mvn verify (fail-fast: spotless + tests)"
         # Defence in depth — branch protection SHOULD have caught any
@@ -118,22 +129,6 @@ jobs:
         # saiku-mcp stdio binary is gone — MCP hosts now hit the launcher
         # directly with per-user Basic auth.
         run: mvn -B -ntp -DskipTests -pl saiku-launcher -am package
-
-      - name: mvn deploy (module jars to GH Packages)
-        # Publishes saiku-bom + saiku-core/* to maven.pkg.github.com/spiculedata/saiku
-        # so downstream consumers (saiku-cloud's IRepositoryManager
-        # adapter, embedders) can `<dependency>` saiku-service the
-        # normal way. saiku-launcher (fat jar) and saiku-webapp (raw
-        # war) opt out via maven-deploy-plugin <skip>true</skip> in
-        # their own poms — they ride to the GitHub Releases page only.
-        #
-        # `mvn deploy` from the reactor root walks every module in
-        # <modules>; the two opt-outs above keep GH Packages free of
-        # multi-hundred-meg blobs. Tests already ran in ci.yml on PR
-        # merge — re-running them here would be wasted runner minutes.
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: mvn -B -ntp -DskipTests deploy
 
       - name: Stage release assets
         env:
@@ -159,8 +154,10 @@ jobs:
           zip -r "release-assets/${STAGE}.zip" "$STAGE"
           # 3) CycloneDX SBOM (saiku#1990). cyclonedx-maven-plugin's
           #    makeAggregateBom writes ONE aggregate at the reactor top-level.
-          #    The last Maven step in this job is a full-reactor `mvn deploy`,
-          #    so the deterministic location is the root module's target/. Fall
+          #    The last Maven step in this job is the full-reactor
+          #    `mvn verify` (saiku#1993 moved `mvn deploy` out to the
+          #    dedicated `deploy-packages` job), so the deterministic
+          #    location is the root module's target/. Fall
           #    back to a tree search in case a future reordering moves it.
           SBOM_SRC="target/saiku-sbom.json"
           [ -f "$SBOM_SRC" ] || SBOM_SRC="$(find . -name saiku-sbom.json | head -1)"
@@ -169,6 +166,20 @@ jobs:
             exit 1
           fi
           cp "$SBOM_SRC" "release-assets/saiku-sbom-${VERSION}.cdx.json"
+          # 4) CycloneDX SBOM for the npm/UI tree (saiku#2000). Emitted by
+          #    `npm run sbom` (@cyclonedx/cyclonedx-npm) as the LAST step of
+          #    saiku-ui's `npm run build`, which saiku-webapp's
+          #    frontend-maven-plugin drives from generate-resources — so the
+          #    `mvn verify` above already produced it. Written outside
+          #    dist/ so vite's emptyOutDir can't wipe it; not overlaid into
+          #    the war, so it's not a served /ui/ asset either.
+          UI_SBOM_SRC="saiku-ui/sbom/saiku-ui-sbom.cdx.json"
+          [ -f "$UI_SBOM_SRC" ] || UI_SBOM_SRC="$(find saiku-ui -name 'saiku-ui-sbom*.cdx.json' | head -1)"
+          if [ -z "${UI_SBOM_SRC:-}" ] || [ ! -f "$UI_SBOM_SRC" ]; then
+            echo "::error::no CycloneDX UI SBOM (saiku-ui/sbom/saiku-ui-sbom.cdx.json) was produced by the frontend build"
+            exit 1
+          fi
+          cp "$UI_SBOM_SRC" "release-assets/saiku-ui-sbom-${VERSION}.cdx.json"
           ls -la release-assets/
 
       - name: Upload JAR artifact
@@ -191,6 +202,95 @@ jobs:
           name: saiku-sbom
           path: release-assets/${{ steps.meta.outputs.sbom_name }}
           retention-days: 7
+
+      - name: Upload UI SBOM artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: saiku-ui-sbom
+          path: release-assets/${{ steps.meta.outputs.ui_sbom_name }}
+          retention-days: 7
+
+  deploy-packages:
+    # PUBLISH-ONLY job (saiku#1993). The jar job builds the release artifacts
+    # and never holds a write-scoped credential — it runs the whole untrusted
+    # lifecycle (`mvn verify` plus the frontend-maven-plugin `npm ci` /
+    # `npm run build` across saiku-ui's transitive dependency tree, whose
+    # install/postinstall scripts we do not control). Before this split the
+    # jar job wrote the ephemeral `packages:write` GITHUB_TOKEN into
+    # ~/.m2/settings.xml (server id `github-saiku-self`) BEFORE `mvn verify`,
+    # so any test, Maven plugin or npm lifecycle script could read a token
+    # that publishes to this repo's GitHub Packages.
+    #
+    # Here the token appears only in this job's settings.xml, and the only
+    # code that can run while it is on disk is the Maven build itself with
+    # tests, test-compilation and the frontend/npm goals switched off — so a
+    # compromised npm dependency can no longer reach a write-scoped token.
+    name: Deploy module jars to GitHub Packages
+    runs-on: ubuntu-latest
+    # Only start once the jar job's verify/package gate passed; a busted build
+    # never reaches the publishing step, and no release asset depends on this
+    # job (the JAR/dist/SBOM ride to the GitHub release from `jar`).
+    needs: [jar]
+    permissions:
+      contents: read # checkout only
+      packages: write # `mvn deploy` publishes module jars to GH Packages
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up JDK 22
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "22"
+          cache: maven
+
+      - name: Configure Maven settings.xml (publish credentials)
+        # Read-scoped PAT for resolving the inbound spiculedata artifacts
+        # (mondrian-saiku, olap4j, olap4j-xmlaserver, saiku-query) — GH
+        # Packages requires auth even for public downloads — plus the ONLY
+        # write-scoped entry, `github-saiku-self`, which is what the root
+        # pom's <distributionManagement> publishes to.
+        env:
+          GH_PACKAGES_USER: ${{ github.actor }}
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p ~/.m2
+          cat > ~/.m2/settings.xml <<EOF
+          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+            <servers>
+              <server><id>github-mondrian-saiku</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-olap4j</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-olap4j-xmlaserver</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-saiku-query</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-saiku-self</id><username>${GITHUB_ACTOR}</username><password>${GITHUB_TOKEN}</password></server>
+            </servers>
+          </settings>
+          EOF
+
+      - name: mvn deploy (module jars to GH Packages)
+        # Publishes saiku-bom + saiku-core/* to maven.pkg.github.com/spiculedata/saiku
+        # so downstream consumers (saiku-cloud's IRepositoryManager
+        # adapter, embedders) can `<dependency>` saiku-service the
+        # normal way. saiku-launcher (fat jar) and saiku-webapp (raw
+        # war) opt out via maven-deploy-plugin <skip>true</skip> in
+        # their own poms — they ride to the GitHub Releases page only.
+        #
+        # `mvn deploy` from the reactor root walks every module in
+        # <modules>; the two opt-outs above keep GH Packages free of
+        # multi-hundred-meg blobs.
+        #
+        # Every untrusted-lifecycle switch is explicit (saiku#1993):
+        #   -Dmaven.test.skip=true  no test compile, no surefire/failsafe
+        #   -Dskip.npm / -Dskip.installnodenpm
+        #                            skip the frontend-maven-plugin goals
+        #                            (no `npm ci`, no `npm run build`) — the
+        #                            published jars don't carry the UI bundle
+        #                            and a deploy must not re-run install
+        #                            scripts from the npm tree.
+        run: |
+          mvn -B -ntp -DskipTests -Dmaven.test.skip=true \
+              -Dskip.npm=true -Dskip.installnodenpm=true deploy
 
   docker:
     name: Build & push Docker image
@@ -280,15 +380,18 @@ jobs:
     name: Publish GitHub release
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
-    needs: [jar, docker]
+    # deploy-packages is in the fan-in so a failed GH Packages publish
+    # blocks the release announcement, exactly as it did when `mvn deploy`
+    # ran inside the jar job (saiku#1993).
+    needs: [jar, docker, deploy-packages]
     permissions:
       contents: write # create the GitHub release + upload assets
       id-token: write # keyless Sigstore signing for JAR + dist provenance (saiku#1992)
       attestations: write # record the SLSA provenance attestations on the repo
     steps:
       # Pull the three artifacts the jar job uploaded — the bare versioned JAR,
-      # the runnable saiku-dist zip, and the CycloneDX SBOM. All get attached
-      # to the release.
+      # the runnable saiku-dist zip, and the two CycloneDX SBOMs (Java +
+      # npm/UI). All get attached to the release.
       - name: Download saiku-jar
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -303,6 +406,12 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: saiku-sbom
+          path: release-assets
+      # saiku#2000: the npm/UI CycloneDX SBOM, staged by the same jar job.
+      - name: Download saiku-ui-sbom
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: saiku-ui-sbom
           path: release-assets
       - name: Confirm release assets staged
         run: ls -la release-assets/
@@ -320,6 +429,7 @@ jobs:
             release-assets/${{ needs.jar.outputs.jar_name }}
             release-assets/${{ needs.jar.outputs.dist_name }}
             release-assets/${{ needs.jar.outputs.sbom_name }}
+            release-assets/${{ needs.jar.outputs.ui_sbom_name }}
 
       - name: Generate SHA256SUMS
         # saiku#1992 / saiku#1919 (18b): a plain checksums manifest over every
@@ -336,9 +446,10 @@ jobs:
           JAR_NAME: ${{ needs.jar.outputs.jar_name }}
           DIST_NAME: ${{ needs.jar.outputs.dist_name }}
           SBOM_NAME: ${{ needs.jar.outputs.sbom_name }}
+          UI_SBOM_NAME: ${{ needs.jar.outputs.ui_sbom_name }}
         run: |
           set -euo pipefail
-          sha256sum "$JAR_NAME" "$DIST_NAME" "$SBOM_NAME" > SHA256SUMS
+          sha256sum "$JAR_NAME" "$DIST_NAME" "$SBOM_NAME" "$UI_SBOM_NAME" > SHA256SUMS
           cat SHA256SUMS
 
       - name: Create GitHub release
@@ -350,6 +461,7 @@ jobs:
             release-assets/${{ needs.jar.outputs.jar_name }}
             release-assets/${{ needs.jar.outputs.dist_name }}
             release-assets/${{ needs.jar.outputs.sbom_name }}
+            release-assets/${{ needs.jar.outputs.ui_sbom_name }}
             release-assets/SHA256SUMS
           name: Saiku ${{ needs.jar.outputs.version }}
           body: |
@@ -366,9 +478,10 @@ jobs:
 
             #### Supply-chain
 
-            - `${{ needs.jar.outputs.sbom_name }}` — CycloneDX SBOM covering the launcher's **Java/Maven** dependency set. (The SvelteKit UI npm tree bundled into the war overlay is not yet covered — follow-up planned.)
+            - `${{ needs.jar.outputs.sbom_name }}` — CycloneDX SBOM covering the launcher's **Java/Maven** dependency set.
+            - `${{ needs.jar.outputs.ui_sbom_name }}` — CycloneDX SBOM covering the **npm** dependency set behind the SvelteKit UI bundled into the war (monaco, ECharts, apache-arrow, …) plus the design-system workspace. Both SBOMs together describe the whole shipped artifact.
             - `SHA256SUMS` — checksums for every asset above.
-            - Each asset (JAR, dist zip, SBOM) and the container image carry a **Sigstore-signed SLSA build provenance** attestation (Rekor-logged). Verify with `gh attestation verify` / `cosign`. See [docs/releasing.md](https://github.com/${{ github.repository }}/blob/${{ needs.jar.outputs.ref_tag }}/docs/releasing.md#verifying-release-artifacts).
+            - Each asset (JAR, dist zip, both SBOMs) and the container image carry a **Sigstore-signed SLSA build provenance** attestation (Rekor-logged). Verify with `gh attestation verify` / `cosign`. See [docs/releasing.md](https://github.com/${{ github.repository }}/blob/${{ needs.jar.outputs.ref_tag }}/docs/releasing.md#verifying-release-artifacts).
 
             ### Auto-generated changelog
           # generate_release_notes appends GitHub's auto-generated "What's
