@@ -11,7 +11,7 @@
 	"scripts": {
 		"dev": "vite dev",
 		"build:app": "vite build",
-		"build:embed": "vite build --config vite.config.embed.ts",
+		"build:embed": "node scripts/build-embed.mjs",
 		"build:embed-npm": "node scripts/stage-embed-npm.mjs",
 		"build:embed-react-npm": "node scripts/stage-embed-react-npm.mjs",
 		"//sbom": "saiku#2000: CycloneDX SBOM for the npm/UI half of what we ship. The Maven SBOM (saiku#1990) only sees the Java tree; this covers everything bundled into the war overlay (monaco, echarts, apache-arrow, …) plus the design-system workspace. `--omit dev` mirrors the Maven SBOM's test-scope exclusion — the SBOM describes what ships, not the build/test harness. Output is CycloneDX 1.6 JSON, written OUTSIDE dist/ so vite's emptyOutDir can't wipe it and it never ends up as a served /ui/ asset.",

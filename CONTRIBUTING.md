@@ -186,10 +186,16 @@ agent. The process below still governs who reviews what.
 A PR from a branch in this repository (not a fork) gets a throwaway preview at
 `https://oss-pr-<n>.preview.saiku.bi` (reachable from the tailnet) when it is authored
 by the Hive bot, carries the `preview` label, or a maintainer comments `/preview` on it.
-It is rebuilt on every push (once the PR's `docker` build has published its image),
+If the PR has no image yet (for example it was last pushed long ago), `/preview` starts the
+`docker` build itself and brings the preview up when it lands; the sticky comment shows
+**BUILDING IMAGE** meanwhile. It is rebuilt on every push (once the PR's `docker` build has published its image),
 removed when the PR closes and after 24 hours without activity, and its status and URL
-are kept in one sticky PR comment. Credentials are never posted; validators fetch them
-as described in [`infra/preview/README.md`](./infra/preview/README.md#credentials-for-validators).
+are kept in one sticky PR comment, which also shows the throwaway admin login (these are
+test-only, tailnet-only environments; a maintainer can stop that by setting the repository
+variable `PREVIEW_POST_CREDENTIALS=false`, after which the comment says how to fetch it).
+A separate new comment pings the PR when a preview comes up, because editing the sticky one
+sends no notification. Validators can also fetch the login as described in
+[`infra/preview/README.md`](./infra/preview/README.md#credentials-for-validators).
 Forks never get a preview. How it works and why:
 [`docs/decisions/ci-preview-environments.md`](./docs/decisions/ci-preview-environments.md).
 

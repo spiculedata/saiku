@@ -60,6 +60,11 @@ public class UnsubscribeResource {
      * Per-IP rate limit for the public unsubscribe endpoint. Direct {@code new} + Spring/test setter,
      * mirroring {@link EmailResource#setEmailRateLimiter}. Keyed by client IP (no principal — this is
      * an unauthenticated endpoint).
+     *
+     * <p>saiku#1913: this default is the PRIVATE per-instance form, which is correct only because
+     * {@code saiku-beans.xml} injects the {@code mailUnsubscribeRateLimiter} SINGLETON (a
+     * {@code shared(...)} store). Do not rely on this field in production: a per-request bean
+     * holding a per-request limiter never trips.
      */
     private AiRateLimiter rateLimiter =
             new AiRateLimiter(Integer.getInteger("saiku.mail.unsubscribe.ratelimit.maxPerMinute", 20), 60_000L);

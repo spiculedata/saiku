@@ -145,6 +145,26 @@ overlays, auto-refresh, PDF/PNG export and read-only share links. See the
 walkthrough, and [`saiku-ui/src/embed/README.md`](saiku-ui/src/embed/README.md)
 to embed a dashboard in your own app via the `<saiku-embed>` web component.
 
+## User provisioning (SCIM 2.0)
+
+Saiku speaks the SCIM 2.0 core profile, so Okta, Microsoft Entra ID or
+OneLogin can own the user lifecycle: an admin mints one bearer token per
+connector, and create / update / deactivate / group-assignment all flow into
+the Saiku user directory without anyone touching the admin console. SCIM
+handles lifecycle; OIDC/SAML handles authentication — a provisioned account has
+no usable local password. See
+[`docs/SCIM-PROVISIONING.md`](docs/SCIM-PROVISIONING.md) for the connector
+walkthrough, the attribute mapping and its limits.
+
+## Google Sheets add-on
+
+A first-party Sheets add-on (`integrations/google-sheets/`, spiculedata/saiku#1436)
+queries the semantic layer from a spreadsheet sidebar — cube picker, measure
+and dimension shelves, *Insert as table*, and a *Refresh* that rewrites the
+same block in place so your formatting survives. It talks to the same typed
+`/saiku/api/ai/*` surface as the MCP server and the Excel add-in. See
+[`docs/sheets.md`](docs/sheets.md).
+
 ## Observability
 
 Saiku ships **opt-in OpenTelemetry instrumentation** via the OTel Java
