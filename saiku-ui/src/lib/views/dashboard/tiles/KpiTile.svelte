@@ -23,7 +23,7 @@
 	import { onDestroy } from 'svelte';
 	import * as echarts from 'echarts';
 	import { ArrowDownRight, ArrowUpRight, Minus, Settings2 } from '@lucide/svelte';
-	import type { CubeRef, DashboardTile, KpiConfig } from '$lib/api/dashboards';
+	import type { CubeRef, DashboardTile, KpiConfig, TimeLevelRef } from '$lib/api/dashboards';
 	import {
 		executeAiQuery,
 		executeOssieQuery,
@@ -48,6 +48,17 @@
 		periodLabel,
 		type KpiDelta as KpiDeltaT
 	} from '$lib/dashboard/kpi';
+	// saiku#1749 — period-to-date: the newest period SO FAR against the same
+	// portion of the one before it. See kpiPtd.ts for why the offset is a member
+	// count rather than an inference from values.
+	import {
+		finerTimeLevel,
+		grainUnitLabel,
+		measureValues,
+		periodToDatePair,
+		type PeriodToDatePair
+	} from '$lib/dashboard/kpiPtd';
+	import { schemaCache } from '$lib/stores/schemaCache.svelte';
 	// #992 — year-over-year (same-period-previous-year) expansion.
 	import { expandYearOverYearRows } from '$lib/dashboard/kpiYoy';
 	import { i18n } from '$lib/stores/i18n.svelte';
@@ -76,6 +87,18 @@
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 	let response = $state<AiQueryResponse | null>(null);
+
+	/* --- saiku#1749: period-to-date --------------------------------------
+	 * The like-for-like baseline for a still-filling period, once the finer-grain
+	 * probe below has resolved it. `ptd` is null until then AND on every
+	 * degradation path, which is the point: a null here means "withhold the
+	 * comparison", never "compare against the whole prior period".
+	 *
+	 * `unit` is the pre-rendered "2 days" for the period label's tooltip. */
+	let ptd = $state<{ pair: PeriodToDatePair; unit: string } | null>(null);
+	/** Why no period-to-date baseline was produced — drives which empty-state
+	 *  the tile shows and what the tooltip explains. */
+	let ptdReason = $state<'pending' | 'no-period' | 'no-grain' | null>(null);
 
 	// Issue #933 — retry re-fires the deduped fetch effect; empty = a
 	// successful query with no rows; hasEffectiveFilters gates the reset.
@@ -151,7 +174,8 @@
 			!!kpi.timeLevel &&
 			(kpi.sparkline === true ||
 				kpi.comparison === 'prior-period' ||
-				kpi.comparison === 'year-over-year')
+				kpi.comparison === 'year-over-year' ||
+				kpi.comparison === 'period-to-date')
 	);
 
 	let lastQueryJson = $state<string>('');
@@ -189,6 +213,74 @@
 			.catch(() => [] as { uniqueName: string; caption: string }[]);
 		levelMembersCache.set(cacheKey, promise);
 		return promise;
+	}
+
+	/* --- saiku#1749: period-to-date resolution ---------------------------
+	 *
+	 * Two extra queries at the time hierarchy's FINER level, one scoped to the
+	 * newest period and one to the period before it. The scoping is what makes
+	 * this work: naming an ancestor member on the row axis emits
+	 * `Descendants(<member>, <finer level>)` server-side (saiku#1774), so each
+	 * response is exactly one period's sub-periods, in the level's declared
+	 * (chronological, for a time attribute) order. Nothing is parsed from a
+	 * caption and nothing is inferred from a value.
+	 *
+	 * `periods` is the time level's ordered member list for the slice the tile is
+	 * actually showing — the same list the row axis enumerates, narrowed to the
+	 * slicer's members plus their comparison counterparts when a same-level
+	 * slicer pinned any. Its last two entries are the pair.
+	 *
+	 * Returns null on every path where a like-for-like baseline does not exist.
+	 * The caller then degrades to #1748 — value shown, period marked partial,
+	 * percentage withheld — which is the safe direction: an unsupported cube
+	 * costs a comparison rather than gaining a wrong one. */
+	async function resolvePeriodToDate(
+		c: CubeRef,
+		tl: TimeLevelRef,
+		measure: string,
+		slicers: { dimension: string; hierarchy: string; level: string; members: string[] }[],
+		periods: string[]
+	): Promise<{ pair: PeriodToDatePair; unit: string } | 'no-period' | null> {
+		if (periods.length < 2) return 'no-period';
+		const priorPeriod = periods[periods.length - 2];
+		const currentPeriod = periods[periods.length - 1];
+
+		let schema = null;
+		try {
+			schema = await schemaCache.get(c);
+		} catch {
+			// The schema is the only way to learn the finer level exists. A cube
+			// that won't describe itself can't be compared like-for-like.
+			return null;
+		}
+		const finer = finerTimeLevel(schema, tl);
+		if (!finer) return null;
+
+		const bodyFor = (period: string): Record<string, unknown> => ({
+			cube: c,
+			measures: [{ name: measure }],
+			rows: [
+				{
+					dimension: tl.dimension,
+					hierarchy: tl.hierarchy,
+					level: finer.name,
+					members: [period]
+				}
+			],
+			filters: slicers
+		});
+		try {
+			const [current, prior] = await Promise.all([
+				executeAiQuery(bodyFor(currentPeriod), 'records'),
+				executeAiQuery(bodyFor(priorPeriod), 'records')
+			]);
+			if (current.status !== 'SUCCESS' || prior.status !== 'SUCCESS') return null;
+			const pair = periodToDatePair(measureValues(current.data), measureValues(prior.data));
+			if (!pair) return null;
+			return { pair, unit: grainUnitLabel(pair.offset, finer.grain, finer.name) };
+		} catch {
+			return null;
+		}
 	}
 
 	$effect(() => {
@@ -329,8 +421,20 @@
 
 		loading = true;
 		error = null;
+		// Reset the PTD state up front so a stale baseline from a previous slice
+		// can never outlive the inputs that produced it.
+		ptd = null;
+		ptdReason = comparison === 'period-to-date' ? 'pending' : null;
 		void (async () => {
 			try {
+				// The ordered period list the row axis enumerates. Kept for the
+				// period-to-date probe below, which needs the same two members the
+				// series' last two rows are. `null` means "no same-level slicer
+				// narrowed this", which is the ONLY case where falling back to the
+				// level's full member list is the right slice — a slicer that
+				// pinned one member must not have the baseline quietly widened
+				// back out to the whole cube.
+				let orderedPeriods: string[] | null = null;
 				// If we need prior-period expansion, fetch the level's members
 				// first, then expand row.members[] before building the query.
 				if (needsPriorExpansion && tl && c) {
@@ -360,6 +464,7 @@
 						}
 						if (ordered.length > 0 && rows.length > 0) {
 							rows[0] = { ...rows[0], members: ordered };
+							orderedPeriods = ordered;
 						}
 					}
 				}
@@ -377,6 +482,32 @@
 				response = r;
 				if (r.status !== 'SUCCESS') error = r.error ?? `Query failed: ${r.status}`;
 				else auto.markUpdated(); // #931
+
+				// saiku#1749 — the period-to-date baseline, once the series is in.
+				// Runs off the row axis's OWN member list so the pair is the two
+				// newest periods of exactly the slice on screen, whether they came
+				// from a same-level slicer or from the full level enumeration.
+				if (comparison === 'period-to-date' && tl && r.status === 'SUCCESS') {
+					if (orderedPeriods == null) {
+						orderedPeriods = (await fetchLevelMembers(c, tl.dimension, tl.hierarchy, tl.level)).map(
+							(m) => m.uniqueName
+						);
+					}
+					const resolved = await resolvePeriodToDate(
+						c,
+						tl,
+						measure,
+						Array.from(byHierarchy.values()),
+						orderedPeriods
+					);
+					if (resolved === 'no-period') ptdReason = 'no-period';
+					else if (resolved) {
+						ptd = resolved;
+						ptdReason = null;
+					} else {
+						ptdReason = 'no-grain';
+					}
+				}
 			} catch (e: unknown) {
 				error = e instanceof Error ? e.message : String(e);
 				response = null;
@@ -415,18 +546,36 @@
 
 	let mainValue = $derived(valueAndPrior.current);
 
+	/* saiku#1749 — the period-to-date baseline resolved by the finer-grain
+	 * probe. Non-null means the tile has a like-for-like comparison to offer and
+	 * the newest period should be labelled "to date" rather than "partial". */
+	let ptdPair = $derived(ptd?.pair ?? null);
+
 	/* The author has declared the newest period incomplete. The value stays on
 	 * screen — it is real — but it is labelled so nobody reads a part-period as a
-	 * full one, and the comparison against it is withheld. */
+	 * full one, and the comparison against it is withheld.
+	 *
+	 * saiku#1749 carves out period-to-date: a resolved like-for-like baseline is
+	 * precisely the answer #1748 had to withhold, so declaring the period
+	 * partial on top of it would suppress a correct comparison. It only applies
+	 * when the baseline did NOT resolve — the degradation path, where "partial"
+	 * is the honest label. */
 	let trailingIsPartial = $derived(
 		wantsSeries &&
 			response?.status === 'SUCCESS' &&
+			ptdPair == null &&
 			isTrailingPartial(response.data?.length ?? 0, kpi.partialTrailing)
 	);
 
-	/** Caption of the period the headline reports, shown only when it's partial. */
+	/* The newest period is reported as period-to-date whenever the comparison
+	 * resolved — that IS what the number now is, whether or not the author also
+	 * declared trailing periods incomplete. */
+	let trailingIsToDate = $derived(wantsSeries && response?.status === 'SUCCESS' && ptdPair != null);
+
+	/** Caption of the period the headline reports, shown only when it is partial
+	 *  or period-to-date. */
 	let periodCaption = $derived.by<string | null>(() => {
-		if (!trailingIsPartial) return null;
+		if (!trailingIsPartial && !trailingIsToDate) return null;
 		const rows = response?.data ?? [];
 		const row = rows[rows.length - 1];
 		if (!row) return null;
@@ -439,20 +588,61 @@
 		return null;
 	});
 
-	let periodNote = $derived(
-		trailingIsPartial
-			? i18n.t(
-					'dashboard.kpi.partialPeriod',
-					"This period is still incomplete, so it isn't compared against a full one — the comparison would measure the calendar, not the business."
-				)
-			: undefined
+	/** Suffix on the period caption: "partial" when the comparison is withheld,
+	 *  "to date" when it is like-for-like. */
+	let periodSuffix = $derived(
+		trailingIsToDate
+			? i18n.t('dashboard.kpi.toDate', 'to date')
+			: i18n.t('dashboard.kpi.partial', 'partial')
 	);
+
+	/** Tooltip on the period caption / headline. Says which comparison is in
+	 *  play, and names the two windows when there are two. */
+	let periodNote = $derived.by<string | undefined>(() => {
+		if (trailingIsToDate && ptd) {
+			const template = ptd.pair.clamped
+				? i18n.t(
+						'dashboard.kpi.toDate.clamped',
+						'The period before it is shorter than {n}, so all of it is used. The two windows are not the same width.'
+					)
+				: i18n.t(
+						'dashboard.kpi.toDate.title',
+						'Period to date: the newest period so far covers {n}, and the comparison is against the first {n} of the period before it.'
+					);
+			return template.split('{n}').join(ptd.unit);
+		}
+		if (trailingIsToDate) return undefined;
+		if (kpi.comparison === 'period-to-date' && ptdReason === 'no-grain') {
+			// The comparison was asked for and could not be built honestly. Say
+			// why rather than leaving a bare "partial" that reads like a data
+			// problem — the number on screen is perfectly real.
+			return i18n.t(
+				'dashboard.kpi.toDateNoGrain.title',
+				"This time level has no finer level below it, so a like-for-like period-to-date comparison isn't available here. The value is real; the comparison is withheld rather than measured against a whole period."
+			);
+		}
+		if (trailingIsPartial) {
+			return i18n.t(
+				'dashboard.kpi.partialPeriod',
+				"This period is still incomplete, so it isn't compared against a full one — the comparison would measure the calendar, not the business."
+			);
+		}
+		return undefined;
+	});
 
 	let delta = $derived.by<KpiDeltaT | null>(() => {
 		// A part-period measured against a whole one describes the calendar, not
 		// the business — so no percentage is offered rather than a misleading one.
 		// The value itself is untouched and still on screen.
 		if (trailingIsPartial) return null;
+		// saiku#1749: the baseline is the same PORTION of the preceding period,
+		// so the newest period keeps its real value and still gets a comparison.
+		// ptdPair is null on every degradation path, and falls through to the
+		// withhold below — a missing finer level costs the comparison, not its
+		// accuracy.
+		if (kpi.comparison === 'period-to-date') {
+			return ptdPair ? kpiDelta(mainValue, ptdPair.prior, kpi.direction) : null;
+		}
 		// prior-period and year-over-year share the last/prior series shape —
 		// the difference is purely which baseline member the expansion picked.
 		if (kpi.comparison === 'prior-period' || kpi.comparison === 'year-over-year') {
@@ -578,10 +768,12 @@
 			</div>
 			{#if periodCaption}
 				<!-- The value above is the newest period's real figure. It is labelled
-             partial so nobody reads it as a completed one, and no comparison is
-             shown against it. -->
+             so nobody reads a part-period as a completed one. saiku#1749: with a
+             like-for-like baseline resolved the suffix is "to date" and the
+             comparison IS shown; without one it stays "partial" and the percentage
+             is withheld. -->
 				<div class="period" title={periodNote}>
-					{periodCaption} · {i18n.t('dashboard.kpi.partial', 'partial')}
+					{periodCaption} · {periodSuffix}
 				</div>
 			{/if}
 			{#if delta && delta.ratio != null}
@@ -618,10 +810,20 @@
 				>
 					<span>{i18n.t('dashboard.kpi.noPriorPeriod', 'no prior period')}</span>
 				</div>
-			{:else if kpi.measureCaption && !trailingIsPartial}
-				<!-- Suppressed while a partial period is flagged: the "Week 52 · partial"
-             line already occupies that slot, and the measure caption would just
-             repeat the tile's own title underneath it. -->
+			{:else if kpi.comparison === 'period-to-date' && wantsSeries && ptdReason === 'no-period' && valueAndPrior.current != null}
+				<div
+					class="delta delta--empty"
+					title={i18n.t(
+						'dashboard.kpi.noPriorPeriod.title',
+						"The selected period has no preceding period in this cube's data."
+					)}
+				>
+					<span>{i18n.t('dashboard.kpi.noPriorPeriod', 'no prior period')}</span>
+				</div>
+			{:else if kpi.measureCaption && !trailingIsPartial && !trailingIsToDate}
+				<!-- Suppressed while a partial / to-date period is flagged: the
+             "Week 52 · partial" line already occupies that slot, and the measure
+             caption would just repeat the tile's own title underneath it. -->
 				<div class="caption">{kpi.measureCaption}</div>
 			{/if}
 			{#if kpi.sparkline && wantsSeries}

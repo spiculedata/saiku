@@ -28,6 +28,7 @@ import org.saiku.service.olap.ai.ask.NlAskMessage;
 import org.saiku.service.olap.ai.ask.NlAskProvider;
 import org.saiku.service.olap.ai.ask.NlAskRequest;
 import org.saiku.service.olap.ai.ask.NlAskResponse;
+import org.saiku.service.olap.ai.ask.NlAskStreamListener;
 
 /**
  * Resource-level tests for the space-scoped streaming endpoint {@code POST
@@ -125,19 +126,20 @@ public class AiAskSpaceStreamTest {
                         + "\"cubeAllowlist\":["
                         + "{\"connectionName\":\"foodmart\",\"catalog\":\"FoodMart\",\"schema\":\"FoodMart\",\"cubeName\":\"Sales\"}"
                         + "]}");
-        // askInSpace passes the pre-flight (Sales is allowlisted) but blows up while producing the
-        // outcome — the client must still see an error AND a terminating final, never a truncated
-        // stream that hangs a client keying completion on `final`.
+        // askInSpaceStreaming passes the pre-flight (Sales is allowlisted) but blows up while
+        // producing the outcome — the client must still see an error AND a terminating final, never
+        // a truncated stream that hangs a client keying completion on `final`.
         AiAskService svc = new AiAskService(ref -> schema, req -> NlAskResponse.degraded("x")) {
             @Override
-            public AskOutcome askInSpace(
+            public AskOutcome askInSpaceStreaming(
                     String spaceId,
                     AiCubeRef ref,
                     String question,
                     List<NlAskMessage> history,
                     String cellsetDigest,
                     NlAskRequest.ForceTool forceTool,
-                    org.saiku.service.olap.ai.AiQueryRequest currentQuery) {
+                    org.saiku.service.olap.ai.AiQueryRequest currentQuery,
+                    NlAskStreamListener listener) {
                 throw new IllegalStateException("boom");
             }
         };

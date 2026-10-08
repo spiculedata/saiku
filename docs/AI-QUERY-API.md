@@ -1186,6 +1186,22 @@ Both routes feed the same typed fields on `AiSchema.Measure` /
 `AiSchema.Level` and the same alias maps, so the API surface is identical
 regardless of where the metadata came from.
 
+### `saiku.semantic.pii` is a refusal, not a hint
+
+One annotation in that namespace changes what the server will *do*. A
+measure or level annotated `saiku.semantic.pii=true` is redacted on
+`/ai/schema` **and refused on every axis a request can name it on** —
+`measures[]`, `rows[]`, `columns[]`, `filters[]` — plus `GET
+/ai/members/search` and drillthrough `returns=`. An agent that hits one
+gets a `400 VALIDATION_ERROR` telling it to aggregate over a parent level
+instead.
+
+The filter case is the one that surprises people: filtering a cube to one
+customer and reading the row header returns that customer's caption, so
+any axis position that can carry a member caption is a PII egress path.
+Full contract, including the digest-level redaction on chained asks:
+[`docs/schema-annotations.md`](schema-annotations.md#saikusemanticpii--the-pii-contract).
+
 ### XML annotation example
 
 ```xml
@@ -1283,6 +1299,21 @@ A correctly-grounded agent never sees MDX, never invents names, and gets
 self-correcting validation feedback when it misses.
 
 ---
+
+## Cost control on the ask layer
+
+Every `POST /ai/ask*` endpoint is capped twice over. A per-minute **call**
+limiter bounds request frequency, and a daily **cost budget**
+(`saiku.ai.budget.*`) bounds the money, charged from the token usage the
+provider reports on each turn — per authenticated principal and per
+instance. A chained ask (`/ai/ask/chain/stream`) is charged per provider
+round-trip, not per HTTP request, because it is up to `maxSteps` calls
+each re-sending the cube schema; concurrent chains are additionally
+capped so a burst can't pin a request thread per chain until the chain
+deadline. Both rate limiting and the budget key on the principal, never
+on `(user, IP)`. Over-budget calls return `429` with a `degraded`
+AskResponse. Tuning reference:
+[`docs/operator-hardening.md`](operator-hardening.md#ai-ask-cost-budget-saiku-aibudget).
 
 ## Natural-language ask layer — `POST /ai/ask`
 
@@ -1522,18 +1553,33 @@ Event names:
 | Event    | When                                                    | Payload                                                                         |
 |----------|---------------------------------------------------------|---------------------------------------------------------------------------------|
 | `model`  | Always fires first when the provider returned a model id | `{"model": "<model-id>"}`                                                        |
-| `intent` | After tool routing, before payload                       | `{"kind": "QUERY" \| "INSIGHT" \| "VIEW_CHANGE"}`                                |
-| `chunk`  | For prose-carrying intents (INSIGHT + VIEW_CHANGE `reason`), zero or more times | `{"delta": "<word or whitespace run>"}` — concatenating all deltas recovers the source |
+| `intent` | As soon as the model commits to a tool, before any payload  | `{"kind": "QUERY" \| "INSIGHT" \| "VIEW_CHANGE"}`                                |
+| `chunk`  | For prose-carrying intents (INSIGHT markdown, EMAIL_DRAFT summary, VIEW_CHANGE reason), zero or more times | `{"delta": "<word or piece of prose>"}` — concatenating all deltas recovers the source |
 | `final`  | Always fires last on success                             | the complete `AskResponse` envelope — same shape as sync `/ai/ask` returns       |
 | `error`  | On degraded (provider transport / parse / auth failure)  | `{"reason": "<explanation>"}` — followed by a `final` event with `degraded:true` |
 
-**Streaming semantics (v1).** The underlying provider call is still
-synchronous — the LLM's tool-use response arrives whole. The endpoint
-then splits any prose fields (insight markdown, view-change reason)
-into word-sized deltas so the client renders progressively. True
-per-token streaming from the LLM provider is a follow-up; the wire
-shape above is stable so a future PR that plugs in real LLM streaming
-won't require any client changes.
+**Streaming semantics (v2, saiku#1484).** The provider call itself is
+a real stream. Anthropic's `input_json_delta` events and OpenAI's
+`tool_calls[].function.arguments` fragments are decoded on the fly, so
+`model` lands with the provider's first event, `intent` as soon as the
+model commits to a tool, and each `chunk` carries prose the model has
+just written — first-token latency is the provider's, not Saiku's. The
+prose-carrying fields are the insight `markdown`, the email-draft
+`summary` and the view-change `reason`; a `QUERY` or dashboard payload
+is structured JSON with nothing human-readable in it, so it streams no
+`chunk` events at all.
+
+A provider without a streaming transport — or an OpenAI-compatible
+gateway that answers a streaming request with a buffered body — falls
+back to splitting the finished response into word-sized deltas, so the
+wire shape above is identical either way and no client change is
+needed. A `429` is still decided before any content arrives, so the
+paced retry re-asks from zero and no client ever sees a token twice.
+
+Note: a streamed turn reports unknown token counts (`-1` internally),
+because `stream_options.include_usage` isn't understood by every
+OpenAI-compatible gateway and a rejected unknown field would fail the
+whole call.
 
 **Client-side accumulation:**
 

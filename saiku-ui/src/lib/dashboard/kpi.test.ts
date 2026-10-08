@@ -230,8 +230,25 @@ describe('deltaLabelFor', () => {
 		expect(deltaLabelFor('target', { level: 'Month' }).fallback).toBe('vs target');
 	});
 
+	/* saiku#1749 — a period-to-date baseline is a TRUNCATED period, so "vs
+	 * yesterday" would promise a same-width comparison the tile is not making. */
+	it.each([
+		['Day', 'vs same point yesterday'],
+		['Week', 'vs same point last week'],
+		['Month', 'vs same point last month'],
+		['Quarter', 'vs same point last quarter'],
+		['Year', 'vs same point last year']
+	])('names the same point for a %s-level period-to-date comparison', (level, expected) => {
+		expect(deltaLabelFor('period-to-date', { level }).fallback).toBe(expected);
+	});
+
+	it('stays generic for a period-to-date comparison with no time level', () => {
+		expect(deltaLabelFor('period-to-date', undefined).fallback).toBe('vs same point');
+		expect(deltaLabelFor('period-to-date', { level: 'Store Name' }).fallback).toBe('vs same point');
+	});
+
 	it('returns an i18n key alongside every fallback', () => {
-		for (const c of ['prior-period', 'year-over-year', 'target'] as const) {
+		for (const c of ['prior-period', 'year-over-year', 'period-to-date', 'target'] as const) {
 			const l = deltaLabelFor(c, { level: 'Month' });
 			expect(l.key.startsWith('dashboard.kpi.')).toBe(true);
 			expect(l.fallback.length).toBeGreaterThan(0);

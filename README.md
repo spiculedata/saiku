@@ -193,6 +193,19 @@ Without the endpoint env var the agent is never loaded. See
 reference, sampling guidance, and what's not yet covered (Tier 2
 custom spans for `ThinQueryService` etc.).
 
+## Operator hardening knobs
+
+Two guardrails an operator is expected to tune, both documented in
+[`docs/operator-hardening.md`](docs/operator-hardening.md):
+
+- **SMTP relay host** — the admin mail wizard's host is put through the same
+  resolve-and-range SSRF gate alert webhooks use, plus an SMTP port allowlist
+  (`saiku.mail.smtp.*`). Prefer an ops-managed relay via `SAIKU_MAIL_SMTP_HOST`,
+  which makes the wizard read-only.
+- **AI ask cost budget** — per-principal and per-instance daily ceilings
+  charged from the token usage the provider actually reports, plus a cap on
+  concurrent chained asks (`saiku.ai.budget.*`).
+
 ## Quality
 
 Quality signals — per-module test-count and line-coverage floors, UI type
