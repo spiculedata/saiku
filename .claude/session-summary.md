@@ -75,6 +75,11 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-10-07 — feature/ai-surface-hardening-1918 — merged development for PR #2070
+**Was doing:** merged development at 4fb7b66c1, preserving the earlier CI fix and the base's describe-query/member-property changes; then fixed two PII-test fixtures flagged by CI to use the three-argument SimpleCubeElement constructor.
+**Now:** check PR #2070 CI after the test-fixture push; the local Maven reactor cannot resolve GitHub Packages artifacts (401), while the isolated SMTP and cost-budget tests passed.
+**Refs:** #1918, #2070
+
 ## 2026-10-07 — feature/1987-export-destination-spi — merged development for PR #2080
 **Was doing:** merged development, retaining both export delivery and webhook digest wiring, corrected the export test stub's `createQuery` return type, and fixed a null-data test helper exposed by CI.
 **Now:** check PR #2080 CI; local focused Maven tests stop at GitHub Packages 401 before compilation, while Spotless and XML parsing pass.

@@ -147,6 +147,22 @@ public class MailConfigStore {
     }
 
     /**
+     * Remove the stored mail configuration entirely, including the encrypted SMTP password. This is
+     * how an admin turns SMTP off: nothing is kept for a feature that is disabled, so a credential
+     * does not linger at rest after the host it belonged to has gone.
+     *
+     * @return a view of the now-unset configuration
+     */
+    public MailConfigView clear() {
+        try {
+            Files.deleteIfExists(file);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to remove " + FILE_NAME, e);
+        }
+        return new MailConfigView(null, 0, null, false, null, false, false, null, false);
+    }
+
+    /**
      * Materialise a usable {@link MailConfig} from the file, decrypting the password. Empty when no
      * file exists. This is the ONLY path that produces the plaintext password — it is handed to the
      * transport and never serialised or returned to a client.

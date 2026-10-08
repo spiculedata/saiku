@@ -844,6 +844,69 @@ public class AiAskServiceTest {
         assertEquals(turn.resultDigest(), secondReq.cellsetDigest());
     }
 
+    /* ---- saiku#1918 (17d): the chain reports what it actually cost ---- */
+
+    @Test
+    public void chainedAskReportsTheTokenUsageOfEveryProviderTurn() {
+        // A chain is one HTTP request and N provider round-trips, each re-sending the cube schema.
+        // If only the request were counted, the most expensive operation on the surface would look
+        // like the cheapest — so the chain has to report the real total for a daily budget to mean
+        // anything.
+        ScriptedProvider provider = new ScriptedProvider(List.of(
+                NlAskResponse.okQuery(fullQueryJson(), "m", 1000, 200, "t1"),
+                NlAskResponse.okInsight(insightJson(), "m", 3000, 400)));
+        AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), provider);
+        svc.setThinQueryService(cannedExecutor(cannedCellDataSet()));
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.AGGREGATED));
+
+        AiAskService.AskChain chain =
+                svc.askChained(CUBE, "build and report", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+
+        assertEquals(2, chain.providerCalls());
+        assertEquals(4000L, chain.inputTokens());
+        assertEquals(600L, chain.outputTokens());
+        assertEquals(4600L, chain.totalTokens());
+    }
+
+    @Test
+    public void aDegradedTurnStillReportsItsUsage() {
+        // The provider was called and billed even though we could not use the answer. Reporting zero
+        // here would make every failure free, which is exactly when an operator least expects it.
+        NlAskResponse degraded = NlAskResponse.degraded("upstream exploded", "m");
+        ScriptedProvider provider = new ScriptedProvider(List.of(degraded));
+        AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), provider);
+        svc.setThinQueryService(cannedExecutor(cannedCellDataSet()));
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.AGGREGATED));
+
+        AiAskService.AskChain chain =
+                svc.askChained(CUBE, "build and report", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+
+        assertEquals(1, chain.providerCalls());
+        assertTrue(chain.steps().get(0).degraded());
+    }
+
+    @Test
+    public void singleTurnOutcomeCarriesTheProvidersTokenUsage() {
+        // The sync /ask path charges the same budget, so AskOutcome has to carry usage too.
+        ScriptedProvider provider = new ScriptedProvider(List.of(NlAskResponse.okInsight(insightJson(), "m", 120, 45)));
+        AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), provider);
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.AGGREGATED));
+
+        AiAskService.AskOutcome out = svc.ask(CUBE, "spot the trend", List.of());
+
+        assertEquals(120, out.inputTokens());
+        assertEquals(45, out.outputTokens());
+        assertEquals(165L, out.totalTokens());
+    }
+
+    @Test
+    public void anOutcomeWithNoReportedUsageReportsZeroRatherThanNegative() {
+        // -1 is the "provider didn't report" sentinel. Summing it naively would make totalTokens()
+        // negative and read as a credit against the budget.
+        AiAskService.AskOutcome out = AiAskService.AskOutcome.degraded("no provider", "m");
+        assertEquals(0L, out.totalTokens());
+    }
+
     @Test
     public void chainedAskForcesInsightOnContinuationTurnByDefault() {
         // OPT-1: the continuation (report) turn is asked with forceTool=INSIGHT so the provider

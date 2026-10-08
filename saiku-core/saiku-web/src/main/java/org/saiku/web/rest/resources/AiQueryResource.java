@@ -135,6 +135,20 @@ public class AiQueryResource {
         this.askRateLimiter = l;
     }
 
+    /**
+     * saiku#1918 (17d, CWE-770): daily cost budget layered ON TOP of the per-minute call limiter.
+     * The limiter bounds request frequency; this bounds the money, from the token usage the
+     * provider actually reports, per principal and per instance. Sits here rather than inside
+     * {@link AiAskService} because only the web layer knows the authenticated principal, and
+     * because the SSE endpoints need the chain-concurrency permit that the service can't take.
+     */
+    private org.saiku.web.security.ratelimit.AiCostBudget aiCostBudget =
+            new org.saiku.web.security.ratelimit.AiCostBudget();
+
+    public void setAiCostBudget(org.saiku.web.security.ratelimit.AiCostBudget b) {
+        this.aiCostBudget = b;
+    }
+
     private final AiSchemaConverter converter = new AiSchemaConverter();
     /** Phase 2: JSON-Schema-driven shape validator. Runs first so an
      *  agent gets one structured 400 per shape failure instead of a
@@ -662,7 +676,16 @@ public class AiQueryResource {
             // Validates every name resolves against the live schema — same check
             // /ai/query runs before execution. The returned ThinQuery is discarded:
             // this endpoint never executes the query.
-            converter.convert(req, schema);
+            try {
+                converter.convert(req, schema);
+            } catch (AiPiiException pii) {
+                // A filter on a PII-flagged level is refused when a query is EXECUTED, but this
+                // endpoint never executes: it only describes the structure, and the summarizer
+                // replaces the member captions with a redaction sentinel before anything reaches the
+                // provider. Describing such a query is therefore safe, and refusing it would break
+                // saved queries that merely carry a filter. (/ai/query still refuses, as it must.)
+                log.debug("describe-query: PII-flagged filter present, captions will be redacted");
+            }
         } catch (AiValidationException e) {
             return badRequest(e.getField(), e.getMessage(), e.getAvailable());
         } catch (RuntimeException e) {
@@ -1322,17 +1345,22 @@ public class AiQueryResource {
             // through to a 200 with degraded:true, same as the classic /ask.
             Response denial = mapSpaceAccessDenial(outcome.denial(), spaceId);
             if (denial != null) {
+                // saiku#1918 (17d): a scope denial happens AFTER the provider was called, so it
+                // still cost money. Charge it — otherwise a persona-misfit is a free LLM call.
+                chargeAsk(outcome);
                 return denial;
             }
             AiAskApi.AskResponse out = new AiAskApi.AskResponse();
             out.setDegraded(true);
             out.setReason(outcome.reason());
             out.setModel(outcome.model());
+            chargeAsk(outcome);
             return Response.ok(out).type(MediaType.APPLICATION_JSON).build();
         }
         // Mirror the classic /ai/ask success handling (saiku#1455): branch on the outcome kind so
         // INSIGHT / VIEW_CHANGE surface their artefact and QUERY is actually executed — previously
         // this path echoed only {model, request} and silently dropped insight/view-change answers.
+        chargeAsk(outcome);
         return buildAskSuccessResponse(outcome);
     }
 
@@ -1360,12 +1388,15 @@ public class AiQueryResource {
             int status = outcome.reason() != null && outcome.reason().startsWith("AI ask is not configured")
                     ? Response.Status.SERVICE_UNAVAILABLE.getStatusCode()
                     : Response.Status.OK.getStatusCode();
+            // saiku#1918 (17d): a degraded turn still reached the provider and was still billed.
+            chargeAsk(outcome);
             return Response.status(status)
                     .entity(out)
                     .type(MediaType.APPLICATION_JSON)
                     .build();
         }
 
+        chargeAsk(outcome);
         return buildAskSuccessResponse(outcome);
     }
 
@@ -1493,16 +1524,44 @@ public class AiQueryResource {
         if (pre != null) {
             return pre;
         }
+        // saiku#1918 (17d): cap how many chains can be mid-flight. A chain holds its request thread
+        // for up to the chain deadline and re-sends the cube schema on every step, so unbounded
+        // concurrency is a thread-pool stall and a spend multiplier at the same time. Taken HERE,
+        // before the 200 event-stream is committed, so an exhausted budget is a real 429 rather
+        // than a 200 that immediately carries an error event.
+        org.saiku.web.security.ratelimit.AiCostBudget.ChainSlot slot = aiCostBudget.tryAcquireChainSlot();
+        if (slot == null) {
+            return askLimitResponse(429, "Too many AI chains in progress on this instance. Please retry shortly.");
+        }
         org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool force = parseForceTool(body.getForceTool());
         return streamChain(
-                (sse, live) -> askService.askChained(
-                        body.getCube(),
-                        body.getQuestion(),
-                        body.historyAsMessages(),
-                        body.getCellsetDigest(),
-                        force,
-                        body.getCurrentQuery(),
-                        live),
+                (sse, live) -> {
+                    // try-with-resources, so a mid-chain client disconnect or an unexpected
+                    // failure can't leak a permit and permanently shrink the cap.
+                    try (slot) {
+                        AiAskService.AskChain chain = askService.askChained(
+                                body.getCube(),
+                                body.getQuestion(),
+                                body.historyAsMessages(),
+                                body.getCellsetDigest(),
+                                force,
+                                body.getCurrentQuery(),
+                                live);
+                        // Count every provider round-trip the chain made — not one per request.
+                        // A five-step chain is five provider calls and five schema uploads, and a
+                        // budget that counted it as one would be off by 5x on the endpoint that
+                        // actually spends the money.
+                        if (chain.providerCalls() > 0) {
+                            aiCostBudget.recordUsage(askBudgetPrincipal(), chain.inputTokens(), chain.outputTokens());
+                            // The endpoint's own tryStartCall already counted this chain as one
+                            // call; the other provider round-trips are the extra ones.
+                            aiCostBudget.recordExtraCalls(askBudgetPrincipal(), chain.providerCalls() - 1);
+                        } else {
+                            aiCostBudget.recordUnpricedCall(askBudgetPrincipal());
+                        }
+                        return chain;
+                    }
+                },
                 "AI ask (chained, streaming)");
     }
 
@@ -3731,6 +3790,41 @@ public class AiQueryResource {
                 .build();
     }
 
+    /**
+     * saiku#1918 (17d): the client-facing reason for a daily-budget refusal.
+     *
+     * <p>The per-user denial is deliberately specific ("your" budget) because the user can act on
+     * it — stop, or ask an admin. The instance-wide denial is deliberately NOT: it would tell a
+     * tenant that other tenants are spending, and the only actionable answer for them is "try later".
+     * Neither message carries a token count, so the endpoint can't be used to read the ceiling back
+     * out of the API.
+     */
+    private String costBudgetReason(org.saiku.web.security.ratelimit.AiCostBudget.Denial denial) {
+        if (denial == org.saiku.web.security.ratelimit.AiCostBudget.Denial.DAILY_CALL_LIMIT) {
+            return "Daily AI ask request budget exhausted (limit " + aiCostBudget.getMaxCallsPerUserPerDay()
+                    + " requests per day). Please retry tomorrow.";
+        }
+        if (denial == org.saiku.web.security.ratelimit.AiCostBudget.Denial.DAILY_TOKEN_LIMIT) {
+            return "Daily AI token budget exhausted. Please retry tomorrow.";
+        }
+        return "The AI service is at its daily capacity. Please retry later.";
+    }
+
+    /**
+     * saiku#1918 (17d): charge the daily budget for a completed ask. Every ask endpoint funnels
+     * its result through here so no surface can forget to charge — the whole point of the budget is
+     * that it counts what was actually spent, and an endpoint that skipped it would be a free one.
+     */
+    private void chargeAsk(AiAskService.AskOutcome outcome) {
+        if (outcome != null && outcome.totalTokens() > 0) {
+            aiCostBudget.recordUsage(askBudgetPrincipal(), outcome.inputTokens(), outcome.outputTokens());
+        } else {
+            // No reported usage: still a real, billed provider turn. Charge the nominal amount
+            // rather than nothing, so a provider that stops returning usage can't go free.
+            aiCostBudget.recordUnpricedCall(askBudgetPrincipal());
+        }
+    }
+
     /** Standard client-facing reason for a 503 when no LLM provider is wired. */
     private static final String ASK_NOT_CONFIGURED_REASON =
             "AI ask is not configured. Set saiku.ai.ask.provider to 'anthropic' or 'openai' and "
@@ -3777,6 +3871,14 @@ public class AiQueryResource {
                     429,
                     "Too many AI ask requests — limit is " + askRateLimiter.getMaxCalls() + " per "
                             + (askRateLimiter.getWindowMs() / 1000) + "s. Please retry shortly.");
+        }
+        // saiku#1918 (17d): the daily budget gate, after the cheap per-minute frequency check and
+        // before anything touches the provider — so an over-budget caller is refused before a
+        // token is spent, and the refusal is about the budget rather than about whatever the
+        // instance would have said next.
+        org.saiku.web.security.ratelimit.AiCostBudget.Denial denial = aiCostBudget.tryStartCall(askBudgetPrincipal());
+        if (denial != org.saiku.web.security.ratelimit.AiCostBudget.Denial.ALLOWED) {
+            return askLimitResponse(429, costBudgetReason(denial));
         }
         if (askService == null) {
             AiAskApi.AskResponse notConfigured = new AiAskApi.AskResponse();
@@ -3949,7 +4051,13 @@ public class AiQueryResource {
                 // the outcome is only known once the turn is over, and carries the terminal
                 // envelope (final, or error + a degraded final).
                 SseTokenStream live = new SseTokenStream(sse);
-                streamOutcomeAsSse(ask.apply(sse, live), sse, live);
+                // saiku#1918 (17d): charge the budget for what this turn actually cost. The
+                // streaming variants are not a bypass surface for the budget — the provider was
+                // called and billed whether or not the client stayed connected to read the result.
+                // Resolved ONCE: the ask is a paid provider call, not a getter.
+                AiAskService.AskOutcome outcome = ask.apply(sse, live);
+                chargeAsk(outcome);
+                streamOutcomeAsSse(outcome, sse, live);
             } catch (com.fasterxml.jackson.core.JsonProcessingException jpe) {
                 // Serialising the outcome failed — the client is still connected. Surface an error
                 // (NOT the disconnect branch below, which JsonProcessingException would fall into
@@ -4024,22 +4132,46 @@ public class AiQueryResource {
     }
 
     /**
-     * saiku#1151: rate-limit identity = caller principal + client IP. Falls back
-     * to a constant when no request is bound to the thread (unit tests), so
-     * those callers share a single bucket.
+     * saiku#1151: rate-limit identity = caller principal. Falls back to the client IP when the
+     * request carries no principal, and to a constant when no request is bound to the thread (unit
+     * tests), so those callers share a single bucket.
+     *
+     * <p>saiku#1918 (17d): the client IP is no longer part of an AUTHENTICATED caller's key. It
+     * used to be {@code user:ip}, which meant a caller who changed address — a new NAT egress, a
+     * VPN, a load balancer with per-request source NAT — got a brand-new bucket and could run the
+     * per-minute allowance several times over. Keying on the principal alone makes the per-minute
+     * and per-day budgets mean what they say. Unauthenticated traffic still buckets by IP, which is
+     * the only identity it has.
      */
     private String askRateKey() {
         jakarta.servlet.http.HttpServletRequest req = currentRequest();
-        String user = null;
-        String ip = null;
-        if (req != null) {
-            user = req.getRemoteUser();
-            if (user == null && req.getUserPrincipal() != null) {
-                user = req.getUserPrincipal().getName();
-            }
-            ip = req.getRemoteAddr();
+        if (req == null) {
+            return "anon:unknown";
         }
-        return (user == null ? "anon" : user) + ":" + (ip == null ? "unknown" : ip);
+        String user = req.getRemoteUser();
+        if (user == null && req.getUserPrincipal() != null) {
+            user = req.getUserPrincipal().getName();
+        }
+        if (user != null && !user.isBlank()) {
+            return user;
+        }
+        String ip = req.getRemoteAddr();
+        return "ip:" + (ip == null ? "unknown" : ip);
+    }
+
+    /**
+     * saiku#1918 (17d): the identity the daily cost budget is charged to. The principal alone —
+     * never the IP — for the same reason {@link #askRateKey()} dropped it. Returns {@code null}
+     * when no principal can be derived, which the budget treats as fail-open.
+     */
+    private String askBudgetPrincipal() {
+        jakarta.servlet.http.HttpServletRequest req = currentRequest();
+        if (req == null) return null;
+        String user = req.getRemoteUser();
+        if (user == null && req.getUserPrincipal() != null) {
+            user = req.getUserPrincipal().getName();
+        }
+        return (user == null || user.isBlank()) ? null : user;
     }
 
     /**
