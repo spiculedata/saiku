@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.saiku.datasources.connection.ISaikuConnection;
 import org.saiku.datasources.connection.SaikuOssieConnection;
@@ -36,6 +37,7 @@ import org.saiku.service.olap.ai.KAnonymityFilter;
 import org.saiku.service.ossie.OssieDiscoverService;
 import org.saiku.service.ossie.OssieModelDto;
 import org.saiku.service.ossie.OssieQueryService;
+import org.saiku.service.ossie.OssieRoleContext;
 import org.saiku.service.ossie.ai.OssieAiQueryRequest;
 import org.saiku.service.ossie.ai.OssieAiQueryResponse;
 import org.saiku.service.ossie.ai.OssieAiSchema;
@@ -43,6 +45,7 @@ import org.saiku.service.ossie.ai.OssieAiSchemaProjector;
 import org.saiku.service.ossie.ai.OssieAiValidationException;
 import org.saiku.service.ossie.ai.OssieAiValidator;
 import org.saiku.service.ossie.ai.OssieAsyncQueryService;
+import org.saiku.web.rest.util.SessionRoles;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -91,6 +94,9 @@ public class AiOssieResource {
 
     private final OssieAiSchemaProjector projector = new OssieAiSchemaProjector();
     private final OssieAiValidator validator = new OssieAiValidator();
+    /** Semantic Layer Sync (saiku#1427) — stateless, no Spring wiring needed (like the two above). */
+    private final org.saiku.service.export.semantic.SemanticExportService semanticExportService =
+            new org.saiku.service.export.semantic.SemanticExportService();
 
     public void setOssieDiscoverService(OssieDiscoverService s) {
         this.ossieDiscoverService = s;
@@ -129,6 +135,8 @@ public class AiOssieResource {
      * Ossie {@code /ask} was a bypass surface — a client 429'd or 413'd on {@code /ai/ask} could
      * switch to {@code /ai/ossie/ask} and reach the paid LLM provider unbounded. Defaults mirror
      * {@link AiQueryResource} so the guard is on even before Spring wires the shared beans.
+     * Production wires the {@code aiOssieAskRateLimiter} SINGLETON (saiku#1913); a per-request
+     * limiter would never trip.
      */
     private org.saiku.service.olap.ai.AiPolicyGuard aiPolicyGuard =
             new org.saiku.service.olap.ai.AiPolicyGuard(org.saiku.service.olap.ai.AiPolicy.FULL);
@@ -389,6 +397,9 @@ public class AiOssieResource {
                         "model '" + modelName + "' not found on connection '" + connectionName + "'",
                         List.of(semantic.getName()));
             }
+            // saiku#1393 — strip fields/metrics the caller's roles deny before the agent-facing
+            // schema is built, same as the workbench discover endpoint.
+            semantic = OssieRoleContext.filterHidden(semantic, Set.copyOf(SessionRoles.currentRoles()));
             // #1404 — ?refresh=true drops the projector's cached samples for this model so the
             // next fetch re-runs the SELECT DISTINCTs against the warehouse.
             if (Boolean.TRUE.equals(refresh)) {
@@ -447,6 +458,45 @@ public class AiOssieResource {
         } catch (Exception e) {
             log.error("Ossie ontology fetch failed for {}/{}", connectionName, modelName, e);
             return error("ontology fetch failed");
+        }
+    }
+
+    // -------------------------------------------------------------------
+    // GET /export/{connection}/{tool} — Semantic Layer Sync (saiku#1427)
+    // -------------------------------------------------------------------
+
+    /**
+     * Render a connection's Ossie model into a downloadable BI-tool artefact — {@code tool} is
+     * {@code tableau} (a {@code .tds} datasource file) or {@code superset} (a dataset-export
+     * {@code .zip}, the same shape {@code superset import-datasources} consumes). See
+     * {@link org.saiku.service.export.semantic.TableauTdsExporter} and
+     * {@link org.saiku.service.export.semantic.SupersetDatasetYamlExporter} for exactly what each
+     * format does and does not carry over (notably: no live warehouse credentials — the analyst
+     * completes the connection locally).
+     */
+    @GET
+    @Path("/export/{connection}/{tool}")
+    @Produces({MediaType.APPLICATION_XML, "application/zip"})
+    public Response exportSemanticModel(
+            @PathParam("connection") String connectionName, @PathParam("tool") String tool) {
+        if (ossieDiscoverService == null) {
+            return error("Ossie discover not wired");
+        }
+        try {
+            OssieModelDto semantic = ossieDiscoverService.getModel(connectionName);
+            org.saiku.service.export.semantic.SemanticExportResult result =
+                    semanticExportService.export(semantic, tool);
+            return Response.ok(result.getContent())
+                    .type(result.getContentType())
+                    .header("Content-Disposition", "attachment; filename=\"" + result.getFilename() + "\"")
+                    .build();
+        } catch (org.saiku.service.export.semantic.SemanticExportException e) {
+            return badRequest("tool", e.getMessage(), List.of("tableau", "superset"));
+        } catch (IllegalArgumentException e) {
+            return badRequest("connection", e.getMessage(), List.of());
+        } catch (Exception e) {
+            log.error("Ossie semantic export failed for connection='{}' tool='{}'", connectionName, tool, e);
+            return error("semantic export failed: " + e.getMessage());
         }
     }
 

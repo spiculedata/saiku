@@ -1,0 +1,130 @@
+name: preview command
+
+# `/preview` PR comment: a collaborator (re)creates the preview environment for
+# a PR. Ported from spiculedata/saiku-cloud .github/workflows/preview-command.yml
+# (saiku-cloud#1379); see docs/decisions/ci-preview-environments.md. Used e.g. after it was torn down for idle or when the PR is
+# not Hive-authored and unlabelled. `/preview restart` also rebuilds a running one.
+# Any `/preview` also extends the 24h idle window. If the PR has no image (its last push
+# predates per-PR image builds, or its build was cancelled) this command starts the
+# docker build itself, says so on the PR, and brings the preview up when it lands.
+#
+# Decisions live in .github/scripts/preview-command.mjs (who may ask, on what) and
+# preview-lifecycle.mjs (what happens); this file is glue. See
+# docs/decisions/ci-preview-environments.md.
+#
+# SECURITY MODEL (same as preview-env.yml, read before editing):
+#   * `issue_comment` always runs THIS file from the default branch, so a PR
+#     cannot edit the workflow or scripts that hold the tailnet and SSH secrets.
+#   * The checkout is the default branch only. No PR-authored file is executed,
+#     sourced or copied to the preview host; the PR contributes only its per-SHA
+#     image tag, as in preview-env.yml.
+#   * Comment text, PR title and branch names are never interpolated into a
+#     script. The comment body is used in the job `if` (an expression, not a
+#     shell) as a cheap pre-filter and is re-matched exactly by the script; the
+#     script gets the event from $GITHUB_EVENT_PATH and builds the ctl event from
+#     API data (number, validated logins, labels, 40-hex sha, repo names).
+#   * Only collaborators with write/maintain/admin may use it (checked via the
+#     collaborator-permission API, failing closed). Fork PRs are refused by the
+#     script (head repo must equal this repo). Closed PRs are a no-op.
+#   * Shares the per-PR concurrency group with preview-env.yml so the two never
+#     race; cross-PR registry updates are serialised by the host lock.
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  command:
+    name: preview / command
+    # Pull-request comments that start with the command. The script re-checks it exactly.
+    if: github.event.issue.pull_request != null && startsWith(github.event.comment.body, '/preview')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      pull-requests: write
+      # Only to dispatch docker.yml for a PR that has no image yet (--ensure-build
+      # below). preview-env and the reaper deliberately do NOT get this: a normal push
+      # already starts the docker build, and only an explicit /preview should start one.
+      actions: write
+    concurrency:
+      group: preview-pr-${{ github.event.issue.number }}
+      cancel-in-progress: false
+    env:
+      PREVIEW_SSH_TARGET: ${{ vars.PREVIEW_SSH_TARGET }}
+    steps:
+      - name: Preview host configured?
+        id: cfg
+        run: |
+          if [ -n "$PREVIEW_SSH_TARGET" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No preview host configured (repository variable PREVIEW_SSH_TARGET is empty). Nothing to do."
+            echo "Preview host not configured (PREVIEW_SSH_TARGET unset): skipped." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # Default branch only. Do not add `ref:` pointing at the PR head.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.cfg.outputs.enabled == 'true'
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: steps.cfg.outputs.enabled == 'true'
+        with:
+          node-version: '22'
+
+      - name: Check the command, the commenter and the PR
+        id: cmd
+        if: steps.cfg.outputs.enabled == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node .github/scripts/preview-command.mjs \
+            --github-event "$GITHUB_EVENT_PATH" \
+            --out "$RUNNER_TEMP/preview-request.json"
+
+      - uses: ./.github/actions/preview-host-access
+        if: steps.cfg.outputs.enabled == 'true' && steps.cmd.outputs.proceed == 'true'
+        with:
+          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
+          ssh-private-key: ${{ secrets.PREVIEW_SSH_PRIVATE_KEY }}
+          known-hosts: ${{ vars.PREVIEW_SSH_KNOWN_HOSTS }}
+          target: ${{ vars.PREVIEW_SSH_TARGET }}
+
+      - name: Apply the lifecycle decision for this request
+        if: steps.cfg.outputs.enabled == 'true' && steps.cmd.outputs.proceed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREVIEW_SSH_KEY: /home/runner/.ssh/preview
+          PREVIEW_SSH_KNOWN_HOSTS: /home/runner/.ssh/preview_known_hosts
+          SAIKU_PREVIEW_MAX_ENVS: ${{ vars.PREVIEW_MAX_ENVS }}
+          SAIKU_PREVIEW_IDLE_HOURS: ${{ vars.PREVIEW_IDLE_HOURS }}
+          SAIKU_PREVIEW_BASE_DOMAIN: ${{ vars.PREVIEW_BASE_DOMAIN }}
+          SAIKU_PREVIEW_AUTHORS: ${{ vars.PREVIEW_AUTHORS }}
+          SAIKU_PREVIEW_POST_CREDENTIALS: ${{ vars.PREVIEW_POST_CREDENTIALS }}
+        run: |
+          node .github/scripts/preview-ctl.mjs event \
+            --host ssh \
+            --github-event "$RUNNER_TEMP/preview-request.json" \
+            --sync-root "$GITHUB_WORKSPACE" \
+            --ensure-build github \
+            --out "$RUNNER_TEMP/preview-result.json" \
+            --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload result
+        if: always() && steps.cfg.outputs.enabled == 'true' && steps.cmd.outputs.proceed == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: preview-command-result
+          path: ${{ runner.temp }}/preview-result.json
+          if-no-files-found: ignore
+          retention-days: 7

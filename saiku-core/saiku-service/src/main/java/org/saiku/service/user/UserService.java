@@ -147,6 +147,75 @@ public class UserService implements IUserManager, Serializable {
         iDatasourceManager.deleteFolder("homes/" + u.getUsername());
     }
 
+    /**
+     * saiku#1438 — case-insensitive directory lookup, the one read the SCIM surface needs to
+     * resolve a {@code userName} the IdP may spell with any casing onto the single canonical
+     * Saiku account (see {@link Usernames}). Returns {@code null} when no account matches, so
+     * callers distinguish "absent" from "disabled" — the whole point of the SCIM {@code active}
+     * round-trip. Fail-closed on lookup error: an unreadable directory is not a wildcard match.
+     */
+    public SaikuUser findByUsername(String username) {
+        if (username == null || username.isBlank()) {
+            return null;
+        }
+        try {
+            for (SaikuUser u : getUsers()) {
+                if (u != null && Usernames.sameUser(username, u.getUsername())) {
+                    return u;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Could not resolve user '{}' in the user directory", username, e);
+        }
+        return null;
+    }
+
+    /**
+     * saiku#1438 — enable/disable an account. The flag is written on its own (see
+     * {@link JdbcUserDAO#updateUserEnabled}) because the full-row update path hard-codes
+     * {@code enabled = TRUE}; going through it would make deactivation impossible.
+     */
+    public void setEnabled(SaikuUser user, boolean enabled) {
+        if (user == null) {
+            return;
+        }
+        uDAO.updateUserEnabled(user.getId(), enabled);
+        user.setEnabled(enabled);
+    }
+
+    /**
+     * saiku#1438 — replace a user's role set without touching the rest of the row.
+     *
+     * <p>{@link #updateUser(SaikuUser, boolean)} would re-write username/email AND force
+     * {@code enabled = TRUE}, so a role change would silently reactivate a deactivated account.
+     * {@link JdbcUserDAO#updateRoles} only replaces {@code USER_ROLES} rows (delete-all +
+     * re-insert), which is what SCIM group membership needs. The caller owns the final role list,
+     * including the mandatory {@code ROLE_USER}.
+     */
+    public void replaceRoles(SaikuUser user, String[] roles) {
+        if (user == null) {
+            return;
+        }
+        user.setRoles(roles);
+        uDAO.updateRoles(user);
+    }
+
+    /**
+     * saiku#1438 — write a user's display attributes and email address without touching username
+     * or the enabled flag.
+     *
+     * <p>{@link #updateUser(SaikuUser, boolean)} cannot serve this: its SQL hard-codes
+     * {@code enabled = TRUE}, so a SCIM profile sync would silently reactivate a deactivated
+     * account. This writes exactly the two column groups SCIM owns.
+     */
+    public void updateProfile(SaikuUser user) {
+        if (user == null) {
+            return;
+        }
+        uDAO.updateUserProfile(user);
+        uDAO.updateUserEmail(user.getId(), user.getEmail());
+    }
+
     public SaikuUser updateUser(SaikuUser u, boolean updatepassword) {
         // Only validate when the caller is actually changing the password —
         // otherwise u.getPassword() may be null/empty/already-hashed.

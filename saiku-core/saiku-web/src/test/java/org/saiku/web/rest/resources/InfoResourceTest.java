@@ -20,6 +20,7 @@ import java.util.zip.ZipInputStream;
 import org.junit.After;
 import org.junit.Test;
 import org.saiku.service.PlatformUtilsService;
+import org.saiku.service.olap.ai.ask.NlAskProviderFactory;
 import org.saiku.service.util.dto.Plugin;
 
 public class InfoResourceTest {
@@ -232,6 +233,67 @@ public class InfoResourceTest {
         @SuppressWarnings("unchecked")
         List<Plugin> body = (List<Plugin>) resp.getEntity();
         assertTrue(body.isEmpty());
+    }
+
+    /* --------------------------- saiku#904 diagnostics --------------------------- */
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void diagnostics_reportsDisabledWhenFactoriesNotWired() {
+        Response resp = new InfoResource().getDiagnostics();
+        assertEquals(200, resp.getStatus());
+        Map<String, Object> body = (Map<String, Object>) resp.getEntity();
+        Map<String, Object> ask = (Map<String, Object>) body.get("ask");
+        Map<String, Object> schemaGen = (Map<String, Object>) body.get("schemaGen");
+        assertEquals(Boolean.FALSE, ask.get("enabled"));
+        assertEquals(Boolean.FALSE, schemaGen.get("enabled"));
+        assertFalse("disabled section must not claim a provider", ask.containsKey("provider"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void diagnostics_reportsOllamaAskConfigNeverLogsAKey() {
+        NlAskProviderFactory factory = new NlAskProviderFactory("ollama", null, null, null);
+        InfoResource r = new InfoResource();
+        r.setAskProviderFactory(factory);
+
+        Response resp = r.getDiagnostics();
+        Map<String, Object> body = (Map<String, Object>) resp.getEntity();
+        Map<String, Object> ask = (Map<String, Object>) body.get("ask");
+        assertEquals(Boolean.TRUE, ask.get("enabled"));
+        assertEquals("ollama", ask.get("provider"));
+        assertEquals(Boolean.TRUE, ask.get("configured"));
+        assertEquals(NlAskProviderFactory.DEFAULT_OLLAMA_ENDPOINT, ask.get("endpoint"));
+        for (Object v : ask.values()) {
+            assertFalse(
+                    "diagnostics must never surface an api key",
+                    String.valueOf(v).contains("sk-"));
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void diagnostics_unreachableEndpointReportsFalseNotAnException() {
+        // Port 1 is reserved/unlisted — connect should fail fast rather than hang or throw.
+        NlAskProviderFactory factory =
+                new NlAskProviderFactory("ollama", null, null, "http://127.0.0.1:1/v1/chat/completions");
+        InfoResource r = new InfoResource();
+        r.setAskProviderFactory(factory);
+
+        Response resp = r.getDiagnostics();
+        Map<String, Object> body = (Map<String, Object>) resp.getEntity();
+        Map<String, Object> ask = (Map<String, Object>) body.get("ask");
+        assertEquals(Boolean.FALSE, ask.get("reachable"));
+    }
+
+    @Test
+    public void probeReachable_returnsFalseForMalformedUrl() {
+        assertFalse(InfoResource.probeReachable("not a url"));
+    }
+
+    @Test
+    public void probeReachable_returnsFalseWhenHostMissing() {
+        assertFalse(InfoResource.probeReachable("/relative/path"));
     }
 
     /* ----------------------------- helpers ------------------------------ */

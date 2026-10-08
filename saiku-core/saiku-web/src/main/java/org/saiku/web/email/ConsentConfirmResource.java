@@ -67,6 +67,10 @@ public class ConsentConfirmResource {
     /**
      * Per-IP rate limit for the public confirm endpoint. Direct {@code new} + Spring/test setter,
      * mirroring {@link UnsubscribeResource}. Keyed by client IP (no principal — unauthenticated).
+     *
+     * <p>saiku#1913: the production budget comes from the {@code mailConsentRateLimiter} /
+     * {@code mailConsentAddressRateLimiter} SINGLETON beans injected in {@code saiku-beans.xml} —
+     * a per-request limiter never trips, which is exactly the bug #1913 reported.
      */
     private AiRateLimiter rateLimiter =
             new AiRateLimiter(Integer.getInteger("saiku.mail.consent.ratelimit.maxPerMinute", 20), 60_000L);
