@@ -146,6 +146,31 @@
         <property name="datasourceManager" ref="repositoryDsManager"/>
     </bean>
 
+    <!-- Schema (Ossie/M4 YAML) version history — issue #1121, Phase 1. schemaHistoryService
+         archives the replaced YAML on each write (flat saiku-schema-history-*.jsonl, retain 50,
+         same mechanics as #947's dashboardHistoryService); ossieSchemaResource
+         (@ /saiku/admin/ossie/schema) is the write path itself — there was no REST way to save
+         Ossie YAML before this issue, only the offline `ossie-export` CLI — and archives every
+         save; schemaHistoryResource (@ /saiku/api/schema/history) lists/previews entries. All
+         three are admin-gated (Ossie datasources are admin-managed, no per-object ACL). -->
+    <bean id="schemaHistoryService" class="org.saiku.service.history.SchemaHistoryService">
+        <property name="datasourceService" ref="datasourceServiceBean"/>
+    </bean>
+
+    <bean id="ossieSchemaResource"
+          class="org.saiku.web.rest.resources.ossie.OssieSchemaResource">
+        <property name="datasourceService" ref="datasourceServiceBean"/>
+        <property name="historyService" ref="schemaHistoryService"/>
+        <property name="userService" ref="userServiceBean"/>
+        <property name="sessionService" ref="sessionService"/>
+    </bean>
+
+    <bean id="schemaHistoryResource"
+          class="org.saiku.web.rest.resources.history.SchemaHistoryResource">
+        <property name="historyService" ref="schemaHistoryService"/>
+        <property name="userService" ref="userServiceBean"/>
+    </bean>
+
     <bean id="olapQueryBean" scope="session" class="org.saiku.service.olap.OlapQueryService" destroy-method="destroy">
         <aop:scoped-proxy/>
         <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
