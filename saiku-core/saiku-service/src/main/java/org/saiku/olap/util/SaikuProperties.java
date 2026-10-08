@@ -257,7 +257,15 @@ public class SaikuProperties extends Properties {
         return ret;
     }
 
-    private static String getPropString(String key, String defaultValue) {
+    /**
+     * Read a {@code saiku.properties} key (including any {@code -Dsaiku.*} system-property
+     * override, folded in by {@link #populate()}), falling back to {@code defaultValue}.
+     *
+     * <p>Public since saiku#1914: the query guardrails (timeout / row cap / Arrow byte
+     * budget) are read lazily through this rather than frozen into a {@code static final}
+     * at class-init, so an operator override and a unit test both take effect.
+     */
+    public static String getPropString(String key, String defaultValue) {
         String ret;
         if (instance.containsKey(key)) {
             ret = instance.getProperty(key);

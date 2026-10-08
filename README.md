@@ -40,9 +40,20 @@ mode ships a self-contained H2 + FoodMart cube — drag fields onto rows, column
 or filters and the SPA writes MDX for you.
 
 > **For a real deployment**, drop `SAIKU_DEMO=true` and set an admin password:
-> `-e SAIKU_ADMIN_PASSWORD='a-strong-password'`. Saiku **refuses to start** on the
-> default `admin`/`admin` once it's network-reachable, so one of those two is
-> required.
+> `-e SAIKU_ADMIN_PASSWORD='a-strong-password'` (or
+> `-e SAIKU_ADMIN_PASSWORD_FILE=/run/secrets/saiku-admin-password`). Saiku
+> **refuses to start** on the default `admin`/`admin` once it's network-reachable,
+> so one of those two is required — and the password must itself clear the policy
+> (≥ 12 characters, not a well-known weak password), so `SAIKU_ADMIN_PASSWORD=admin`
+> is refused too.
+
+> **Demo fixtures follow demo mode** (saiku#1953). A boot without `SAIKU_DEMO=true`
+> stages **no** demo content: no FoodMart/Bank/TPC-DS/Flights schemas, no H2
+> fixtures, no datasource descriptors — a fresh home comes up with an empty
+> datasource list. Set `SAIKU_SEED=true` to install the fixtures on a
+> non-demo boot, or `SAIKU_DEMO=true SAIKU_SEED=false` for the demo login against
+> your own cubes. Seeding is seed-if-absent, so an existing `saiku-home` is never
+> rewritten or emptied.
 
 > **The container runs as a non-root user** (uid/gid `10001:10001`). A *fresh*
 > named/anonymous volume works out of the box. Any **pre-existing** `saiku-home`
@@ -134,6 +145,26 @@ overlays, auto-refresh, PDF/PNG export and read-only share links. See the
 walkthrough, and [`saiku-ui/src/embed/README.md`](saiku-ui/src/embed/README.md)
 to embed a dashboard in your own app via the `<saiku-embed>` web component.
 
+## User provisioning (SCIM 2.0)
+
+Saiku speaks the SCIM 2.0 core profile, so Okta, Microsoft Entra ID or
+OneLogin can own the user lifecycle: an admin mints one bearer token per
+connector, and create / update / deactivate / group-assignment all flow into
+the Saiku user directory without anyone touching the admin console. SCIM
+handles lifecycle; OIDC/SAML handles authentication — a provisioned account has
+no usable local password. See
+[`docs/SCIM-PROVISIONING.md`](docs/SCIM-PROVISIONING.md) for the connector
+walkthrough, the attribute mapping and its limits.
+
+## Google Sheets add-on
+
+A first-party Sheets add-on (`integrations/google-sheets/`, spiculedata/saiku#1436)
+queries the semantic layer from a spreadsheet sidebar — cube picker, measure
+and dimension shelves, *Insert as table*, and a *Refresh* that rewrites the
+same block in place so your formatting survives. It talks to the same typed
+`/saiku/api/ai/*` surface as the MCP server and the Excel add-in. See
+[`docs/sheets.md`](docs/sheets.md).
+
 ## Observability
 
 Saiku ships **opt-in OpenTelemetry instrumentation** via the OTel Java
@@ -154,6 +185,18 @@ Without the endpoint env var the agent is never loaded. See
 [`docs/observability.md`](docs/observability.md) for the full env-var
 reference, sampling guidance, and what's not yet covered (Tier 2
 custom spans for `ThinQueryService` etc.).
+
+## Quality
+
+Quality signals — per-module test-count and line-coverage floors, UI type
+checks, UI tests — are declared as files (`.github/test-floors.json`,
+`.coverage-thresholds.json`) and **gated on every PR** by the `ci` workflow.
+A separate weekly run, `.github/workflows/quality-report.yml`, renders the same
+signals as one Markdown **quality dashboard** in its job summary: where each
+module stands, and by how much headroom. That run is read-only and is not a
+gate — the gates stay in CI. See [`docs/quality.md`](docs/quality.md). For how
+CI, the merge queue, images, previews and the demo deployment fit together, see
+[`docs/ci-overview.md`](docs/ci-overview.md).
 
 ## Build from source
 
@@ -197,6 +240,15 @@ mvn verify -P integration
 
 See [`CLAUDE.md`](CLAUDE.md) for the full layout, the dependency catalog
 (`saiku-bom`), and the GitHub Packages auth gotcha for local builds.
+
+## Verifying release artifacts
+
+The fat JAR, dist zip, SBOM, container image and npm packages carry
+keyless [Sigstore](https://www.sigstore.dev/)-signed SLSA build provenance,
+and each release ships a `SHA256SUMS` file. See
+[Verifying release artifacts](docs/releasing.md#verifying-release-artifacts)
+for the commands per artifact type (`gh attestation verify`,
+`cosign verify-attestation`, `sha256sum -c`, `npm audit signatures`).
 
 ## Repository layout
 

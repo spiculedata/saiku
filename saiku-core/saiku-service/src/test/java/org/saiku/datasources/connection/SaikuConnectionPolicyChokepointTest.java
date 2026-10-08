@@ -124,7 +124,9 @@ public class SaikuConnectionPolicyChokepointTest {
         assertTrue("a permitted URL must still connect", con.connect());
         assertTrue(con.initialized());
         assertEquals("exactly one driver call", 1, driver.connectCalls.get());
-        assertEquals("jdbc:" + TEST_SCHEME + ":ok;", driver.lastUrl);
+        assertEquals(
+                // saiku#2003: a plain driver URL is handed to the driver verbatim — no ';' appended
+                "jdbc:" + TEST_SCHEME + ":ok", driver.lastUrl);
     }
 
     /* ---------------------------------------------------------------- OSSIE (Calcite warehouse) */

@@ -29,10 +29,13 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.saiku.olap.dto.*;
 import org.saiku.service.olap.OlapDiscoverService;
 import org.saiku.service.ossie.OssieDiscoverService;
 import org.saiku.service.ossie.OssieModelDto;
+import org.saiku.service.ossie.OssieRoleContext;
+import org.saiku.web.rest.util.SessionRoles;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -80,6 +83,9 @@ public class OlapDiscoverResource implements Serializable {
      * {@code "OSSIE"}; the workbench then calls this endpoint to populate its schema browser
      * (datasets / metrics / relationships) before the user starts dragging fields onto shelves.
      *
+     * <p>saiku#1393 — the returned tree is filtered to what the caller's Spring Security roles are
+     * allowed to see: fields/metrics denied by every one of the caller's roles are removed.
+     *
      * @summary Get the Ossie model for a connection.
      */
     @GET
@@ -93,6 +99,9 @@ public class OlapDiscoverResource implements Serializable {
                         .build();
             }
             OssieModelDto model = ossieDiscoverService.getModel(connectionName);
+            // saiku#1393 — strip fields/metrics the caller's roles deny before the workbench's
+            // schema browser ever renders them.
+            model = OssieRoleContext.filterHidden(model, Set.copyOf(SessionRoles.currentRoles()));
             return Response.ok(model).build();
         } catch (IllegalArgumentException e) {
             return Response.status(Response.Status.NOT_FOUND)

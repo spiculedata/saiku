@@ -1,29 +1,132 @@
 name: docker
 
+# Names a PR-targeted dispatch so /preview can tell "already building for this PR"
+# from "needs a build" (preview-ctl.mjs GhImageBuilder). Empty, i.e. GitHub's default
+# title, for every other run.
+run-name: "${{ inputs.pr && format('docker: image for PR #{0}', inputs.pr) || '' }}"
+
 # Rolling demo image. Fires on every push to development (and on
 # workflow_dispatch). Tagged releases are handled by release.yml,
 # which produces stable semver tags + :latest; this workflow gives
 # users a way to pull "current development tip" without waiting for
 # a release.
+#
+# Same-repo pull requests targeting development ALSO build and push a per-PR
+# image (`pr-<n>` + the 7-hex PR head SHA) so a reviewer can pull exactly what
+# a PR built. Fork PRs and Dependabot PRs build only and never push. Tag
+# grammar and retention: docs/ci-images.md.
+#
+# A PR that was last pushed before this trigger existed (or whose build was
+# cancelled) has no image, and /preview cannot run it. So /preview dispatches
+# this workflow with `pr=<n>` (see the `target` job): it builds that PR's head
+# and publishes ONLY pr-<n> + the 7-hex SHA, never a rolling tag.
 on:
   push:
     branches: [development, main]
+  pull_request:
+    branches: [development]
+    # Only changes that can alter the image. Docs-only PRs do not build one.
+    paths:
+      - "pom.xml"
+      - "**/pom.xml"
+      - "saiku-*/**"
+      - "lib/**"
+      - "Dockerfile"
+      - "docker/**"
+      - ".github/workflows/docker.yml"
   workflow_dispatch:
+    inputs:
+      pr:
+        description: >-
+          Optional PR number. Builds and publishes that same-repo PR's HEAD commit
+          under its per-PR tags (pr-<n> + the 7-hex head SHA), exactly as a
+          pull_request run would, for a PR that has no image yet. Sent by the
+          /preview command (preview-command.yml); never publishes a rolling tag.
+        required: false
+        type: string
 
+# A newer push to a PR supersedes the older build; development/main/manual runs
+# are never cancelled (each rolling tag must land).
+concurrency:
+  group: docker-${{ github.event.pull_request.number || inputs.pr || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Least-privilege default: read-only for the whole workflow. Each job below
+# elevates ONLY the scope it needs (see per-job `permissions:` blocks), so the
+# Maven + frontend lifecycle runs with no forge/signing capability (SEC S2/N1).
 permissions:
   contents: read
-  packages: write
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build-and-push:
-    name: Build & push demo image
+  target:
+    # Decides WHAT to build. A normal run (push, pull_request, a plain manual
+    # dispatch) builds the triggering commit and this job outputs nothing. A
+    # dispatch with `pr` builds that PR's HEAD commit instead. The input is never
+    # trusted: it reaches the script only through the environment, must be a plain
+    # number, and every property that makes a PR image publishable is re-read from
+    # the API here (open, head in THIS repository, base development, not Dependabot).
+    name: Resolve build target
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      pr: ${{ steps.t.outputs.pr }}
+      sha: ${{ steps.t.outputs.sha }}
+    steps:
+      - name: Resolve the PR head
+        id: t
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_INPUT: ${{ inputs.pr }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PR_INPUT:-}" ]; then
+            echo "pr=" >> "$GITHUB_OUTPUT"
+            echo "sha=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! [[ "$PR_INPUT" =~ ^[0-9]{1,7}$ ]]; then
+            echo "::error::pr must be a plain PR number"
+            exit 1
+          fi
+          pr_json=$(gh api "repos/${REPO}/pulls/${PR_INPUT}")
+          state=$(jq -r '.state' <<<"$pr_json")
+          head_repo=$(jq -r '.head.repo.full_name // ""' <<<"$pr_json")
+          base_ref=$(jq -r '.base.ref' <<<"$pr_json")
+          author=$(jq -r '.user.login' <<<"$pr_json")
+          sha=$(jq -r '.head.sha' <<<"$pr_json")
+          [ "$state" = "open" ] || { echo "::error::PR #${PR_INPUT} is not open"; exit 1; }
+          [ "$head_repo" = "$REPO" ] || { echo "::error::PR #${PR_INPUT} is from a fork; per-PR images are published for same-repo PRs only"; exit 1; }
+          [ "$base_ref" = "development" ] || { echo "::error::PR #${PR_INPUT} does not target development"; exit 1; }
+          [ "$author" != "dependabot[bot]" ] || { echo "::error::PR #${PR_INPUT} is from Dependabot; its builds never publish"; exit 1; }
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::could not read a valid head SHA for PR #${PR_INPUT}"; exit 1; }
+          echo "Building PR #${PR_INPUT} at ${sha}"
+          echo "pr=${PR_INPUT}" >> "$GITHUB_OUTPUT"
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+
+  build:
+    # Build ONLY. Runs the full Maven + frontend-maven-plugin lifecycle
+    # (`npm ci`/build inside saiku-webapp + every Maven plugin) with NO
+    # packages/id-token/attestations — a compromised build plugin or npm dep
+    # here can neither push to GHCR nor mint a Sigstore identity (SEC S2). It
+    # hands the built fat JAR to the push job as an artifact.
+    name: Build launcher fat JAR
+    runs-on: ubuntu-latest
+    needs: [target]
+    permissions:
+      contents: read # checkout only
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Empty on every normal run (checkout then uses the triggering commit);
+          # for a dispatch with `pr` it is that PR's head commit.
+          ref: ${{ needs.target.outputs.sha }}
 
       - name: Set up JDK 22
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
@@ -68,13 +171,79 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p build-context
+          # Dockerfile's default ARG JAR_PATH=build-context/saiku.jar — the push
+          # job restores this exact path from the artifact below.
           cp "saiku-launcher/target/saiku-${VERSION}.jar" build-context/saiku.jar
           ls -la build-context/
+
+      - name: Upload launcher JAR
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: saiku-jar
+          path: build-context/saiku.jar
+          retention-days: 7
+
+  push:
+    # Push + attest ONLY. Holds packages:write (push image + attestations to
+    # GHCR) + id-token:write/attestations:write (keyless Sigstore provenance).
+    # It runs NO Maven/npm lifecycle: it only checks out the Docker context
+    # (Dockerfile + docker/), restores the prebuilt JAR, and builds/pushes the
+    # image — so the elevated identity never touches arbitrary build code
+    # (SEC S2). Permissions are JOB-level, not workflow-level (SEC N1).
+    name: Push & attest image
+    runs-on: ubuntu-latest
+    env:
+      # On pull_request GITHUB_SHA is the synthetic merge commit, which nobody
+      # can map back to a PR head. Tag with the head commit instead.
+      IMAGE_SHA: ${{ needs.target.outputs.sha || github.event.pull_request.head.sha || github.sha }}
+    needs: [build, target]
+    permissions:
+      contents: read # checkout the Docker build context
+      packages: write # push the image AND its attestations to GHCR
+      id-token: write # keyless Sigstore signing for build provenance (saiku#1992)
+      attestations: write # record the SLSA provenance attestation on the repo
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.target.outputs.sha }}
+
+      # The Dockerfile COPYs a prebuilt build-context/saiku.jar (no Maven runs
+      # at image build). Restore exactly that from the build job's artifact.
+      - name: Download launcher JAR
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: saiku-jar
+          path: build-context
+      - name: Confirm build context
+        run: ls -la build-context/
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
+      # Everything below keys off this one output. A PR image is published only
+      # when the PR head lives in THIS repository and was not opened by
+      # Dependabot: a fork's GITHUB_TOKEN has no packages:write (the push would
+      # fail) and publishing a stranger's build into our registry is not ours to
+      # do either way. Those PRs still build the image, they just do not push.
+      - name: Resolve publish eligibility
+        id: publish
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REPO: ${{ github.repository }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ] && { [ "$HEAD_REPO" != "$REPO" ] || [ "$ACTOR" = "dependabot[bot]" ]; }; then
+            echo "push=false" >> "$GITHUB_OUTPUT"
+            echo "PR from $HEAD_REPO by $ACTOR: build only, no registry push."
+          else
+            echo "push=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "short_sha=${IMAGE_SHA::7}" >> "$GITHUB_OUTPUT"
+
       - name: Log in to GHCR
+        if: steps.publish.outputs.push == 'true'
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ${{ env.REGISTRY }}
@@ -86,20 +255,28 @@ jobs:
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          labels: |
+            org.opencontainers.image.revision=${{ env.IMAGE_SHA }}
           # Push:
           #   ghcr.io/spiculedata/saiku:development  (rolling tip)
           #   ghcr.io/spiculedata/saiku:main         (rolling tip of main)
           #   ghcr.io/spiculedata/saiku:sha-abc1234  (immutable, pinnable)
+          # Same-repo PR:
+          #   ghcr.io/spiculedata/saiku:pr-123       (moves with the PR)
+          #   ghcr.io/spiculedata/saiku:abc1234      (7-hex PR head SHA, bare)
           tags: |
-            type=ref,event=branch
-            type=sha,prefix=sha-,format=short
+            type=ref,event=branch,enable=${{ needs.target.outputs.pr == '' }}
+            type=sha,prefix=sha-,format=short,enable=${{ github.event_name != 'pull_request' && needs.target.outputs.pr == '' }}
+            type=raw,value=pr-${{ github.event.pull_request.number || needs.target.outputs.pr }},enable=${{ github.event_name == 'pull_request' || needs.target.outputs.pr != '' }}
+            type=raw,value=${{ steps.publish.outputs.short_sha }},enable=${{ github.event_name == 'pull_request' || needs.target.outputs.pr != '' }}
 
       - name: Build & push
+        id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: Dockerfile
-          push: true
+          push: ${{ steps.publish.outputs.push == 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           # buildx cache via GitHub's built-in Action cache, so iterative
@@ -107,3 +284,20 @@ jobs:
           # the freshly-built JARs).
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # saiku#1990 + #1992: the rolling development image is the primary
+          # image push on `development`, so it carries the same SBOM + SLSA
+          # provenance attestations as the released image. This is where the
+          # container supply-chain wiring is proven ahead of a tagged release.
+          sbom: ${{ steps.publish.outputs.push == 'true' }}
+          provenance: ${{ steps.publish.outputs.push == 'true' && 'mode=max' || 'false' }}
+
+      - name: Attest image build provenance
+        if: steps.publish.outputs.push == 'true'
+        # saiku#1992: keyless Sigstore provenance for the rolling image, logged
+        # to Rekor and pushed to GHCR as a referring attestation. subject-digest
+        # is the image index digest emitted by the build step above.
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
