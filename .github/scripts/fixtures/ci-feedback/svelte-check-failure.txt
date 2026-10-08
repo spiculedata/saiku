@@ -1,0 +1,18 @@
+2026-10-04T12:00:00.0370000Z ##[group]Run npm run check
+2026-10-04T12:00:00.0740000Z [36;1mnpm run check[0m
+2026-10-04T12:00:00.1110000Z shell: /usr/bin/bash -e {0}
+2026-10-04T12:00:00.1480000Z ##[endgroup]
+2026-10-04T12:00:00.1850000Z 
+2026-10-04T12:00:00.2220000Z > saiku-ui@3.20.0 check
+2026-10-04T12:00:00.2590000Z > svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && npm run check:embed-react
+2026-10-04T12:00:00.2960000Z 
+2026-10-04T12:00:00.3330000Z 1791162867873 START "/home/runner/work/saiku/saiku/saiku-ui"
+2026-10-04T12:00:00.3700000Z 1791162867884 ERROR "src/lib/ZzBad.svelte" 2:6 "Type 'string' is not assignable to type 'number'."
+2026-10-04T12:00:00.4070000Z 1791162867884 COMPLETED 6330 FILES 1 ERRORS 34 WARNINGS 15 FILES_WITH_PROBLEMS
+2026-10-04T12:00:00.4440000Z 1791162867875 WARNING "src/embed/SaikuEmbed.svelte" 10:2 "The `customElement` option is used when generating a custom element. Did you forget the `customElement: true` compile option?\nhttps://svelte.dev/e/options_missing_custom_element"
+2026-10-04T12:00:00.4810000Z 1791162867883 WARNING "src/lib/cube-designer/AskDimSumWidget.svelte" 134:2 "noninteractive element cannot have nonnegative tabIndex value\nhttps://svelte.dev/e/a11y_no_noninteractive_tabindex"
+2026-10-04T12:00:00.5180000Z 1791162867883 WARNING "src/lib/cube-designer/CanvasToolbar.svelte" 418:5 "Visible, non-interactive element `<div>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type=\"button\">` or `<a>` might be more appropriate\nhttps://svelte.dev/e/a11y_click_events_have_key_events"
+2026-10-04T12:00:00.5550000Z 1791162867883 WARNING "src/lib/cube-designer/JoinsPanel.svelte" 339:8 "Visible, non-interactive element `<div>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type=\"button\">` or `<a>` might be more appropriate\nhttps://svelte.dev/e/a11y_click_events_have_key_events"
+2026-10-04T12:00:00.5920000Z 1791162867883 WARNING "src/lib/cube-designer/CanvasPane.svelte" 343:1 "noninteractive element cannot have nonnegative tabIndex value\nhttps://svelte.dev/e/a11y_no_noninteractive_tabindex"
+2026-10-04T12:00:00.6290000Z 1791162867883 WARNING "src/lib/cube-designer/CanvasPane.svelte" 343:1 "Non-interactive element `<div>` should not be assigned mouse or keyboard event listeners\nhttps://svelte.dev/e/a11y_no_noninteractive_element_interactions"
+2026-10-04T12:00:00.6660000Z ##[error]Process completed with exit code 1.

@@ -9,7 +9,9 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import org.saiku.datasources.connection.IConnectionManager;
 import org.saiku.datasources.connection.ISaikuConnection;
 import org.saiku.olap.dto.resultset.AbstractBaseCell;
@@ -21,6 +23,10 @@ import org.saiku.olap.query2.ThinQuery;
 import org.saiku.service.olap.OlapDiscoverService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 /**
  * Execute a shelf-state query against an Ossie datasource. Sibling to the MDX-flavoured
@@ -59,6 +65,28 @@ public class OssieQueryService {
     }
 
     /**
+     * The caller's granted authorities, read from {@link SecurityContextHolder} (saiku#1393). Local
+     * to this service — analogous readers already exist in {@code SecurityAwareConnectionManager}
+     * and {@code AsyncQueryService} — rather than a shared cross-module utility, since {@code
+     * org.saiku.web.rest.util.SessionRoles} lives in {@code saiku-web}, which depends on this
+     * module, not the other way round. An absent, unauthenticated, or anonymous principal yields an
+     * empty set (fail-closed: no role is ever granted to an unauthenticated caller).
+     */
+    private static Set<String> getSpringRoles() {
+        Authentication auth = SecurityContextHolder.getContext() == null
+                ? null
+                : SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || auth instanceof AnonymousAuthenticationToken) {
+            return Set.of();
+        }
+        Set<String> roles = new LinkedHashSet<>();
+        for (GrantedAuthority a : auth.getAuthorities()) {
+            if (a != null && a.getAuthority() != null) roles.add(a.getAuthority());
+        }
+        return roles;
+    }
+
+    /**
      * Translate {@code model} into the SQL string that {@link #execute} would dispatch, without
      * touching the connection or running anything. Powers the workbench's "Show SQL" affordance
      * so users can inspect the SQL their shelf state produces.
@@ -70,7 +98,7 @@ public class OssieQueryService {
             throw new IllegalArgumentException("OssieQueryModel.connection is required");
         }
         OssieModelDto semantic = discoverService.getModel(connectionName);
-        return translator.translate(model, semantic);
+        return translator.translate(model, semantic, getSpringRoles());
     }
 
     /**
@@ -88,7 +116,7 @@ public class OssieQueryService {
             throw new IllegalArgumentException("OssieQueryModel.connection is required");
         }
         OssieModelDto semantic = discoverService.getModel(connectionName);
-        String sql = translator.translate(model, semantic);
+        String sql = translator.translate(model, semantic, getSpringRoles());
         log.info("Ossie execute (query='{}', connection='{}'): {}", tq.getName(), connectionName, sql);
 
         long startMs = System.currentTimeMillis();

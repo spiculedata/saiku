@@ -43,6 +43,7 @@ Plus the long-tail:
 | `GET /saiku/api/ai/query/{queryId}/drillthrough/export/csv` | Same params as the JSON drillthrough (`position`, `returns`, `maxrows`, `firstRowset`); streams `text/csv` with `Content-Disposition: attachment` for direct download (saiku#1051). |
 | `POST /saiku/api/ai/anomaly` | Run a query, then flag anomalous points along a time axis. Returns the typed records response with an `anomaly:{score,expected,direction}` block on each flagged cell, plus an `anomaly` summary (`method`, `threshold`, `anomalyCount`) (saiku#907). |
 | `POST /saiku/api/ai/forecast` | Run a time-series query, then project `horizon` future points with prediction intervals. Returns the typed records response (observed data untouched) plus a `forecast` block keyed by measure (saiku#908). |
+| `POST /saiku/api/ai/describe-query` | Tier-1 (schema-only): suggest a short title + one-line description for a query's structure — measures, rows, columns, slicer. Never executes the query; no data values leave the box (saiku#909). |
 
 All routes require an authenticated session (form login at `POST /login`
 on the launcher; same auth as the regular UI).
@@ -887,6 +888,98 @@ appends these as a dashed continuation with a shaded confidence band.
 
 ---
 
+## Dashboard narrative summary — `POST /ai/narrate-dashboard` (saiku#910)
+
+Tier-2 (aggregated) feature: a 2-4 sentence plain-English summary of a
+dashboard's current state — "Sales up 15% YoY, growth concentrated in
+West region." Requires `ai.policy` to be `aggregated` or `full`;
+`schema-only` refuses with a 403 before any tile is even executed.
+
+The dashboard layer is layout-only on the backend (see
+`DashboardResource`) — the frontend already computes each visible
+tile's effective filters and re-issues its query client-side. This
+endpoint follows the same shape: the caller posts each VISIBLE tile's
+already filter-resolved query, and the server re-executes it itself
+(so k-anonymity suppression and PII redaction apply to freshly-run
+data, never client-supplied numbers) before narrating the result.
+
+```jsonc
+{
+  "dashboardTitle": "Sales Overview",
+  "tiles": [
+    { "title": "Sales by Region", "query": { /* a normal /query request body */ } },
+    { "title": "Top Products", "query": { /* ... */ } }
+  ]
+}
+```
+
+Response:
+
+```jsonc
+{ "degraded": false, "model": "claude-...", "narrative": "Sales are up 15% year over year, led by the West region..." }
+```
+
+- An empty `tiles` list, or every tile executing to zero rows, returns
+  `{"narrative": "No data to summarise."}` **without calling the LLM**
+  — no tokens spent describing nothing.
+- A malformed tile (missing `query`/`cube`) is skipped, not fatal —
+  the narrative covers whatever tiles executed successfully.
+- Up to 12 tiles and the first 10 rows per tile are sent to the model,
+  bounding token cost.
+- Small cells are suppressed (k-anonymity, saiku#905) the same way
+  `/ai/query` suppresses them. Member captions drawn from a
+  `saiku.semantic.pii=true` level are redacted to `[REDACTED]` before
+  the digest reaches the LLM (saiku#902) — the measure **value** is
+  kept, only the caption is withheld.
+- Same rate limit + not-configured (503) behaviour as `/ai/ask`.
+- Audited automatically like every other `/saiku/api/ai/*` call.
+
+---
+
+## Step 8 — tile titles/descriptions: `POST /ai/describe-query` (saiku#909)
+
+Tier-1 (schema-only): suggests a short title and one-sentence description
+for the dashboard tile a query will render as, based purely on the query's
+**structure** — selected measures, row/column axes, slicer — never on data
+values or aggregated results. The query is validated and resolved against
+the live schema exactly like `/ai/query`, but is never executed.
+
+```jsonc
+// POST /ai/describe-query
+{
+  "query": { /* a normal /query request body */ }
+}
+```
+
+```jsonc
+// 200
+{
+  "suggestedTitle": "Sales by region, last 4 quarters",
+  "suggestedDescription": "Compares quarterly sales across geographic regions for the trailing 12 months."
+}
+```
+
+Notes:
+
+- Gated at the `schema-only` policy tier — the least-trusted, default
+  tier — so it stays available under every `ai.policy` setting.
+- Respects saiku#902 PII annotations: any measure or level tagged
+  `saiku.semantic.pii=true` that the query touches has its member captions
+  replaced with `[REDACTED]` before the structure summary is built. The
+  axis/filter shape (dimension, hierarchy, level) is kept so the model
+  still understands "this breaks down by X" — it just never sees which
+  members.
+- `400 VALIDATION_ERROR` on a malformed request or an unresolvable name —
+  same envelope as `/ai/query`.
+- `503` with `{"status":"AI_NOT_CONFIGURED","error":"AI not configured"}`
+  when no LLM upstream is configured.
+- `502` with `{"status":"AI_UPSTREAM_ERROR", ...}` on a transport / upstream
+  failure.
+- Every call is audit-logged (saiku#906), same as the rest of the `/ai/*`
+  surface.
+
+---
+
 ## Request body — every option
 
 ```jsonc
@@ -1658,3 +1751,40 @@ Fresh launcher installs stage two personas:
 
 See `saiku-launcher/src/main/resources/seed/agent-spaces/`. A fresh
 demo has personas ready to click without any operator authoring.
+
+---
+
+## Certified queries — admin-approved answers run verbatim (saiku#1430)
+
+Where spaces decide *who* is answering, **certified queries** decide
+*what* the answer is. Each entry pairs a `ThinQuery` — the exact saved
+query — with the `matchIntent` phrasings that should reach it, so an
+operator can say "when the user asks about monthly revenue, always run
+this exact query, never re-derive it". Persisted as JSON under
+`saiku-home/certified/`. Full reference:
+[docs/CERTIFIED-QUERIES-SPEC.md](./CERTIFIED-QUERIES-SPEC.md).
+
+- `GET /rest/saiku/api/ai/certified` — the catalogue. Summaries only
+  (id, description, intents); the approved MDX is deliberately not
+  listed, so an embed can't scrape and run it around the agent. Pass
+  `?errors=true` to see why a file was rejected.
+- `GET /rest/saiku/api/ai/certified/{id}` — one entry in full,
+  including the query body, for reviewing an approval.
+- `POST /rest/saiku/api/ai/certified/{id}/run` — execute verbatim.
+  Returns the standard query response plus `"source": "certified"` and
+  `"certifiedId"`. No body, no filters: the query cannot be edited in
+  flight.
+- `POST /rest/saiku/api/ai/certified/refresh` — force a rescan.
+
+`POST /ai/ask` prefers a certified answer over a re-derived one. The
+routing decision is made **before** the provider call, so on a match
+the model is never asked at all. It fires only for a genuine data ask:
+no cellset digest on screen, no explicit non-query intent, no slash
+command, and the same cube the query was approved for. The response
+carries `response.source = "certified"` with `request` left null —
+there is no model-authored query, and one in hand would invite an edit
+that silently de-certifies the numbers.
+
+Matching is deterministic token comparison over the authored
+`matchIntent` phrasings, not an LLM decision — that is what makes the
+approval a guarantee rather than a request.
