@@ -11,6 +11,8 @@ import java.io.IOException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.time.Duration;
+import org.saiku.service.mcp.outbound.McpOutboundToolCatalog;
+import org.saiku.service.mcp.outbound.McpOutboundToolDescriptor;
 
 /**
  * {@link NlAskProvider} backed by OpenAI's Chat Completions API.
@@ -181,6 +183,14 @@ public class OpenAINlAskProvider extends AbstractNlAskProvider {
         // Dashboard is a dedicated forced mode (buildDashboard), never part of AUTO — so the classic
         // ask picker never emits a dashboard. When forced, only emit_dashboard + refusal advertise.
         boolean wantDashboard = force == NlAskRequest.ForceTool.DASHBOARD;
+        // saiku#1425: outbound MCP tools ride alongside AUTO (turn 1) AND the forced-INSIGHT
+        // continuation turn (see AiAskService#askChained's forceReportAfterQuery narrowing) — NOT
+        // alongside QUERY/VIEW_CHANGE/DASHBOARD forced turns. Rationale: a "combined metrics +
+        // context" answer needs the model to still be able to reach an external tool on the report
+        // turn (after a cube query already executed), so mcp tools can't be dropped the same way
+        // emit_query is once forceReportAfterQuery narrows the schema.
+        boolean wantMcpTools = (force == NlAskRequest.ForceTool.AUTO || force == NlAskRequest.ForceTool.INSIGHT)
+                && !request.mcpTools().isEmpty();
 
         ArrayNode tools = root.putArray("tools");
 
@@ -241,6 +251,23 @@ public class OpenAINlAskProvider extends AbstractNlAskProvider {
             viewFn.set("parameters", viewChangeInputSchema());
         }
 
+        // saiku#1425: admin-enabled outbound MCP tools, one function per descriptor. qualifiedName
+        // is already sanitised to the function-name charset by McpOutboundToolCatalog.qualify — no
+        // further escaping needed here.
+        if (wantMcpTools) {
+            for (McpOutboundToolDescriptor mcp : request.mcpTools()) {
+                ObjectNode mcpTool = tools.addObject();
+                mcpTool.put("type", "function");
+                ObjectNode mcpFn = mcpTool.putObject("function");
+                mcpFn.put("name", mcp.qualifiedName());
+                mcpFn.put(
+                        "description",
+                        "[external MCP tool via " + mcp.serverId() + "] "
+                                + (mcp.description().isBlank() ? mcp.toolName() : mcp.description()));
+                mcpFn.set("parameters", MAPPER.readTree(mcp.inputSchemaJson()));
+            }
+        }
+
         // Refusal path — model picks this when the user's question isn't
         // about the cube. Stops the AI key becoming a free general LLM proxy.
         ObjectNode refusalTool = tools.addObject();
@@ -279,6 +306,15 @@ public class OpenAINlAskProvider extends AbstractNlAskProvider {
         // `/<name>: <description>` — the model treats these as first-class routes.
         if (request.skillsFragment() != null && !request.skillsFragment().isBlank()) {
             sys.append("\n\n").append(request.skillsFragment());
+        }
+        if (wantMcpTools) {
+            sys.append("\n\nEXTERNAL TOOLS: some functions above are proxies to admin-approved external "
+                    + "systems (marked \"[external MCP tool via <server>]\" in their description). Call one "
+                    + "when the user's question needs context or data those functions describe that this "
+                    + "cube doesn't have — e.g. looking up a ticket, a document, or a record in another "
+                    + "system. You may call one before emit_query (gather context first) or after "
+                    + "emit_insight/report (combine the cube result with external context in one answer). "
+                    + "Never invent arguments the schema doesn't ask for.");
         }
         if (wantViewChange) {
             sys.append("\n\nChart-type catalog (for emit_view_change):\n").append(chartTypeCatalogText());
@@ -542,6 +578,16 @@ public class OpenAINlAskProvider extends AbstractNlAskProvider {
                     reason = args.path("reason").asText(reason);
                 }
                 return NlAskResponse.degraded(REFUSAL_REASON_PREFIX + reason, model);
+            }
+            // saiku#1425: any function name we didn't advertise ourselves but DID request in the
+            // mcp__ namespace is an outbound MCP tool call. McpOutboundToolCatalog.qualify() is the
+            // only thing that mints mcp__-prefixed names, so this can't collide with a real emit_*
+            // tool short of the admin naming a server/tool to deliberately spoof it — re-validated
+            // server-side at dispatch time regardless (AiAskService#dispatchMcpTool).
+            if (McpOutboundToolCatalog.isMcpQualifiedName(fnName)) {
+                String toolCallId = call.path("id").asText(null);
+                return NlAskResponse.okMcpTool(
+                        fnName, arguments == null ? "{}" : arguments, model, inputTokens, outputTokens, toolCallId);
             }
         }
         return NlAskResponse.degraded("tool_calls did not include a recognised tool", model);

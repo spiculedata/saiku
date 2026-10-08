@@ -11,6 +11,8 @@ import java.io.IOException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.time.Duration;
+import org.saiku.service.mcp.outbound.McpOutboundToolCatalog;
+import org.saiku.service.mcp.outbound.McpOutboundToolDescriptor;
 
 /**
  * {@link NlAskProvider} backed by Anthropic's Messages API.
@@ -167,6 +169,9 @@ public final class AnthropicNlAskProvider extends AbstractNlAskProvider {
         // Dashboard is a dedicated forced mode (buildDashboard), never part of AUTO — so the classic
         // ask picker never emits a dashboard. When forced, only emit_dashboard + refusal advertise.
         boolean wantDashboard = force == NlAskRequest.ForceTool.DASHBOARD;
+        // saiku#1425 — see the matching comment in OpenAINlAskProvider for the AUTO+INSIGHT rationale.
+        boolean wantMcpTools = (force == NlAskRequest.ForceTool.AUTO || force == NlAskRequest.ForceTool.INSIGHT)
+                && !request.mcpTools().isEmpty();
 
         StringBuilder system = new StringBuilder(SYSTEM_PROMPT);
         // Agent-space persona voice (saiku#1440). Prepended before the cube schema so the LLM
@@ -181,6 +186,15 @@ public final class AnthropicNlAskProvider extends AbstractNlAskProvider {
         // `/<name>: <description>` — the model treats these as first-class routes.
         if (request.skillsFragment() != null && !request.skillsFragment().isBlank()) {
             system.append("\n\n").append(request.skillsFragment());
+        }
+        if (wantMcpTools) {
+            system.append("\n\nEXTERNAL TOOLS: some tools above are proxies to admin-approved external "
+                    + "systems (marked \"[external MCP tool via <server>]\" in their description). Call one "
+                    + "when the user's question needs context or data those tools describe that this cube "
+                    + "doesn't have — e.g. looking up a ticket, a document, or a record in another system. "
+                    + "You may call one before emit_query (gather context first) or after emit_insight/report "
+                    + "(combine the cube result with external context in one answer). Never invent arguments "
+                    + "the schema doesn't ask for.");
         }
         // Chart-type catalog only matters for view-change routing. Skipping it on query/insight-only
         // turns trims ~500 tokens off the prompt and shaves a noticeable chunk off response time.
@@ -269,6 +283,20 @@ public final class AnthropicNlAskProvider extends AbstractNlAskProvider {
                             + "Use when the user asks to switch view or pick a chart that fits the data. Do "
                             + "not propose a new query.");
             viewTool.set("input_schema", viewChangeInputSchema());
+        }
+
+        // saiku#1425: admin-enabled outbound MCP tools. qualifiedName is already sanitised to a safe
+        // charset by McpOutboundToolCatalog.qualify — no further escaping needed here.
+        if (wantMcpTools) {
+            for (McpOutboundToolDescriptor mcp : request.mcpTools()) {
+                ObjectNode mcpTool = tools.addObject();
+                mcpTool.put("name", mcp.qualifiedName());
+                mcpTool.put(
+                        "description",
+                        "[external MCP tool via " + mcp.serverId() + "] "
+                                + (mcp.description().isBlank() ? mcp.toolName() : mcp.description()));
+                mcpTool.set("input_schema", MAPPER.readTree(mcp.inputSchemaJson()));
+            }
         }
 
         // Refusal path — the model picks this when the user's question isn't
@@ -538,6 +566,13 @@ public final class AnthropicNlAskProvider extends AbstractNlAskProvider {
                 if (REFUSAL_TOOL_NAME.equals(toolName)) {
                     String reason = input.path("reason").asText("Question is not about the cube.");
                     return NlAskResponse.degraded(REFUSAL_REASON_PREFIX + reason, model);
+                }
+                // saiku#1425 — see the matching comment in OpenAINlAskProvider.
+                if (McpOutboundToolCatalog.isMcpQualifiedName(toolName)) {
+                    String toolCallId = block.path("id").asText(null);
+                    String argsJson =
+                            (input.isMissingNode() || input.isNull()) ? "{}" : MAPPER.writeValueAsString(input);
+                    return NlAskResponse.okMcpTool(toolName, argsJson, model, inputTokens, outputTokens, toolCallId);
                 }
             }
         }

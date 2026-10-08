@@ -60,20 +60,33 @@ public class Database {
     public void init() throws SQLException {
         initDB();
         loadUsers();
-        try {
-            loadFoodmart();
-        } catch (Exception e) {
-            log.warn("Foodmart sample data not loaded: {}", e.getMessage());
-        }
-        try {
-            loadBank();
-        } catch (Exception e) {
-            log.warn("Bank (bridge demo) sample data not loaded: {}", e.getMessage());
-        }
-        try {
-            loadEarthquakes();
-        } catch (Exception e) {
-            log.warn("Earthquakes sample data not loaded: {}", e.getMessage());
+        // saiku#1953: the sample loaders below register the bundled demo datasources
+        // (FoodMart, Bank, Earthquakes) and RUNSCRIPT their fixtures. They used to run
+        // unconditionally, so a non-demo deployment still ended up with demo datasources
+        // on first boot. saiku-launcher resolves the SAIKU_SEED / -Dsaiku.seed decision
+        // (default: follow demo mode) and publishes it as the `saiku.seed` system
+        // property; gate on it. A bare webapp deploy that never sets the property keeps
+        // the historical behaviour (seed), so this is a launcher-default change, not a
+        // silent change for existing webapp installations.
+        if (sampleDataEnabled()) {
+            try {
+                loadFoodmart();
+            } catch (Exception e) {
+                log.warn("Foodmart sample data not loaded: {}", e.getMessage());
+            }
+            try {
+                loadBank();
+            } catch (Exception e) {
+                log.warn("Bank (bridge demo) sample data not loaded: {}", e.getMessage());
+            }
+            try {
+                loadEarthquakes();
+            } catch (Exception e) {
+                log.warn("Earthquakes sample data not loaded: {}", e.getMessage());
+            }
+        } else {
+            log.info("Demo sample datasources not seeded (saiku.seed=false);"
+                    + " set SAIKU_SEED=true / -Dsaiku.seed=true to install them.");
         }
         loadLegacyDatasources();
         // saiku#1223: rebuild the workspace datasource cache from disk after the demo
@@ -88,6 +101,20 @@ public class Database {
         } catch (Exception e) {
             log.warn("Post-seed datasource cache reload failed: {}", e.getMessage());
         }
+    }
+
+    /**
+     * saiku#1953 — whether the bundled demo sample datasources (FoodMart / Bank /
+     * Earthquakes) may be registered and loaded. Reads the {@code saiku.seed} system
+     * property that {@code saiku-launcher} sets from {@code SAIKU_SEED} /
+     * {@code -Dsaiku.seed}; unset (or blank) means enabled, so a webapp deployed
+     * without the launcher behaves exactly as before. Empty / whitespace counts as
+     * unset, matching the launcher's precedence rules. Static + package-visible so
+     * the decision is unit-testable without a servlet context.
+     */
+    static boolean sampleDataEnabled() {
+        String value = System.getProperty("saiku.seed");
+        return value == null || value.isBlank() || Boolean.parseBoolean(value.trim());
     }
 
     private static String expandSaikuHome(String s) {
@@ -418,6 +445,15 @@ public class Database {
                 + "  user_id INT(11) NOT NULL REFERENCES USERS(user_id),\n"
                 + "  ROLE VARCHAR(45) NOT NULL,\n"
                 + "  PRIMARY KEY (user_role_id));");
+
+        // saiku#1438 (SCIM): the core User schema carries name.givenName / name.familyName /
+        // displayName, and both Okta and Entra send them on every create and update. Without
+        // columns they would be accepted and thrown away, so the user directory would show a
+        // bare username for every provisioned person. Additive, idempotent, nullable — an
+        // existing H2 file upgrades in place and a NULL reads back as "not set".
+        statement.execute("ALTER TABLE USERS ADD COLUMN IF NOT EXISTS GIVEN_NAME VARCHAR(100);");
+        statement.execute("ALTER TABLE USERS ADD COLUMN IF NOT EXISTS FAMILY_NAME VARCHAR(100);");
+        statement.execute("ALTER TABLE USERS ADD COLUMN IF NOT EXISTS DISPLAY_NAME VARCHAR(255);");
 
         ResultSet result = statement.executeQuery("select count(*) as c from LOG where log = 'insert users'");
         result.next();

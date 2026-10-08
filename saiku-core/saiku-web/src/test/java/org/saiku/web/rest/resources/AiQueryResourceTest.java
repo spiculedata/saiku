@@ -130,6 +130,37 @@ public class AiQueryResourceTest {
                 body.getMetadata().getColumns().get(0).getCaption());
     }
 
+    /**
+     * saiku#827: {@code MemberPropertyExtractor} populates olap4j member
+     * properties onto the row-header {@code MemberCell} during formatting;
+     * {@link AiQueryResource} must thread that map through to
+     * {@code AiQueryMetadata.Caption.properties} so agents can read it
+     * without a second schema round-trip.
+     */
+    @Test
+    public void rowHeaderMemberPropertiesSurfaceOnRowCaption() {
+        resource.setThinQueryService(new ThinQueryService() {
+            @Override
+            public CellDataSet execute(ThinQuery tq) {
+                CellDataSet cds = buildStubCellDataSet();
+                cds.getCellSetBody()[0][0].setProperty("currencyCode", "USD");
+                return cds;
+            }
+        });
+
+        Response resp = resource.executeAi(baseRequest(), "records");
+        assertEquals(200, resp.getStatus());
+        AiQueryResponse body = (AiQueryResponse) resp.getEntity();
+
+        Map<String, String> props0 = body.getMetadata().getRows().get(0).getProperties();
+        assertNotNull("row0's header cell carried a member property", props0);
+        assertEquals("USD", props0.get("currencyCode"));
+
+        assertNull(
+                "row1's header cell set no properties, so NON_EMPTY leaves it null on the wire",
+                body.getMetadata().getRows().get(1).getProperties());
+    }
+
     @Test
     public void matrixFormatReturnsTypedCells() {
         Response resp = resource.executeAi(baseRequest(), "matrix");

@@ -1,0 +1,26 @@
+{
+  "id": "monthly-store-sales-by-country",
+  "description": "Official monthly store sales (and cost) by store country and product family. Finance's approved definition — do not re-derive.",
+  "matchIntent": [
+    "monthly revenue",
+    "monthly sales",
+    "monthly store sales",
+    "revenue by month",
+    "sales by month",
+    "monthly sales by country"
+  ],
+  "query": {
+    "name": "certified-monthly-store-sales-by-country",
+    "cube": {
+      "uniqueName": "[unknown_foodmart].[FoodMart].[FoodMart].[Sales]",
+      "name": "Sales",
+      "connection": "unknown_foodmart",
+      "catalog": "FoodMart",
+      "schema": "FoodMart",
+      "caption": "Sales"
+    },
+    "queryType": "OLAP",
+    "type": "MDX",
+    "mdx": "SELECT NON EMPTY {[Measures].[Store Sales], [Measures].[Store Cost]} ON COLUMNS, NON EMPTY {([Time].[Month].Members, [Product].[Product Family].Members)} ON ROWS FROM [Sales]"
+  }
+}
