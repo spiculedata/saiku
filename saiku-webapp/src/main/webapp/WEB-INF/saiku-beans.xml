@@ -146,6 +146,31 @@
         <property name="datasourceManager" ref="repositoryDsManager"/>
     </bean>
 
+    <!-- Schema (Ossie/M4 YAML) version history — issue #1121, Phase 1. schemaHistoryService
+         archives the replaced YAML on each write (flat saiku-schema-history-*.jsonl, retain 50,
+         same mechanics as #947's dashboardHistoryService); ossieSchemaResource
+         (@ /saiku/admin/ossie/schema) is the write path itself — there was no REST way to save
+         Ossie YAML before this issue, only the offline `ossie-export` CLI — and archives every
+         save; schemaHistoryResource (@ /saiku/api/schema/history) lists/previews entries. All
+         three are admin-gated (Ossie datasources are admin-managed, no per-object ACL). -->
+    <bean id="schemaHistoryService" class="org.saiku.service.history.SchemaHistoryService">
+        <property name="datasourceService" ref="datasourceServiceBean"/>
+    </bean>
+
+    <bean id="ossieSchemaResource"
+          class="org.saiku.web.rest.resources.ossie.OssieSchemaResource">
+        <property name="datasourceService" ref="datasourceServiceBean"/>
+        <property name="historyService" ref="schemaHistoryService"/>
+        <property name="userService" ref="userServiceBean"/>
+        <property name="sessionService" ref="sessionService"/>
+    </bean>
+
+    <bean id="schemaHistoryResource"
+          class="org.saiku.web.rest.resources.history.SchemaHistoryResource">
+        <property name="historyService" ref="schemaHistoryService"/>
+        <property name="userService" ref="userServiceBean"/>
+    </bean>
+
     <bean id="olapQueryBean" scope="session" class="org.saiku.service.olap.OlapQueryService" destroy-method="destroy">
         <aop:scoped-proxy/>
         <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
@@ -878,6 +903,55 @@
         <property name="sessionStore" ref="mcpSessionStore"/>
     </bean>
 
+    <!-- ====================================================================
+         MCP OAuth 2.0 resource-server — bearer-token passthrough auth
+         (saiku#879, long-term follow-up to #878's HTTP Basic passthrough).
+         Inert unless -Dsaiku.oauth.issuerUri is set; see
+         OAuthResourceServerProperties for the full config surface.
+
+         - oauthResourceServerProperties: reads the saiku.oauth.* system
+           properties once at context start-up.
+         - oauthJwtDecoder: null when OAuth isn't configured; otherwise a
+           JwtDecoder that defers OIDC discovery to the first bearer request
+           so an unreachable IdP never blocks webapp start-up.
+         - oauthRoleMapper: claims -> Saiku ROLE_* authorities, reusing the
+           #878 SecurityAwareConnectionManager role-propagation hook as-is.
+         - oauthBearerAuthFilter: Spring Security custom filter, wired before
+           BASIC_AUTH_FILTER in applicationContext-saiku.xml — acts only on
+           /rest/saiku/api/mcp/** requests carrying an Authorization: Bearer
+           header; every other request (Basic, session, no bearer at all)
+           falls through unchanged.
+         - mcpOAuthProtectedResourceResource (@ /saiku/mcp/.well-known/
+           oauth-protected-resource): RFC 9728 discovery metadata; permitAll
+           in the security chain since a client has no token yet when it
+           fetches this. 404s when OAuth isn't configured.
+         ==================================================================== -->
+    <bean id="oauthResourceServerProperties"
+          class="org.saiku.web.security.oauth.OAuthResourceServerProperties"
+          factory-method="fromSystemProperties"/>
+
+    <bean id="oauthJwtDecoder"
+          class="org.saiku.web.security.oauth.OAuthJwtDecoderFactory"
+          factory-method="create">
+        <constructor-arg ref="oauthResourceServerProperties"/>
+    </bean>
+
+    <bean id="oauthRoleMapper" class="org.saiku.web.security.oauth.OAuthRoleMapper">
+        <constructor-arg ref="oauthResourceServerProperties"/>
+    </bean>
+
+    <bean id="oauthBearerAuthFilter"
+          class="org.saiku.web.security.oauth.OAuthBearerAuthenticationFilter">
+        <constructor-arg ref="oauthResourceServerProperties"/>
+        <constructor-arg ref="oauthJwtDecoder"/>
+        <constructor-arg ref="oauthRoleMapper"/>
+    </bean>
+
+    <bean id="mcpOAuthProtectedResourceResource"
+          class="org.saiku.web.rest.resources.mcp.McpOAuthProtectedResourceResource">
+        <property name="properties" ref="oauthResourceServerProperties"/>
+    </bean>
+
     <!-- Tier-1 auth hardening: shared login rate-limiter.
          5 failures per 15 minutes per client IP. Default: do NOT trust
          X-Forwarded-For (set saiku.auth.trustForwardedFor=true only when
@@ -1043,6 +1117,23 @@
         <property name="sessionService" ref="sessionService"/>
     </bean>
 
+    <!-- Notebook CRUD (org.saiku.web.rest.resources.notebooks.NotebookResource
+         @ /saiku/api/notebooks, issue #1108). Another direct clone of the
+         dashboards resource: notebooks persist as opaque .saikunb JSON blobs
+         under the existing repo via the same JCR file primitives, inheriting
+         the permission model + path conventions. The document is opaque —
+         the UI owns the schema; the backend never interprets it. -->
+    <bean id="notebookResource"
+          class="org.saiku.web.rest.resources.notebooks.NotebookResource">
+        <property name="datasourceService" ref="datasourceServiceBean"/>
+        <property name="sessionService" ref="sessionService"/>
+        <!-- POST /saiku/api/notebooks/run (issue #1108): resolves an MDX
+             cell's AiCubeRef against the live schema and executes via
+             queryResource2 — see NotebookCubeResolver's javadoc. -->
+        <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
+        <property name="query2Resource" ref="queryResource2"/>
+    </bean>
+
     <!-- Tile plugin catalogue (App Builder Phase 2, saiku#1441). Admin-installed
          self-contained HTML tile widgets under saiku-home/tile-plugins/<id>/ are
          scanned lazily (mtime signature) and served over REST so the App Builder
@@ -1128,6 +1219,21 @@
         <property name="datasourceService" ref="datasourceServiceBean"/>
         <property name="sessionService" ref="sessionService"/>
         <property name="aiQueryResource" ref="aiQueryResource"/>
+    </bean>
+
+    <!-- Notebook counterpart of shareViewResource (issue #1108), sitting under
+         the same /rest/saiku/share/view/ prefix shareTokenAuthFilter already
+         scopes to ROLE_SHARE_GUEST — no filter or intercept-url change needed.
+         Re-runs a shared notebook's MDX cells via queryResource2#execute
+         (raw-MDX path, not the AI Query API dashboards use) under the owner's
+         identity via sessionService.runAs. -->
+    <bean id="notebookShareViewResource" scope="request"
+          class="org.saiku.web.rest.resources.share.NotebookShareViewResource">
+        <aop:scoped-proxy/>
+        <property name="datasourceService" ref="datasourceServiceBean"/>
+        <property name="sessionService" ref="sessionService"/>
+        <property name="query2Resource" ref="queryResource2"/>
+        <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
     </bean>
 
     <!-- ====================================================================
@@ -1364,6 +1470,46 @@
         <property name="userService" ref="userServiceBean"/>
     </bean>
 
+    <!-- One-click Ossie model generation (saiku#1439). Reuses the whole schema-gen graph above
+         — same introspector, inferrer, enricher, op-applier, connection provider and sidecar
+         store — and adds the hop that was missing: draft → Mondrian → Ossie YAML, validated and
+         written next to a rationale markdown. POST returns 202 + a job id; the pipeline runs on
+         schemaGenExecutor because a 47-table warehouse takes 30-60s. -->
+    <bean id="ossieGenerationJobStore"
+          class="org.saiku.service.ossie.generate.OssieGenerationJobStore">
+        <constructor-arg>
+            <bean class="java.time.Duration" factory-method="ofMinutes">
+                <constructor-arg value="30"/>
+            </bean>
+        </constructor-arg>
+    </bean>
+
+    <bean id="generatedModelStore"
+          class="org.saiku.service.ossie.generate.DatasourceBackedModelStore">
+        <constructor-arg ref="datasourceServiceBean"/>
+    </bean>
+
+    <bean id="ossieModelGenerationService"
+          class="org.saiku.service.ossie.generate.OssieModelGenerationService">
+        <constructor-arg ref="ossieGenerationJobStore"/>
+        <constructor-arg ref="jdbcIntrospector"/>
+        <constructor-arg ref="schemaInferrer"/>
+        <constructor-arg ref="llmEnricher"/>
+        <constructor-arg ref="opApplier"/>
+        <constructor-arg ref="mondrianSchemaWriter"/>
+        <constructor-arg ref="generatedModelStore"/>
+        <constructor-arg ref="sidecarStore"/>
+        <constructor-arg ref="schemaGenExecutor"/>
+        <constructor-arg ref="schemaGenConnectionProvider"/>
+    </bean>
+
+    <bean id="ossieGenerateResource"
+          class="org.saiku.web.rest.resources.schemagen.OssieGenerateResource">
+        <constructor-arg ref="ossieModelGenerationService"/>
+        <constructor-arg ref="ossieGenerationJobStore"/>
+        <property name="userService" ref="userServiceBean"/>
+    </bean>
+
     <!-- Cube/schema designer backend (saiku-ui/src/lib/cube-designer). Reuses the
          schema-generator's JDBC connection provider + the datasource service;
          auto-registered as a JAX-RS resource by SaikuJerseyApplication's @Path scan. -->
@@ -1539,6 +1685,90 @@
     </bean>
 
     <!-- ====================================================================
+         saiku#1987: export destination SPI + Google Drive as the first connector.
+
+         ExportDestination is the file-delivery sibling of AlertChannel: an
+         exporter produces the BYTES, a destination decides where they LAND. Be
+         ans registered in this map are the delivery channels available to the
+         EXPORT_DELIVERY job and to the admin API. Adding a channel (S3,
+         OneDrive, a custom HTTP sink) is a one-bean change here, with no
+         change to any exporter.
+
+         This is NOT the tile-plugin surface (#1441): those are sandboxed viz
+         iframes with connect-src 'none' and cannot upload a file. Do not
+         overload either API.
+         ==================================================================== -->
+
+    <!-- The first-party Google Drive connector. Service-account OAuth only
+         (scope drive.file, uploads pinned to one folderId) — the threat model
+         is documented on DriveAccessTokenSupplier.ServiceAccountTokenSupplier
+         and in docs/EXPORT-DESTINATIONS.md. It is inert until an admin saves
+         a config for it via /saiku/admin/export-destinations. -->
+    <bean id="googleDriveExportDestination"
+          class="org.saiku.service.export.destination.google.GoogleDriveExportDestination"/>
+
+    <!-- Admin-side config + credential storage under ${saiku.home}/export-destinations.
+         Plain settings go to <ID>.json; every destination's credentials go to a single
+         owner-read/write secrets.json, so a secret never lands in a settings file, a
+         job payload, or an API response. -->
+    <bean id="exportDestinationConfigStore"
+          class="org.saiku.service.export.destination.ExportDestinationConfigStore"
+          factory-method="forSaikuHome">
+        <constructor-arg value="${saiku.home:./saiku-home}"/>
+    </bean>
+
+    <bean id="exportDestinationRegistry"
+          class="org.saiku.service.export.destination.ExportDestinationRegistry">
+        <property name="destinations">
+            <map>
+                <entry key="GOOGLE_DRIVE" value-ref="googleDriveExportDestination"/>
+            </map>
+        </property>
+    </bean>
+
+    <!-- The MVP artifact producer: execute a saved .saiku query off-request (fresh
+         ThinQueryService from the SAME singleton collaborators saiku-beans.xml wires
+         into thinQueryBean — it must never touch the session-scoped proxy on a
+         scheduler thread) and flatten the cell set to CSV. -->
+    <bean id="savedQueryCsvArtifactProducer"
+          class="org.saiku.service.schedule.delivery.SavedQueryCsvArtifactProducer">
+        <constructor-arg ref="datasourceServiceBean"/>
+        <constructor-arg ref="olapDiscoverServiceBean"/>
+        <constructor-arg ref="saikuQueryCacheBean"/>
+        <constructor-arg ref="userServiceBean"/>
+        <constructor-arg ref="queryCoalescerBean"/>
+        <constructor-arg ref="ossieQueryServiceBean"/>
+    </bean>
+
+    <!-- The EXPORT_DELIVERY job handler. Runs as the job owner (the owner-identity
+         runner has already established the owner's SecurityContext — it does NOT
+         re-impersonate). The payload names a destination id and a source; every
+         credential is resolved from exportDestinationConfigStore at delivery time,
+         so a job file in saiku-home/jobs/ never contains a secret. -->
+    <bean id="exportDeliveryJobHandler"
+          class="org.saiku.service.schedule.delivery.ExportDeliveryJobHandler">
+        <constructor-arg ref="exportDestinationRegistry"/>
+        <constructor-arg ref="exportDestinationConfigStore"/>
+        <constructor-arg>
+            <map>
+                <entry key="SAVED_QUERY_CSV" value-ref="savedQueryCsvArtifactProducer"/>
+            </map>
+        </constructor-arg>
+    </bean>
+
+    <!-- Admin CRUD over export destinations: GET/POST/DELETE
+         /saiku/admin/export-destinations/{id} plus GET (list) and POST /{id}/test
+         (a constant, server-generated probe — never an arbitrary upload). Admin-only
+         (@RolesAllowed + the /rest/saiku/admin/** URL gate). Secrets are WRITE-ONLY:
+         the API returns the names of the secrets that are set, never their values. -->
+    <bean id="exportDestinationAdminResource"
+          class="org.saiku.web.rest.resources.ExportDestinationAdminResource">
+        <property name="registry" ref="exportDestinationRegistry"/>
+        <property name="configStore" ref="exportDestinationConfigStore"/>
+        <property name="userService" ref="userServiceBean"/>
+    </bean>
+
+    <!-- ====================================================================
          #1099: WEBHOOK_DIGEST handler — Slack / Microsoft Teams channel digests.
 
          Webhooks only, NO OAuth: an admin pastes a Slack or Teams incoming-webhook
@@ -1615,7 +1845,8 @@
     <!-- The live engine. init-method="start" starts the ticker at boot; destroy-method="shutdown"
          stops both the ticker and worker pools cleanly on context close. Registered handlers: the
          no-op ("NOOP"), the threshold-alert ("THRESHOLD_ALERT", #1098), the email dashboard digest
-         ("DASHBOARD_DIGEST", #943), and the Slack/Teams channel digest ("WEBHOOK_DIGEST", #1099). -->
+         ("DASHBOARD_DIGEST", #943), the Slack/Teams channel digest
+         ("WEBHOOK_DIGEST", #1099), and export delivery ("EXPORT_DELIVERY", #1987). -->
     <bean id="jobScheduler" class="org.saiku.service.schedule.JobScheduler"
           init-method="start" destroy-method="shutdown">
         <constructor-arg ref="jobStore"/>
@@ -1626,6 +1857,7 @@
                 <entry key="NOOP" value-ref="noOpJobHandler"/>
                 <entry key="THRESHOLD_ALERT" value-ref="thresholdAlertJobHandler"/>
                 <entry key="DASHBOARD_DIGEST" value-ref="dashboardDigestJobHandler"/>
+                <entry key="EXPORT_DELIVERY" value-ref="exportDeliveryJobHandler"/>
                 <entry key="WEBHOOK_DIGEST" value-ref="channelDigestJobHandler"/>
             </map>
         </property>

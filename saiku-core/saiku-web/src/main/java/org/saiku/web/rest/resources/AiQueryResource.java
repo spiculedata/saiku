@@ -135,6 +135,20 @@ public class AiQueryResource {
         this.askRateLimiter = l;
     }
 
+    /**
+     * saiku#1918 (17d, CWE-770): daily cost budget layered ON TOP of the per-minute call limiter.
+     * The limiter bounds request frequency; this bounds the money, from the token usage the
+     * provider actually reports, per principal and per instance. Sits here rather than inside
+     * {@link AiAskService} because only the web layer knows the authenticated principal, and
+     * because the SSE endpoints need the chain-concurrency permit that the service can't take.
+     */
+    private org.saiku.web.security.ratelimit.AiCostBudget aiCostBudget =
+            new org.saiku.web.security.ratelimit.AiCostBudget();
+
+    public void setAiCostBudget(org.saiku.web.security.ratelimit.AiCostBudget b) {
+        this.aiCostBudget = b;
+    }
+
     private final AiSchemaConverter converter = new AiSchemaConverter();
     /** Phase 2: JSON-Schema-driven shape validator. Runs first so an
      *  agent gets one structured 400 per shape failure instead of a
@@ -662,7 +676,16 @@ public class AiQueryResource {
             // Validates every name resolves against the live schema — same check
             // /ai/query runs before execution. The returned ThinQuery is discarded:
             // this endpoint never executes the query.
-            converter.convert(req, schema);
+            try {
+                converter.convert(req, schema);
+            } catch (AiPiiException pii) {
+                // A filter on a PII-flagged level is refused when a query is EXECUTED, but this
+                // endpoint never executes: it only describes the structure, and the summarizer
+                // replaces the member captions with a redaction sentinel before anything reaches the
+                // provider. Describing such a query is therefore safe, and refusing it would break
+                // saved queries that merely carry a filter. (/ai/query still refuses, as it must.)
+                log.debug("describe-query: PII-flagged filter present, captions will be redacted");
+            }
         } catch (AiValidationException e) {
             return badRequest(e.getField(), e.getMessage(), e.getAvailable());
         } catch (RuntimeException e) {
@@ -1322,17 +1345,22 @@ public class AiQueryResource {
             // through to a 200 with degraded:true, same as the classic /ask.
             Response denial = mapSpaceAccessDenial(outcome.denial(), spaceId);
             if (denial != null) {
+                // saiku#1918 (17d): a scope denial happens AFTER the provider was called, so it
+                // still cost money. Charge it — otherwise a persona-misfit is a free LLM call.
+                chargeAsk(outcome);
                 return denial;
             }
             AiAskApi.AskResponse out = new AiAskApi.AskResponse();
             out.setDegraded(true);
             out.setReason(outcome.reason());
             out.setModel(outcome.model());
+            chargeAsk(outcome);
             return Response.ok(out).type(MediaType.APPLICATION_JSON).build();
         }
         // Mirror the classic /ai/ask success handling (saiku#1455): branch on the outcome kind so
         // INSIGHT / VIEW_CHANGE surface their artefact and QUERY is actually executed — previously
         // this path echoed only {model, request} and silently dropped insight/view-change answers.
+        chargeAsk(outcome);
         return buildAskSuccessResponse(outcome);
     }
 
@@ -1360,12 +1388,15 @@ public class AiQueryResource {
             int status = outcome.reason() != null && outcome.reason().startsWith("AI ask is not configured")
                     ? Response.Status.SERVICE_UNAVAILABLE.getStatusCode()
                     : Response.Status.OK.getStatusCode();
+            // saiku#1918 (17d): a degraded turn still reached the provider and was still billed.
+            chargeAsk(outcome);
             return Response.status(status)
                     .entity(out)
                     .type(MediaType.APPLICATION_JSON)
                     .build();
         }
 
+        chargeAsk(outcome);
         return buildAskSuccessResponse(outcome);
     }
 
@@ -1395,13 +1426,16 @@ public class AiQueryResource {
      * data: {"degraded":false,"model":"...","insight":{...}}
      * }</pre>
      *
-     * <p><strong>Streaming semantics (v1).</strong> The underlying provider call is still
-     * synchronous — the LLM's tool-use response is emitted whole. The endpoint then chunks any
-     * prose fields (insight markdown, view-change reason) into word-sized deltas so the client
-     * gets a progressive render experience. True per-token streaming from the LLM provider is a
-     * follow-up (both Anthropic and OpenAI expose streaming APIs, but their tool-use streaming
-     * payloads are non-trivial to accumulate at the AbstractNlAskProvider seam). The wire shape
-     * is stable; a future PR that plugs in real LLM streaming won't require client changes.
+     * <p><strong>Streaming semantics (v2, saiku#1484).</strong> The provider call itself is a real
+     * stream: the {@code model} event lands with the provider's first event, the {@code intent}
+     * event as soon as the model commits to a tool, and the {@code chunk} events carry the model's
+     * prose <em>as it is written</em> — Anthropic's {@code input_json_delta} and OpenAI's
+     * {@code tool_calls[].function.arguments} are decoded on the fly, so first-token latency is the
+     * provider's rather than ours. A provider without a streaming transport (or one that answers a
+     * streaming request with a buffered body) degrades to the previous behaviour: the finished
+     * response replayed word by word, so the wire shape and the client contract are unchanged either
+     * way. QUERY intent still emits no chunks — a half-built JSON query is not something a user
+     * should watch being typed.
      *
      * <p>Rate limiter + size cap + policy gate + auth are identical to {@link
      * #ask(AiAskApi.AskRequest)} — the streaming variant isn't a bypass surface.
@@ -1417,13 +1451,14 @@ public class AiQueryResource {
         }
         org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool force = parseForceTool(body.getForceTool());
         return streamAsk(
-                () -> askService.ask(
+                (sse, live) -> askService.askStreaming(
                         body.getCube(),
                         body.getQuestion(),
                         body.historyAsMessages(),
                         body.getCellsetDigest(),
                         force,
-                        body.getCurrentQuery()),
+                        body.getCurrentQuery(),
+                        live),
                 "AI ask (streaming)");
     }
 
@@ -1457,14 +1492,15 @@ public class AiQueryResource {
         }
         org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool force = parseForceTool(body.getForceTool());
         return streamAsk(
-                () -> askService.askInSpace(
+                (sse, live) -> askService.askInSpaceStreaming(
                         spaceId,
                         body.getCube(),
                         body.getQuestion(),
                         body.historyAsMessages(),
                         body.getCellsetDigest(),
                         force,
-                        body.getCurrentQuery()),
+                        body.getCurrentQuery(),
+                        live),
                 "AI ask-in-space (streaming)");
     }
 
@@ -1488,15 +1524,44 @@ public class AiQueryResource {
         if (pre != null) {
             return pre;
         }
+        // saiku#1918 (17d): cap how many chains can be mid-flight. A chain holds its request thread
+        // for up to the chain deadline and re-sends the cube schema on every step, so unbounded
+        // concurrency is a thread-pool stall and a spend multiplier at the same time. Taken HERE,
+        // before the 200 event-stream is committed, so an exhausted budget is a real 429 rather
+        // than a 200 that immediately carries an error event.
+        org.saiku.web.security.ratelimit.AiCostBudget.ChainSlot slot = aiCostBudget.tryAcquireChainSlot();
+        if (slot == null) {
+            return askLimitResponse(429, "Too many AI chains in progress on this instance. Please retry shortly.");
+        }
         org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool force = parseForceTool(body.getForceTool());
         return streamChain(
-                () -> askService.askChained(
-                        body.getCube(),
-                        body.getQuestion(),
-                        body.historyAsMessages(),
-                        body.getCellsetDigest(),
-                        force,
-                        body.getCurrentQuery()),
+                (sse, live) -> {
+                    // try-with-resources, so a mid-chain client disconnect or an unexpected
+                    // failure can't leak a permit and permanently shrink the cap.
+                    try (slot) {
+                        AiAskService.AskChain chain = askService.askChained(
+                                body.getCube(),
+                                body.getQuestion(),
+                                body.historyAsMessages(),
+                                body.getCellsetDigest(),
+                                force,
+                                body.getCurrentQuery(),
+                                live);
+                        // Count every provider round-trip the chain made — not one per request.
+                        // A five-step chain is five provider calls and five schema uploads, and a
+                        // budget that counted it as one would be off by 5x on the endpoint that
+                        // actually spends the money.
+                        if (chain.providerCalls() > 0) {
+                            aiCostBudget.recordUsage(askBudgetPrincipal(), chain.inputTokens(), chain.outputTokens());
+                            // The endpoint's own tryStartCall already counted this chain as one
+                            // call; the other provider round-trips are the extra ones.
+                            aiCostBudget.recordExtraCalls(askBudgetPrincipal(), chain.providerCalls() - 1);
+                        } else {
+                            aiCostBudget.recordUnpricedCall(askBudgetPrincipal());
+                        }
+                        return chain;
+                    }
+                },
                 "AI ask (chained, streaming)");
     }
 
@@ -1685,10 +1750,23 @@ public class AiQueryResource {
      * <p>Package-visible for unit testing. Called by both {@link #askStream} and {@link
      * #askInSpaceStream}; the two endpoints differ only in which {@code AiAskService} entry
      * point they invoke.
+     *
+     * <p>When {@code live} is non-null it describes what the provider already streamed while the
+     * turn was running (saiku#1484) — the {@code model} / {@code intent} events were written by
+     * {@link SseTokenStream} as the events arrived, and the prose has already been delivered as
+     * {@code chunk} events, so this method emits only the terminal envelope. With a null {@code
+     * live} (the unit-test seam) nothing has been streamed yet, so the synthetic word-chunk replay
+     * runs exactly as it always did.
      */
     void streamOutcomeAsSse(AiAskService.AskOutcome outcome, SseWriter sse) throws java.io.IOException {
+        streamOutcomeAsSse(outcome, sse, null);
+    }
+
+    void streamOutcomeAsSse(AiAskService.AskOutcome outcome, SseWriter sse, SseTokenStream live)
+            throws java.io.IOException {
+        boolean streamed = live != null;
         // model event — always fired first so the client can show which backend answered.
-        if (outcome.model() != null) {
+        if (outcome.model() != null && !(streamed && live.modelEmitted)) {
             sse.event("model", MAPPER.writeValueAsString(java.util.Map.of("model", outcome.model())));
         }
 
@@ -1706,10 +1784,12 @@ public class AiQueryResource {
             return;
         }
 
-        sse.event(
-                "intent",
-                MAPPER.writeValueAsString(java.util.Map.of(
-                        "kind", outcome.kind() == null ? "" : outcome.kind().name())));
+        if (!(streamed && live.intentEmitted)) {
+            sse.event(
+                    "intent",
+                    MAPPER.writeValueAsString(java.util.Map.of(
+                            "kind", outcome.kind() == null ? "" : outcome.kind().name())));
+        }
 
         AiAskApi.AskResponse out = new AiAskApi.AskResponse();
         out.setDegraded(false);
@@ -1718,7 +1798,7 @@ public class AiQueryResource {
         if (outcome.kind() == AiAskService.AskOutcome.Kind.INSIGHT) {
             out.setInsight(outcome.insight());
             String markdown = outcome.insight() == null ? "" : outcome.insight().getMarkdown();
-            if (markdown != null && !markdown.isEmpty()) {
+            if (!streamed && markdown != null && !markdown.isEmpty()) {
                 emitChunks(sse, markdown);
             }
             sse.event("final", MAPPER.writeValueAsString(out));
@@ -1729,7 +1809,7 @@ public class AiQueryResource {
             out.setViewChange(outcome.viewChange());
             String reason =
                     outcome.viewChange() == null ? null : outcome.viewChange().getReason();
-            if (reason != null && !reason.isEmpty()) {
+            if (!streamed && reason != null && !reason.isEmpty()) {
                 emitChunks(sse, reason);
             }
             sse.event("final", MAPPER.writeValueAsString(out));
@@ -1750,7 +1830,7 @@ public class AiQueryResource {
             out.setEmailDraft(outcome.emailDraft());
             String summary =
                     outcome.emailDraft() == null ? "" : outcome.emailDraft().getSummary();
-            if (summary != null && !summary.isEmpty()) {
+            if (!streamed && summary != null && !summary.isEmpty()) {
                 emitChunks(sse, summary);
             }
             sse.event("final", MAPPER.writeValueAsString(out));
@@ -1803,6 +1883,11 @@ public class AiQueryResource {
      * <p>Package-visible for unit testing (mirrors {@link #streamOutcomeAsSse}'s test seam).
      */
     void streamChainAsSse(AiAskService.AskChain chain, SseWriter sse) throws java.io.IOException {
+        streamChainAsSse(chain, sse, null);
+    }
+
+    void streamChainAsSse(AiAskService.AskChain chain, SseWriter sse, SseTokenStream live) throws java.io.IOException {
+        boolean streamed = live != null;
         List<AiAskService.AskOutcome> steps = chain.steps();
 
         // model event once — the first step that carries a model id, fired before any step content.
@@ -1811,7 +1896,7 @@ public class AiQueryResource {
                 .filter(java.util.Objects::nonNull)
                 .findFirst()
                 .orElse(null);
-        if (model != null) {
+        if (model != null && !(streamed && live.modelEmitted)) {
             sse.event("model", MAPPER.writeValueAsString(java.util.Map.of("model", model)));
         }
 
@@ -1835,10 +1920,12 @@ public class AiQueryResource {
                 continue;
             }
 
-            sse.event(
-                    "intent",
-                    MAPPER.writeValueAsString(java.util.Map.of(
-                            "kind", step.kind() == null ? "" : step.kind().name(), "index", i)));
+            if (!(streamed && live.intentStreamedFor(i))) {
+                sse.event(
+                        "intent",
+                        MAPPER.writeValueAsString(java.util.Map.of(
+                                "kind", step.kind() == null ? "" : step.kind().name(), "index", i)));
+            }
 
             AiAskApi.AskResponse out = new AiAskApi.AskResponse();
             out.setDegraded(false);
@@ -1847,14 +1934,14 @@ public class AiQueryResource {
             if (step.kind() == AiAskService.AskOutcome.Kind.INSIGHT) {
                 out.setInsight(step.insight());
                 String markdown = step.insight() == null ? "" : step.insight().getMarkdown();
-                if (markdown != null && !markdown.isEmpty()) {
+                if (!streamed && markdown != null && !markdown.isEmpty()) {
                     emitChunks(sse, markdown);
                 }
             } else if (step.kind() == AiAskService.AskOutcome.Kind.VIEW_CHANGE) {
                 out.setViewChange(step.viewChange());
                 String reason =
                         step.viewChange() == null ? null : step.viewChange().getReason();
-                if (reason != null && !reason.isEmpty()) {
+                if (!streamed && reason != null && !reason.isEmpty()) {
                     emitChunks(sse, reason);
                 }
             } else if (step.kind() == AiAskService.AskOutcome.Kind.EMAIL_DRAFT) {
@@ -1869,7 +1956,7 @@ public class AiQueryResource {
                 out.setEmailDraft(step.emailDraft());
                 String summary =
                         step.emailDraft() == null ? "" : step.emailDraft().getSummary();
-                if (summary != null && !summary.isEmpty()) {
+                if (!streamed && summary != null && !summary.isEmpty()) {
                     emitChunks(sse, summary);
                 }
             } else if (step.kind() == AiAskService.AskOutcome.Kind.QUERY) {
@@ -1956,6 +2043,83 @@ public class AiQueryResource {
         }
         b.append('"');
         return b.toString();
+    }
+
+    /**
+     * Bridges the provider's live token stream (saiku#1484) onto the SSE wire.
+     *
+     * <p>The three callbacks map one-to-one onto the documented event sequence: the model id becomes
+     * {@code model}, the tool the model committed to becomes {@code intent} (its name translated to
+     * the {@link AiAskService.AskOutcome.Kind} a client knows), and every piece of prose becomes a
+     * {@code chunk} carrying the existing {@code {"delta":"…"}} shape. Nothing about the wire format
+     * changes — only <em>when</em> the events arrive.
+     *
+     * <p>Each callback is idempotent per turn: the model event fires once even though every streamed
+     * chunk carries the model id, and a tool is only announced the first time it is named. For the
+     * chained endpoint the events are tagged with the step index the service reported through
+     * {@link #onStepStart(int)}, so a multi-step turn renders the same way the buffered
+     * {@code intent}/{@code index} events did.
+     *
+     * <p>A write failure (the client hung up) propagates as {@link java.io.IOException} to the
+     * provider, which degrades the turn rather than throwing — the stream then simply stops.
+     */
+    static final class SseTokenStream implements org.saiku.service.olap.ai.ask.NlAskStreamListener {
+
+        private final SseWriter sse;
+        private final java.util.Set<Integer> intentSteps = new java.util.HashSet<>();
+        private boolean modelEmitted;
+        private boolean intentEmitted;
+        private int currentStep;
+        private boolean multiStep;
+
+        SseTokenStream(SseWriter sse) {
+            this.sse = sse;
+        }
+
+        @Override
+        public void onModel(String model) throws java.io.IOException {
+            if (modelEmitted || model == null || model.isBlank()) {
+                return;
+            }
+            modelEmitted = true;
+            sse.event("model", "{\"model\":" + jsonString(model) + "}");
+        }
+
+        @Override
+        public void onToolSelected(String toolName) throws java.io.IOException {
+            org.saiku.service.olap.ai.ask.NlAskResponse.Kind kind =
+                    org.saiku.service.olap.ai.ask.NlAskStreamListener.kindForTool(toolName);
+            if (kind == null || intentSteps.contains(currentStep)) {
+                // Refusals and unknown tools have no streamed intent — the terminal error event
+                // carries them instead.
+                return;
+            }
+            intentSteps.add(currentStep);
+            intentEmitted = true;
+            // The chained endpoint's intent events carry a step index; the single-turn ones don't
+            // (one step, no index needed) — matching each endpoint's documented shape exactly.
+            String index = multiStep ? ",\"index\":" + currentStep : "";
+            sse.event("intent", "{\"kind\":" + jsonString(kind.name()) + index + "}");
+        }
+
+        @Override
+        public void onDelta(String delta) throws java.io.IOException {
+            if (delta == null || delta.isEmpty()) {
+                return;
+            }
+            sse.event("chunk", "{\"delta\":" + jsonString(delta) + "}");
+        }
+
+        @Override
+        public void onStepStart(int index) {
+            currentStep = index;
+            multiStep = true;
+        }
+
+        /** Whether {@code intent} for step {@code index} was already streamed live (chained only). */
+        boolean intentStreamedFor(int index) {
+            return intentSteps.contains(index);
+        }
     }
 
     /**
@@ -3626,6 +3790,41 @@ public class AiQueryResource {
                 .build();
     }
 
+    /**
+     * saiku#1918 (17d): the client-facing reason for a daily-budget refusal.
+     *
+     * <p>The per-user denial is deliberately specific ("your" budget) because the user can act on
+     * it — stop, or ask an admin. The instance-wide denial is deliberately NOT: it would tell a
+     * tenant that other tenants are spending, and the only actionable answer for them is "try later".
+     * Neither message carries a token count, so the endpoint can't be used to read the ceiling back
+     * out of the API.
+     */
+    private String costBudgetReason(org.saiku.web.security.ratelimit.AiCostBudget.Denial denial) {
+        if (denial == org.saiku.web.security.ratelimit.AiCostBudget.Denial.DAILY_CALL_LIMIT) {
+            return "Daily AI ask request budget exhausted (limit " + aiCostBudget.getMaxCallsPerUserPerDay()
+                    + " requests per day). Please retry tomorrow.";
+        }
+        if (denial == org.saiku.web.security.ratelimit.AiCostBudget.Denial.DAILY_TOKEN_LIMIT) {
+            return "Daily AI token budget exhausted. Please retry tomorrow.";
+        }
+        return "The AI service is at its daily capacity. Please retry later.";
+    }
+
+    /**
+     * saiku#1918 (17d): charge the daily budget for a completed ask. Every ask endpoint funnels
+     * its result through here so no surface can forget to charge — the whole point of the budget is
+     * that it counts what was actually spent, and an endpoint that skipped it would be a free one.
+     */
+    private void chargeAsk(AiAskService.AskOutcome outcome) {
+        if (outcome != null && outcome.totalTokens() > 0) {
+            aiCostBudget.recordUsage(askBudgetPrincipal(), outcome.inputTokens(), outcome.outputTokens());
+        } else {
+            // No reported usage: still a real, billed provider turn. Charge the nominal amount
+            // rather than nothing, so a provider that stops returning usage can't go free.
+            aiCostBudget.recordUnpricedCall(askBudgetPrincipal());
+        }
+    }
+
     /** Standard client-facing reason for a 503 when no LLM provider is wired. */
     private static final String ASK_NOT_CONFIGURED_REASON =
             "AI ask is not configured. Set saiku.ai.ask.provider to 'anthropic' or 'openai' and "
@@ -3672,6 +3871,14 @@ public class AiQueryResource {
                     429,
                     "Too many AI ask requests — limit is " + askRateLimiter.getMaxCalls() + " per "
                             + (askRateLimiter.getWindowMs() / 1000) + "s. Please retry shortly.");
+        }
+        // saiku#1918 (17d): the daily budget gate, after the cheap per-minute frequency check and
+        // before anything touches the provider — so an over-budget caller is refused before a
+        // token is spent, and the refusal is about the budget rather than about whatever the
+        // instance would have said next.
+        org.saiku.web.security.ratelimit.AiCostBudget.Denial denial = aiCostBudget.tryStartCall(askBudgetPrincipal());
+        if (denial != org.saiku.web.security.ratelimit.AiCostBudget.Denial.ALLOWED) {
+            return askLimitResponse(429, costBudgetReason(denial));
         }
         if (askService == null) {
             AiAskApi.AskResponse notConfigured = new AiAskApi.AskResponse();
@@ -3819,10 +4026,10 @@ public class AiQueryResource {
 
     /**
      * Shared SSE runner for the streaming ask endpoints (saiku#1460). Builds the WHATWG SSE stream,
-     * invokes {@code outcomeSupplier} to produce the outcome (the only thing that differs between
-     * {@link #askStream} and {@link #askInSpaceStream}), and pipes it through {@link
-     * #streamOutcomeAsSse}. Centralises the failure handling so both endpoints get identical,
-     * correct behaviour:
+     * invokes {@code ask} with the token stream attached so the provider's model / intent / chunk
+     * events reach the client as they happen (saiku#1484), and pipes the resulting outcome through
+     * {@link #streamOutcomeAsSse} for the terminal envelope. Centralises the failure handling so
+     * both endpoints get identical, correct behaviour:
      *
      * <ul>
      *   <li>{@link com.fasterxml.jackson.core.JsonProcessingException} (a serialisation failure of
@@ -3833,13 +4040,24 @@ public class AiQueryResource {
      *       {@code final} event, matching the documented wire contract (saiku#1456).
      * </ul>
      */
-    private Response streamAsk(java.util.function.Supplier<AiAskService.AskOutcome> outcomeSupplier, String logLabel) {
+    private Response streamAsk(
+            java.util.function.BiFunction<SseWriter, SseTokenStream, AiAskService.AskOutcome> ask, String logLabel) {
         jakarta.ws.rs.core.StreamingOutput stream = outputStream -> {
             java.io.Writer writer =
                     new java.io.OutputStreamWriter(outputStream, java.nio.charset.StandardCharsets.UTF_8);
             SseWriter sse = new SseWriter(writer);
             try {
-                streamOutcomeAsSse(outcomeSupplier.get(), sse);
+                // The token stream writes model / intent / chunk events as the provider emits them;
+                // the outcome is only known once the turn is over, and carries the terminal
+                // envelope (final, or error + a degraded final).
+                SseTokenStream live = new SseTokenStream(sse);
+                // saiku#1918 (17d): charge the budget for what this turn actually cost. The
+                // streaming variants are not a bypass surface for the budget — the provider was
+                // called and billed whether or not the client stayed connected to read the result.
+                // Resolved ONCE: the ask is a paid provider call, not a getter.
+                AiAskService.AskOutcome outcome = ask.apply(sse, live);
+                chargeAsk(outcome);
+                streamOutcomeAsSse(outcome, sse, live);
             } catch (com.fasterxml.jackson.core.JsonProcessingException jpe) {
                 // Serialising the outcome failed — the client is still connected. Surface an error
                 // (NOT the disconnect branch below, which JsonProcessingException would fall into
@@ -3870,13 +4088,15 @@ public class AiQueryResource {
      * runtime failure emits the terminal error/final pair so a client keying completion on {@code
      * final} never hangs.
      */
-    private Response streamChain(java.util.function.Supplier<AiAskService.AskChain> chainSupplier, String logLabel) {
+    private Response streamChain(
+            java.util.function.BiFunction<SseWriter, SseTokenStream, AiAskService.AskChain> ask, String logLabel) {
         jakarta.ws.rs.core.StreamingOutput stream = outputStream -> {
             java.io.Writer writer =
                     new java.io.OutputStreamWriter(outputStream, java.nio.charset.StandardCharsets.UTF_8);
             SseWriter sse = new SseWriter(writer);
             try {
-                streamChainAsSse(chainSupplier.get(), sse);
+                SseTokenStream live = new SseTokenStream(sse);
+                streamChainAsSse(ask.apply(sse, live), sse, live);
             } catch (com.fasterxml.jackson.core.JsonProcessingException jpe) {
                 log.warn("{}: failed to serialise SSE payload", logLabel, jpe);
                 emitStreamError(sse);
@@ -3912,22 +4132,46 @@ public class AiQueryResource {
     }
 
     /**
-     * saiku#1151: rate-limit identity = caller principal + client IP. Falls back
-     * to a constant when no request is bound to the thread (unit tests), so
-     * those callers share a single bucket.
+     * saiku#1151: rate-limit identity = caller principal. Falls back to the client IP when the
+     * request carries no principal, and to a constant when no request is bound to the thread (unit
+     * tests), so those callers share a single bucket.
+     *
+     * <p>saiku#1918 (17d): the client IP is no longer part of an AUTHENTICATED caller's key. It
+     * used to be {@code user:ip}, which meant a caller who changed address — a new NAT egress, a
+     * VPN, a load balancer with per-request source NAT — got a brand-new bucket and could run the
+     * per-minute allowance several times over. Keying on the principal alone makes the per-minute
+     * and per-day budgets mean what they say. Unauthenticated traffic still buckets by IP, which is
+     * the only identity it has.
      */
     private String askRateKey() {
         jakarta.servlet.http.HttpServletRequest req = currentRequest();
-        String user = null;
-        String ip = null;
-        if (req != null) {
-            user = req.getRemoteUser();
-            if (user == null && req.getUserPrincipal() != null) {
-                user = req.getUserPrincipal().getName();
-            }
-            ip = req.getRemoteAddr();
+        if (req == null) {
+            return "anon:unknown";
         }
-        return (user == null ? "anon" : user) + ":" + (ip == null ? "unknown" : ip);
+        String user = req.getRemoteUser();
+        if (user == null && req.getUserPrincipal() != null) {
+            user = req.getUserPrincipal().getName();
+        }
+        if (user != null && !user.isBlank()) {
+            return user;
+        }
+        String ip = req.getRemoteAddr();
+        return "ip:" + (ip == null ? "unknown" : ip);
+    }
+
+    /**
+     * saiku#1918 (17d): the identity the daily cost budget is charged to. The principal alone —
+     * never the IP — for the same reason {@link #askRateKey()} dropped it. Returns {@code null}
+     * when no principal can be derived, which the budget treats as fail-open.
+     */
+    private String askBudgetPrincipal() {
+        jakarta.servlet.http.HttpServletRequest req = currentRequest();
+        if (req == null) return null;
+        String user = req.getRemoteUser();
+        if (user == null && req.getUserPrincipal() != null) {
+            user = req.getUserPrincipal().getName();
+        }
+        return (user == null || user.isBlank()) ? null : user;
     }
 
     /**
