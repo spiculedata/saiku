@@ -1389,6 +1389,46 @@
         <property name="userService" ref="userServiceBean"/>
     </bean>
 
+    <!-- One-click Ossie model generation (saiku#1439). Reuses the whole schema-gen graph above
+         — same introspector, inferrer, enricher, op-applier, connection provider and sidecar
+         store — and adds the hop that was missing: draft → Mondrian → Ossie YAML, validated and
+         written next to a rationale markdown. POST returns 202 + a job id; the pipeline runs on
+         schemaGenExecutor because a 47-table warehouse takes 30-60s. -->
+    <bean id="ossieGenerationJobStore"
+          class="org.saiku.service.ossie.generate.OssieGenerationJobStore">
+        <constructor-arg>
+            <bean class="java.time.Duration" factory-method="ofMinutes">
+                <constructor-arg value="30"/>
+            </bean>
+        </constructor-arg>
+    </bean>
+
+    <bean id="generatedModelStore"
+          class="org.saiku.service.ossie.generate.DatasourceBackedModelStore">
+        <constructor-arg ref="datasourceServiceBean"/>
+    </bean>
+
+    <bean id="ossieModelGenerationService"
+          class="org.saiku.service.ossie.generate.OssieModelGenerationService">
+        <constructor-arg ref="ossieGenerationJobStore"/>
+        <constructor-arg ref="jdbcIntrospector"/>
+        <constructor-arg ref="schemaInferrer"/>
+        <constructor-arg ref="llmEnricher"/>
+        <constructor-arg ref="opApplier"/>
+        <constructor-arg ref="mondrianSchemaWriter"/>
+        <constructor-arg ref="generatedModelStore"/>
+        <constructor-arg ref="sidecarStore"/>
+        <constructor-arg ref="schemaGenExecutor"/>
+        <constructor-arg ref="schemaGenConnectionProvider"/>
+    </bean>
+
+    <bean id="ossieGenerateResource"
+          class="org.saiku.web.rest.resources.schemagen.OssieGenerateResource">
+        <constructor-arg ref="ossieModelGenerationService"/>
+        <constructor-arg ref="ossieGenerationJobStore"/>
+        <property name="userService" ref="userServiceBean"/>
+    </bean>
+
     <!-- Cube/schema designer backend (saiku-ui/src/lib/cube-designer). Reuses the
          schema-generator's JDBC connection provider + the datasource service;
          auto-registered as a JAX-RS resource by SaikuJerseyApplication's @Path scan. -->
