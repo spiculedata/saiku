@@ -5,8 +5,11 @@
 package org.saiku.service.olap.ai.ask;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import java.util.Collections;
+import java.util.Set;
 import org.junit.Test;
 import org.saiku.olap.dto.resultset.AbstractBaseCell;
 import org.saiku.olap.dto.resultset.CellDataSet;
@@ -128,5 +131,73 @@ public class CellsetDigestBuilderTest {
                 + "| Small |  |  |";
 
         assertEquals(expected, CellsetDigestBuilder.digest(cds, 50));
+    }
+
+    // ---------------------------------------------------------------------
+    // saiku#1918 (17a) — digest redaction. The digest is the last hop before a
+    // server-executed cellset crosses to the LLM as text, so it re-checks the PII
+    // posture of the query that produced it rather than trusting that every path
+    // into it went through the converter.
+    // ---------------------------------------------------------------------
+
+    @Test
+    public void redactRowHeaderBlanksColumnZeroAndLeavesMeasuresIntact() {
+        CellDataSet cds = new CellDataSet();
+        cds.setCellSetHeaders(new AbstractBaseCell[][] {{header("Customer"), header("Store Sales")}});
+        cds.setCellSetBody(
+                new AbstractBaseCell[][] {{data("Wanda Maximoff"), data("1,500")}, {data("Vision"), data("4,500")}});
+
+        String out = CellsetDigestBuilder.digest(cds, 50, CellsetDigestBuilder.DigestPolicy.redactRowHeader());
+
+        assertTrue(out, out.contains("| " + CellsetDigestBuilder.REDACTED + " | 1,500 |"));
+        // The aggregate is the whole point of the report — redacting it would make the digest
+        // useless rather than safe. Only the per-person axis is suppressed.
+        assertTrue(out, out.contains("4,500"));
+        assertFalse("per-person caption must not survive", out.contains("Wanda Maximoff"));
+        assertFalse("a second caption in the same column must not survive either", out.contains("Vision"));
+    }
+
+    @Test
+    public void redactColumnHeadersBlanksOnlyTheNamedColumn() {
+        CellDataSet cds = new CellDataSet();
+        cds.setCellSetHeaders(new AbstractBaseCell[][] {{header("Country"), header("Customer Email")}});
+        cds.setCellSetBody(new AbstractBaseCell[][] {
+            {data("USA"), data("wanda@example.test")}, {data("UK"), data("vision@example.test")}
+        });
+
+        String out = CellsetDigestBuilder.digest(
+                cds, 50, CellsetDigestBuilder.DigestPolicy.redactColumnHeaders(Set.of("Customer Email")));
+
+        assertFalse(out, out.contains("wanda@example.test"));
+        assertFalse(out, out.contains("vision@example.test"));
+        // The non-PII column is untouched, and so is the row axis (that level isn't PII here).
+        assertTrue(out, out.contains("USA"));
+    }
+
+    @Test
+    public void columnHeaderRedactionIsCaseInsensitive() {
+        CellDataSet cds = new CellDataSet();
+        cds.setCellSetHeaders(new AbstractBaseCell[][] {{header("Country"), header("Customer Email")}});
+        cds.setCellSetBody(new AbstractBaseCell[][] {{data("USA"), data("wanda@example.test")}});
+
+        String out = CellsetDigestBuilder.digest(
+                cds, 50, CellsetDigestBuilder.DigestPolicy.redactColumnHeaders(Set.of("customer email")));
+
+        assertFalse(out, out.contains("wanda@example.test"));
+    }
+
+    @Test
+    public void defaultDigestIsUnchangedByTheRedactionOverload() {
+        // Regression guard: NONE must be byte-identical to the historical two-arg call, because the
+        // digest format is a contract with saiku-ui/src/lib/api/cellsetDigest.ts and with every
+        // prompt already tuned against it.
+        CellDataSet cds = new CellDataSet();
+        cds.setCellSetHeaders(new AbstractBaseCell[][] {{header("Tier"), header("Balance")}});
+        cds.setCellSetBody(new AbstractBaseCell[][] {{data("Small"), data("1,500")}});
+
+        assertEquals(
+                CellsetDigestBuilder.digest(cds, 50),
+                CellsetDigestBuilder.digest(cds, 50, CellsetDigestBuilder.DigestPolicy.NONE));
+        assertEquals(CellsetDigestBuilder.digest(cds, 50), CellsetDigestBuilder.digest(cds, 50, null));
     }
 }

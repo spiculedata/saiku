@@ -1,0 +1,19 @@
+{
+  "issue": 2194,
+  "title": "The launcher resolves the patched Jackson databind version through the root Maven property",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "the launcher declares its direct jackson-databind dependency",
+      "then": "that dependency uses the root jackson.version property and resolves to 2.22.3"
+    },
+    {
+      "id": "C2",
+      "given": "the root project and saiku-bom each define jackson.version",
+      "then": "both properties are 2.22.3 so the launcher and BOM stay aligned"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}

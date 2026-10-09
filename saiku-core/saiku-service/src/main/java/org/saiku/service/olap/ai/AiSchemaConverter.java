@@ -106,6 +106,10 @@ public class AiSchemaConverter {
         // field-level pointer + teaching message, not a 500 (saiku#784).
         validateNoAxisFilterHierarchyOverlap(req, schema);
 
+        // saiku#1918 (17a): PII-tagged columns are refused on EVERY query axis before any name
+        // reaches the MDX. See validatePiiPolicy for the full contract.
+        validatePiiPolicy(req, schema);
+
         // saiku#818: levels with declared requiredFilters get pre-flight checked.
         // If the agent touches such a level (rows / columns / filters) and the
         // request's filters[] don't satisfy each requirement, refuse to emit
@@ -1416,6 +1420,156 @@ public class AiSchemaConverter {
         if (n == null) return "[]";
         if (n.startsWith("[") && n.endsWith("]")) return n;
         return "[" + n.replace("]", "]]") + "]";
+    }
+
+    /**
+     * saiku#1918 (17a, CWE-359) — refuse a request that puts a {@code saiku.semantic.pii=true}
+     * measure or level on ANY axis: {@code measures[]}, {@code rows[]}, {@code columns[]} or
+     * {@code filters[]}.
+     *
+     * <p><b>Why this exists.</b> {@link AiSchema#toAgentView()} already redacts a PII level's
+     * display name, description, synonyms and sample members out of the {@code /ai/schema}
+     * response, and the drillthrough path has always refused a PII {@code returns=} column. But
+     * the redaction was only cosmetic: the level's {@code name} and {@code uniqueName} are kept on
+     * purpose (the agent needs the schema's shape), and both are exactly what {@code rows[].level}
+     * takes. So a PII level stayed fully queryable — via {@code GET /ai/members/search}, as a
+     * query axis on {@code /ai/query}, and over MCP {@code search_members} — and every member
+     * caption came back per-person. Schema redaction that leaves the axis queryable is not a
+     * control, it is a suggestion, and the "aggregated egress" contract was quietly a per-person
+     * one on a PII axis.
+     *
+     * <p><b>What is refused.</b> Any axis entry whose resolved measure / level carries
+     * {@code pii=true}. A PII level is refused even when the request only names it as a filter
+     * (an {@code in}-filter over a PII level is a per-person selection, and its row header
+     * echoes the caption back), and even when it appears on {@code columns} rather than
+     * {@code rows}. The check is deliberately name-based over the whole request rather than
+     * per-axis so no future axis type can be forgotten.
+     *
+     * <p><b>Resolution rules.</b> Canonical and display-name aliases both resolve here (same
+     * lookup path the axis builders use), so an alias cannot be used to slip past the gate. A name
+     * that does not resolve at all is NOT a PII refusal — it is left to the existing
+     * "Unknown dimension/level" validation, which produces a better self-correction error than a
+     * PII verdict would.
+     *
+     * <p><b>Escape hatch.</b> None at the AI layer, deliberately: the whole point of the annotation
+     * is that a deployment author says "this column is personal data, don't let the agent read
+     * it". An operator who genuinely wants an agent to aggregate a PII column should expose a
+     * derived, non-PII measure over it instead of re-opening this gate.
+     */
+    private static void validatePiiPolicy(AiQueryRequest req, AiSchema schema) {
+        if (req.getMeasures() != null) {
+            for (int i = 0; i < req.getMeasures().size(); i++) {
+                AiMeasureSelection m = req.getMeasures().get(i);
+                if (m == null) continue;
+                AiSchema.Measure resolved = lookupMeasureOrNull(m.getName(), schema);
+                if (resolved != null && resolved.pii) {
+                    throw piiRefusal("measures[" + i + "].name", "Measure '" + resolved.name + "'");
+                }
+            }
+        }
+        checkAxisForPii(req.getRows(), schema, "rows");
+        checkAxisForPii(req.getColumns(), schema, "columns");
+        if (req.getOrder() != null) {
+            for (int i = 0; i < req.getOrder().size(); i++) {
+                AiOrderBy o = req.getOrder().get(i);
+                if (o == null) continue;
+                AiSchema.Measure resolved = lookupMeasureOrNull(o.getBy(), schema);
+                if (resolved != null && resolved.pii) {
+                    throw piiRefusal("order[" + i + "].by", "Measure '" + resolved.name + "'");
+                }
+            }
+        }
+        if (req.getFilters() != null) {
+            for (int i = 0; i < req.getFilters().size(); i++) {
+                AiFilterSelection f = req.getFilters().get(i);
+                if (f == null) continue;
+                String fieldPath = "filters[" + i + "]";
+                AiSchema.Level lvl = resolveLevelPiiAware(f.getDimension(), f.getHierarchy(), f.getLevel(), schema);
+                if (lvl != null && lvl.pii) {
+                    throw piiRefusal(fieldPath + ".level", "Level '" + lvl.name + "'");
+                }
+            }
+        }
+    }
+
+    private static void checkAxisForPii(List<AiAxisSelection> axes, AiSchema schema, String fieldPrefix) {
+        if (axes == null) return;
+        for (int i = 0; i < axes.size(); i++) {
+            AiAxisSelection a = axes.get(i);
+            if (a == null) continue;
+            String fieldPath = fieldPrefix + "[" + i + "]";
+            AiSchema.Level lvl = resolveLevelPiiAware(a.getDimension(), a.getHierarchy(), a.getLevel(), schema);
+            if (lvl != null && lvl.pii) {
+                throw piiRefusal(fieldPath + ".level", "Level '" + lvl.name + "'");
+            }
+        }
+    }
+
+    /**
+     * Alias-aware level resolution for the PII pass, returning {@code null} instead of throwing.
+     *
+     * <p>Deliberately a near-copy of {@link #lookupHierarchy} + {@link #lookupLevelOnHierarchy} —
+     * and deliberately NOT of the quieter {@link #resolveLevel(String, String, String, AiSchema)}
+     * helper used by the required-filters pre-flight. That helper reads the canonical dimension and
+     * level maps only, so it does not see a level's <em>display-name</em> alias. Reusing it here
+     * would have made "Customer Name" a one-word bypass for the annotated "Full Name", which is
+     * precisely the shape the gate exists to close. A gate that resolves names by a different rule
+     * than the path it guards is not a gate.
+     */
+    private static AiSchema.Level resolveLevelPiiAware(
+            String dimName, String hierName, String levelName, AiSchema schema) {
+        if (dimName == null || dimName.isEmpty() || levelName == null || levelName.isEmpty()) {
+            return null;
+        }
+        String dimK = AiSchema.key(dimName);
+        AiSchema.Dimension d = schema.dimensions.get(dimK);
+        if (d == null) {
+            String t = schema.dimensionAliases.get(dimK);
+            if (t != null) d = schema.dimensions.get(t);
+        }
+        if (d == null) return null;
+        AiSchema.Hierarchy h;
+        if (hierName == null || hierName.isEmpty()) {
+            if (d.hierarchies.size() != 1) return null;
+            h = d.hierarchies.values().iterator().next();
+        } else {
+            String hk = AiSchema.key(hierName);
+            h = d.hierarchies.get(hk);
+            if (h == null) {
+                String t = d.hierarchyAliases.get(hk);
+                if (t != null) h = d.hierarchies.get(t);
+            }
+        }
+        if (h == null) return null;
+        String lk = AiSchema.key(levelName);
+        AiSchema.Level l = h.levels.get(lk);
+        if (l == null) {
+            String t = h.levelAliases.get(lk);
+            if (t != null) l = h.levels.get(t);
+        }
+        return l;
+    }
+
+    /** Canonical-or-alias measure lookup that returns {@code null} instead of throwing, so the
+     *  PII pass never pre-empts the ordinary "Unknown measure" self-correction error. */
+    private static AiSchema.Measure lookupMeasureOrNull(String name, AiSchema schema) {
+        if (name == null || name.isEmpty()) return null;
+        String k = AiSchema.key(name);
+        AiSchema.Measure m = schema.measures.get(k);
+        if (m == null) {
+            String aliasTarget = schema.measureAliases.get(k);
+            if (aliasTarget != null) m = schema.measures.get(aliasTarget);
+        }
+        return m;
+    }
+
+    private static AiPiiException piiRefusal(String field, String what) {
+        return new AiPiiException(
+                field,
+                what + " is annotated PII (saiku.semantic.pii=true) and cannot be queried over the AI "
+                        + "surface. PII columns are refused on measures, rows, columns, filters and order alike — "
+                        + "query an aggregate measure or a non-PII level over the same dimension instead.",
+                null);
     }
 
     /**

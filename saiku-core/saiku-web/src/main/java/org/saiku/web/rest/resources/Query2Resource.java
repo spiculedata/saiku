@@ -49,6 +49,7 @@ import org.saiku.olap.dto.SimpleCubeElement;
 import org.saiku.olap.dto.resultset.AbstractBaseCell;
 import org.saiku.olap.dto.resultset.CellDataSet;
 import org.saiku.olap.dto.resultset.MemberCell;
+import org.saiku.olap.query2.ThinNamedSet;
 import org.saiku.olap.query2.ThinQuery;
 import org.saiku.olap.result.ArrowCellsetWriter;
 import org.saiku.olap.result.ArrowDrillthroughWriter;
@@ -57,7 +58,14 @@ import org.saiku.olap.util.exception.SaikuOlapException;
 import org.saiku.service.async.AsyncQueryHandle;
 import org.saiku.service.async.AsyncQueryService;
 import org.saiku.service.olap.ThinQueryService;
+import org.saiku.service.olap.ai.AiCubeMetadataService;
+import org.saiku.service.olap.ai.AiCubeRef;
+import org.saiku.service.olap.ai.AiPiiException;
+import org.saiku.service.olap.ai.AiReturnsResolver;
+import org.saiku.service.olap.ai.AiSchema;
+import org.saiku.service.olap.ai.AiValidationException;
 import org.saiku.service.olap.drillthrough.DrillThroughResult;
+import org.saiku.service.util.exception.SaikuAccessDeniedException;
 import org.saiku.service.util.exception.SaikuServiceException;
 import org.saiku.web.export.JSConverter;
 import org.saiku.web.export.PdfReport;
@@ -104,6 +112,17 @@ public class Query2Resource {
 
     public AsyncQueryService getAsyncQueryService() {
         return asyncQueryService;
+    }
+
+    /** saiku#837: same cube-metadata service the AI query surface uses for
+     *  {@code returns=} caption→qualified-MDX resolution (saiku#782), reused
+     *  here so the Query2 drillthrough entry points get the same behaviour.
+     *  Nullable — a deployment that hasn't wired the AI metadata bean simply
+     *  skips resolution and passes {@code returns=} through unchanged. */
+    private AiCubeMetadataService cubeMetadataService;
+
+    public void setCubeMetadataService(AiCubeMetadataService cubeMetadataService) {
+        this.cubeMetadataService = cubeMetadataService;
     }
 
     /**
@@ -154,6 +173,73 @@ public class Query2Resource {
         } catch (Exception e) {
             log.error("Cannot delete query (" + queryName + ")", e);
             throw new WebApplicationException(e);
+        }
+    }
+
+    /**
+     * List the named sets defined on a query's model.
+     * @summary List named sets.
+     * @param queryName The query name
+     * @return the named sets currently on the query model, or HTTP 404 if the query is unknown.
+     */
+    @GET
+    @Produces({"application/json"})
+    @Path("/{queryname}/sets")
+    public Response getNamedSets(@PathParam("queryname") String queryName) {
+        try {
+            return Response.ok(thinQueryService.getNamedSets(queryName)).build();
+        } catch (SaikuServiceException e) {
+            return Response.status(Status.NOT_FOUND)
+                    .entity(Map.of("error", e.getMessage()))
+                    .build();
+        }
+    }
+
+    /**
+     * Add a named set to a query's model (saiku#824).
+     * @summary Add named set.
+     * @param queryName The query name
+     * @param namedSet The named set to append
+     * @return the appended named set (HTTP 201), HTTP 400 on a validation failure,
+     *         or HTTP 404 if the query is unknown.
+     */
+    @POST
+    @Consumes({"application/json"})
+    @Produces({"application/json"})
+    @Path("/{queryname}/sets")
+    public Response addNamedSet(@PathParam("queryname") String queryName, ThinNamedSet namedSet) {
+        try {
+            ThinNamedSet added = thinQueryService.addNamedSet(queryName, namedSet);
+            return Response.status(Status.CREATED).entity(added).build();
+        } catch (IllegalArgumentException e) {
+            return Response.status(Status.BAD_REQUEST)
+                    .entity(Map.of("error", e.getMessage()))
+                    .build();
+        } catch (SaikuServiceException e) {
+            return Response.status(Status.NOT_FOUND)
+                    .entity(Map.of("error", e.getMessage()))
+                    .build();
+        }
+    }
+
+    /**
+     * Remove a named set from a query's model by name (saiku#824).
+     * @summary Remove named set.
+     * @param queryName The query name
+     * @param setName The named set's name
+     * @return HTTP 410 (Gone) on success, or HTTP 404 if the query or named set is unknown.
+     */
+    @DELETE
+    @Produces({"application/json"})
+    @Path("/{queryname}/sets/{setName}")
+    public Response deleteNamedSet(@PathParam("queryname") String queryName, @PathParam("setName") String setName) {
+        try {
+            thinQueryService.removeNamedSet(queryName, setName);
+            return Response.status(Status.GONE).build();
+        } catch (SaikuServiceException e) {
+            return Response.status(Status.NOT_FOUND)
+                    .entity(Map.of("error", e.getMessage()))
+                    .build();
         }
     }
 
@@ -260,6 +346,12 @@ public class Query2Resource {
             // text-plain content-type dance.
             String body = "{\"sql\":" + jacksonJsonString(sql) + "}";
             return Response.ok(body).type("application/json").build();
+        } catch (SaikuAccessDeniedException e) {
+            // The denial may name a datasource or field; keep the response information-free.
+            return Response.status(Response.Status.FORBIDDEN)
+                    .entity("{\"error\":\"Access denied\"}")
+                    .type("application/json")
+                    .build();
         } catch (Exception e) {
             log.error("Cannot preview Ossie SQL", e);
             String msg = e.getMessage() == null ? "internal error" : e.getMessage();
@@ -361,14 +453,110 @@ public class Query2Resource {
      * anywhere in the cause chain means the request named something that could not be resolved — an
      * unknown connection, cube, or member — which the caller can fix, so 400. Anything else is ours
      * and reports 500.
+     *
+     * <p>saiku#1973: a {@link SaikuAccessDeniedException} anywhere in the chain is neither — the
+     * caller is authenticated but not authorised for this datasource (the #1968 fail-closed denial)
+     * — so it reports <b>403</b> with a fixed message. The denial message names the datasource, and
+     * the whole point of the denial path is that the caller learns nothing from it.
      */
     private Response queryFailure(Exception e) {
+        if (isAccessDenied(e)) {
+            return accessDenied();
+        }
         String error = ExceptionUtils.getRootCauseMessage(e);
         Status status = isClientError(e) ? Status.BAD_REQUEST : Status.INTERNAL_SERVER_ERROR;
         return Response.status(status)
                 .entity(new QueryResult(error))
                 .type(MediaType.APPLICATION_JSON)
                 .build();
+    }
+
+    /**
+     * saiku#837 — Query2 parity for saiku#782: rewrite a bare-caption
+     * {@code returns=} drillthrough clause into the fully-qualified MDX form
+     * Mondrian's {@code RETURN} clause expects, using the same
+     * {@link AiReturnsResolver} the AI query surface (saiku#782,
+     * {@code AiQueryResource.rewriteDrillthroughReturns}) already applies.
+     * Tokens already bracketed ({@code [...]}) pass through unchanged.
+     *
+     * <p>Writes the resolved value into {@code out[0]} (defaults to the raw
+     * {@code returns}). Returns a 400 {@link Response} carrying the typed
+     * validation envelope when the resolver can't match a token (or refuses
+     * a PII-flagged one); {@code null} otherwise, meaning the caller should
+     * proceed with {@code out[0]}.
+     *
+     * <p>A schema lookup failure (unknown cube, discover error) must not
+     * poison the drillthrough — falls through with the raw value and lets
+     * Mondrian report whatever it reports, same posture as the AI path.
+     */
+    private Response resolveDrillthroughReturns(String queryName, String returns, String[] out) {
+        out[0] = returns;
+        if (returns == null || returns.trim().isEmpty() || cubeMetadataService == null) {
+            return null;
+        }
+        try {
+            org.saiku.service.util.QueryContext qc = thinQueryService.getContext(queryName);
+            if (qc != null && qc.getOlapQuery() != null && qc.getOlapQuery().getCube() != null) {
+                org.saiku.olap.dto.SaikuCube cube = qc.getOlapQuery().getCube();
+                AiCubeRef ref =
+                        new AiCubeRef(cube.getConnection(), cube.getCatalog(), cube.getSchema(), cube.getName());
+                AiSchema schema = cubeMetadataService.getSchema(ref);
+                out[0] = AiReturnsResolver.resolve(returns, schema);
+            }
+        } catch (AiPiiException pe) {
+            log.info("drillthrough returns= refused (PII column): query={} message={}", queryName, pe.getMessage());
+            return returnsValidationError(pe.getField(), pe.getMessage(), pe.getAvailable());
+        } catch (AiValidationException ve) {
+            return returnsValidationError(ve.getField(), ve.getMessage(), ve.getAvailable());
+        } catch (RuntimeException ignored) {
+            // Schema lookup failure (unknown cube, discover error) — fall through with the raw
+            // returns value; the existing Mondrian-error translation path handles whatever the
+            // downstream RETURN clause produces.
+        }
+        return null;
+    }
+
+    /** Standard {@code {status,error,field,available}} validation-error envelope — same shape as
+     *  {@code AiQueryResponse} on the AI query surface so a client that already understands one
+     *  drillthrough validation error understands the other. */
+    private Response returnsValidationError(String field, String message, List<String> available) {
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("status", "VALIDATION_ERROR");
+        body.put("error", message);
+        body.put("field", field);
+        body.put("available", available == null ? List.of() : available);
+        return Response.status(Response.Status.BAD_REQUEST)
+                .entity(body)
+                .type(MediaType.APPLICATION_JSON)
+                .build();
+    }
+
+    /**
+     * saiku#1973 — the uniform access-denied response: 403 with a fixed, information-free message.
+     *
+     * <p>Shared by {@link #queryFailure(Exception)} and the async submit path so a denial reads the
+     * same whichever door the caller came through — the issue this closes was specifically about
+     * that door-to-door inconsistency.
+     */
+    private static Response accessDenied() {
+        return Response.status(Status.FORBIDDEN)
+                .entity(new QueryResult("Access denied"))
+                .type(MediaType.APPLICATION_JSON)
+                .build();
+    }
+
+    /**
+     * True when a {@link SaikuAccessDeniedException} is anywhere in the cause chain — the saiku#1968
+     * fail-closed datasource denial. By exception TYPE only; the message is never inspected, since
+     * the message is precisely what must not reach the caller.
+     */
+    private static boolean isAccessDenied(Throwable t) {
+        for (Throwable c = t; c != null; c = c.getCause() == c ? null : c.getCause()) {
+            if (c instanceof SaikuAccessDeniedException) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -490,6 +678,11 @@ public class Query2Resource {
                     .build();
         } catch (Exception e) {
             log.error("Cannot submit async query", e);
+            // saiku#1973 — a denied datasource is a 403 with a generic body, not a 500 that
+            // echoes the root cause message (which names the datasource).
+            if (isAccessDenied(e)) {
+                return accessDenied();
+            }
             return Response.serverError()
                     .entity(ExceptionUtils.getRootCauseMessage(e))
                     .build();
@@ -844,10 +1037,69 @@ public class Query2Resource {
     }
 
     /**
+     * Drill down into a single row: injects the clicked member's children as nested rows
+     * directly beneath it and re-runs the query, leaving every other row untouched.
+     * @summary Drill down
+     * @param queryName The query name
+     * @param rowIndex The index of the row (on the last executed result's ROWS axis) to drill into
+     * @return The re-executed query result, with the member's children inserted beneath it
+     */
+    @GET
+    @Produces({"application/json"})
+    @Path("/{queryname}/drill/{rowindex}")
+    public Response drillDown(@PathParam("queryname") String queryName, @PathParam("rowindex") int rowIndex) {
+        if (log.isDebugEnabled()) {
+            log.debug("TRACK\t" + "\t/query/" + queryName + "/drill/" + rowIndex + "\tGET");
+        }
+        try {
+            QueryResult qr = RestUtil.convert(thinQueryService.drillDown(queryName, rowIndex));
+            org.saiku.service.util.QueryContext ctx = thinQueryService.getContext(queryName);
+            if (ctx != null) {
+                qr.setQuery(ctx.getOlapQuery());
+            }
+            return Response.ok(qr).type(MediaType.APPLICATION_JSON).build();
+        } catch (Exception e) {
+            log.error("Cannot drill down on query (" + queryName + ") row (" + rowIndex + ")", e);
+            return queryFailure(e);
+        }
+    }
+
+    /**
+     * Drill up: collapses a row previously expanded via {@link #drillDown}, removing the rows
+     * that were injected for its children.
+     * @summary Drill up
+     * @param queryName The query name
+     * @param rowIndex The index of the previously drilled-down parent row to collapse
+     * @return The re-executed query result, with the drilled-down children removed
+     */
+    @GET
+    @Produces({"application/json"})
+    @Path("/{queryname}/drillup/{rowindex}")
+    public Response drillUp(@PathParam("queryname") String queryName, @PathParam("rowindex") int rowIndex) {
+        if (log.isDebugEnabled()) {
+            log.debug("TRACK\t" + "\t/query/" + queryName + "/drillup/" + rowIndex + "\tGET");
+        }
+        try {
+            QueryResult qr = RestUtil.convert(thinQueryService.drillUp(queryName, rowIndex));
+            org.saiku.service.util.QueryContext ctx = thinQueryService.getContext(queryName);
+            if (ctx != null) {
+                qr.setQuery(ctx.getOlapQuery());
+            }
+            return Response.ok(qr).type(MediaType.APPLICATION_JSON).build();
+        } catch (Exception e) {
+            log.error("Cannot drill up on query (" + queryName + ") row (" + rowIndex + ")", e);
+            return queryFailure(e);
+        }
+    }
+
+    /**
      * Drill through on the query result set.
      * @summary Drill through
      * @param queryName The query name
      * @param maxrows The max rows returned
+     * @param firstRowset Optional warehouse-side FIRST_ROWSET bound (saiku#822); wins over
+     *     maxrows when both are supplied, whole-result drills only (see
+     *     {@link ThinQueryService#drillthrough(String, int, Integer, String)}).
      * @param position The position
      * @param returns The returned dimensions and levels
      * @return A query result set.
@@ -863,19 +1115,26 @@ public class Query2Resource {
     public Response drillthrough(
             @PathParam("queryname") String queryName,
             @QueryParam("maxrows") @DefaultValue("100") Integer maxrows,
+            @QueryParam("firstRowset") Integer firstRowset,
             @QueryParam("position") String position,
             @QueryParam("returns") String returns,
             @Context HttpHeaders headers) {
         if (log.isDebugEnabled()) {
             log.debug("TRACK\t" + "\t/query/" + queryName + "/drillthrough\tGET");
         }
+        // saiku#837: resolve bare-caption returns= to qualified MDX before it reaches the engine.
+        String[] resolvedReturns = {returns};
+        Response returnsError = resolveDrillthroughReturns(queryName, returns, resolvedReturns);
+        if (returnsError != null) return returnsError;
+        returns = resolvedReturns[0];
+
         boolean arrow = clientPrefersArrow(headers);
         ResultSet rs = null;
         try {
             Long start = (new Date()).getTime();
             DrillThroughResult dtr = null;
             if (position == null) {
-                rs = thinQueryService.drillthrough(queryName, maxrows, returns);
+                rs = thinQueryService.drillthrough(queryName, maxrows, firstRowset, returns);
             } else {
                 String[] positions = position.split(":");
                 List<Integer> cellPosition = new ArrayList<>();
@@ -910,6 +1169,48 @@ public class Query2Resource {
             // before the response body is written, so it is safe to close the
             // ResultSet here for both JSON and Arrow branches.
             JdbcCleanup.closeQuietly(rs);
+        }
+    }
+
+    /**
+     * Discover the drillthrough column list for a query (saiku#822 — Query2
+     * parity with the AI Query API's {@code /ai/query/{queryId}/drillthrough/columns}).
+     * Delegates to {@link ThinQueryService#drillthroughColumns(String)} (shipped
+     * in saiku#819) and returns the same {@code {queryId, columns:[{name,type}]}}
+     * envelope so saiku-ui can share one client-side shape across both surfaces.
+     * @summary Discover drillthrough columns
+     * @param queryName The query name
+     * @return { queryId, columns: [ { name, type } ] }
+     */
+    @GET
+    @Produces({"application/json"})
+    @Path("/{queryname}/drillthrough/columns")
+    public Response drillthroughColumns(@PathParam("queryname") String queryName) {
+        if (log.isDebugEnabled()) {
+            log.debug("TRACK\t" + "\t/query/" + queryName + "/drillthrough/columns\tGET");
+        }
+        try {
+            List<Map<String, String>> cols = thinQueryService.drillthroughColumns(queryName);
+            Map<String, Object> body = new java.util.LinkedHashMap<>();
+            body.put("queryId", queryName);
+            body.put("columns", cols);
+            return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
+        } catch (Exception e) {
+            log.error("Cannot discover drillthrough columns (" + queryName + ")", e);
+            // saiku#1973 — same uniform 403 as every other denial path.
+            if (isAccessDenied(e)) {
+                return accessDenied();
+            }
+            // Unlike queryFailure(e), never echo the root cause: the underlying failure can be
+            // a JDBC/olap4j exception whose message embeds the datasource URL, including
+            // embedded credentials (e.g. "jdbc:postgresql://host/db?user=x&password=y"). The
+            // full exception is already logged above for operators; the caller only needs the
+            // status code.
+            Status status = isClientError(e) ? Status.BAD_REQUEST : Status.INTERNAL_SERVER_ERROR;
+            return Response.status(status)
+                    .entity(new QueryResult("Cannot discover drillthrough columns for query: " + queryName))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
         }
     }
 
@@ -984,6 +1285,12 @@ public class Query2Resource {
             log.debug("TRACK\t" + "\t/query/" + queryName + "/drillthrough/export/csv (maxrows:" + maxrows + " position"
                     + position + ")\tGET");
         }
+        // saiku#837: resolve bare-caption returns= to qualified MDX before it reaches the engine.
+        String[] resolvedReturns = {returns};
+        Response returnsError = resolveDrillthroughReturns(queryName, returns, resolvedReturns);
+        if (returnsError != null) return returnsError;
+        returns = resolvedReturns[0];
+
         ResultSet rs = null;
 
         try {

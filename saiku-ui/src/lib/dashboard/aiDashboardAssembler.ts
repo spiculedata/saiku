@@ -27,17 +27,13 @@ import {
 } from '$lib/api/dashboards';
 import type { DashboardSpec } from '$lib/api/aiDashboard';
 import { defaultSizeFor, firstFreeSlot } from '$lib/dashboard/tilePlacement';
-import { isChartType } from '$lib/views/chartTypes';
+import { resolveChartKind } from './chartKind';
 
 /** UI tile types the builder emits. The backend already constrains `type` to
  *  this set, but we validate defensively — an out-of-set value degrades to a
  *  table (mirroring the backend's own coerce default) rather than producing an
  *  unrenderable tile. */
 const ASSEMBLABLE_TILE_TYPES: ReadonlySet<string> = new Set<TileType>(['chart', 'table', 'kpi']);
-
-/** Default chart kind for a chart tile whose spec chartType is missing /
- *  unrecognised — matches the backend's `coerceChartType` fallback. */
-const DEFAULT_CHART_TYPE = 'bar';
 
 function coerceTileType(type: string | undefined): TileType {
 	return type && ASSEMBLABLE_TILE_TYPES.has(type) ? (type as TileType) : 'table';
@@ -94,9 +90,10 @@ export function assembleDashboard(spec: DashboardSpec, cube: CubeRef): Dashboard
 		};
 
 		if (type === 'chart') {
-			tile.chartType = isChartType(tileSpec.chartType ?? '')
-				? tileSpec.chartType
-				: DEFAULT_CHART_TYPE;
+			// #1481: resolve through the same normaliser the tile renderer uses, so a
+			// legacy / decorated spelling emitted by the model ("DonutChart", "column")
+			// lands on its supported equivalent instead of being thrown away for `bar`.
+			tile.chartType = resolveChartKind(tileSpec.chartType);
 		}
 
 		dashboard.layout.tiles.push(tile);

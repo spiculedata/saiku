@@ -115,6 +115,14 @@ own coverage is worse than a short one, because a reader stops checking.
   embed/share token stores, the launcher, and this file to the maintainers
   for review.
 
+- **Bounded query execution.** Every OLAP execution path carries a
+  server-enforced statement timeout, drillthrough/export row ceiling,
+  and a byte budget for the Arrow allocators, independent of what a
+  client asks for. Tunable in `saiku.properties` — see
+  `saiku.olap.query.timeout.seconds`, `saiku.olap.max.rows`,
+  `saiku.olap.arrow.max.bytes` — with the deployment-wide backstop in
+  `mondrian.properties` (`mondrian.rolap.queryTimeout`,
+  `mondrian.result.limit`, `mondrian.rolap.iterationLimit`).
 - **Vulnerability triage.** Findings are logged internally with a
   planned fix window; the fix + disclosure ship together per the
   agreed timeline.

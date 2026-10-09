@@ -58,6 +58,32 @@ export function parseStarterCubeRef(params: URLSearchParams): StarterCubeRef | n
 	return { connection, catalog, schema, name };
 }
 
+/** Cube coordinates a caller needs to build a starter-cube launch URL. */
+export interface LaunchCoordinates {
+	/** The name the server registered the connection under — NOT the datasource id. */
+	connection: string;
+	/** Mondrian catalog and schema are both the `<Schema name=…>` attribute. */
+	schema: string;
+	cube: string;
+}
+
+/**
+ * Build the Studio URL that opens `cube` with a populated query model, per this module's
+ * `starterCube*` contract. Originally lived in the cube-designer route (saiku#1859) — lifted
+ * here so the quickstart CSV-upload route (saiku#1117) can build the same URL without importing
+ * across route directories; {@code cube-designer}'s {@code publish.ts} re-exports this for
+ * backward compatibility with its existing callers.
+ */
+export function buildLaunchUrl(coords: LaunchCoordinates): string {
+	const params = new URLSearchParams({
+		starterCubeConnection: coords.connection,
+		starterCubeCatalog: coords.schema,
+		starterCubeSchema: coords.schema,
+		starterCubeName: coords.cube
+	});
+	return `/ui/?${params.toString()}`;
+}
+
 /**
  * Walk the loaded connection tree to find the cube matching the ref.
  * Returns null when no cube matches — the caller falls through to
