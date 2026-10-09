@@ -99,6 +99,37 @@ All notable changes to Saiku are documented here. This project follows
   reports each stack's configured provider/model/endpoint plus a live
   reachability probe — never the API key — so an operator can confirm the
   wiring without running a query. (saiku#904)
+- **Creator Mode: `<saiku-embed kind="creator">` — customer-authored
+  dashboards in an OEM/ISV embed (saiku#1435).** The embed suite shipped
+  read-only kinds: a token pins a saved query, dashboard, app or cube, and the
+  visitor looks. There was no "let the visitor build their own against a pinned
+  cube" mode — the objection that loses self-serve-analytics deals. A new
+  `resourceKind: "authoring"` token pins **one cube and one `tenantId`**;
+  `<saiku-embed kind="creator" cube="connection/catalog/schema/cube">` renders a
+  stripped workbench (rows picker, measures picker, table/bar/line/pie, Save
+  query, Save dashboard, "your saved items") inside the shadow DOM.
+  - Writes are confined to `/rest/saiku/api/embed/authoring/**` and require a
+    second role, `ROLE_EMBED_AUTHOR`, that a read token never carries. The target
+    path is always re-derived from the token's tenant; no endpoint there accepts
+    a caller-supplied path, and object names are reduced to a single safe
+    segment. Public grants for authoring are refused — an anonymous write scope
+    has no tenant to attribute it to.
+  - Creator queries are `QUERYMODEL`-only. Raw MDX (on the query, an axis, a
+    hierarchy or a level), filters, sort expressions, calculated members, named
+    sets and query parameters are refused, and every hierarchy / level / member /
+    measure is checked against a frozen catalogue of the pinned cube before the
+    MDX is generated server-side. A member on a level the catalogue could not
+    enumerate is refused rather than guessed.
+  - Queries and saves run under the token owner's identity and roles (the same
+    `sessionService.runAs` delegation the read surface uses), so the tenant's
+    RLS still applies and the saved objects live in the owner's home, where they
+    open in the full Saiku workbench.
+  - Embed JWTs work too: `saiku.resourceKind: "authoring"` +
+    `saiku.tenantId`, same `SAIKU_EMBED_JWT_SECRET`. A token with no usable
+    tenant claim is refused with the same opaque 401 as a bad signature.
+  - Docs: [`docs/embed/creator-mode.md`](docs/embed/creator-mode.md).
+  - Known gap, called out in the docs: a saved dashboard is a single saved query
+    plus a chart type — no drag-and-drop grid yet.
 - **True per-token LLM streaming behind the existing SSE ask endpoints**
   (saiku#1484). `/ai/ask/stream` and `/ai/spaces/{id}/ask/stream` used to
   *replay* a finished response as word-sized deltas, so a client rendered

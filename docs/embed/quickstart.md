@@ -160,6 +160,13 @@ saiku-embed {
 - **Same-origin pages can omit `server`** (v3.19+) — if the host page is
   served by Saiku itself, leave the attribute off.
 
+## See also
+
+- [`creator-mode.md`](creator-mode.md) — **Creator Mode** (`kind="creator"`): let
+  your customers build their own dashboards against a cube you pin, without
+  leaving your product. The one embed kind that writes; the guide covers
+  per-tenant tokens, the threat model and the endpoint reference.
+
 ## Current limitations (v1)
 
 Records-format rendering only; dashboard filter tiles render as authored

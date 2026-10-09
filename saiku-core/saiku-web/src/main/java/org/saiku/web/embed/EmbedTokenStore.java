@@ -52,7 +52,7 @@ public class EmbedTokenStore {
     /** Resource kinds the embed surface understands. The mint endpoint rejects
      *  anything outside this set so a typo can never persist a "ghost" kind
      *  that the view endpoint silently ignores. */
-    private static final Set<String> ALLOWED_KINDS = Set.of("query", "dashboard", "app");
+    private static final Set<String> ALLOWED_KINDS = Set.of("query", "dashboard", "app", "authoring");
 
     /** Non-null when persisting to disk; null → use {@link #memory}. */
     private final Path dir;
@@ -117,6 +117,25 @@ public class EmbedTokenStore {
             long ttlMillis,
             String label,
             EmbedToken.RedactionPolicy redactionPolicy) {
+        return create(resourceKind, resourcePath, createdBy, ownerRoles, ttlMillis, label, redactionPolicy, null);
+    }
+
+    /**
+     * saiku#1435 overload — authoring tokens additionally pin a tenant id, which
+     * derives the only folder their bearer may create objects in. Required (and
+     * shape-validated) for {@code resourceKind == "authoring"}; ignored for
+     * every read-only kind so a read token can never be turned into a writer by
+     * smuggling a tenantId into the mint request.
+     */
+    public EmbedToken create(
+            String resourceKind,
+            String resourcePath,
+            String createdBy,
+            List<String> ownerRoles,
+            long ttlMillis,
+            String label,
+            EmbedToken.RedactionPolicy redactionPolicy,
+            String tenantId) {
         if (resourceKind == null || !ALLOWED_KINDS.contains(resourceKind)) {
             // ALLOWED_KINDS.contains(null) throws NPE on Set.of immutables, so
             // null-check first — defends both the API and the runtime.
@@ -124,6 +143,12 @@ public class EmbedTokenStore {
         }
         if (resourcePath == null || resourcePath.isBlank()) {
             throw new IllegalArgumentException("resourcePath is required");
+        }
+        if ("authoring".equals(resourceKind) && !EmbedAuthoringScope.isValidTenantId(tenantId)) {
+            // Fail closed at the store boundary: an authoring token with an
+            // unusable tenantId would have no derivable scope, and a
+            // best-effort fallback would put two tenants in one folder.
+            throw new IllegalArgumentException("authoring tokens require a valid tenantId");
         }
         EmbedToken t = new EmbedToken();
         t.token = generateId();
@@ -136,6 +161,7 @@ public class EmbedTokenStore {
         t.expiresAt = t.createdAt + ttlMillis;
         t.revoked = false;
         t.label = label;
+        t.tenantId = "authoring".equals(resourceKind) ? tenantId : null;
         persist(t);
         return t;
     }

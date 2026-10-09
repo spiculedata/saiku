@@ -1326,6 +1326,28 @@
         <property name="pluginRegistry" ref="tilePluginRegistryBean"/>
     </bean>
 
+    <!-- saiku#1435 Creator Mode. The only embed surface that writes: an
+         authoring token (or JWT) pins ONE cube + ONE tenant, and every path
+         here is re-derived server-side from that pin (EmbedAuthoringScope) —
+         no endpoint accepts a caller-supplied repository path. Queries run
+         under the owner's identity via sessionService.runAs, and every
+         hierarchy / level / member / measure is checked against a frozen
+         catalogue of the pinned cube before the MDX is generated server-side,
+         so a creator can only name what the catalogue listed. Reachable only
+         with ROLE_EMBED_AUTHOR (see the intercept-url in
+         applicationContext-saiku.xml). -->
+    <bean id="embedAuthoringResource" scope="request"
+          class="org.saiku.web.rest.resources.embed.EmbedAuthoringResource">
+        <aop:scoped-proxy/>
+        <property name="datasourceService" ref="datasourceServiceBean"/>
+        <property name="sessionService" ref="sessionService"/>
+        <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
+        <property name="thinQueryService" ref="thinQueryBean"/>
+        <property name="aiQueryResource" ref="aiQueryResource"/>
+        <!-- carries the JWT sub into the audit trail, same as the read surface -->
+        <property name="auditLog" ref="aiAuditLog"/>
+    </bean>
+
     <!-- Per-tile dashboard comments (issue #942). commentService stores a
          per-dashboard .jsonl via the internal-file API; commentResource
          (@ /saiku/api/dashboards/comments) gates every op on the caller's

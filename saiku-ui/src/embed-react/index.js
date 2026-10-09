@@ -32,6 +32,7 @@ export function SaikuEmbed(props) {
 		server,
 		path,
 		kind,
+		cube,
 		token,
 		render,
 		mode,
@@ -84,6 +85,7 @@ export function SaikuEmbed(props) {
 	if (server !== undefined) attrs.server = server;
 	if (path !== undefined) attrs.path = path;
 	if (kind !== undefined) attrs.kind = kind;
+	if (cube !== undefined) attrs.cube = cube;
 	if (token !== undefined) attrs.token = token;
 	if (render !== undefined) attrs.render = render;
 	if (mode !== undefined) attrs.mode = mode;
@@ -118,6 +120,9 @@ export async function mintEmbedToken(opts) {
 	};
 	if (opts.ttlHours !== undefined) body.ttlHours = opts.ttlHours;
 	if (opts.label !== undefined) body.label = opts.label;
+	// saiku#1435: authoring tokens pin a tenant; the server derives the single
+	// folder their bearer may write into.
+	if (opts.tenantId !== undefined) body.tenantId = opts.tenantId;
 	const url = opts.server.replace(/\/+$/, '') + '/rest/saiku/api/embed/tokens';
 	const res = await doFetch(url, {
 		method: 'POST',

@@ -30,8 +30,9 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
  * Establishes a short-lived, locked-down guest identity for valid
- * {@code <saiku-embed>} reads. It acts ONLY on the {@code /rest/saiku/api/embed/}
- * read prefixes (query + dashboard + ai + app) and ONLY when the request presents a valid
+ * {@code <saiku-embed>} requests. It acts ONLY on the
+ * {@code /rest/saiku/api/embed/} prefixes (query + dashboard + ai + app +
+ * authoring) and ONLY when the request presents a valid
  * token OR targets a publicly-granted resource; for every other request it is
  * a transparent pass-through. The mint endpoint
  * ({@code /rest/saiku/api/embed/tokens}) is intentionally NOT touched — it
@@ -40,6 +41,14 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * <p>On a valid token: a request-scoped {@link PreAuthenticatedAuthenticationToken}
  * with authority {@link #GUEST_ROLE} carrying {@link EmbedGuestDetails} that
  * pin the resource kind + path the token authorises.
+ *
+ * <p>saiku#1435 (Creator Mode): the {@code authoring/} prefix is the only
+ * <em>writing</em> surface an embed identity can reach, and it is gated behind a
+ * second role ({@link #AUTHOR_ROLE}) that a read token never carries. The tenant
+ * those writes are confined to is derived server-side from the token's
+ * {@code saiku.tenantId} claim (or the opaque record's {@code tenantId}) and is
+ * validated here, so a request naming a tenant the token doesn't pin fails
+ * closed with the same opaque 401 as a bad signature.
  *
  * <p>On a public-grant match: same role + details, but with {@code token=null}
  * to mark the request as having used the public path. View endpoints can use
@@ -68,6 +77,12 @@ import org.springframework.web.filter.OncePerRequestFilter;
 public class EmbedAuthFilter extends OncePerRequestFilter {
 
     public static final String GUEST_ROLE = "ROLE_EMBED_GUEST";
+    /** saiku#1435 — second role, carried IN ADDITION to {@link #GUEST_ROLE} and
+     *  granted only for a valid {@code authoring} token. It is what the Spring
+     *  rule on {@code /rest/saiku/api/embed/authoring/**} demands, so a
+     *  query / dashboard / app token can never reach a write endpoint. */
+    public static final String AUTHOR_ROLE = "ROLE_EMBED_AUTHOR";
+
     public static final String TOKEN_HEADER = "X-Saiku-Embed-Token";
 
     private static final Logger LOG = LoggerFactory.getLogger(EmbedAuthFilter.class);
@@ -94,6 +109,24 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
     static final String DASHBOARD_SEGMENT = "dashboard/";
     static final String AI_SEGMENT = "ai/";
     static final String APP_SEGMENT = "app/";
+
+    /** saiku#1435 (Creator Mode). The pinned resource is a CUBE, not a file, and
+     *  the cube ref is followed by an operation segment
+     *  ({@code context} / {@code preview} / {@code query} / {@code dashboard} /
+     *  {@code objects} / {@code object}), so the target is pinned on the cube
+     *  alone and the operation is left to the resource to route. */
+    static final String AUTHORING_SEGMENT = "authoring/";
+
+    /** The {@code resourceKind} / claim value an authoring token carries. */
+    public static final String AUTHORING_KIND = "authoring";
+
+    /** Cube refs are {@code connection/catalog/schema/cube} — exactly 4 segments. */
+    static final int CUBE_REF_SEGMENTS = 4;
+
+    /** HTTP methods the authoring prefix admits. Any other verb falls through to
+     *  the Spring chain, which holds no rule for it under the author role and so
+     *  refuses it — the embed identity is never the thing that decides. */
+    private static final List<String> AUTHORING_METHODS = List.of("GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS");
 
     /** Mint surface — explicitly skipped so a real user's session auth still
      *  applies. */
@@ -137,6 +170,17 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
             return;
         }
 
+        // saiku#1435: the authoring prefix is the only embed surface that writes.
+        // Refuse an unlisted verb here rather than letting the filter establish
+        // an identity for it — the verb allowlist is one more thing an attacker
+        // can't negotiate around.
+        boolean authoring = AUTHORING_KIND.equals(target.kind);
+        if (authoring && !AUTHORING_METHODS.contains(req.getMethod())) {
+            LOG.debug("embed authoring: refusing method {}", req.getMethod());
+            writeInvalid(resp);
+            return;
+        }
+
         // 1. Token path.
         String tokenId = extractToken(req);
         if (tokenId != null && !tokenId.isEmpty()) {
@@ -161,6 +205,15 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
                 writeInvalid(resp);
                 return;
             }
+            // saiku#1435: an authoring token additionally pins a tenant, which
+            // is what the write path scopes to. No derivable tenant => unusable
+            // (never a fallback scope).
+            if (AUTHORING_KIND.equals(token.resourceKind)
+                    && !org.saiku.web.embed.EmbedAuthoringScope.isValidTenantId(token.tenantId)) {
+                LOG.warn("embed authoring token {} has no usable tenantId — refusing", token.token.length());
+                writeInvalid(resp);
+                return;
+            }
             // saiku#1920: the mint-time role snapshot is NOT trusted — re-resolve
             // the owner now so a disabled/demoted owner loses guest access on
             // the very next request.
@@ -182,7 +235,12 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
                             // saiku-cloud#948: carry the policy forward so
                             // the view resource can stamp the gateway-
                             // facing redaction-policy header.
-                            token.redactionPolicy));
+                            token.redactionPolicy,
+                            // An opaque token has no JWT subject or forced filters; it does carry
+                            // the tenant an authoring token is pinned to (saiku#1435).
+                            null,
+                            null,
+                            token.tenantId));
             return;
         }
 
@@ -192,7 +250,7 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
         //    disabled, skip the lookup entirely so existing embed-public.json
         //    grants are IGNORED (fail closed) and the request falls through to
         //    the Spring 401, exactly as if no grant existed.
-        if (EmbedPublicRegistry.publicEmbedsEnabled()) {
+        if (!authoring && EmbedPublicRegistry.publicEmbedsEnabled()) {
             EmbedPublicGrant grant = publicRegistry.lookup(target.kind, target.path);
             if (grant != null) {
                 // saiku#1920: same live re-resolution as the token path — a public
@@ -230,8 +288,17 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
     private void authenticate(
             HttpServletRequest req, HttpServletResponse resp, FilterChain chain, EmbedGuestDetails details)
             throws IOException, ServletException {
-        PreAuthenticatedAuthenticationToken auth = new PreAuthenticatedAuthenticationToken(
-                "embed-guest", details, List.of(new SimpleGrantedAuthority(GUEST_ROLE)));
+        List<SimpleGrantedAuthority> authorities = new ArrayList<>();
+        authorities.add(new SimpleGrantedAuthority(GUEST_ROLE));
+        // saiku#1435: the author role is added ONLY for an authoring identity, and
+        // only after the tenant pin above has been proven. It is what opens the
+        // /embed/authoring/** Spring rule, so a read token structurally cannot
+        // reach a write endpoint.
+        if (details != null && AUTHORING_KIND.equals(details.resourceKind)) {
+            authorities.add(new SimpleGrantedAuthority(AUTHOR_ROLE));
+        }
+        PreAuthenticatedAuthenticationToken auth =
+                new PreAuthenticatedAuthenticationToken("embed-guest", details, authorities);
         auth.setDetails(details);
         try {
             SecurityContextHolder.getContext().setAuthentication(auth);
@@ -274,6 +341,20 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
             writeInvalid(resp);
             return null;
         }
+        // saiku#1435: an authoring JWT MUST pin a tenant. The claim is the only
+        // thing that decides which folder its bearer may create objects in, so a
+        // token without one is refused outright rather than being handed a
+        // default scope. Anything unusable (traversal payloads, over-long ids)
+        // fails isValidTenantId and lands here too.
+        String tenantId = null;
+        if (AUTHORING_KIND.equals(claimKind)) {
+            tenantId = text(claims, "saiku.tenantId");
+            if (!org.saiku.web.embed.EmbedAuthoringScope.isValidTenantId(tenantId)) {
+                LOG.debug("embed authoring JWT has no usable saiku.tenantId claim");
+                writeInvalid(resp);
+                return null;
+            }
+        }
         JsonNode filters = claims.get("saiku.filters");
         String forcedFiltersJson =
                 (filters != null && !filters.isNull() && !filters.isMissingNode()) ? filters.toString() : null;
@@ -308,7 +389,8 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
                 owner.currentRoles(),
                 org.saiku.web.embed.EmbedToken.RedactionPolicy.TENANT_DEFAULT,
                 text(claims, "sub"),
-                forcedFiltersJson);
+                forcedFiltersJson,
+                tenantId);
     }
 
     /**
@@ -406,6 +488,11 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
         } else if (tail.startsWith(APP_SEGMENT)) {
             kind = "app";
             rest = tail.substring(APP_SEGMENT.length());
+        } else if (tail.startsWith(AUTHORING_SEGMENT)) {
+            // saiku#1435: pin the CUBE, ignore the trailing operation. Parsed
+            // before the /page/ + /tile/ strips below so a cube named "page" or
+            // "tile" can't have its ref truncated.
+            return parseAuthoringTarget(tail.substring(AUTHORING_SEGMENT.length()));
         } else {
             return null;
         }
@@ -451,6 +538,32 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
             decoded = "/" + decoded;
         }
         return new ResourceTarget(kind, decoded);
+    }
+
+    /**
+     * saiku#1435 — the Creator Mode URL shape is
+     * {@code /embed/authoring/<connection>/<catalog>/<schema>/<cube>[/<op>]}.
+     * The token is pinned on the 4-segment cube ref, exactly like the
+     * {@code kind="ai"} cube tokens, so a token minted for cube A can't be
+     * replayed against cube B or against a repository file. The optional
+     * operation segment is left for the resource to route.
+     *
+     * @return null when the cube ref is malformed — the caller then falls through
+     *     to the Spring chain, which has no author rule for a nameless target
+     */
+    private static ResourceTarget parseAuthoringTarget(String rest) {
+        String decoded = URLDecoder.decode(rest, StandardCharsets.UTF_8);
+        String[] segments = decoded.split("/");
+        if (segments.length < CUBE_REF_SEGMENTS) {
+            return null;
+        }
+        for (int i = 0; i < CUBE_REF_SEGMENTS; i++) {
+            if (segments[i] == null || segments[i].isBlank() || segments[i].contains("..")) {
+                return null;
+            }
+        }
+        String cubeRef = String.join("/", segments[0], segments[1], segments[2], segments[3]);
+        return new ResourceTarget(AUTHORING_KIND, "/" + cubeRef);
     }
 
     private static void writeInvalid(HttpServletResponse resp) throws IOException {
@@ -522,6 +635,10 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
          *  JSON array (AiFilterSelection shape). The forced RLS slicer the view
          *  injects before execution. Null when no forced filters are present. */
         public final String forcedFiltersJson;
+        /** saiku#1435 — the tenant an {@code authoring} identity writes for; it
+         *  derives the single folder the write path may touch. Always null for
+         *  the read-only kinds, so those identities carry no write scope at all. */
+        public final String tenantId;
 
         public EmbedGuestDetails(
                 String token, String resourceKind, String resourcePath, String ownerUser, List<String> ownerRoles) {
@@ -542,7 +659,7 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
                 String ownerUser,
                 List<String> ownerRoles,
                 org.saiku.web.embed.EmbedToken.RedactionPolicy redactionPolicy) {
-            this(token, resourceKind, resourcePath, ownerUser, ownerRoles, redactionPolicy, null, null);
+            this(token, resourceKind, resourcePath, ownerUser, ownerRoles, redactionPolicy, null, null, null);
         }
 
         /** saiku#1104 — full constructor including the embed-JWT claims. */
@@ -555,6 +672,29 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
                 org.saiku.web.embed.EmbedToken.RedactionPolicy redactionPolicy,
                 String jwtSub,
                 String forcedFiltersJson) {
+            this(
+                    token,
+                    resourceKind,
+                    resourcePath,
+                    ownerUser,
+                    ownerRoles,
+                    redactionPolicy,
+                    jwtSub,
+                    forcedFiltersJson,
+                    null);
+        }
+
+        /** saiku#1435 — full constructor including the pinned authoring tenant. */
+        public EmbedGuestDetails(
+                String token,
+                String resourceKind,
+                String resourcePath,
+                String ownerUser,
+                List<String> ownerRoles,
+                org.saiku.web.embed.EmbedToken.RedactionPolicy redactionPolicy,
+                String jwtSub,
+                String forcedFiltersJson,
+                String tenantId) {
             this.token = token;
             this.resourceKind = resourceKind;
             this.resourcePath = resourcePath;
@@ -565,6 +705,13 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
                     : redactionPolicy;
             this.jwtSub = jwtSub;
             this.forcedFiltersJson = forcedFiltersJson;
+            this.tenantId = tenantId;
+        }
+
+        /** saiku#1435 — true for a Creator Mode identity (the only kind that may
+         *  reach a write endpoint). */
+        public boolean isAuthoring() {
+            return AUTHORING_KIND.equals(resourceKind);
         }
 
         /** True when this request reached the resource via a public grant

@@ -315,6 +315,15 @@
 	    <security:intercept-url pattern="/rest/saiku/api/embed/query/**" access="hasRole('EMBED_GUEST') or isFullyAuthenticated()" />
 	    <security:intercept-url pattern="/rest/saiku/api/embed/dashboard/**" access="hasRole('EMBED_GUEST') or isFullyAuthenticated()" />
 	    <security:intercept-url pattern="/rest/saiku/api/embed/app/**" access="hasRole('EMBED_GUEST') or isFullyAuthenticated()" />
+	    <!-- saiku#1435 Creator Mode. The ONLY writing surface an embed identity
+	         can reach, and it demands the second role (ROLE_EMBED_AUTHOR) that
+	         embedAuthFilter grants ONLY for a valid resourceKind=authoring token
+	         that also pins a tenant. A query / dashboard / app / ai token carries
+	         GUEST alone, so it structurally cannot post here — the widening is a
+	         URL prefix, not a verb on someone else's endpoint. The public-grant
+	         path is refused by the filter for this prefix, so an anonymous
+	         visitor never gets a write scope. Order matters: before /embed/**. -->
+	    <security:intercept-url pattern="/rest/saiku/api/embed/authoring/**" access="hasRole('EMBED_AUTHOR') or isFullyAuthenticated()" />
 	    <security:intercept-url pattern="/rest/saiku/api/embed/**" access="isFullyAuthenticated()" />
       <!-- saiku#1165 audit-3: route-level admin gate (defense in depth). The
            admin resources already carry @RolesAllowed("ROLE_ADMIN"), but this

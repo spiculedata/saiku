@@ -217,6 +217,42 @@ embed-configurable. Embedders theme the surface through the existing
 `--saiku-embed-*` CSS variables (and the `theme` attribute) just like every
 other embed kind — see "Styling" below.
 
+### Creator Mode — the visitor builds their own (`kind="creator"`, saiku#1435)
+
+The one embed kind that **writes**. For OEM/ISV: your customer builds their own
+dashboard against a cube you pinned, inside your product, under your auth.
+
+```html
+<saiku-embed
+	server="..."
+	token="..."
+	kind="creator"
+	cube="foodmart/FoodMart/FoodMart/Sales"
+	height="720px"
+></saiku-embed>
+```
+
+The visitor gets the pinned cube's catalogue, a rows picker, a measures picker, a
+table / bar / line / pie chart, **Save query** / **Save dashboard**, and a list of
+their own saved items. There is no cube switcher, no repository tree, and no MDX
+editor — and the server would refuse all three anyway: an authoring token pins
+one cube _and_ one `tenantId`, the folder is derived from that tenant server-side,
+and every query is checked against a frozen catalogue of the pinned cube before the
+MDX is generated.
+
+Mint one token per tenant, with a short TTL:
+
+```bash
+curl -X POST 'https://YOUR-SAIKU/rest/saiku/api/embed/tokens' \
+  -u admin:admin -H 'Content-Type: application/json' \
+  -d '{ "resourceKind": "authoring",
+        "resourcePath": "foodmart/FoodMart/FoodMart/Sales",
+        "tenantId": "acme", "ttlHours": 24 }'
+```
+
+Full guide, threat model and endpoint reference:
+[`docs/embed/creator-mode.md`](../../docs/embed/creator-mode.md).
+
 ### Anonymous public embed
 
 If the resource is marked publicly embeddable on the server
@@ -290,18 +326,19 @@ omit `token`.
 (`<saiku-chart>` and `<saiku-dashboard>` have their own, narrower attribute
 tables above.)
 
-| Attribute | Default      | Notes                                                                                                                                                                                                        |
-| --------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `server`  | _(optional)_ | Origin of the Saiku launcher, e.g. `https://demo.saiku.bi`. Leave empty for same-origin (v3.19+)                                                                                                             |
-| `path`    | _(required)_ | `kind=query`: saved query path (`.saiku`) — `kind=dashboard`: dashboard path (`.saikudash`) — `kind=ai`: cube ref `connection/catalog/schema/cubeName` — `kind=app`: App Builder document path (`.saikuapp`) |
-| `kind`    | `query`      | `query`, `dashboard`, `ai`, or `app`                                                                                                                                                                         |
-| `token`   | _(none)_     | Embed token from `POST /saiku/api/embed/tokens`. Omit for public reads                                                                                                                                       |
-| `render`  | `table`      | For `kind=query`: `table`, `matrix`, `chart`, or `kpi` (v3.20)                                                                                                                                               |
-| `mode`    | `bar`        | For `render=chart`: `bar`, `line`, or `pie`                                                                                                                                                                  |
-| `height`  | `400px`      | CSS height of the rendered surface                                                                                                                                                                           |
-| `space`   | _(none)_     | For `kind=ai`: Agent Space persona id — scopes the ask server-side (v3.20)                                                                                                                                   |
-| `filter`  | _(none)_     | For `kind=query`: JSON array of slicer overrides applied at embed time (v3.20)                                                                                                                               |
-| `theme`   | _(light)_    | `light`, `dark`, or `auto` (follow `prefers-color-scheme`) (v3.20)                                                                                                                                           |
+| Attribute | Default                           | Notes                                                                                                                                                                                                        |
+| --------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `server`  | _(optional)_                      | Origin of the Saiku launcher, e.g. `https://demo.saiku.bi`. Leave empty for same-origin (v3.19+)                                                                                                             |
+| `cube`    | _(none)_                          | For `kind=creator` (saiku#1435): cube ref `connection/catalog/schema/cubeName`; the token pins it, so there is no switcher. Falls back to `path` when unset                                                  |
+| `path`    | _(required unless `cube` is set)_ | `kind=query`: saved query path (`.saiku`) — `kind=dashboard`: dashboard path (`.saikudash`) — `kind=ai`: cube ref `connection/catalog/schema/cubeName` — `kind=app`: App Builder document path (`.saikuapp`) |
+| `kind`    | `query`                           | `query`, `dashboard`, `ai`, `app`, or `creator` (saiku#1435)                                                                                                                                                 |
+| `token`   | _(none)_                          | Embed token from `POST /saiku/api/embed/tokens`. Omit for public reads                                                                                                                                       |
+| `render`  | `table`                           | For `kind=query`: `table`, `matrix`, `chart`, or `kpi` (v3.20)                                                                                                                                               |
+| `mode`    | `bar`                             | For `render=chart`: `bar`, `line`, or `pie`                                                                                                                                                                  |
+| `height`  | `400px`                           | CSS height of the rendered surface                                                                                                                                                                           |
+| `space`   | _(none)_                          | For `kind=ai`: Agent Space persona id — scopes the ask server-side (v3.20)                                                                                                                                   |
+| `filter`  | _(none)_                          | For `kind=query`: JSON array of slicer overrides applied at embed time (v3.20)                                                                                                                               |
+| `theme`   | _(light)_                         | `light`, `dark`, or `auto` (follow `prefers-color-scheme`) (v3.20)                                                                                                                                           |
 
 The component re-renders whenever an attribute changes, so frameworks
 binding state to attrs (React's JSX, Vue's `:server="..."`, etc.) just
@@ -427,6 +464,12 @@ saiku-embed {
 }
 ```
 
+Creator Mode (`kind="creator"`, saiku#1435) adds three variables for the builder
+chrome, each defaulting to the existing tokens so a host that sets nothing new
+still looks right: `--saiku-embed-surface` (panel background),
+`--saiku-embed-control` (select / input background) and
+`--saiku-embed-accent-soft` (control hover / selected background).
+
 ### Theming the chart itself
 
 The variables above style the embed **chrome** (frame, header, table). To brand
@@ -455,11 +498,20 @@ An embed with none of these set renders exactly as before (ECharts defaults).
   `X-Saiku-Embed-Token`. Never a `?token=` query parameter — those leak
   into access logs, proxy logs, browser history, and outbound
   `Referer`.
+- **Creator Mode writes are a URL prefix, not a verb.** The embed identity is
+  admitted only under `/rest/saiku/api/embed/authoring/**` and only with a
+  second role (`ROLE_EMBED_AUTHOR`) that a read token never carries. The target
+  path is always re-derived from the token's `tenantId`; no endpoint there accepts
+  a caller-supplied path, and object names are reduced to a single safe path
+  segment. Creator queries are `QUERYMODEL`-only — raw MDX, filters, sort
+  expressions, calculated members, named sets and query parameters are refused —
+  and every hierarchy / level / member / measure is checked against a frozen
+  catalogue of the pinned cube.
 - **Server-side authoritative.** Tokens are opaque random 256-bit ids
   with no embedded claims; the server looks them up on every request.
   Revocation takes effect on the very next request.
 - **Per-resource scope.** A token pins exactly one query, dashboard, cube,
-  or app. Replaying it against any other resource (or any other endpoint)
+  or app — or, for Creator Mode, exactly one cube _and_ one tenant. Replaying it against any other resource (or any other endpoint)
   returns the same opaque `EMBED_INVALID` 401, regardless of whether
   the request used the wrong kind, the wrong path, an expired token,
   or a revoked one. Probes can't enumerate. An `app` token grants the one
@@ -519,3 +571,7 @@ fully self-contained IIFE, per the "single self-contained file" design in
   dependency to keep the bundle tight).
 - AI Query results (`/ai/query`) aren't wired as an `<saiku-embed>`
   source yet — coming in a follow-up.
+- Creator Mode has no drag-and-drop grid yet: a saved dashboard is a single
+  saved query plus a chart type. Tiles, cross-filtering and a full layout
+  builder are the obvious follow-up; the save path already stores whatever
+  `layout` you send, so the document shape won't need to change.
