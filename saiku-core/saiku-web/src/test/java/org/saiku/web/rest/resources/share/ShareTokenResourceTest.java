@@ -140,6 +140,45 @@ public class ShareTokenResourceTest {
         assertEquals(404, r.getStatus());
     }
 
+    /** Issue #1108: mint widened to accept {@code .saikunb} notebooks alongside
+     *  {@code .saikudash} dashboards, and the returned viewer URL must point at
+     *  the notebook share route, not the dashboard one. */
+    @Test
+    public void mint_acceptsNotebookPathAndReturnsNotebookViewerUrl() {
+        session.username = "admin";
+        ds.allow("/nb.saikunb");
+        ShareTokenResource.MintRequest req = new ShareTokenResource.MintRequest();
+        req.dashboardPath = "/nb.saikunb";
+        Response r = resource.mint(req);
+        assertEquals(200, r.getStatus());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) r.getEntity();
+        assertTrue(((String) body.get("url")).startsWith("/ui/notebooks/share#"));
+    }
+
+    @Test
+    public void mint_dashboardPathStillReturnsDashboardViewerUrl() {
+        session.username = "admin";
+        ds.allow("/q.saikudash");
+        ShareTokenResource.MintRequest req = new ShareTokenResource.MintRequest();
+        req.dashboardPath = "/q.saikudash";
+        Response r = resource.mint(req);
+        assertEquals(200, r.getStatus());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) r.getEntity();
+        assertTrue(((String) body.get("url")).startsWith("/ui/share#"));
+    }
+
+    @Test
+    public void mint_rejectsUnrecognisedExtension() {
+        session.username = "admin";
+        ds.allow("/x.saiku");
+        ShareTokenResource.MintRequest req = new ShareTokenResource.MintRequest();
+        req.dashboardPath = "/x.saiku";
+        Response r = resource.mint(req);
+        assertEquals(400, r.getStatus());
+    }
+
     /* --------------------------- stubs ---------------------------- */
 
     private static class StubSessionService extends SessionService {

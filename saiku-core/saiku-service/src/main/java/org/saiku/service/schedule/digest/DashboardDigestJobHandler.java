@@ -19,6 +19,8 @@ import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import org.saiku.service.datasource.IDatasourceManager;
 import org.saiku.service.mail.MailConfig;
 import org.saiku.service.mail.MailMessage;
 import org.saiku.service.mail.MailSender;
@@ -69,6 +71,24 @@ import org.slf4j.LoggerFactory;
  *
  * <p>This handler is read-only over the job payload — it records no per-run state (unlike the
  * threshold-alert handler), so a digest is a pure snapshot each run.
+ *
+ * <h2>Insight digests (saiku#1119)</h2>
+ *
+ * <p>When the payload carries an {@code insight} block the digest gains a "what changed since the
+ * previous period" half:
+ *
+ * <ol>
+ *   <li><b>Opt-out first.</b> {@link DigestOptOut#isOptedOut} is consulted before anything else — an
+ *       opted-out owner is not queried, not narrated, not emailed. The job is skipped and the run is
+ *       recorded as a success with no delivery.</li>
+ *   <li>{@link InsightDigestBuilder} reads each measure over both periods and differences them.</li>
+ *   <li>The bullets are narrated — by the LLM when {@code insight.narrate} is on and egress policy
+ *       permits aggregated values, otherwise (and on any failure) by the deterministic
+ *       {@link TemplateDigestNarrator}.</li>
+ * </ol>
+ *
+ * <p>Delivery is unchanged: same subject, same gate, same self-email fallback — the insight section
+ * rides along in the same message rather than introducing a second send path.
  */
 public final class DashboardDigestJobHandler implements JobHandler {
 
@@ -83,13 +103,28 @@ public final class DashboardDigestJobHandler implements JobHandler {
     private final MailSender mailSender;
     private final MailConfig mailConfig;
     private final MailLinkBuilder linkBuilder;
+    private final DigestOptOutCheck optOutCheck;
+    private final DigestNarrator narrator;
 
-    public DashboardDigestJobHandler(
+    /** Visible for tests only, and deliberately package-private so Spring sees exactly ONE public constructor. */
+    DashboardDigestJobHandler(
             MeasureValueReader valueReader,
             MultiRecipientMailService multiRecipientMailService,
             MailSender mailSender,
             MailConfig mailConfig,
             MailLinkBuilder linkBuilder) {
+        this(valueReader, multiRecipientMailService, mailSender, mailConfig, linkBuilder, null, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public DashboardDigestJobHandler(
+            MeasureValueReader valueReader,
+            MultiRecipientMailService multiRecipientMailService,
+            MailSender mailSender,
+            MailConfig mailConfig,
+            MailLinkBuilder linkBuilder,
+            IDatasourceManager datasourceManager,
+            DigestNarrator narrator) {
         if (valueReader == null) {
             throw new IllegalArgumentException("valueReader is required");
         }
@@ -101,6 +136,18 @@ public final class DashboardDigestJobHandler implements JobHandler {
         this.mailSender = mailSender;
         this.mailConfig = mailConfig;
         this.linkBuilder = linkBuilder == null ? new MailLinkBuilder((String) null) : linkBuilder;
+        this.optOutCheck = ownerUsername -> DigestOptOut.isOptedOut(datasourceManager, ownerUsername);
+        this.narrator = narrator == null ? new TemplateDigestNarrator() : narrator;
+    }
+
+    /**
+     * The opt-out probe, held as a tiny seam so tests can assert "the job was suppressed before it
+     * queried anything" without a repository. Production resolves the CURRENT principal's own
+     * preferences document.
+     */
+    @FunctionalInterface
+    interface DigestOptOutCheck {
+        boolean optedOut(String ownerUsername);
     }
 
     @Override
@@ -111,10 +158,48 @@ public final class DashboardDigestJobHandler implements JobHandler {
         Map<String, Object> payload = job.getPayload();
         DashboardDigestSpec spec = DashboardDigestSpec.fromPayload(payload);
 
-        // (1) Read each measure's current value under the owner's already-established SecurityContext.
+        // (0) saiku#1119 — a per-user opt-out suppresses the run ENTIRELY, before the first query, the
+        // LLM call or the mail composition. Checked first on purpose: an opted-out user asked for no
+        // digests, not for a cheaper one.
+        if (isOptedOut(job.getOwnerUsername())) {
+            log.info("Dashboard digest job {}: owner has opted out of digests; run suppressed", job.getId());
+            return;
+        }
+
+        // (1) saiku#1119 — the insight half first: period-over-period deltas + "what changed" bullets.
+        // Only the period-bearing measures are read here, over their current and previous periods.
+        List<String> bullets = List.of();
+        List<DashboardDigestContent.DeltaLine> deltaLines = List.of();
+        List<MeasureDelta> deltas = List.of();
+        if (spec.isInsightEnabled()) {
+            DigestNarrator activeNarrator = spec.isInsightNarrate() ? narrator : new TemplateDigestNarrator();
+            InsightDigestBuilder builder = new InsightDigestBuilder(valueReader, activeNarrator);
+            InsightDigestBuilder.InsightDigest insight = builder.build(spec);
+            bullets = insight.bullets();
+            deltas = insight.deltas();
+            List<DashboardDigestContent.DeltaLine> rows = new ArrayList<>();
+            for (MeasureDelta d : deltas) {
+                rows.add(new DashboardDigestContent.DeltaLine(
+                        d.label(), d.formattedCurrent(), d.formattedPrevious(), changeText(d)));
+            }
+            deltaLines = rows;
+        }
+
+        // (1b) Each measure's current value under the owner's already-established SecurityContext. A
+        // measure the insight block already read for its current period reuses that value: it is the
+        // period-filtered one the digest is about, and reading it again would be a redundant query
+        // (the deltas arrive in measure order, so they are consumed in step with the measures).
         List<DashboardDigestContent.MeasureLine> lines = new ArrayList<>();
+        int nextDelta = 0;
         for (DashboardDigestSpec.Measure m : spec.getMeasures()) {
-            double value = valueReader.readMeasure(m.getCube(), m.getMeasure(), m.getFilters());
+            double value;
+            if (m.getPeriod() != null
+                    && nextDelta < deltas.size()
+                    && Objects.equals(deltas.get(nextDelta).label(), m.getLabel())) {
+                value = deltas.get(nextDelta++).current();
+            } else {
+                value = valueReader.readMeasure(m.getCube(), m.getMeasure(), m.getFilters());
+            }
             lines.add(new DashboardDigestContent.MeasureLine(m.getLabel(), format(value)));
         }
 
@@ -124,10 +209,32 @@ public final class DashboardDigestJobHandler implements JobHandler {
 
         // (3) Compose the HTML email (all data-derived strings escaped).
         String subject = DashboardDigestContent.subject(spec.getDashboardTitle());
-        String html = DashboardDigestContent.htmlBody(spec.getDashboardTitle(), lines, dashboardUrl);
+        String html =
+                DashboardDigestContent.htmlBody(spec.getDashboardTitle(), lines, bullets, deltaLines, dashboardUrl);
 
         // (4) Deliver: through the gate when recipients are named, else self-email fallback.
         deliver(job.getId(), spec.getRecipients(), subject, html);
+    }
+
+    /** The per-user opt-out probe, resolved against the job owner's own preferences document. */
+    private boolean isOptedOut(String ownerUsername) {
+        try {
+            return optOutCheck.optedOut(ownerUsername);
+        } catch (RuntimeException e) {
+            // Fail OPEN on an unexpected repository failure: a transient outage must not silently stop
+            // every digest on the instance. The read path inside DigestOptOut already swallows its own
+            // errors; this only catches something unforeseen.
+            log.warn(
+                    "Digest opt-out check failed ({}); proceeding with the run",
+                    e.getClass().getSimpleName());
+            return false;
+        }
+    }
+
+    /** The delta column of the insight table: signed absolute plus the percentage when there is one. */
+    private static String changeText(MeasureDelta d) {
+        String pct = d.formattedPercent();
+        return pct.isEmpty() ? d.formattedChange() : d.formattedChange() + " (" + pct + ")";
     }
 
     /**

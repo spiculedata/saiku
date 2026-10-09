@@ -99,30 +99,32 @@
 	/* ----------------------- @-mention autocomplete ---------------------- */
 
 	let textareaEl = $state<HTMLTextAreaElement | null>(null);
-	let usernames = $state<string[]>([]);
-	let usersLoaded = false;
 	let suggestions = $state<string[]>([]);
 	let selectedIndex = $state(0);
+	/** Guards against a slow response for an older query overwriting a newer one. */
+	let usersRequestSeq = 0;
 
-	async function ensureUsers(): Promise<void> {
-		if (usersLoaded) return;
-		usersLoaded = true;
-		try {
-			usernames = (await getUsers()).map((u) => u.username);
-		} catch {
-			usernames = [];
-		}
-	}
+	/** Minimum prefix the server accepts (saiku#1920 — the directory can't be
+	 *  dumped, so autocomplete needs at least two characters to search on). */
+	const MIN_MENTION_QUERY = 2;
 
 	async function refreshSuggestions(): Promise<void> {
 		const caret = textareaEl?.selectionStart ?? body.length;
 		const tok = currentMentionToken(body, caret);
-		if (!tok) {
+		if (!tok || tok.query.length < MIN_MENTION_QUERY) {
 			suggestions = [];
+			selectedIndex = 0;
 			return;
 		}
-		await ensureUsers();
-		suggestions = matchUsers(usernames, tok.query);
+		const seq = ++usersRequestSeq;
+		let matches: string[] = [];
+		try {
+			matches = (await getUsers(tok.query)).map((u) => u.username);
+		} catch {
+			matches = [];
+		}
+		if (seq !== usersRequestSeq) return; // a newer keystroke already asked
+		suggestions = matchUsers(matches, tok.query);
 		selectedIndex = 0;
 	}
 

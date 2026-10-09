@@ -642,32 +642,48 @@ public class AiOssieResource {
                     "Too many AI ask requests — limit is " + askRateLimiter.getMaxCalls() + " per "
                             + (askRateLimiter.getWindowMs() / 1000) + "s. Please retry shortly.");
         }
+        // #1398 — optional history: [{role, content}] for multi-turn conversations.
+        // saiku#1918 (17c, CWE-74): `role` is a closed enum, not free text. It used to be forwarded
+        // to the provider verbatim, and on an OpenAI-compatible endpoint a role:"system" turn IS a
+        // system prompt — appended after this service's own guardrails, so the client got the last
+        // word on the model's instructions. Refused here, alongside the other shape guards and
+        // BEFORE any model or warehouse work, so the caller gets a real 400 listing the legal
+        // values. OssieAiAskService.ChatTurn#wireRole() is the second line of defence for every
+        // other caller.
+        List<org.saiku.service.ossie.ai.OssieAiAskService.ChatTurn> history = new ArrayList<>();
+        Object rawHistory = body.get("history");
+        if (rawHistory instanceof List<?> hlist) {
+            for (int hi = 0; hi < hlist.size(); hi++) {
+                if (hlist.get(hi) instanceof Map<?, ?> hmap) {
+                    String role = strOr(hmap.get("role"));
+                    String content = strOr(hmap.get("content"));
+                    if (role == null || content == null) continue;
+                    if (!isAllowedOssieRole(role)) {
+                        return badRequest(
+                                "history",
+                                "history[" + hi + "].role must be 'user' or 'assistant'; got '" + role + "'.",
+                                List.of("user", "assistant"));
+                    }
+                    history.add(new org.saiku.service.ossie.ai.OssieAiAskService.ChatTurn(role, content));
+                }
+            }
+        }
         try {
             OssieModelDto semantic = ossieDiscoverService.getModel(connection);
             if (modelName == null || modelName.isBlank()) modelName = semantic.getName();
             OssieAiSchema schema = projector.project(connection, semantic, openWarehouseConnection(connection));
 
-            // #1398 — accept optional history: [{role, content}] for multi-turn conversations.
-            List<org.saiku.service.ossie.ai.OssieAiAskService.ChatTurn> history = new ArrayList<>();
-            Object rawHistory = body.get("history");
-            if (rawHistory instanceof List<?> hlist) {
-                for (Object h : hlist) {
-                    if (h instanceof Map<?, ?> hmap) {
-                        String role = strOr(hmap.get("role"));
-                        String content = strOr(hmap.get("content"));
-                        if (role != null && content != null) {
-                            history.add(new org.saiku.service.ossie.ai.OssieAiAskService.ChatTurn(role, content));
-                        }
-                    }
-                }
-            }
             org.saiku.service.ossie.ai.OssieAiAskService.AskResult ar =
                     askService.ask(question, schema, connection, modelName, history);
             if (ar.error() != null) {
                 Map<String, Object> err = new LinkedHashMap<>();
                 err.put("error", "ASK_FAILED");
-                err.put("message", ar.error());
-                if (ar.rawResponse() != null) err.put("rawResponse", ar.rawResponse());
+                // saiku#1920: the provider's own error text and raw completion are NOT
+                // echoed. They carry vendor request ids, quota state, masked key fragments
+                // and — for a content-policy refusal — an echo of the prompt. The detail is
+                // in the server log; the caller gets a stable, generic reason.
+                log.warn("Ossie AI ask rejected by the provider: {}", ar.error());
+                err.put("message", "the AI provider could not answer that question");
                 return Response.status(Response.Status.BAD_REQUEST)
                         .entity(err)
                         .type(MediaType.APPLICATION_JSON)
@@ -681,14 +697,19 @@ public class AiOssieResource {
             wrapped.put("connection", connection);
             wrapped.put("model", modelName);
             wrapped.put("queryUsed", req);
-            wrapped.put("rawLlmResponse", ar.rawResponse());
+            // saiku#1920: rawLlmResponse dropped — the vendor completion can echo prompt
+            // content and sample values back at the caller. The parsed request + response
+            // above are the useful, non-leaky contract.
             wrapped.put("response", resp);
             return Response.ok(wrapped).type(MediaType.APPLICATION_JSON).build();
         } catch (OssieAiValidationException e) {
             return badRequest(e.getField(), e.getMessage(), e.getAvailable());
         } catch (Exception e) {
+            // saiku#1920: JDBC/warehouse exception text names the driver, the URL, the
+            // schema and sometimes the failing SQL — none of which belongs in a client
+            // response. Log it in full, return a generic reason.
             log.error("Ossie AI ask failed", e);
-            return error("ask failed: " + e.getMessage());
+            return error("ask failed");
         }
     }
 
@@ -696,6 +717,18 @@ public class AiOssieResource {
         if (v == null) return null;
         String s = v.toString();
         return s.isBlank() ? null : s;
+    }
+
+    /**
+     * saiku#1918 (17c): the closed set of conversation roles the ask surface accepts. Case- and
+     * whitespace-insensitive so a chat UI that sends {@code "User"} still works; anything else is
+     * refused rather than coerced, so the caller learns their history shape is wrong instead of
+     * silently having one of their turns reinterpreted.
+     */
+    private static boolean isAllowedOssieRole(String role) {
+        if (role == null) return false;
+        String r = role.trim();
+        return "user".equalsIgnoreCase(r) || "assistant".equalsIgnoreCase(r);
     }
 
     // -------------------------------------------------------------------

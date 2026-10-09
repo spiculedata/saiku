@@ -12,6 +12,10 @@ import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
+import org.saiku.service.ossie.generate.GeneratedModelStore;
+import org.saiku.service.ossie.generate.OssieGenerationJob;
+import org.saiku.service.ossie.generate.OssieGenerationJobStore;
+import org.saiku.service.ossie.generate.OssieModelGenerationService;
 import org.saiku.service.schema.generate.apply.OpApplier;
 import org.saiku.service.schema.generate.enrich.LlmEnricher;
 import org.saiku.service.schema.generate.enrich.provider.LlmProvider;
@@ -19,9 +23,11 @@ import org.saiku.service.schema.generate.enrich.provider.LlmProviderFactory;
 import org.saiku.service.schema.generate.enrich.provider.NoopProvider;
 import org.saiku.service.schema.generate.infer.SchemaInferrer;
 import org.saiku.service.schema.generate.introspect.JdbcIntrospector;
+import org.saiku.service.schema.generate.quickstart.QuickstartIngestService;
 import org.saiku.service.schema.generate.session.SchemaGenOrchestrator;
 import org.saiku.service.schema.generate.session.SchemaGenSessionStore;
 import org.saiku.service.schema.generate.writer.MondrianSchemaWriter;
+import org.saiku.web.rest.resources.quickstart.QuickstartResource;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
 
 /**
@@ -31,6 +37,29 @@ import org.springframework.context.support.ClassPathXmlApplicationContext;
  * property-name drift between Java types and XML surfaces here before it reaches production.
  */
 public class SchemaGenWiringSmokeTest {
+
+    /** saiku#1439 — the one-click Ossie generation graph wires and shares its singletons. */
+    @Test
+    public void contextLoadsWithOssieGenerationBeans() {
+        try (ClassPathXmlApplicationContext ctx = new ClassPathXmlApplicationContext("schemagen-wiring-test.xml")) {
+            assertNotNull(ctx.getBean("ossieGenerationJobStore", OssieGenerationJobStore.class));
+            assertNotNull(ctx.getBean("generatedModelStore", GeneratedModelStore.class));
+            OssieModelGenerationService service =
+                    ctx.getBean("ossieModelGenerationService", OssieModelGenerationService.class);
+            assertNotNull(service);
+            assertNotNull(ctx.getBean("ossieGenerateResource", OssieGenerateResource.class));
+
+            // The service and the REST resource must share ONE job store. If they didn't, a job id
+            // handed back by POST would 404 on the follow-up GET — the exact failure this test
+            // exists to prevent, and one no compile step would catch.
+            OssieGenerationJobStore storeFromServiceGraph =
+                    ctx.getBean("ossieGenerationJobStore", OssieGenerationJobStore.class);
+            OssieGenerationJob created = storeFromServiceGraph.create("ds-1", "warehouse");
+            assertNotNull(
+                    "a job published into the shared store must be retrievable",
+                    storeFromServiceGraph.get(created.id()));
+        }
+    }
 
     @Test
     public void contextLoadsWithSchemaGenBeans() {
@@ -84,6 +113,13 @@ public class SchemaGenWiringSmokeTest {
                     DatasourceJdbcConnectionProvider.extractKey(
                             "jdbc:mondrian:Jdbc=jdbc:h2:mem:test;Catalog=mondrian://x;JdbcDrivers=org.h2.Driver",
                             "JdbcDrivers"));
+
+            // saiku#1117: the quickstart CSV-upload beans sit right beside these in production
+            // wiring — assert they resolve too so a constructor-arg/property drift there fails
+            // this same fast smoke test instead of only showing up at webapp boot.
+            assertNotNull(ctx.getBean("quickstartIngestService", QuickstartIngestService.class));
+            assertNotNull(ctx.getBean("quickstartResource", QuickstartResource.class));
+
             assertTrue(true);
         }
     }

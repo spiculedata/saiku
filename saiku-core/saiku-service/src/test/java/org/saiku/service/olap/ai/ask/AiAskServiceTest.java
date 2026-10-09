@@ -844,6 +844,69 @@ public class AiAskServiceTest {
         assertEquals(turn.resultDigest(), secondReq.cellsetDigest());
     }
 
+    /* ---- saiku#1918 (17d): the chain reports what it actually cost ---- */
+
+    @Test
+    public void chainedAskReportsTheTokenUsageOfEveryProviderTurn() {
+        // A chain is one HTTP request and N provider round-trips, each re-sending the cube schema.
+        // If only the request were counted, the most expensive operation on the surface would look
+        // like the cheapest — so the chain has to report the real total for a daily budget to mean
+        // anything.
+        ScriptedProvider provider = new ScriptedProvider(List.of(
+                NlAskResponse.okQuery(fullQueryJson(), "m", 1000, 200, "t1"),
+                NlAskResponse.okInsight(insightJson(), "m", 3000, 400)));
+        AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), provider);
+        svc.setThinQueryService(cannedExecutor(cannedCellDataSet()));
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.AGGREGATED));
+
+        AiAskService.AskChain chain =
+                svc.askChained(CUBE, "build and report", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+
+        assertEquals(2, chain.providerCalls());
+        assertEquals(4000L, chain.inputTokens());
+        assertEquals(600L, chain.outputTokens());
+        assertEquals(4600L, chain.totalTokens());
+    }
+
+    @Test
+    public void aDegradedTurnStillReportsItsUsage() {
+        // The provider was called and billed even though we could not use the answer. Reporting zero
+        // here would make every failure free, which is exactly when an operator least expects it.
+        NlAskResponse degraded = NlAskResponse.degraded("upstream exploded", "m");
+        ScriptedProvider provider = new ScriptedProvider(List.of(degraded));
+        AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), provider);
+        svc.setThinQueryService(cannedExecutor(cannedCellDataSet()));
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.AGGREGATED));
+
+        AiAskService.AskChain chain =
+                svc.askChained(CUBE, "build and report", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+
+        assertEquals(1, chain.providerCalls());
+        assertTrue(chain.steps().get(0).degraded());
+    }
+
+    @Test
+    public void singleTurnOutcomeCarriesTheProvidersTokenUsage() {
+        // The sync /ask path charges the same budget, so AskOutcome has to carry usage too.
+        ScriptedProvider provider = new ScriptedProvider(List.of(NlAskResponse.okInsight(insightJson(), "m", 120, 45)));
+        AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), provider);
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.AGGREGATED));
+
+        AiAskService.AskOutcome out = svc.ask(CUBE, "spot the trend", List.of());
+
+        assertEquals(120, out.inputTokens());
+        assertEquals(45, out.outputTokens());
+        assertEquals(165L, out.totalTokens());
+    }
+
+    @Test
+    public void anOutcomeWithNoReportedUsageReportsZeroRatherThanNegative() {
+        // -1 is the "provider didn't report" sentinel. Summing it naively would make totalTokens()
+        // negative and read as a credit against the budget.
+        AiAskService.AskOutcome out = AiAskService.AskOutcome.degraded("no provider", "m");
+        assertEquals(0L, out.totalTokens());
+    }
+
     @Test
     public void chainedAskForcesInsightOnContinuationTurnByDefault() {
         // OPT-1: the continuation (report) turn is asked with forceTool=INSIGHT so the provider
@@ -1853,6 +1916,31 @@ public class AiAskServiceTest {
                 "missing chartType on a chart tile defaults to bar",
                 "bar",
                 spec.tiles().get(2).chartType());
+    }
+
+    /**
+     * Issue #1481 — the tile chartType allowlist was a five-id MVP set, so every other palette type
+     * (treemap, sunburst, waterfall, radar, heatmap, map, the stacked variants, bubble) was silently
+     * downgraded to "bar" here even though the dashboard tile renderer draws all of them. Each id in
+     * the canonical catalog must now survive assembly untouched.
+     */
+    @Test
+    public void buildDashboardKeepsEveryCatalogChartType() {
+        String template =
+                "{\"title\":\"Catalog\",\"tiles\":[{\"title\":\"t\",\"type\":\"chart\",\"chartType\":\"%s\",\"query\":%s}]}";
+        for (String id : AiViewChangeCatalog.CHART_TYPE_IDS) {
+            String payload = String.format(template, id, VALID_TILE_QUERY);
+            AiAskService svc = new AiAskService(
+                    fixedSchemaService(salesSchemaWithMeasure()), stub(NlAskResponse.okDashboard(payload, "m", 0, 0)));
+
+            DashboardSpec spec = svc.buildDashboard(CUBE, "catalog", List.of(), null);
+
+            assertFalse("degraded for chartType " + id, spec.degraded());
+            assertEquals(
+                    "chartType " + id + " must not be coerced",
+                    id,
+                    spec.tiles().get(0).chartType());
+        }
     }
 
     @Test

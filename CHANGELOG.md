@@ -130,6 +130,20 @@ All notable changes to Saiku are documented here. This project follows
   - Docs: [`docs/embed/creator-mode.md`](docs/embed/creator-mode.md).
   - Known gap, called out in the docs: a saved dashboard is a single saved query
     plus a chart type — no drag-and-drop grid yet.
+- **True per-token LLM streaming behind the existing SSE ask endpoints**
+  (saiku#1484). `/ai/ask/stream` and `/ai/spaces/{id}/ask/stream` used to
+  *replay* a finished response as word-sized deltas, so a client rendered
+  progressively while the first token was still seconds away. The provider
+  call is now a real stream: Anthropic's `input_json_delta` events and
+  OpenAI's `tool_calls[].function.arguments` fragments are decoded on the fly,
+  and each piece of the model's prose is forwarded as a `chunk` event as it is
+  written. The wire shape is unchanged — `model`, then `intent` (as soon as
+  the model commits to a tool), then `chunk`s, then `final` — so no client
+  change is needed, and a provider with no streaming transport (or an
+  OpenAI-compatible gateway that answers a streaming request with a buffered
+  body) still produces exactly the old event sequence. A `QUERY` or dashboard
+  payload streams no `chunk` events: half a JSON query is not something a user
+  should watch being typed.
 
 ### Fixed
 
@@ -526,6 +540,22 @@ Two changes are visible behaviour changes for API clients — see **Breaking**.
   account-level key/value store, keyed on the authenticated caller. The first
   consumer is the onboarding tour, which now stays dismissed per *person* rather
   than per browser. (saiku#1857)
+- **Insight digests — the scheduled dashboard digest now says what *changed*.**
+  An optional `insight` block on a `DASHBOARD_DIGEST` job adds a
+  period-over-period comparison above the usual measure table: each measure may
+  declare a `period` (time axis + level + current preset), the job reads it twice
+  — current period and `previous_period`, both as ordinary typed-AI-Query
+  relative slicers, so no MDX is hand-written — and emails up to three
+  "what changed" bullets plus the delta table behind them. The bullets are
+  narrated by the configured LLM from the *server-computed* deltas (the
+  `emit_insight` tool is forced, so nothing is executed), and fall back to a
+  deterministic template whenever narration is off, the provider is
+  unconfigured, or the LLM-egress policy withholds aggregates — an unwired
+  egress guard denies, so figures never leave the box unasked. A per-user
+  opt-out (`{"dashboardDigestOptOut": true}` in the user's own preferences
+  document) suppresses the run *before the first query*. A payload with no
+  `insight` block produces exactly the email it did before. Docs:
+  [`docs/INSIGHT-DIGESTS.md`](docs/INSIGHT-DIGESTS.md). (saiku#1119)
 
 ### Fixed
 

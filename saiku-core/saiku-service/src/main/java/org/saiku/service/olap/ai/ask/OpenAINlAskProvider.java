@@ -390,6 +390,130 @@ public class OpenAINlAskProvider extends AbstractNlAskProvider {
         return parseToolResponse(body, model);
     }
 
+    // ---------- streaming (saiku#1484) ----------
+
+    @Override
+    StreamDecoder streamDecoder() {
+        return new OpenAiStreamDecoder();
+    }
+
+    /**
+     * Folds the Chat Completions event stream back into a buffered response body.
+     *
+     * <p>Each {@code data:} chunk carries {@code choices[0].delta}, and a tool call arrives as a
+     * series of {@code delta.tool_calls[]} fragments keyed by their own {@code index}: the first
+     * carries the call id and function name, the rest are {@code arguments} string fragments that
+     * concatenate to the function's JSON. Reassembled in that same shape, the body is byte-for-byte
+     * what a buffered call returns, so {@link #parseToolResponse} handles it unchanged.
+     *
+     * <p>{@code usage} is not requested ({@code stream_options.include_usage} isn't understood by
+     * every OpenAI-compatible gateway, and a rejected unknown field would break the whole call), so
+     * a streamed turn reports unknown token counts where a buffered one would have reported real
+     * ones. Consumers already treat {@code -1} as "unknown".
+     */
+    static final class OpenAiStreamDecoder extends AbstractNlAskProvider.StreamDecoder {
+
+        /** One in-flight {@code tool_calls[]} entry. */
+        private static final class Call {
+            String id;
+            String name;
+            final ProseDeltaScanner scanner = new ProseDeltaScanner();
+            boolean prose;
+        }
+
+        private final java.util.Map<Integer, Call> calls = new java.util.LinkedHashMap<>();
+        private final StringBuilder content = new StringBuilder();
+        private String model = "";
+        private boolean modelAnnounced;
+        private String finishReason;
+
+        @Override
+        void accept(JsonNode event, NlAskStreamListener listener) throws IOException {
+            if (event.has("error")) {
+                String message = event.path("error").path("message").asText("provider stream error");
+                throw StreamAbort.of(message, model);
+            }
+            if (event.hasNonNull("model")) {
+                model = event.path("model").asText();
+                if (!modelAnnounced) {
+                    // Every chunk repeats the model id; announce it once, like the buffered path.
+                    modelAnnounced = true;
+                    listener.onModel(model);
+                }
+            }
+            JsonNode choices = event.path("choices");
+            if (!choices.isArray() || choices.isEmpty()) {
+                return; // keep-alive / usage-only chunk
+            }
+            JsonNode choice = choices.get(0);
+            if (choice.hasNonNull("finish_reason")) {
+                finishReason = choice.path("finish_reason").asText();
+            }
+            JsonNode delta = choice.path("delta");
+            if (delta.hasNonNull("content")) {
+                content.append(delta.path("content").asText(""));
+            }
+            JsonNode toolCalls = delta.path("tool_calls");
+            if (!toolCalls.isArray()) {
+                return;
+            }
+            for (JsonNode fragment : toolCalls) {
+                int index = fragment.path("index").asInt(calls.size());
+                Call call = calls.computeIfAbsent(index, i -> new Call());
+                if (fragment.hasNonNull("id")) {
+                    call.id = fragment.path("id").asText();
+                }
+                JsonNode function = fragment.path("function");
+                String name = function.path("name").asText("");
+                if (!name.isEmpty() && call.name == null) {
+                    // OpenAI sends the whole function name in the first fragment for this index.
+                    // First one wins: some gateways repeat it on every fragment, and concatenating
+                    // those would produce a name no tool matches.
+                    call.name = name;
+                    listener.onToolSelected(name);
+                    // Only prose tools stream; a query's half-built JSON is not user-facing.
+                    call.prose = isProseTool(name);
+                }
+                String arguments = function.path("arguments").asText("");
+                if (!arguments.isEmpty()) {
+                    // Always buffer (the assembled call needs the whole argument JSON); only prose
+                    // tools hand the decoded text to the listener as it arrives.
+                    String prose = call.scanner.accept(arguments);
+                    if (call.prose && !prose.isEmpty()) {
+                        listener.onDelta(prose);
+                    }
+                }
+            }
+        }
+
+        @Override
+        String assembledBody() throws IOException {
+            ObjectNode root = MAPPER.createObjectNode();
+            root.put("model", model);
+            ArrayNode choices = root.putArray("choices");
+            ObjectNode choice = choices.addObject();
+            choice.put("index", 0);
+            choice.put("finish_reason", finishReason);
+            ObjectNode message = choice.putObject("message");
+            message.put("role", "assistant");
+            if (content.length() == 0) {
+                message.putNull("content");
+            } else {
+                message.put("content", content.toString());
+            }
+            ArrayNode toolCalls = message.putArray("tool_calls");
+            for (Call call : calls.values()) {
+                ObjectNode node = toolCalls.addObject();
+                node.put("id", call.id);
+                node.put("type", "function");
+                ObjectNode function = node.putObject("function");
+                function.put("name", call.name);
+                function.put("arguments", call.scanner.raw().isEmpty() ? "{}" : call.scanner.raw());
+            }
+            return MAPPER.writeValueAsString(root);
+        }
+    }
+
     /**
      * Parse an OpenAI Chat Completions response body into an {@link NlAskResponse}. Visible for
      * testing — this is the deserialisation contract.

@@ -10,8 +10,12 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.List;
+import org.saiku.web.schedule.OwnerIdentity;
+import org.saiku.web.schedule.OwnerIdentityResolver;
 import org.saiku.web.share.ShareToken;
 import org.saiku.web.share.ShareTokenStore;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.preauth.PreAuthenticatedAuthenticationToken;
@@ -35,6 +39,15 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * HttpSession: each guest request re-presents its token and is re-validated
  * from disk, so revocation and expiry take effect on the very next request and
  * there is no guest "session" to hijack.
+ *
+ * <p><b>saiku#1920 — owner identity is re-resolved on every read.</b> The
+ * share token's {@code ownerRolesSnapshot} is captured at mint time and goes
+ * stale the moment the owner is disabled or demoted; the guest would then keep
+ * reading the dashboard under the old (possibly admin) data scope. Each
+ * request therefore resolves {@link ShareToken#createdBy} through
+ * {@link OwnerIdentityResolver} and runs under the owner's CURRENT roles. An
+ * unknown / disabled / unresolvable owner is absent, and absent collapses to
+ * the same opaque {@code SHARE_INVALID} response (fail-closed).
  */
 public class ShareTokenAuthFilter extends OncePerRequestFilter {
 
@@ -44,10 +57,15 @@ public class ShareTokenAuthFilter extends OncePerRequestFilter {
     public static final String GUEST_ROLE = "ROLE_SHARE_GUEST";
     static final String TOKEN_HEADER = "X-Saiku-Share-Token";
 
-    private final ShareTokenStore store;
+    private static final Logger log = LoggerFactory.getLogger(ShareTokenAuthFilter.class);
 
-    public ShareTokenAuthFilter(ShareTokenStore store) {
+    private final ShareTokenStore store;
+    /** saiku#1920 — live owner identity; mandatory, every read re-resolves. */
+    private final OwnerIdentityResolver ownerResolver;
+
+    public ShareTokenAuthFilter(ShareTokenStore store, OwnerIdentityResolver ownerResolver) {
         this.store = store;
+        this.ownerResolver = ownerResolver;
     }
 
     @Override
@@ -80,18 +98,52 @@ public class ShareTokenAuthFilter extends OncePerRequestFilter {
             return;
         }
 
+        // saiku#1920: the mint-time role snapshot is not trusted — a share link does not
+        // outlive its owner's account. Resolve the owner's live identity or fail closed.
+        OwnerIdentity owner = resolveOwner(token.createdBy);
+        if (owner == null) {
+            writeInvalid(resp);
+            return;
+        }
+
         PreAuthenticatedAuthenticationToken auth = new PreAuthenticatedAuthenticationToken(
                 "share-guest", token.token, List.of(new SimpleGrantedAuthority(GUEST_ROLE)));
         // Pin the authorised dashboard to the principal — ShareViewResource
         // reads it from here, never from client input.
-        auth.setDetails(
-                new ShareGuestDetails(token.token, token.dashboardPath, token.createdBy, token.ownerRolesSnapshot));
+        auth.setDetails(new ShareGuestDetails(token.token, token.dashboardPath, token.createdBy, owner.currentRoles()));
         try {
             SecurityContextHolder.getContext().setAuthentication(auth);
             chain.doFilter(req, resp);
         } finally {
             // Never persist a guest context to the session.
             SecurityContextHolder.clearContext();
+        }
+    }
+
+    /** The same opaque response as a bad/expired token — a probe must not be able to
+     *  tell "this share link is stale" from "this token does not exist". */
+    private static void writeInvalid(HttpServletResponse resp) throws IOException {
+        resp.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        resp.setContentType("application/json");
+        resp.setHeader("X-Content-Type-Options", "nosniff");
+        resp.setHeader("Cache-Control", "no-store");
+        resp.setHeader("Referrer-Policy", "no-referrer");
+        resp.getWriter().write("{\"status\":\"SHARE_INVALID\",\"error\":\"Share link is invalid or expired.\"}");
+    }
+
+    /** saiku#1920 — re-resolve the owner, or null when absent (fail-closed). */
+    private OwnerIdentity resolveOwner(String ownerUser) {
+        if (ownerResolver == null) {
+            log.error("No OwnerIdentityResolver wired into ShareTokenAuthFilter — refusing the share read"
+                    + " (fail-closed).");
+            return null;
+        }
+        try {
+            OwnerIdentity id = ownerResolver.resolve(ownerUser);
+            return (id != null && id.present()) ? id : null;
+        } catch (RuntimeException e) {
+            log.warn("Owner identity resolution threw for '{}' — refusing the share read (fail-closed).", ownerUser, e);
+            return null;
         }
     }
 

@@ -16,10 +16,12 @@ import org.saiku.service.mcp.outbound.McpOutboundClient;
 import org.saiku.service.mcp.outbound.McpOutboundToolCatalog;
 import org.saiku.service.mcp.outbound.McpOutboundToolDescriptor;
 import org.saiku.service.olap.ThinQueryService;
+import org.saiku.service.olap.ai.AiAxisSelection;
 import org.saiku.service.olap.ai.AiCubeMetadataService;
 import org.saiku.service.olap.ai.AiCubeRef;
 import org.saiku.service.olap.ai.AiDataKind;
 import org.saiku.service.olap.ai.AiFilterSelection;
+import org.saiku.service.olap.ai.AiMeasureSelection;
 import org.saiku.service.olap.ai.AiPolicyGuard;
 import org.saiku.service.olap.ai.AiQueryRequest;
 import org.saiku.service.olap.ai.AiRequestJsonSchema;
@@ -292,6 +294,11 @@ public class AiAskService {
      * <p>Exactly one of {@code request} / {@code insight} / {@code viewChange} / {@code
      * emailDraft} / {@code certifiedQuery} is non-null on success (matched to {@link #kind()});
      * all are null on degraded.
+     *
+     * <p>saiku#1918 (17d, CWE-770): {@code inputTokens} / {@code outputTokens} are the provider's
+     * own reported usage for the turn ({@code -1} when it reported none). They exist so the web layer
+     * can charge a real budget against what was actually spent — a per-minute CALL cap cannot tell
+     * a 200-token question from a 90k-token schema dump, and only one of those is worth a dollar.
      */
     public record AskOutcome(
             Kind kind,
@@ -304,9 +311,40 @@ public class AiAskService {
             String model,
             SpaceAccess denial,
             McpToolCallSummary mcpToolCall,
-            CertifiedQuery certifiedQuery) {
+            CertifiedQuery certifiedQuery,
+            int inputTokens,
+            int outputTokens) {
 
-        /** Back-compatible 10-component form (no certified query). */
+        /** Back-compatible 12-component form (no reported token usage). */
+        public AskOutcome(
+                Kind kind,
+                boolean degraded,
+                String reason,
+                AiQueryRequest request,
+                AiInsight insight,
+                AiViewChange viewChange,
+                AiEmailDraft emailDraft,
+                String model,
+                SpaceAccess denial,
+                McpToolCallSummary mcpToolCall,
+                CertifiedQuery certifiedQuery) {
+            this(
+                    kind,
+                    degraded,
+                    reason,
+                    request,
+                    insight,
+                    viewChange,
+                    emailDraft,
+                    model,
+                    denial,
+                    mcpToolCall,
+                    certifiedQuery,
+                    -1,
+                    -1);
+        }
+
+        /** Back-compatible 10-component form (no certified query, no reported token usage). */
         public AskOutcome(
                 Kind kind,
                 boolean degraded,
@@ -321,7 +359,36 @@ public class AiAskService {
             this(kind, degraded, reason, request, insight, viewChange, emailDraft, model, denial, mcpToolCall, null);
         }
 
-        /** Back-compatible 9-component form (no MCP tool call, no certified query). */
+        /** Back-compatible form carrying provider-reported usage but no MCP call or certified query. */
+        public AskOutcome(
+                Kind kind,
+                boolean degraded,
+                String reason,
+                AiQueryRequest request,
+                AiInsight insight,
+                AiViewChange viewChange,
+                AiEmailDraft emailDraft,
+                String model,
+                SpaceAccess denial,
+                int inputTokens,
+                int outputTokens) {
+            this(
+                    kind,
+                    degraded,
+                    reason,
+                    request,
+                    insight,
+                    viewChange,
+                    emailDraft,
+                    model,
+                    denial,
+                    null,
+                    null,
+                    inputTokens,
+                    outputTokens);
+        }
+
+        /** Back-compatible 9-component form (no MCP tool call, certified query or token usage). */
         public AskOutcome(
                 Kind kind,
                 boolean degraded,
@@ -332,7 +399,13 @@ public class AiAskService {
                 AiEmailDraft emailDraft,
                 String model,
                 SpaceAccess denial) {
-            this(kind, degraded, reason, request, insight, viewChange, emailDraft, model, denial, null, null);
+            this(kind, degraded, reason, request, insight, viewChange, emailDraft, model, denial, null, null, -1, -1);
+        }
+
+        /** Total provider-reported tokens for this turn; {@code 0} when nothing was reported. */
+        public long totalTokens() {
+            if (inputTokens < 0 && outputTokens < 0) return 0L;
+            return Math.max(0, inputTokens) + Math.max(0, outputTokens);
         }
 
         public enum Kind {
@@ -360,13 +433,26 @@ public class AiAskService {
             return new AskOutcome(Kind.QUERY, false, null, request, null, null, null, model, SpaceAccess.OK, null);
         }
 
+        public static AskOutcome ok(AiQueryRequest request, String model, int in, int out) {
+            return new AskOutcome(Kind.QUERY, false, null, request, null, null, null, model, SpaceAccess.OK, in, out);
+        }
+
         public static AskOutcome okInsight(AiInsight insight, String model) {
             return new AskOutcome(Kind.INSIGHT, false, null, null, insight, null, null, model, SpaceAccess.OK, null);
+        }
+
+        public static AskOutcome okInsight(AiInsight insight, String model, int in, int out) {
+            return new AskOutcome(Kind.INSIGHT, false, null, null, insight, null, null, model, SpaceAccess.OK, in, out);
         }
 
         public static AskOutcome okViewChange(AiViewChange viewChange, String model) {
             return new AskOutcome(
                     Kind.VIEW_CHANGE, false, null, null, null, viewChange, null, model, SpaceAccess.OK, null);
+        }
+
+        public static AskOutcome okViewChange(AiViewChange viewChange, String model, int in, int out) {
+            return new AskOutcome(
+                    Kind.VIEW_CHANGE, false, null, null, null, viewChange, null, model, SpaceAccess.OK, in, out);
         }
 
         public static AskOutcome okEmailDraft(AiEmailDraft emailDraft, String model) {
@@ -389,9 +475,18 @@ public class AiAskService {
                     Kind.CERTIFIED, false, null, null, null, null, null, null, SpaceAccess.OK, null, certified);
         }
 
+        public static AskOutcome okEmailDraft(AiEmailDraft emailDraft, String model, int in, int out) {
+            return new AskOutcome(
+                    Kind.EMAIL_DRAFT, false, null, null, null, null, emailDraft, model, SpaceAccess.OK, in, out);
+        }
+
         /** Provider-side degrade (transport/parse/refusal) — carries no space-scope denial. */
         public static AskOutcome degraded(String reason, String model) {
             return new AskOutcome(null, true, reason, null, null, null, null, model, SpaceAccess.OK, null);
+        }
+
+        public static AskOutcome degraded(String reason, String model, int in, int out) {
+            return new AskOutcome(null, true, reason, null, null, null, null, model, SpaceAccess.OK, in, out);
         }
 
         /**
@@ -423,8 +518,26 @@ public class AiAskService {
      * (QUERY for a built+executed query, INSIGHT/VIEW_CHANGE/EMAIL_DRAFT for a terminal, or a
      * degraded step for an error / policy stop). {@code hitStepLimit} is true when the cap was
      * reached while the model was still emitting queries (no report produced).
+     *
+     * <p>saiku#1918 (17d): {@code providerCalls} and the token totals are the chain's real cost. A
+     * chain is billed as ONE unit by the per-minute limiter, but it is up to {@code maxSteps}
+     * provider round-trips, each re-sending the cube schema — so "one call" and "one call's worth
+     * of money" diverge by an order of magnitude. Charging the chain's actual usage is the only way
+     * a daily token budget means anything on this endpoint.
      */
-    public record AskChain(List<AskOutcome> steps, boolean hitStepLimit) {}
+    public record AskChain(
+            List<AskOutcome> steps, boolean hitStepLimit, int providerCalls, long inputTokens, long outputTokens) {
+
+        /** Legacy shape: a chain with no usage accounting. */
+        public AskChain(List<AskOutcome> steps, boolean hitStepLimit) {
+            this(steps, hitStepLimit, 0, 0L, 0L);
+        }
+
+        /** Total provider-reported tokens across every round-trip in the chain. */
+        public long totalTokens() {
+            return inputTokens + outputTokens;
+        }
+    }
 
     /**
      * Translate a natural-language question against the cube pointed to by {@code ref}.
@@ -469,7 +582,29 @@ public class AiAskService {
             String cellsetDigest,
             NlAskRequest.ForceTool forceTool,
             AiQueryRequest currentQuery) {
-        return askInternal(ref, question, history, cellsetDigest, forceTool, currentQuery, null);
+        return askInternal(ref, question, history, cellsetDigest, forceTool, currentQuery, null, null);
+    }
+
+    /**
+     * True per-token streaming variant of {@link #ask(AiCubeRef, String, List, String,
+     * NlAskRequest.ForceTool, AiQueryRequest)} (saiku#1484): the model's prose reaches
+     * {@code listener} while it is being written, and the returned {@link AskOutcome} is the same
+     * one the buffered call produces. Pass {@code null} for {@code listener} to get the buffered
+     * behaviour.
+     *
+     * <p>Every guard the buffered path applies — schema load, egress strip of the digest /
+     * currentQuery / history, slash-command expansion, space scoping — is applied identically here,
+     * because it is the same method with a sink attached.
+     */
+    public AskOutcome askStreaming(
+            AiCubeRef ref,
+            String question,
+            List<NlAskMessage> history,
+            String cellsetDigest,
+            NlAskRequest.ForceTool forceTool,
+            AiQueryRequest currentQuery,
+            NlAskStreamListener listener) {
+        return askInternal(ref, question, history, cellsetDigest, forceTool, currentQuery, null, listener);
     }
 
     /**
@@ -491,6 +626,24 @@ public class AiAskService {
             String cellsetDigest,
             NlAskRequest.ForceTool forceTool,
             AiQueryRequest currentQuery) {
+        return askInSpaceStreaming(spaceId, ref, question, history, cellsetDigest, forceTool, currentQuery, null);
+    }
+
+    /**
+     * Space-scoped ask with the model's prose streamed to {@code listener} as it is written
+     * (saiku#1484). Twin of {@link #askInSpace} — same allowlist enforcement, same pre-LLM scope
+     * decision, same post-LLM re-check of the cube the model actually emitted; the only difference
+     * is that the provider call streams.
+     */
+    public AskOutcome askInSpaceStreaming(
+            String spaceId,
+            AiCubeRef ref,
+            String question,
+            List<NlAskMessage> history,
+            String cellsetDigest,
+            NlAskRequest.ForceTool forceTool,
+            AiQueryRequest currentQuery,
+            NlAskStreamListener listener) {
         if (spaces == null) {
             return AskOutcome.degraded(
                     "agent spaces are not configured on this instance", null, SpaceAccess.SPACES_NOT_CONFIGURED);
@@ -516,7 +669,7 @@ public class AiAskService {
                     null,
                     SpaceAccess.FORBIDDEN);
         }
-        return askInternal(effectiveRef, question, history, cellsetDigest, forceTool, currentQuery, space);
+        return askInternal(effectiveRef, question, history, cellsetDigest, forceTool, currentQuery, space, listener);
     }
 
     /**
@@ -716,6 +869,23 @@ public class AiAskService {
             String cellsetDigest,
             NlAskRequest.ForceTool forceTool,
             AiQueryRequest currentQuery) {
+        return askChained(ref, question, history, cellsetDigest, forceTool, currentQuery, null);
+    }
+
+    /**
+     * Streaming variant of {@link #askChained} (saiku#1484): each step's prose reaches
+     * {@code listener} as the model writes it, tagged by {@link NlAskStreamListener#onStepStart(int)}
+     * so a multi-step consumer can tell the steps apart. The returned {@link AskChain} is the chain
+     * the buffered call would have produced.
+     */
+    public AskChain askChained(
+            AiCubeRef ref,
+            String question,
+            List<NlAskMessage> history,
+            String cellsetDigest,
+            NlAskRequest.ForceTool forceTool,
+            AiQueryRequest currentQuery,
+            NlAskStreamListener listener) {
 
         if (ref == null) {
             return new AskChain(List.of(AskOutcome.degraded("cube ref required", null)), false);
@@ -801,8 +971,20 @@ public class AiAskService {
         final long chainStartNanos = nanoClock.getAsLong();
         final long chainDeadlineNanos = chainDeadlineSeconds() * 1_000_000_000L;
         String lastModel = null; // most recent provider model, for a clean degraded return on deadline
+        // saiku#1918 (17d): accumulate the chain's true cost. Every iteration below is a real
+        // provider round-trip, including the paced retries inside askWithPacedRetry and the turns
+        // that end in a degrade, so the counters are bumped the moment a response comes back rather
+        // than only on the success path.
+        int providerCalls = 0;
+        long inputTokens = 0L;
+        long outputTokens = 0L;
 
         for (int i = 0; i < cap; i++) {
+            // Streaming consumers (the chained SSE endpoint) need to know which step the following
+            // events belong to before the first token of it lands. No-op for a null listener.
+            if (listener != null) {
+                listener.onStepStart(i);
+            }
             // F3: stop the loop cleanly if the whole chain has blown its wall-clock budget. Checked
             // before each provider round-trip (and thus after the previous turn's paced-retry waits).
             // Mirrors the egress-denied early exit: append a degraded step and break — NEVER throw,
@@ -839,7 +1021,11 @@ public class AiAskService {
             // OPT-3: a rate-limited turn (HTTP 429) is paced + retried in place — the SAME request,
             // since a rate limit isn't the model's fault — up to a bounded retry count. A non-429
             // degrade never enters that loop. Shared with buildDashboard (see askWithPacedRetry).
-            NlAskResponse resp = askWithPacedRetry(req);
+            PaskedResponse asked = askWithPacedRetry(req, listener);
+            NlAskResponse resp = asked.response();
+            providerCalls += asked.providerCalls();
+            inputTokens += tokensOrZero(resp.inputTokens());
+            outputTokens += tokensOrZero(resp.outputTokens());
             lastModel = resp.model(); // remember for a clean deadline degrade on a later iteration
 
             if (resp.degraded()) {
@@ -889,8 +1075,9 @@ public class AiAskService {
             }
             AiQueryRequest parsed = outcome.request();
             CellDataSet cds;
+            AiSchema qSchema;
             try {
-                AiSchema qSchema = metadataService.getSchema(parsed.getCube());
+                qSchema = metadataService.getSchema(parsed.getCube());
                 ThinQuery tq = converter.convert(parsed, qSchema);
                 cds = thinQueryService.execute(tq);
             } catch (RuntimeException e) {
@@ -903,14 +1090,111 @@ public class AiAskService {
             if (kAnonymityFilter != null) {
                 kAnonymityFilter.applyToCellDataSet(cds);
             }
-            String resultDigest = CellsetDigestBuilder.digest(cds, CHAIN_DIGEST_MAX_ROWS);
+            // saiku#1918 (17a): the digest is the last hop before the cellset text reaches the
+            // provider, so it re-checks the PII posture of the query that produced it rather than
+            // trusting the converter to have been the only thing that got there. The converter
+            // already refuses a PII axis, so this is the second layer.
+            String resultDigest =
+                    CellsetDigestBuilder.digest(cds, CHAIN_DIGEST_MAX_ROWS, piiDigestPolicy(parsed, qSchema));
             String callId =
                     (resp.toolCallId() != null && !resp.toolCallId().isBlank()) ? resp.toolCallId() : "call_" + i;
             transcript.add(new ToolTurn(callId, "emit_query", resp.payloadJson(), resultDigest));
             turnDigest = resultDigest; // feed forward: unlocks emit_insight + supplies the data
             // else: loop again — the model now has the data and should emit_insight (the report).
         }
-        return new AskChain(List.copyOf(steps), hitStepLimit);
+        return new AskChain(List.copyOf(steps), hitStepLimit, providerCalls, inputTokens, outputTokens);
+    }
+
+    /** Provider-reported token counts use {@code -1} for "not reported"; charge nothing for those. */
+    private static long tokensOrZero(int reported) {
+        return reported < 0 ? 0L : reported;
+    }
+
+    /**
+     * saiku#1918 (17a) — derive the digest redaction policy for a query the chain is about to
+     * hand to the LLM.
+     *
+     * <p>Two things get redacted. A PII level on the row axis means column 0 of every digest row
+     * is a personal caption, so the whole row-header column is suppressed. A PII measure or
+     * column-axis level means a whole column is personal data, so its header name is registered
+     * and every cell under it is suppressed.
+     *
+     * <p>Name resolution goes through the same canonical-or-alias lookups the converter uses, so
+     * an alias that resolves to a PII column is caught here too. A name that resolves to nothing
+     * contributes nothing — an unresolvable axis is the converter's problem to report, not this
+     * method's to guess at.
+     */
+    private static CellsetDigestBuilder.DigestPolicy piiDigestPolicy(AiQueryRequest req, AiSchema schema) {
+        if (req == null || schema == null) return CellsetDigestBuilder.DigestPolicy.NONE;
+        // Only the ROWS axis puts a member caption in column 0; a PII level on the columns axis
+        // lands in a header cell, which is handled by the named-column list below.
+        boolean redactRowHeader = anyPiiLevel(req.getRows(), schema);
+        java.util.Set<String> piiHeaders = new java.util.LinkedHashSet<>();
+        if (req.getMeasures() != null) {
+            for (AiMeasureSelection m : req.getMeasures()) {
+                if (m == null) continue;
+                AiSchema.Measure resolved = schema.measures.get(AiSchema.key(m.getName()));
+                if (resolved == null) {
+                    String alias = schema.measureAliases.get(AiSchema.key(m.getName()));
+                    if (alias != null) resolved = schema.measures.get(alias);
+                }
+                if (resolved != null && resolved.pii) piiHeaders.add(resolved.name);
+            }
+        }
+        collectPiiColumnHeaders(req.getColumns(), schema, piiHeaders);
+        if (!redactRowHeader && piiHeaders.isEmpty()) return CellsetDigestBuilder.DigestPolicy.NONE;
+        return new CellsetDigestBuilder.DigestPolicy(redactRowHeader, piiHeaders);
+    }
+
+    private static boolean anyPiiLevel(List<AiAxisSelection> axes, AiSchema schema) {
+        if (axes == null) return false;
+        for (AiAxisSelection a : axes) {
+            if (a == null) continue;
+            AiSchema.Level lvl = resolveLevelQuietly(a, schema);
+            if (lvl != null && lvl.pii) return true;
+        }
+        return false;
+    }
+
+    private static void collectPiiColumnHeaders(
+            List<AiAxisSelection> axes, AiSchema schema, java.util.Set<String> out) {
+        if (axes == null) return;
+        for (AiAxisSelection a : axes) {
+            if (a == null) continue;
+            AiSchema.Level lvl = resolveLevelQuietly(a, schema);
+            if (lvl != null && lvl.pii) out.add(lvl.name);
+        }
+    }
+
+    /** Canonical-or-alias level resolution that returns {@code null} rather than throwing — the
+     *  digest policy is a defence-in-depth layer and must never turn a valid chain into a degrade
+     *  with a worse message than the converter's own. */
+    private static AiSchema.Level resolveLevelQuietly(AiAxisSelection a, AiSchema schema) {
+        if (a.getDimension() == null || a.getLevel() == null) return null;
+        AiSchema.Dimension d = schema.dimensions.get(AiSchema.key(a.getDimension()));
+        if (d == null) {
+            String alias = schema.dimensionAliases.get(AiSchema.key(a.getDimension()));
+            if (alias != null) d = schema.dimensions.get(alias);
+        }
+        if (d == null) return null;
+        AiSchema.Hierarchy h;
+        if (a.getHierarchy() == null || a.getHierarchy().isEmpty()) {
+            if (d.hierarchies.size() != 1) return null;
+            h = d.hierarchies.values().iterator().next();
+        } else {
+            h = d.hierarchies.get(AiSchema.key(a.getHierarchy()));
+            if (h == null) {
+                String alias = d.hierarchyAliases.get(AiSchema.key(a.getHierarchy()));
+                if (alias != null) h = d.hierarchies.get(alias);
+            }
+        }
+        if (h == null) return null;
+        AiSchema.Level lvl = h.levels.get(AiSchema.key(a.getLevel()));
+        if (lvl == null) {
+            String alias = h.levelAliases.get(AiSchema.key(a.getLevel()));
+            if (alias != null) lvl = h.levels.get(alias);
+        }
+        return lvl;
     }
 
     /**
@@ -945,9 +1229,22 @@ public class AiAskService {
      * Extracted so {@link #askChained} and {@link #buildDashboard} share identical paced-retry
      * behaviour rather than duplicating the loop.
      */
-    private NlAskResponse askWithPacedRetry(NlAskRequest req) {
-        NlAskResponse resp = provider.ask(req);
+    private PaskedResponse askWithPacedRetry(NlAskRequest req) {
+        return askWithPacedRetry(req, null);
+    }
+
+    /**
+     * Provider call with the paced 429 / transient-tool-error retry loop, optionally streaming the
+     * model's prose to {@code listener} (saiku#1484).
+     *
+     * <p>Retrying a stream is safe precisely because a rate limit is decided before any content
+     * arrives: the HTTP status is known when the response headers do, so a re-ask starts from
+     * zero deltas and the client never sees a token twice.
+     */
+    private PaskedResponse askWithPacedRetry(NlAskRequest req, NlAskStreamListener listener) {
+        NlAskResponse resp = listener == null ? provider.ask(req) : provider.askStreaming(req, listener);
         int rlRetries = 0;
+        int calls = 1;
         while (resp.degraded() && resp.retryAfterMs() >= 0 && rlRetries < rateLimitRetries()) {
             long wait = resp.retryAfterMs() > 0 ? resp.retryAfterMs() : DEFAULT_RATE_LIMIT_WAIT_MS;
             wait = Math.min(wait, rateLimitMaxWaitMs());
@@ -958,11 +1255,19 @@ public class AiAskService {
                 break; // stop retrying; caller handles the degraded response
             }
             rlRetries++;
+            calls++;
             log.info("AI ask: LLM rate-limited, waited {}ms, retry {}/{}", wait, rlRetries, rateLimitRetries());
-            resp = provider.ask(req);
+            resp = listener == null ? provider.ask(req) : provider.askStreaming(req, listener);
         }
-        return resp;
+        return new PaskedResponse(resp, calls);
     }
+
+    /**
+     * saiku#1918 (17d): a paced provider turn plus how many provider round-trips it actually took.
+     * A rate-limit retry is a real, billed call, so "one ask" is not reliably "one call" — and the
+     * daily budget has to be charged for what was sent, not for what the endpoint counted.
+     */
+    private record PaskedResponse(NlAskResponse response, int providerCalls) {}
 
     /**
      * Cap on the number of tiles {@link #buildDashboard} will keep. Read from env
@@ -987,8 +1292,14 @@ public class AiAskService {
     /** Allowlisted dashboard tile kinds (MVP). Unknown values coerce to {@code table}. */
     private static final java.util.Set<String> TILE_TYPES = java.util.Set.of("chart", "table", "kpi");
 
-    /** Allowlisted chart subtypes for chart tiles. Unknown values coerce to {@code bar}. */
-    private static final java.util.Set<String> CHART_TYPES = java.util.Set.of("bar", "line", "pie", "area", "scatter");
+    /**
+     * Allowlisted chart subtypes for chart tiles — the canonical catalog
+     * ({@link AiViewChangeCatalog#CHART_TYPE_IDS}), i.e. every type the dashboard tile renderer can
+     * draw. It was a five-id MVP set (bar/line/pie/area/scatter) until issue #1481, which silently
+     * downgraded eleven renderable chart types to {@code bar} whenever a model picked one. Unknown
+     * values still coerce to {@code bar}.
+     */
+    private static final java.util.Set<String> CHART_TYPES = AiViewChangeCatalog.CHART_TYPE_IDS;
 
     private static final int DASHBOARD_TITLE_MAX = 120;
     private static final int TILE_TITLE_MAX = 80;
@@ -1088,7 +1399,7 @@ public class AiAskService {
                 spaceSystemPrompt,
                 List.of());
 
-        NlAskResponse resp = askWithPacedRetry(req);
+        NlAskResponse resp = askWithPacedRetry(req).response();
         if (resp.degraded()) {
             // Provider transport/parse/refusal degrade — surface the reason (already generic /
             // OFF_TOPIC-prefixed) so the resource can render it.
@@ -1230,7 +1541,8 @@ public class AiAskService {
             String cellsetDigest,
             NlAskRequest.ForceTool forceTool,
             AiQueryRequest currentQuery,
-            AgentSpace space) {
+            AgentSpace space,
+            NlAskStreamListener listener) {
         if (ref == null) {
             return AskOutcome.degraded("cube ref required", null);
         }
@@ -1355,10 +1667,15 @@ public class AiAskService {
                 skillsFragment,
                 spaceSystemPrompt,
                 List.of());
-        NlAskResponse resp = provider.ask(req);
+        // A null listener is the buffered path, byte for byte the call this method made before
+        // streaming existed (every provider's askStreaming short-circuits to ask in that case).
+        NlAskResponse resp = provider.askStreaming(req, listener);
 
         if (resp.degraded()) {
-            return AskOutcome.degraded(resp.reason(), resp.model());
+            // saiku#1918 (17d): a degraded turn still cost money at the provider — the request was
+            // sent and billed even though we couldn't use the answer. Report its usage so the
+            // budget reflects the spend.
+            return AskOutcome.degraded(resp.reason(), resp.model(), resp.inputTokens(), resp.outputTokens());
         }
         return routeResponse(resp, space, hadCellsetOnScreen);
     }
@@ -1393,7 +1710,7 @@ public class AiAskService {
                             resp.model(),
                             SpaceAccess.FORBIDDEN);
                 }
-                return AskOutcome.ok(parsed, resp.model());
+                return AskOutcome.ok(parsed, resp.model(), resp.inputTokens(), resp.outputTokens());
             }
             if (kind == NlAskResponse.Kind.INSIGHT) {
                 AiInsight insight = mapper.readValue(resp.payloadJson(), AiInsight.class);
@@ -1402,7 +1719,7 @@ public class AiAskService {
                         || insight.getMarkdown().isBlank()) {
                     return AskOutcome.degraded("provider emitted empty insight", resp.model());
                 }
-                return AskOutcome.okInsight(insight, resp.model());
+                return AskOutcome.okInsight(insight, resp.model(), resp.inputTokens(), resp.outputTokens());
             }
             if (kind == NlAskResponse.Kind.EMAIL_DRAFT) {
                 if (!hadCellsetOnScreen) {
@@ -1416,7 +1733,7 @@ public class AiAskService {
                         || draft.getSummary().isBlank()) {
                     return AskOutcome.degraded("provider emitted empty email draft", resp.model());
                 }
-                return AskOutcome.okEmailDraft(draft, resp.model());
+                return AskOutcome.okEmailDraft(draft, resp.model(), resp.inputTokens(), resp.outputTokens());
             }
             if (kind == NlAskResponse.Kind.VIEW_CHANGE) {
                 AiViewChange vc = mapper.readValue(resp.payloadJson(), AiViewChange.class);
@@ -1431,7 +1748,7 @@ public class AiAskService {
                     return AskOutcome.degraded(
                             "provider emitted unknown chartType '" + vc.getChartType() + "'", resp.model());
                 }
-                return AskOutcome.okViewChange(vc, resp.model());
+                return AskOutcome.okViewChange(vc, resp.model(), resp.inputTokens(), resp.outputTokens());
             }
             return AskOutcome.degraded("provider returned unexpected kind: " + kind, resp.model());
         } catch (JsonProcessingException e) {

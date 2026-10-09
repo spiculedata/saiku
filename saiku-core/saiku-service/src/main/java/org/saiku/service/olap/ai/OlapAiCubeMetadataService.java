@@ -213,6 +213,21 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
         if (level == null) {
             throw new AiValidationException("level", "Unknown level '" + levelName + "'", canonicalLevelNames(hier));
         }
+        // saiku#1918 (17a, CWE-359): a PII level's members are the payload the /ai/schema
+        // redaction exists to keep private — the schema view replaces sampleMembers with a
+        // single [REDACTED] sentinel for exactly this level. Without this check the same
+        // captions came straight back through GET /ai/members/search (and MCP search_members),
+        // per person, one page at a time. Refuse the lookup rather than redact the hits:
+        // a "no members" answer for a PII level would be indistinguishable from a genuinely
+        // empty dimension, and the agent would keep paging.
+        if (level.pii) {
+            throw new AiPiiException(
+                    "level",
+                    "Level '" + level.name + "' is annotated PII (saiku.semantic.pii=true); its members are not "
+                            + "searchable over the AI surface. Query an aggregate measure over the parent level "
+                            + "instead of enumerating this one.",
+                    java.util.Collections.singletonList(level.name));
+        }
 
         SaikuCube cube = findCube(ref);
         try {
@@ -449,7 +464,14 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
         } catch (RuntimeException e) {
             log.debug("level annotations unreadable for {}/{}: {}", h.getName(), lvl.getName(), e.getMessage());
         }
-        populateSampleMembers(l, cube, h.getName(), lvl.getName());
+        // saiku#1918 (17a): don't even fetch sample members for a PII level. The in-memory schema
+        // used to keep them because the converter needed captions for name resolution — but the
+        // converter now refuses a PII axis outright and member search refuses the level too, so
+        // nothing legitimate reads them. Skipping the fetch keeps personal data out of the heap and
+        // saves a warehouse round-trip per PII level per schema build.
+        if (!l.pii) {
+            populateSampleMembers(l, cube, h.getName(), lvl.getName());
+        }
         return l;
     }
 

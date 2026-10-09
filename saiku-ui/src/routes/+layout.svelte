@@ -16,6 +16,7 @@
 		Table2,
 		LayoutDashboard,
 		AppWindow,
+		FileText,
 		UserRound,
 		Braces,
 		Database
@@ -72,6 +73,12 @@
 			icon: AppWindow,
 			active: page.url.pathname.startsWith(`${base}/apps`)
 		},
+		{
+			href: `${base}/notebooks`,
+			label: i18n.t('topbar.notebooks', 'Notebooks'),
+			icon: FileText,
+			active: page.url.pathname.startsWith(`${base}/notebooks`)
+		},
 		// saiku#1106: MDX workbench — promoted out of the toolbar's MDXModal
 		// into its own route. Always present, same posture as Dashboards/Apps
 		// (no role gate — any authenticated user who can already open the MDX
@@ -108,8 +115,12 @@
 	]);
 
 	// #941 share viewer: the public /share route renders a dashboard for an
-	// account-free guest — no app chrome (topbar / upgrade banner), no session.
-	const isShare = $derived(page.url.pathname.startsWith(`${base}/share`));
+	// account-free guest — no app chrome (topbar / upgrade banner), no
+	// session. #1108 adds the notebook counterpart at /notebooks/share.
+	const isShare = $derived(
+		page.url.pathname.startsWith(`${base}/share`) ||
+			page.url.pathname.startsWith(`${base}/notebooks/share`)
+	);
 
 	// Chrome-hide: `?chrome=none` renders a page full-bleed with no Saiku topbar
 	// (or upgrade banner) — for embedding an App Builder app in an iframe / kiosk

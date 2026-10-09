@@ -637,6 +637,20 @@
                 <artifactId>spring-security-web</artifactId>
                 <version>${spring.security.version}</version>
             </dependency>
+            <!-- saiku#879: OAuth2 resource-server support for the native MCP
+                 endpoint (bearer-token passthrough auth). oauth2-jose covers
+                 JWT-signed tokens (Keycloak/Auth0/Okta/Entra default); the
+                 opaque-token/introspection path is deferred. -->
+            <dependency>
+                <groupId>org.springframework.security</groupId>
+                <artifactId>spring-security-oauth2-resource-server</artifactId>
+                <version>${spring.security.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework.security</groupId>
+                <artifactId>spring-security-oauth2-jose</artifactId>
+                <version>${spring.security.version}</version>
+            </dependency>
             <!-- javax.servlet:jstl 1.2 (2006): 0 references; saiku is on Jakarta
                  EE 10 (jakarta.servlet) so this javax artifact would have caused
                  a duplicate-namespace conflict anyway. Removed. -->

@@ -1,0 +1,19 @@
+{
+  "issue": 2199,
+  "title": "Query-result PDF export treats warehouse values as text and emits no external image resources",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "a query result containing an image tag in a formatted cell",
+      "then": "the export renderer emits escaped text instead of an image element"
+    },
+    {
+      "id": "C2",
+      "given": "query-result HTML containing image or object tags",
+      "then": "the PDF stylesheet does not emit an external graphic for FOP to fetch"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}
