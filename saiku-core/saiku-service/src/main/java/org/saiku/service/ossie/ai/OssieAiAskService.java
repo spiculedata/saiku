@@ -224,9 +224,22 @@ public class OssieAiAskService {
             req.setModel(modelName);
             return new AskResult(req, null, null, rawJson);
         } catch (Exception e) {
+            // saiku#1920: the message is kept server-side only. It is logged below; the
+            // returned reason is a generic "the provider call failed" so a transport error
+            // can't relay vendor internals (request ids, quota, masked key fragments) to
+            // the caller. Callers that need detail read the server log.
             log.warn("Ossie ask call failed: {}", e.getMessage());
-            return new AskResult(null, null, "provider call failed: " + e.getMessage(), null);
+            return new AskResult(null, null, "provider call failed", null);
         }
+    }
+
+    /** Cap a vendor error body before it reaches the log — enough to debug with, not
+     *  enough to spill a whole prompt echo into a log aggregator. */
+    private static String truncate(String s) {
+        if (s == null) {
+            return "";
+        }
+        return s.length() <= 512 ? s : s.substring(0, 512) + "…[truncated]";
     }
 
     /**
@@ -352,7 +365,12 @@ public class OssieAiAskService {
                 .POST(HttpRequest.BodyPublishers.ofString(body.toString()));
         HttpResponse<String> resp = httpClient.send(req.build(), HttpResponse.BodyHandlers.ofString());
         if (resp.statusCode() >= 400) {
-            throw new IOException("anthropic HTTP " + resp.statusCode() + ": " + resp.body());
+            // saiku#1920: the vendor's error body can carry the request id, quota state,
+            // a masked key fragment and (for content-policy errors) an echo of the prompt.
+            // Log it server-side where the operator can read it; never let it ride out on
+            // an exception message, which the resource layer hands straight to the caller.
+            log.warn("Anthropic ask failed: HTTP {} body={}", resp.statusCode(), truncate(resp.body()));
+            throw new IOException("the AI provider rejected the request (HTTP " + resp.statusCode() + ")");
         }
         JsonNode parsed = MAPPER.readTree(resp.body());
         // Walk content blocks for the tool_use block. tool_choice forces the model to emit it.
@@ -424,7 +442,9 @@ public class OssieAiAskService {
                 .POST(HttpRequest.BodyPublishers.ofString(body.toString()));
         HttpResponse<String> resp = httpClient.send(req.build(), HttpResponse.BodyHandlers.ofString());
         if (resp.statusCode() >= 400) {
-            throw new IOException("openai HTTP " + resp.statusCode() + ": " + resp.body());
+            // saiku#1920: same redaction as the Anthropic transport — see the note there.
+            log.warn("OpenAI ask failed: HTTP {} body={}", resp.statusCode(), truncate(resp.body()));
+            throw new IOException("the AI provider rejected the request (HTTP " + resp.statusCode() + ")");
         }
         JsonNode parsed = MAPPER.readTree(resp.body());
         JsonNode choices = parsed.path("choices");

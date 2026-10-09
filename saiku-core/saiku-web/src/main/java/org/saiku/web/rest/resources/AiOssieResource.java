@@ -678,8 +678,12 @@ public class AiOssieResource {
             if (ar.error() != null) {
                 Map<String, Object> err = new LinkedHashMap<>();
                 err.put("error", "ASK_FAILED");
-                err.put("message", ar.error());
-                if (ar.rawResponse() != null) err.put("rawResponse", ar.rawResponse());
+                // saiku#1920: the provider's own error text and raw completion are NOT
+                // echoed. They carry vendor request ids, quota state, masked key fragments
+                // and — for a content-policy refusal — an echo of the prompt. The detail is
+                // in the server log; the caller gets a stable, generic reason.
+                log.warn("Ossie AI ask rejected by the provider: {}", ar.error());
+                err.put("message", "the AI provider could not answer that question");
                 return Response.status(Response.Status.BAD_REQUEST)
                         .entity(err)
                         .type(MediaType.APPLICATION_JSON)
@@ -693,14 +697,19 @@ public class AiOssieResource {
             wrapped.put("connection", connection);
             wrapped.put("model", modelName);
             wrapped.put("queryUsed", req);
-            wrapped.put("rawLlmResponse", ar.rawResponse());
+            // saiku#1920: rawLlmResponse dropped — the vendor completion can echo prompt
+            // content and sample values back at the caller. The parsed request + response
+            // above are the useful, non-leaky contract.
             wrapped.put("response", resp);
             return Response.ok(wrapped).type(MediaType.APPLICATION_JSON).build();
         } catch (OssieAiValidationException e) {
             return badRequest(e.getField(), e.getMessage(), e.getAvailable());
         } catch (Exception e) {
+            // saiku#1920: JDBC/warehouse exception text names the driver, the URL, the
+            // schema and sometimes the failing SQL — none of which belongs in a client
+            // response. Log it in full, return a generic reason.
             log.error("Ossie AI ask failed", e);
-            return error("ask failed: " + e.getMessage());
+            return error("ask failed");
         }
     }
 

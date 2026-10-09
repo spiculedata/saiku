@@ -1066,9 +1066,12 @@ export interface SaikuUserRef {
 }
 
 /** Minimal authenticated user list (usernames only) — powers @-mention
- *  autocomplete in comments. */
-export async function getUsers(): Promise<SaikuUserRef[]> {
-	const res = await fetch('/rest/saiku/api/users', {
+ *  autocomplete in comments.
+ *
+ *  saiku#1920: the endpoint requires a search prefix of at least 2 characters
+ *  and returns only matches, so the directory can't be dumped wholesale. */
+export async function getUsers(query: string): Promise<SaikuUserRef[]> {
+	const res = await fetch(`/rest/saiku/api/users?q=${encodeURIComponent(query)}`, {
 		credentials: 'include',
 		headers: { Accept: 'application/json' }
 	});

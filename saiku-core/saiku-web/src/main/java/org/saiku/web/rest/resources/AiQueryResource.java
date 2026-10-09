@@ -79,6 +79,12 @@ public class AiQueryResource {
     private org.saiku.service.datasource.DatasourceService datasourceService;
 
     private org.saiku.web.service.SessionService sessionService;
+    /** saiku#1920 — gates the full (unredacted) agent-space record. */
+    private org.saiku.service.user.UserService userService;
+
+    public void setUserService(org.saiku.service.user.UserService s) {
+        this.userService = s;
+    }
     /**
      * Phase 2: optional natural-language ask layer. When set, {@code POST /ai/ask} is enabled
      * (otherwise it returns 503 "not configured"). Held as {@code null} when no Spring wiring
@@ -1112,21 +1118,46 @@ public class AiQueryResource {
      * One space's full record — used by the admin UI when editing a persona. Includes the system
      * prompt and cube allowlist that {@link #listSpaces} omits.
      */
+    /**
+     * One space's record (saiku#1920).
+     *
+     * <p>Previously this returned the whole {@code AgentSpace} — {@code systemPrompt},
+     * {@code cubeAllowlist}, {@code skillAllowlist}, {@code sourcePath} — to <i>any</i>
+     * authenticated caller, which undid the redaction {@link #listSpaces} performs one
+     * line up: a caller could just walk the ids and read every persona and routing
+     * allowlist on the server. The system prompt is the routing/guardrail text and the
+     * allowlist maps which cubes an AI agent can reach, so both are server-side
+     * configuration, not user data.
+     *
+     * <p>Now the same compact {@code AgentSpace.asSummary()} projection {@code /ai/spaces}
+     * returns is the default. The full record is still available for authoring, but only
+     * behind an explicit {@code ?full=true} <i>and</i> {@code userService.isAdmin()}.
+     */
     @GET
     @Path("/spaces/{id}")
     @Produces(MediaType.APPLICATION_JSON)
-    public Response getSpace(@PathParam("id") String id) {
+    public Response getSpace(@PathParam("id") String id, @QueryParam("full") @DefaultValue("false") boolean full) {
         if (askService == null || askService.spaces() == null) {
             return Response.status(Response.Status.NOT_FOUND)
                     .entity(java.util.Map.of("error", "space not found"))
                     .type(MediaType.APPLICATION_JSON)
                     .build();
         }
+        boolean admin = full && userService != null && userService.isAdmin();
+        if (full && !admin) {
+            // 403 discloses nothing beyond what /ai/spaces already does, and unlike a
+            // 404 it can't be used to probe which spaces exist.
+            return Response.status(Response.Status.FORBIDDEN)
+                    .entity(java.util.Map.of("error", "full agent-space records are admin-only"))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
         return askService
                 .spaces()
                 .get(id)
-                .<Response>map(space ->
-                        Response.ok(space).type(MediaType.APPLICATION_JSON).build())
+                .<Response>map(space -> Response.ok(admin ? space : space.asSummary())
+                        .type(MediaType.APPLICATION_JSON)
+                        .build())
                 .orElseGet(() -> Response.status(Response.Status.NOT_FOUND)
                         .entity(java.util.Map.of("error", "space '" + id + "' not found"))
                         .type(MediaType.APPLICATION_JSON)
