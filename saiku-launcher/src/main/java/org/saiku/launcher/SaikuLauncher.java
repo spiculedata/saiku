@@ -12,8 +12,11 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
+import java.util.Locale;
 import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -27,6 +30,7 @@ import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.session.DefaultSessionCache;
 import org.eclipse.jetty.session.FileSessionDataStore;
+import org.saiku.service.security.SecretFileStore;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
@@ -169,15 +173,39 @@ public class SaikuLauncher implements Callable<Integer> {
             }
             System.out.println("Saiku home: " + saikuHome);
 
-            stageSeedAssets(dataDir);
+            // saiku#1953: the demo fixtures below (FoodMart/Bank schemas + H2 data,
+            // the foodmart datasource descriptor, the TPC-DS and Flights Ossie
+            // datasources) are staged behind an explicit gate instead of running on
+            // every boot. SAIKU_DEMO=false used to be ignored here, so a production
+            // deployment following the README's "drop SAIKU_DEMO=true" advice still
+            // came up with four demo datasources and no supported way to opt out.
+            // The gate follows demo mode by default; SAIKU_SEED / -Dsaiku.seed is the
+            // escape hatch in both directions (fixtures without demo accounts, or
+            // demo accounts against the operator's own cubes). See shouldStageSeedFixtures.
+            boolean seedFixtures = shouldStageSeedFixtures(
+                    isDemoModeRequested(), System.getenv("SAIKU_SEED"), System.getProperty("saiku.seed"));
+            // saiku#1953: publish the RESOLVED decision so the webapp's sample loaders
+            // (Database.loadFoodmart / loadBank / loadEarthquakes, which register the
+            // demo datasources independently of the launcher) honour the same gate.
+            System.setProperty("saiku.seed", Boolean.toString(seedFixtures));
+            if (seedFixtures) {
+                stageSeedAssets(dataDir);
+                stageDefaultDatasource(saikuHome);
+                // #1394 demos: TPC-DS + Flights Ossie datasources with H2 fixtures.
+                // Auto-provisioned on first boot so a fresh demo container has three
+                // Ossie datasources ready to poke at via /ai/ossie/models. Idempotent —
+                // stageResource + stageOssieDemoDatasource both no-op when the target
+                // exists, so operator edits survive container restarts.
+                stageOssieDemoDatasources(saikuHome);
+            } else {
+                System.out.println("Demo fixtures not staged: FoodMart/Bank/TPC-DS/Flights are"
+                        + " demo content and seeding now follows demo mode (saiku#1953). Set"
+                        + " SAIKU_SEED=true to install them without demo mode, or SAIKU_DEMO=true"
+                        + " for the bundled demo.");
+            }
+            // The branding sample is a commented CSS template, not a fixture or a
+            // datasource — it carries no data and is inert, so it stays unconditional.
             stageBrandingSample(brandingDir);
-            stageDefaultDatasource(saikuHome);
-            // #1394 demos: TPC-DS + Flights Ossie datasources with H2 fixtures.
-            // Auto-provisioned on first boot so a fresh container has three Ossie
-            // datasources ready to poke at via /ai/ossie/models. Idempotent —
-            // stageResource + stageOssieDemoDatasource both no-op when the target
-            // exists, so operator edits survive container restarts.
-            stageOssieDemoDatasources(saikuHome);
             // saiku#1245: in demo mode, also stage a "Welcome" dashboard
             // under /dashboards/ so a fresh demo container has something
             // ready-to-look-at at first login instead of an empty list.
@@ -298,21 +326,40 @@ public class SaikuLauncher implements Callable<Integer> {
             // XHR returns 401, which the saiku-ui surfaces as the
             // "Session ended" modal. Max-inactive bumped to 7 days so an
             // idle browser tab doesn't get prompted to re-login every hour.
-            File sessionsDir = saikuHome.resolve("sessions").toFile();
+            //
+            // saiku#1859: the store is necessary but NOT sufficient on its own — the
+            // authenticated identity Saiku reads from /rest/saiku/session lived in a
+            // per-JVM map (SessionService.sessionHolder), so it died with the process even
+            // when the container session survived. That half is fixed in
+            // org.saiku.web.service.SessionService, which now mirrors the session map onto
+            // the HttpSession so it rides along in these files.
+            Path sessionsDirPath = saikuHome.resolve("sessions");
+            File sessionsDir = sessionsDirPath.toFile();
             sessionsDir.mkdirs();
-            FileSessionDataStore sessionStore = new FileSessionDataStore();
-            sessionStore.setStoreDir(sessionsDir);
-            DefaultSessionCache sessionCache = new DefaultSessionCache(sessionHandler);
-            sessionCache.setSessionDataStore(sessionStore);
-            sessionHandler.setSessionCache(sessionCache);
-            sessionHandler.setMaxInactiveInterval(7 * 24 * 60 * 60);
+            // The session store holds serialised JSESSIONID + Spring SecurityContext entries —
+            // a session file is a bearer credential. Restrict the directory to the owner (0700 /
+            // owner-only ACL) so a co-tenant on the host cannot lift a session and hijack an
+            // authenticated user (#1919 18c, CWE-732).
+            try {
+                SecretFileStore.restrictDirectory(sessionsDirPath);
+            } catch (IOException e) {
+                System.err.println("WARNING: could not restrict the session store directory " + sessionsDirPath
+                        + " to the owner: " + e.getMessage());
+            }
+            configureSessionPersistence(sessionHandler, sessionsDir);
 
             server.setHandler(webapp);
 
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 try {
                     server.stop();
-                } catch (Exception ignored) {
+                } catch (Exception e) {
+                    // saiku#1859: this used to be `catch (Exception ignored) {}`, which made a
+                    // failed session flush completely invisible — the store's shutdown pass is
+                    // what writes the last live sessions to disk, so swallowing it here turns a
+                    // visible failure into "everyone got logged out and nobody knows why".
+                    System.err.println("Saiku: server.stop() failed during shutdown: " + e);
+                    e.printStackTrace();
                 }
             }));
 
@@ -323,6 +370,33 @@ public class SaikuLauncher implements Callable<Integer> {
             TelemetryService.startIfEnabled(saikuHome, System.getProperty("saiku.version"));
 
             return server;
+        }
+
+        /**
+         * saiku#1859 — point a {@link org.eclipse.jetty.session.SessionHandler} at a
+         * {@link FileSessionDataStore} under {@code sessionsDir}, and make it write a session out
+         * as it is USED rather than only when the cache shuts down.
+         *
+         * <p>{@code saveOnCreate} matters because Jetty's default {@code NEVER_EVICT} cache only
+         * flushes on shutdown: a {@code kill -9}, a crash or a container stop loses every session
+         * that was never flushed. {@code flushOnResponseCommit} (Jetty's default, set explicitly
+         * so the intent is pinned and a future default flip can't silently regress it) writes at
+         * the end of every request that touched the session.
+         *
+         * <p>Package-private and static so it is directly unit-testable without booting Jetty.
+         */
+        static void configureSessionPersistence(
+                org.eclipse.jetty.session.AbstractSessionManager sessionHandler, File sessionsDir)
+                throws java.io.IOException {
+            sessionsDir.mkdirs();
+            FileSessionDataStore sessionStore = new FileSessionDataStore();
+            sessionStore.setStoreDir(sessionsDir);
+            DefaultSessionCache sessionCache = new DefaultSessionCache(sessionHandler);
+            sessionCache.setSessionDataStore(sessionStore);
+            sessionCache.setSaveOnCreate(true);
+            sessionCache.setFlushOnResponseCommit(true);
+            sessionHandler.setSessionCache(sessionCache);
+            sessionHandler.setMaxInactiveInterval(7 * 24 * 60 * 60);
         }
 
         /**
@@ -413,7 +487,178 @@ public class SaikuLauncher implements Callable<Integer> {
         static boolean isDefaultAdminValue(String adminPropertyValue) {
             if (adminPropertyValue == null) return false;
             String enc = adminPropertyValue.split(",", 2)[0].trim();
-            return enc.equals("{noop}admin") || enc.equals(SHIPPED_BCRYPT_ADMIN_DEFAULT);
+            if (enc.equals("{noop}admin") || enc.equals(SHIPPED_BCRYPT_ADMIN_DEFAULT)) {
+                return true;
+            }
+            // saiku#1915: the shipped hash is one bcrypt encoding of "admin", and
+            // bcrypt salts are random — so a re-encoded "admin" (what
+            // SAIKU_ADMIN_PASSWORD=admin produces) is byte-different but is the
+            // SAME password. Compare the password, not the hash string.
+            return hashMatchesAny(enc, DEFAULT_ADMIN_PASSWORDS);
+        }
+
+        /* ------------- saiku#1915: weak admin-password policy ------------- */
+
+        /** The passwords this build ships / documents as the admin default. */
+        private static final Set<String> DEFAULT_ADMIN_PASSWORDS = Set.of("admin");
+
+        /**
+         * saiku#1915: minimum length for a runtime-supplied admin password. The
+         * gate exists to stop an operator's obvious shortcut
+         * ({@code -e SAIKU_ADMIN_PASSWORD=admin}) from putting a network-reachable
+         * instance behind admin/admin; a length floor catches the rest of the
+         * same family ("a", "pass", "admin123").
+         */
+        static final int MIN_ADMIN_PASSWORD_LENGTH = 12;
+
+        /**
+         * saiku#1915 (CWE-1392/CWE-521): password tokens that must never become the
+         * admin password, even though some of them clear the length floor. Compared
+         * case-insensitively against the plaintext and — via bcrypt
+         * {@code matches} — against an already-encoded users.properties row.
+         */
+        private static final Set<String> WEAK_ADMIN_PASSWORDS = Set.of(
+                "admin",
+                "admin1",
+                "admin123",
+                "admin1234",
+                "administrator",
+                "changeme",
+                "changeme123",
+                "default",
+                "letmein",
+                "password",
+                "password1",
+                "password12",
+                "password123",
+                "passw0rd",
+                "p@ssw0rd",
+                "qwerty",
+                "qwerty123",
+                "root",
+                "saiku",
+                "saiku123",
+                "secret",
+                "123456",
+                "12345678",
+                "123456789");
+
+        /**
+         * Strip the Spring Security {@code {id}} prefix off an encoded password,
+         * returning the raw bcrypt token, or null when the value is not bcrypt.
+         */
+        private static String bcryptToken(String encoded) {
+            if (encoded == null) return null;
+            String v = encoded.startsWith("{bcrypt}") ? encoded.substring("{bcrypt}".length()) : encoded;
+            return (v.startsWith("$2a$") || v.startsWith("$2b$") || v.startsWith("$2y$")) ? v : null;
+        }
+
+        /**
+         * True when {@code encoded} is a bcrypt hash of any of {@code candidates}.
+         * Never throws: a malformed hash is simply "not a match", because a
+         * policy check must not become a crash on a bad file.
+         */
+        static boolean hashMatchesAny(String encoded, Collection<String> candidates) {
+            String token = bcryptToken(encoded);
+            if (token == null) return false;
+            BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
+            for (String candidate : candidates) {
+                try {
+                    if (encoder.matches(candidate, token)) return true;
+                } catch (IllegalArgumentException ignore) {
+                    // Malformed bcrypt token — treat as "no match", never as a boot failure.
+                }
+            }
+            return false;
+        }
+
+        /**
+         * saiku#1915: pure policy decision on a plaintext admin password.
+         * Returns a short operator-facing reason when the password must be
+         * refused, or null when it is acceptable.
+         */
+        static String weakAdminPasswordReason(String username, String password) {
+            if (password == null || password.isBlank()) {
+                return "it is empty";
+            }
+            // Denylist first: "changeme12" is both short-ish and famous, and the
+            // operator needs the specific reason, not "too short, try longer".
+            String lower = password.toLowerCase(Locale.ROOT);
+            if (WEAK_ADMIN_PASSWORDS.contains(lower) || DEFAULT_ADMIN_PASSWORDS.contains(lower)) {
+                return "it is a well-known weak password";
+            }
+            if (password.length() < MIN_ADMIN_PASSWORD_LENGTH) {
+                return "it is shorter than " + MIN_ADMIN_PASSWORD_LENGTH + " characters";
+            }
+            if (username != null && password.equalsIgnoreCase(username.trim())) {
+                return "it is identical to the username";
+            }
+            return null;
+        }
+
+        /**
+         * saiku#1915: the hash-side twin of {@link #weakAdminPasswordReason} — an
+         * operators-supplied users.properties only gives us the encoded value, so
+         * the denylist is matched with bcrypt {@code matches}. Length cannot be
+         * asserted from a hash; the plaintext path covers that.
+         */
+        static boolean isWeakAdminValue(String adminPropertyValue) {
+            if (adminPropertyValue == null) return false;
+            String enc = adminPropertyValue.split(",", 2)[0].trim();
+            return hashMatchesAny(enc, WEAK_ADMIN_PASSWORDS);
+        }
+
+        /**
+         * saiku#1915: escape hatch for labs / CI that deliberately run a weak
+         * password. {@code SAIKU_ALLOW_WEAK_ADMIN_PASSWORD=true} (env) or
+         * {@code -Dsaiku.allowWeakAdminPassword=true} (system property), plus the
+         * existing demo-mode / allow-default-admin switches.
+         */
+        static boolean allowWeakAdminPassword() {
+            String env = System.getenv("SAIKU_ALLOW_WEAK_ADMIN_PASSWORD");
+            if (env != null && Boolean.parseBoolean(env.trim())) return true;
+            return Boolean.parseBoolean(System.getProperty("saiku.allowWeakAdminPassword", "false"));
+        }
+
+        /**
+         * True when an operator has explicitly accepted the weak-password risk, so
+         * the policy stays a deliberate decision rather than a side effect. The
+         * existing demo-mode and {@code SAIKU_ALLOW_DEFAULT_ADMIN} switches count —
+         * a lab or the local IT harness that already opts into default credentials
+         * must not be broken by the stricter rule.
+         */
+        static boolean weakPasswordPolicyBypassed() {
+            return allowWeakAdminPassword() || allowDefaultAdmin() || isDemoModeRequested();
+        }
+
+        /** saiku#1915: the refusal text for a password the policy rejects. */
+        static String weakPasswordMessage(String reason, String source) {
+            String bar = "============================================================";
+            return String.join(
+                    System.lineSeparator(),
+                    "",
+                    bar,
+                    "  FATAL: refusing to start — the admin password supplied via",
+                    "  " + source + " is too weak (" + reason + ").",
+                    "",
+                    "  Rotating away from admin/admin only helps if the replacement",
+                    "  is not guessable too: this build requires at least " + MIN_ADMIN_PASSWORD_LENGTH + " characters",
+                    "  and rejects well-known weak passwords.",
+                    "",
+                    "  Fix one of the following, then restart:",
+                    "    * Supply a strong password, from a secret manager mount:",
+                    "        SAIKU_ADMIN_PASSWORD_FILE=/run/secrets/saiku-admin-password",
+                    "      or inline, SAIKU_ADMIN_PASSWORD=<" + MIN_ADMIN_PASSWORD_LENGTH + "+-character-password>",
+                    "    * Or rotate it in users.properties (bcrypt):",
+                    "        htpasswd -nbBC 12 admin <newpassword>",
+                    "    * Or replace the in-memory auth with LDAP / OAuth / SAML",
+                    "      (applicationContext-spring-security-memory.xml).",
+                    "",
+                    "  To start anyway on a lab / CI host that accepts the risk, set:",
+                    "        SAIKU_ALLOW_WEAK_ADMIN_PASSWORD=true",
+                    "  (SAIKU_ALLOW_DEFAULT_ADMIN=true and SAIKU_DEMO=true also opt out)",
+                    bar,
+                    "");
         }
 
         /**
@@ -461,6 +706,17 @@ public class SaikuLauncher implements Callable<Integer> {
             boolean isDefault = usersFile.equals(warPath)
                     ? adminPasswordIsDefault(warPath)
                     : isDefaultAdminValue(readAdminValue(usersFile));
+            // saiku#1915: an external users.properties can carry a re-encoded
+            // admin/admin or another denylisted password — the shipped-hash check
+            // above only sees the byte-identical default.
+            if (!isDefault && !weakPasswordPolicyBypassed()) {
+                String value = usersFile.equals(warPath) ? null : readAdminValue(usersFile);
+                if (isWeakAdminValue(value)) {
+                    System.setProperty("saiku.security.adminIsDefault", "false");
+                    throw new DefaultCredentialsException(
+                            weakPasswordMessage("it is a well-known weak password", "users.properties"));
+                }
+            }
             // Record it so the post-boot warning doesn't cry "default credentials" once rotated.
             System.setProperty("saiku.security.adminIsDefault", Boolean.toString(isDefault));
             if (!shouldRefuse(isDefault, isDemoModeRequested(), allowDefaultAdmin())) {
@@ -476,8 +732,11 @@ public class SaikuLauncher implements Callable<Integer> {
                     "  with default credentials is compromised within seconds.",
                     "",
                     "  Fix one of the following, then restart:",
-                    "    * Set an admin password (no rebuild — recommended):",
+                    "    * Set an admin password (no rebuild — recommended),",
+                    "      from a secret-manager mount or inline:",
+                    "        SAIKU_ADMIN_PASSWORD_FILE=/run/secrets/saiku-admin-password",
                     "        SAIKU_ADMIN_PASSWORD=<a-strong-password>",
+                    "      (at least " + MIN_ADMIN_PASSWORD_LENGTH + " characters; weak passwords are refused too)",
                     "    * Or rotate it in users.properties (bcrypt):",
                     "        htpasswd -nbBC 12 admin <newpassword>",
                     "    * Or replace the in-memory auth with LDAP / OAuth / SAML",
@@ -494,14 +753,24 @@ public class SaikuLauncher implements Callable<Integer> {
         /**
          * Resolve which users.properties Spring Security should authenticate against, and point it
          * there via {@code -Dsaiku.security.usersFile} when an override is active. Precedence:
-         * {@code SAIKU_ADMIN_PASSWORD} / {@code -Dsaiku.admin.password} (hashed into an external
+         * {@code SAIKU_ADMIN_PASSWORD_FILE} / {@code SAIKU_ADMIN_PASSWORD} / {@code -Dsaiku.admin.password}
+         * (hashed into an external
          * file) &gt; an existing {@code <saiku-home>/users.properties} &gt; the WAR's baked default
-         * (returned as {@code warPath}). Never throws — falls back to the bundled file on any I/O error.
+         * (returned as {@code warPath}). Falls back to the bundled file on any I/O error.
+         *
+         * @throws DefaultCredentialsException when a supplied password is too weak
+         *     (saiku#1915) — a refusal must be deliberate, never a side effect of
+         *     an I/O error, so the weak-password check sits outside the try.
          */
         static Path resolveEffectiveUsersFile(Path saikuHome, Path warPath) {
             Path external = saikuHome.resolve("users.properties");
-            String pw = System.getenv("SAIKU_ADMIN_PASSWORD");
-            if (pw == null || pw.isBlank()) pw = System.getProperty("saiku.admin.password");
+            String pw = readSuppliedAdminPassword();
+            if (pw != null && !pw.isBlank() && !weakPasswordPolicyBypassed()) {
+                String reason = weakAdminPasswordReason("admin", pw);
+                if (reason != null) {
+                    throw new DefaultCredentialsException(weakPasswordMessage(reason, adminPasswordSource()));
+                }
+            }
             try {
                 if (pw != null && !pw.isBlank()) {
                     writeAdminUsersFile(external, pw.trim());
@@ -521,6 +790,44 @@ public class SaikuLauncher implements Callable<Integer> {
                         + "); falling back to the bundled default.");
             }
             return warPath;
+        }
+
+        /**
+         * saiku#1915: the operator-supplied admin password, in precedence order —
+         * {@code SAIKU_ADMIN_PASSWORD_FILE} (a secret-manager mount: Docker/
+         * Kubernetes secrets, systemd LoadCredential) >
+         * {@code SAIKU_ADMIN_PASSWORD} (env) > {@code -Dsaiku.admin.password}.
+         * A file value has its trailing newline stripped — every editor adds one
+         * and a secret that ends in {@code \n} is not the secret the operator meant.
+         * Returns null when nothing is supplied.
+         */
+        static String readSuppliedAdminPassword() {
+            String path = System.getenv("SAIKU_ADMIN_PASSWORD_FILE");
+            if (path != null && !path.isBlank()) {
+                try {
+                    return Files.readString(Paths.get(path.trim())).strip();
+                } catch (IOException e) {
+                    throw new IllegalStateException(
+                            "Could not read SAIKU_ADMIN_PASSWORD_FILE (" + path.trim() + "): " + e.getMessage()
+                                    + ". Mount the secret, or set SAIKU_ADMIN_PASSWORD instead.",
+                            e);
+                }
+            }
+            String pw = System.getenv("SAIKU_ADMIN_PASSWORD");
+            if (pw == null || pw.isBlank()) pw = System.getProperty("saiku.admin.password");
+            return pw;
+        }
+
+        /** saiku#1915: which knob supplied the password, for the refusal message. */
+        static String adminPasswordSource() {
+            String path = System.getenv("SAIKU_ADMIN_PASSWORD_FILE");
+            if (path != null && !path.isBlank()) {
+                return "SAIKU_ADMIN_PASSWORD_FILE";
+            }
+            return System.getenv("SAIKU_ADMIN_PASSWORD") != null
+                            && !System.getenv("SAIKU_ADMIN_PASSWORD").isBlank()
+                    ? "SAIKU_ADMIN_PASSWORD"
+                    : "-Dsaiku.admin.password";
         }
 
         /**
@@ -585,6 +892,42 @@ public class SaikuLauncher implements Callable<Integer> {
                 if ("demo".equalsIgnoreCase(p.trim())) return true;
             }
             return false;
+        }
+
+        /**
+         * saiku#1953 — decide whether the demo fixtures (FoodMart + Bank schemas and
+         * H2 data, the {@code foodmart} datasource descriptor, the TPC-DS + Flights
+         * Ossie datasources) are staged into a fresh saiku-home.
+         *
+         * <p>Default: seeding follows demo mode. {@code SAIKU_DEMO=true} keeps seeding
+         * (the documented quickstart path), and a deployment with {@code SAIKU_DEMO}
+         * unset or {@code false} comes up with an empty datasource list — which is what
+         * the README already tells operators to do for a real deployment.
+         *
+         * <p>{@code SAIKU_SEED} (env) and {@code -Dsaiku.seed} (system property) are the
+         * escape hatch in both directions, and both are strictly independent of demo mode:
+         * {@code SAIKU_SEED=true} alone installs the fixtures without the demo accounts,
+         * and {@code SAIKU_DEMO=true SAIKU_SEED=false} runs the demo login against the
+         * operator's own cubes. Precedence: {@code -Dsaiku.seed} > {@code SAIKU_SEED} >
+         * demo mode. Empty / whitespace values count as unset, matching
+         * {@link #resolveDemoAiPolicyDefault}.
+         *
+         * <p>Nothing is ever deleted by turning seeding off — every staging step is
+         * seed-if-absent, so an existing home keeps whatever it already has.
+         *
+         * @param demoMode whether demo mode is active (from {@link #isDemoModeRequested()})
+         * @param envValue current value of the {@code SAIKU_SEED} env var (may be null)
+         * @param propValue current value of the {@code saiku.seed} system property (may be null)
+         * @return true when the demo fixtures should be staged
+         */
+        static boolean shouldStageSeedFixtures(boolean demoMode, String envValue, String propValue) {
+            if (propValue != null && !propValue.isBlank()) {
+                return Boolean.parseBoolean(propValue.trim());
+            }
+            if (envValue != null && !envValue.isBlank()) {
+                return Boolean.parseBoolean(envValue.trim());
+            }
+            return demoMode;
         }
 
         /** True when demo mode is currently in effect (post-bootstrap), which
@@ -943,6 +1286,17 @@ public class SaikuLauncher implements Callable<Integer> {
                     "/seed/agent-spaces/foodmart-sales-analyst.json", spacesDir.resolve("foodmart-sales-analyst.json"));
             stageResource(
                     "/seed/agent-spaces/foodmart-finance-ops.json", spacesDir.resolve("foodmart-finance-ops.json"));
+
+            // Seed the certified-query catalogue (saiku#1430) with Finance's approved monthly
+            // store-sales definition. On a fresh demo the DimSum widget can then answer "what was
+            // monthly revenue" from the approval rather than re-deriving it — and the response is
+            // attributable (source: certified). Idempotent, like every other seed here: an
+            // operator's own certified/ directory is never overwritten.
+            Path certifiedDir = saikuHome.resolve("certified");
+            Files.createDirectories(certifiedDir);
+            stageResource(
+                    "/seed/certified/monthly-store-sales-by-country.json",
+                    certifiedDir.resolve("monthly-store-sales-by-country.json"));
 
             // Seed the tile plugin catalogue (App Builder Phase 2, saiku#1441) with a working
             // example: a self-contained bar-chart tile that renders a record set under the host's

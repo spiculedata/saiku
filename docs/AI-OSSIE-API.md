@@ -793,10 +793,17 @@ Response:
   "connection": "…",
   "model": "…",
   "queryUsed": { /* the OssieAiQueryRequest the LLM produced */ },
-  "rawLlmResponse": "{\"connection\":\"…\",\"rows\":[…]}",
   "response": { /* the full records-format execution result */ }
 }
 ```
+
+`rawLlmResponse` was removed in saiku#1920: the vendor completion can
+echo prompt content and warehouse sample values straight back at the
+caller. `queryUsed` + `response` are the useful, non-leaky contract.
+For the same reason an `ASK_FAILED` response carries a generic
+`"the AI provider could not answer that question"` message and no raw
+provider body — the vendor error text (request id, quota state, masked
+key fragment) is logged server-side, not returned.
 
 **How structured output is enforced** (#1397): the service forces the
 LLM into a `tool_use` (Anthropic) / `tool_choice: function` (OpenAI)

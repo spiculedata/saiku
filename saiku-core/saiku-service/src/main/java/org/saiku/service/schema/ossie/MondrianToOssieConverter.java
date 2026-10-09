@@ -21,11 +21,13 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import javax.xml.parsers.ParserConfigurationException;
 import org.saiku.service.util.xml.SecureXml;
 import org.w3c.dom.Document;
@@ -150,15 +152,26 @@ public final class MondrianToOssieConverter {
 
         Map<String, List<String>> tableKeys = readPhysicalKeys(physicalSchema);
 
-        // Dimension datasets first, keyed by DIMENSION name so the links below resolve.
+        Set<String> factDatasetNames = m4FactDatasetNames(cube);
+
+        // Dimension datasets first, keyed by DIMENSION name so the links below resolve. A dimension
+        // that lives on a fact table (a degenerate dimension, typically the TIME one) is NOT a
+        // dataset of its own: Ossie resolves relationships by dataset name, so a second dataset
+        // with the fact's name would be unreachable and the model invalid. Its fields are folded
+        // into the fact dataset below instead.
         Map<String, Dataset> byDimension = new LinkedHashMap<>();
+        Map<String, Dataset> degenerateByFact = new LinkedHashMap<>();
         Element dims = firstChild(cube, "Dimensions");
         if (dims != null) {
             for (Element dim : childrenNamed(dims, "Dimension")) {
                 Dataset ds = convertM4Dimension(dim, tableKeys);
                 if (ds == null) continue;
                 byDimension.put(attr(dim, "name"), ds);
-                sm.getDatasets().add(ds);
+                if (factDatasetNames.contains(ds.getName())) {
+                    degenerateByFact.merge(ds.getName(), ds, MondrianToOssieConverter::mergeFields);
+                } else {
+                    sm.getDatasets().add(ds);
+                }
             }
         }
 
@@ -176,6 +189,10 @@ public final class MondrianToOssieConverter {
                 for (String k : tableKeys.getOrDefault(table, List.of())) {
                     fact.getPrimaryKey().add(k);
                 }
+                Dataset degenerate = degenerateByFact.get(fact.getName());
+                if (degenerate != null) {
+                    mergeFields(fact, degenerate);
+                }
                 sm.getDatasets().add(fact);
                 if (firstFact == null) firstFact = fact;
 
@@ -192,6 +209,7 @@ public final class MondrianToOssieConverter {
                         Dataset dim = byDimension.get(attr(link, "dimension"));
                         String fk = attr(link, "foreignKeyColumn");
                         if (dim == null
+                                || dim.getName().equals(fact.getName()) // degenerate: no self-join
                                 || fk == null
                                 || fk.isBlank()
                                 || dim.getPrimaryKey().isEmpty()) {
@@ -220,6 +238,28 @@ public final class MondrianToOssieConverter {
             }
         }
         return sm;
+    }
+
+    /** Dataset names the cube's measure groups will emit, so degenerate dimensions can be detected up front. */
+    private Set<String> m4FactDatasetNames(Element cube) {
+        Set<String> names = new HashSet<>();
+        Element groups = firstChild(cube, "MeasureGroups");
+        if (groups == null) return names;
+        for (Element mg : childrenNamed(groups, "MeasureGroup")) {
+            String table = attr(mg, "table");
+            if (table != null && !table.isBlank()) names.add(sanitiseName(table));
+        }
+        return names;
+    }
+
+    /** Append {@code from}'s fields to {@code into} (skipping names it already has) and return {@code into}. */
+    private static Dataset mergeFields(Dataset into, Dataset from) {
+        Set<String> have = new HashSet<>();
+        for (Field f : into.getFields()) have.add(f.getName());
+        for (Field f : from.getFields()) {
+            if (have.add(f.getName())) into.getFields().add(f);
+        }
+        return into;
     }
 
     /** {@code <PhysicalSchema><Table name=…><Key><Column name=…/></Key></Table>} → table → key columns. */

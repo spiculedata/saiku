@@ -8,16 +8,17 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.List;
 
 /**
- * A persisted share-token record (issue #941) — the server-side authority for
- * an account-free, view-only dashboard link. The token string itself is an
- * opaque random lookup key (see {@link ShareTokenStore}); this record holds no
- * secret beyond it.
+ * A persisted share-token record (issue #941, widened by issue #1108) — the
+ * server-side authority for an account-free, view-only dashboard or notebook
+ * link. The token string itself is an opaque random lookup key (see {@link
+ * ShareTokenStore}); this record holds no secret beyond it.
  *
  * <p>Stored as {@code ${saiku.home}/share-tokens/<token>.json}. A guest request
  * is authorised purely by presenting a token that maps to a non-revoked,
  * unexpired record here; the {@link #dashboardPath} it pins is the ONLY
- * dashboard that token can ever view, and {@link #ownerRolesSnapshot} is the
- * data-scope the proxied queries run under (see ShareViewResource).
+ * resource that token can ever view, and {@link #ownerRolesSnapshot} is the
+ * data-scope the proxied queries run under (see ShareViewResource /
+ * NotebookShareViewResource).
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ShareToken {
@@ -25,7 +26,12 @@ public class ShareToken {
     /** Opaque URL-safe random id; also the store filename stem. */
     public String token;
 
-    /** Repository path of the shared dashboard (ends {@code .saikudash}). */
+    /** Repository path of the shared resource — a dashboard ({@code
+     *  .saikudash}) or, since issue #1108, a notebook ({@code .saikunb}).
+     *  Keeps its #941 name because {@link ShareTokenStore} and {@code
+     *  ShareTokenAuthFilter} are generic over what path they pin; only the
+     *  mint-time suffix check and the guest-facing view resource are
+     *  resource-kind-aware. */
     public String dashboardPath;
 
     /** Username that minted the link (must have had GRANT on the dashboard). */

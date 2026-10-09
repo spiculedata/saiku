@@ -13,11 +13,14 @@ import java.io.IOException;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import org.saiku.web.embed.EmbedPublicGrant;
 import org.saiku.web.embed.EmbedPublicRegistry;
 import org.saiku.web.embed.EmbedToken;
 import org.saiku.web.embed.EmbedTokenStore;
+import org.saiku.web.schedule.OwnerIdentity;
+import org.saiku.web.schedule.OwnerIdentityResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -47,6 +50,20 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * never persisted to the HttpSession — each request re-presents its token /
  * re-checks public state from disk, so revocation takes effect on the very
  * next request and there is no guest "session" to hijack.
+ *
+ * <p><b>saiku#1920 — owner identity is re-resolved on EVERY read.</b> The
+ * token / public-registry / JWT records all carry an owner-role <i>snapshot</i>
+ * taken at mint time. A snapshot is stale the moment the owner is disabled or
+ * demoted, and the guest read then runs under the old (possibly admin) scope.
+ * Every request therefore resolves the asserted owner through
+ * {@link OwnerIdentityResolver} — the same
+ * {@code UserServiceOwnerIdentityResolver} the scheduler uses — and runs
+ * under the owner's CURRENT roles. An unknown, disabled, or unresolvable
+ * owner is <b>absent</b>, and an absent owner collapses to the same opaque
+ * {@code EMBED_INVALID} response as a bad token (fail-closed). This also
+ * covers the embed JWT: {@code saiku.owner} / {@code saiku.ownerRoles} are
+ * assertions by the embedder, and are now treated as such — the roles are
+ * resolved server-side, never read from the token.
  */
 public class EmbedAuthFilter extends OncePerRequestFilter {
 
@@ -63,6 +80,11 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
     public static final String PROP_JWT_SECRET = "saiku.embed.jwt.secret";
     public static final String ENV_JWT_AUDIENCE = "SAIKU_EMBED_JWT_AUDIENCE";
     public static final String PROP_JWT_AUDIENCE = "saiku.embed.jwt.audience";
+    /** saiku#1920 — optional {@code iss} pin. When set, the JWT's {@code iss}
+     *  claim MUST equal it; the {@code iss} claim itself is always required. */
+    public static final String ENV_JWT_ISSUER = "SAIKU_EMBED_JWT_ISSUER";
+
+    public static final String PROP_JWT_ISSUER = "saiku.embed.jwt.issuer";
 
     /** Read surface — query + dashboard. The mint surface lives elsewhere
      *  and goes through the normal authenticated chain. */
@@ -79,10 +101,14 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
 
     private final EmbedTokenStore tokenStore;
     private final EmbedPublicRegistry publicRegistry;
+    /** saiku#1920 — live owner identity. Mandatory: every read re-resolves. */
+    private final OwnerIdentityResolver ownerResolver;
 
-    public EmbedAuthFilter(EmbedTokenStore tokenStore, EmbedPublicRegistry publicRegistry) {
+    public EmbedAuthFilter(
+            EmbedTokenStore tokenStore, EmbedPublicRegistry publicRegistry, OwnerIdentityResolver ownerResolver) {
         this.tokenStore = tokenStore;
         this.publicRegistry = publicRegistry;
+        this.ownerResolver = ownerResolver;
     }
 
     @Override
@@ -135,6 +161,14 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
                 writeInvalid(resp);
                 return;
             }
+            // saiku#1920: the mint-time role snapshot is NOT trusted — re-resolve
+            // the owner now so a disabled/demoted owner loses guest access on
+            // the very next request.
+            OwnerIdentity owner = resolveOwner(token.createdBy);
+            if (owner == null) {
+                writeInvalid(resp);
+                return;
+            }
             authenticate(
                     req,
                     resp,
@@ -144,7 +178,7 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
                             token.resourceKind,
                             token.resourcePath,
                             token.createdBy,
-                            token.ownerRolesSnapshot,
+                            owner.currentRoles(),
                             // saiku-cloud#948: carry the policy forward so
                             // the view resource can stamp the gateway-
                             // facing redaction-policy header.
@@ -161,17 +195,28 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
         if (EmbedPublicRegistry.publicEmbedsEnabled()) {
             EmbedPublicGrant grant = publicRegistry.lookup(target.kind, target.path);
             if (grant != null) {
-                authenticate(
-                        req,
-                        resp,
-                        chain,
-                        new EmbedGuestDetails(
-                                null,
-                                grant.resourceKind,
-                                grant.resourcePath,
-                                grant.grantedBy,
-                                grant.ownerRolesSnapshot));
-                return;
+                // saiku#1920: same live re-resolution as the token path — a public
+                // grant does not outlive the grantor's account.
+                OwnerIdentity owner = resolveOwner(grant.grantedBy);
+                if (owner != null) {
+                    authenticate(
+                            req,
+                            resp,
+                            chain,
+                            new EmbedGuestDetails(
+                                    null,
+                                    grant.resourceKind,
+                                    grant.resourcePath,
+                                    grant.grantedBy,
+                                    owner.currentRoles()));
+                    return;
+                }
+                LOG.warn(
+                        "Public embed grant {}{} granted by '{}' whose identity no longer resolves — refusing the"
+                                + " anonymous read (fail-closed).",
+                        target.kind,
+                        target.path,
+                        grant.grantedBy);
             }
         }
 
@@ -213,7 +258,7 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
         }
         JsonNode claims;
         try {
-            claims = EmbedJwt.verify(compact, secret, jwtAudience(), System.currentTimeMillis());
+            claims = EmbedJwt.verify(compact, secret, jwtAudience(), jwtIssuer(), System.currentTimeMillis());
         } catch (EmbedJwt.EmbedJwtException e) {
             LOG.debug("embed JWT rejected: {}", e.getMessage());
             writeInvalid(resp);
@@ -232,15 +277,57 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
         JsonNode filters = claims.get("saiku.filters");
         String forcedFiltersJson =
                 (filters != null && !filters.isNull() && !filters.isMissingNode()) ? filters.toString() : null;
+        // saiku#1920: saiku.owner is an ASSERTION by the embedder; saiku.ownerRoles is
+        // ignored entirely. Resolve the owner's live identity server-side and fail closed
+        // when it no longer resolves (account deleted, disabled, or demoted since mint).
+        OwnerIdentity owner = resolveOwner(text(claims, "saiku.owner"));
+        if (owner == null) {
+            LOG.warn(
+                    "Embed JWT for {}{} names an owner that no longer resolves — refusing the read (fail-closed).",
+                    claimKind,
+                    claimPath);
+            writeInvalid(resp);
+            return null;
+        }
+        // The asserted role claim is never honoured, but a mismatch is worth an audit
+        // line: it means the embedder's view of the owner's scope has drifted.
+        List<String> asserted = stringArray(claims, "saiku.ownerRoles");
+        if (!asserted.isEmpty() && !new HashSet<>(asserted).equals(new HashSet<>(owner.currentRoles()))) {
+            LOG.info(
+                    "Embed JWT asserted owner roles {} but the live identity of '{}' resolves to {} — using the"
+                            + " live identity.",
+                    asserted,
+                    text(claims, "saiku.owner"),
+                    owner.currentRoles());
+        }
         return new EmbedGuestDetails(
                 compact,
                 claimKind,
                 claimPath,
                 text(claims, "saiku.owner"),
-                stringArray(claims, "saiku.ownerRoles"),
+                owner.currentRoles(),
                 org.saiku.web.embed.EmbedToken.RedactionPolicy.TENANT_DEFAULT,
                 text(claims, "sub"),
                 forcedFiltersJson);
+    }
+
+    /**
+     * saiku#1920 — re-resolve the asserted owner's CURRENT identity, or {@code null} when
+     * the owner is absent (unknown / disabled / unresolvable) so callers fail closed. Never
+     * falls back to the mint-time snapshot.
+     */
+    private OwnerIdentity resolveOwner(String ownerUser) {
+        if (ownerResolver == null) {
+            LOG.error("No OwnerIdentityResolver wired into EmbedAuthFilter — refusing the embed read (fail-closed).");
+            return null;
+        }
+        try {
+            OwnerIdentity id = ownerResolver.resolve(ownerUser);
+            return (id != null && id.present()) ? id : null;
+        } catch (RuntimeException e) {
+            LOG.warn("Owner identity resolution threw for '{}' — refusing the embed read (fail-closed).", ownerUser, e);
+            return null;
+        }
     }
 
     /** Embed JWT secret (env &gt; system property); null when unset/blank so the
@@ -259,6 +346,16 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
             a = System.getProperty(PROP_JWT_AUDIENCE);
         }
         return (a == null || a.isBlank()) ? null : a.trim();
+    }
+
+    /** saiku#1920 — expected {@code iss}; null when the deployment does not pin one
+     *  (the {@code iss} CLAIM is still required by {@link EmbedJwt#verify}). */
+    private static String jwtIssuer() {
+        String i = System.getenv(ENV_JWT_ISSUER);
+        if (i == null || i.isBlank()) {
+            i = System.getProperty(PROP_JWT_ISSUER);
+        }
+        return (i == null || i.isBlank()) ? null : i.trim();
     }
 
     private static String text(JsonNode claims, String field) {

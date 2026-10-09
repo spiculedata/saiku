@@ -6,6 +6,7 @@ package org.saiku.database;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.sql.Connection;
@@ -86,5 +87,40 @@ public class JdbcUserDAOUserMapperTest {
                 + "'pw' AS password, 'ROLE_USER' AS ROLES");
         assertEquals("dave", u.getUsername());
         assertTrue("a missing ENABLED column must fail safe to enabled (legacy fallback)", u.isEnabled());
+    }
+
+    // saiku#1438 (SCIM): the display columns added for name.givenName / name.familyName /
+    // displayName. Same fail-SAFE shape as ENABLED — an older query that does not select them (or
+    // a pre-migration table) must degrade to "no name", never break the whole directory read.
+
+    @Test
+    public void scimDisplayColumnsAreMapped() throws Exception {
+        SaikuUser u = mapSingleRow("SELECT 4 AS user_id, 'ellen' AS username, 'e@x.com' AS email, "
+                + "'pw' AS password, 1 AS enabled, 'ROLE_USER' AS ROLES, "
+                + "'Ellen' AS GIVEN_NAME, 'Ripley' AS FAMILY_NAME, 'Ellen Ripley' AS DISPLAY_NAME");
+        assertEquals("Ellen", u.getGivenName());
+        assertEquals("Ripley", u.getFamilyName());
+        assertEquals("Ellen Ripley", u.getDisplayName());
+    }
+
+    @Test
+    public void scimDisplayColumnsMissing_failSafeToNull() throws Exception {
+        // A pre-#1438 query shape: the columns are not selected at all. The mapper must swallow the
+        // SQLException, because failing here would break the whole user directory, not just a name.
+        SaikuUser u = mapSingleRow("SELECT 5 AS user_id, 'ripley' AS username, 'r@x.com' AS email, "
+                + "'pw' AS password, 1 AS enabled, 'ROLE_USER' AS ROLES");
+        assertNull("a missing display column must degrade to null, not fail the read", u.getGivenName());
+        assertNull(u.getFamilyName());
+        assertNull(u.getDisplayName());
+    }
+
+    @Test
+    public void scimDisplayColumnsSqlNull_readAsNull() throws Exception {
+        SaikuUser u = mapSingleRow("SELECT 6 AS user_id, 'new' AS username, 'n@x.com' AS email, "
+                + "'pw' AS password, 1 AS enabled, 'ROLE_USER' AS ROLES, "
+                + "CAST(NULL AS VARCHAR) AS GIVEN_NAME, CAST(NULL AS VARCHAR) AS FAMILY_NAME, "
+                + "CAST(NULL AS VARCHAR) AS DISPLAY_NAME");
+        assertNull(u.getGivenName());
+        assertEquals("new", u.getUsername());
     }
 }

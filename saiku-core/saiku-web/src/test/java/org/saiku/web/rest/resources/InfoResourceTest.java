@@ -53,6 +53,7 @@ public class InfoResourceTest {
         System.clearProperty("saiku.demo");
         System.clearProperty("saiku.mcp.url");
         System.clearProperty("saiku.version");
+        System.clearProperty("saiku.oauth.issuerUri");
     }
 
     /* ------------------------------ DXT bundle ------------------------------ */
@@ -188,6 +189,20 @@ public class InfoResourceTest {
         assertEquals(Boolean.TRUE, mcp.get("enabled"));
         assertEquals("https://demo.saiku.bi/rest/saiku/api/mcp", mcp.get("url"));
         assertEquals("streamable-http", mcp.get("transport"));
+        // saiku#879: no OAuth issuer configured -> the #878 default.
+        assertEquals("basic", mcp.get("authMode"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void capabilities_reportsOauthAuthModeWhenIssuerConfigured() {
+        System.setProperty("saiku.mcp.url", "https://demo.saiku.bi/rest/saiku/api/mcp");
+        System.setProperty("saiku.oauth.issuerUri", "https://idp.example.com/realms/saiku");
+
+        Response resp = new InfoResource().getCapabilities(null);
+        Map<String, Object> body = (Map<String, Object>) resp.getEntity();
+        Map<String, Object> mcp = (Map<String, Object>) body.get("mcp");
+        assertEquals("oauth", mcp.get("authMode"));
     }
 
     @Test

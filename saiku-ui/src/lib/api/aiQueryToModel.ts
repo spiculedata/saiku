@@ -60,7 +60,8 @@ export function aiRequestToQueryModel(req: AiQueryRequestShape): ThinQueryModel 
 		// the measure list is built; no calculated measures/members from the AI.
 		details: { axis: 'COLUMNS', location: 'TOP', measures: [] },
 		calculatedMeasures: [],
-		calculatedMembers: []
+		calculatedMembers: [],
+		namedSets: []
 	} as ThinQueryModel;
 
 	// Measures go into details. Each entry's `name` is the measure caption

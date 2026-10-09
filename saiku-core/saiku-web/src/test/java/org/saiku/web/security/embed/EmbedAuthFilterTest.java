@@ -53,12 +53,34 @@ public class EmbedAuthFilterTest {
     private EmbedTokenStore tokenStore;
     private EmbedPublicRegistry publicRegistry;
     private EmbedAuthFilter filter;
+    /** saiku#1920 — the owner identity the filter re-resolves on every read. Swapped
+     *  per test to simulate a disabled / demoted / deleted owner. */
+    private MutableOwnerResolver ownerResolver;
 
     @Before
     public void setUp() {
         tokenStore = new EmbedTokenStore((String) null);
         publicRegistry = new EmbedPublicRegistry((String) null);
-        filter = new EmbedAuthFilter(tokenStore, publicRegistry);
+        ownerResolver = new MutableOwnerResolver();
+        ownerResolver.present = true;
+        ownerResolver.roles = List.of("ROLE_ADMIN");
+        filter = new EmbedAuthFilter(tokenStore, publicRegistry, ownerResolver);
+    }
+
+    /** Mutable stand-in for {@code UserServiceOwnerIdentityResolver}: the filter only
+     *  needs "does this owner still resolve, and to what roles". */
+    private static final class MutableOwnerResolver implements org.saiku.web.schedule.OwnerIdentityResolver {
+        boolean present = true;
+        List<String> roles = List.of();
+        String lastResolved;
+
+        @Override
+        public org.saiku.web.schedule.OwnerIdentity resolve(String username) {
+            lastResolved = username;
+            return present
+                    ? org.saiku.web.schedule.OwnerIdentity.present(roles)
+                    : org.saiku.web.schedule.OwnerIdentity.absent();
+        }
     }
 
     @After
@@ -67,6 +89,7 @@ public class EmbedAuthFilterTest {
         System.clearProperty(EmbedPublicRegistry.ALLOW_PUBLIC_PROP);
         System.clearProperty(EmbedAuthFilter.PROP_JWT_SECRET);
         System.clearProperty(EmbedAuthFilter.PROP_JWT_AUDIENCE);
+        System.clearProperty(EmbedAuthFilter.PROP_JWT_ISSUER);
     }
 
     @Test
@@ -345,10 +368,12 @@ public class EmbedAuthFilterTest {
     public void valid_jwt_pins_guest_with_sub_and_forced_filters() throws Exception {
         System.setProperty(EmbedAuthFilter.PROP_JWT_SECRET, JWT_SECRET);
         String jwt = mintJwt(
-                "{\"sub\":\"u_99\",\"saiku.resourceKind\":\"query\","
+                "{\"sub\":\"u_99\",\"aud\":\"saiku-embed\",\"iss\":\"https://embedder.example\","
+                        + "\"saiku.resourceKind\":\"query\","
                         + "\"saiku.resourcePath\":\"/homes/admin/sales.saiku\","
                         + "\"saiku.owner\":\"admin\",\"saiku.ownerRoles\":[\"ROLE_ADMIN\"],"
-                        + "\"saiku.filters\":[{\"dimension\":\"Customer\",\"op\":\"in\",\"members\":[\"[Customer].[acme]\"]}],"
+                        + "\"saiku.filters\":[{\"dimension\":\"Customer\",\"op\":\"in\","
+                        + "\"members\":[\"[Customer].[acme]\"]}],"
                         + "\"exp\":" + future() + "}",
                 JWT_SECRET);
         MockHttpServletRequest req =
@@ -363,6 +388,9 @@ public class EmbedAuthFilterTest {
         EmbedGuestDetails d = (EmbedGuestDetails) chain.capturedAuth.getDetails();
         assertEquals("u_99", d.jwtSub);
         assertEquals("admin", d.ownerUser);
+        // saiku#1920: saiku.ownerRoles is an ASSERTION and is not honoured — the filter
+        // resolves the owner's live roles. The seeded resolver here reports ROLE_ADMIN,
+        // so the value coincides; see owner_roles_come_from_the_user_store_not_the_jwt.
         assertEquals(List.of("ROLE_ADMIN"), d.ownerRoles);
         assertNotNull("forced filters carried forward", d.forcedFiltersJson);
         assertTrue(d.forcedFiltersJson.contains("Customer"));
@@ -370,12 +398,180 @@ public class EmbedAuthFilterTest {
         assertEquals("/homes/admin/sales.saiku", d.resourcePath);
     }
 
+    // ---- saiku#1920: live owner re-resolution ---------------------------
+
+    @Test
+    public void owner_roles_come_from_the_user_store_not_the_jwt() throws Exception {
+        // The JWT claims ROLE_ADMIN; the live identity has been demoted to ROLE_USER.
+        // The demoted scope must win — the token is not a licence to self-elevate.
+        System.setProperty(EmbedAuthFilter.PROP_JWT_SECRET, JWT_SECRET);
+        ownerResolver.roles = List.of("ROLE_USER");
+        String jwt = mintJwt(
+                "{\"sub\":\"u_99\",\"aud\":\"saiku-embed\",\"iss\":\"https://embedder.example\","
+                        + "\"saiku.resourceKind\":\"query\","
+                        + "\"saiku.resourcePath\":\"/homes/admin/sales.saiku\","
+                        + "\"saiku.owner\":\"admin\",\"saiku.ownerRoles\":[\"ROLE_ADMIN\"],\"exp\":" + future() + "}",
+                JWT_SECRET);
+        MockHttpServletRequest req =
+                new MockHttpServletRequest("GET", "/rest/saiku/api/embed/query/homes/admin/sales.saiku");
+        req.addHeader(EmbedAuthFilter.TOKEN_HEADER, jwt);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        ContextCapturingChain chain = new ContextCapturingChain();
+
+        filter.doFilter(req, resp, chain);
+
+        assertTrue(chain.called);
+        EmbedGuestDetails d = (EmbedGuestDetails) chain.capturedAuth.getDetails();
+        assertEquals(List.of("ROLE_USER"), d.ownerRoles);
+    }
+
+    @Test
+    public void jwt_for_a_disabled_owner_is_invalid() throws Exception {
+        System.setProperty(EmbedAuthFilter.PROP_JWT_SECRET, JWT_SECRET);
+        ownerResolver.present = false;
+        String jwt = mintJwt(
+                "{\"sub\":\"u_99\",\"aud\":\"saiku-embed\",\"iss\":\"https://embedder.example\","
+                        + "\"saiku.resourceKind\":\"query\","
+                        + "\"saiku.resourcePath\":\"/homes/admin/sales.saiku\","
+                        + "\"saiku.owner\":\"admin\",\"saiku.ownerRoles\":[\"ROLE_ADMIN\"],\"exp\":" + future() + "}",
+                JWT_SECRET);
+        MockHttpServletRequest req =
+                new MockHttpServletRequest("GET", "/rest/saiku/api/embed/query/homes/admin/sales.saiku");
+        req.addHeader(EmbedAuthFilter.TOKEN_HEADER, jwt);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        TrackingChain chain = new TrackingChain();
+
+        filter.doFilter(req, resp, chain);
+
+        assertEquals(401, resp.getStatus());
+        assertTrue(resp.getContentAsString().contains("EMBED_INVALID"));
+        assertFalse(chain.called);
+    }
+
+    @Test
+    public void jwt_without_aud_claim_is_invalid() throws Exception {
+        // saiku#1920: an unscoped token is one any relying party sharing the secret can mint.
+        System.setProperty(EmbedAuthFilter.PROP_JWT_SECRET, JWT_SECRET);
+        String jwt = mintJwt(
+                "{\"sub\":\"u\",\"saiku.resourceKind\":\"query\"," + "\"saiku.resourcePath\":\"/q.saiku\","
+                        + "\"saiku.owner\":\"admin\",\"exp\":" + future() + "}",
+                JWT_SECRET);
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/rest/saiku/api/embed/query/q.saiku");
+        req.addHeader(EmbedAuthFilter.TOKEN_HEADER, jwt);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        TrackingChain chain = new TrackingChain();
+
+        filter.doFilter(req, resp, chain);
+
+        assertEquals(401, resp.getStatus());
+        assertFalse(chain.called);
+    }
+
+    @Test
+    public void jwt_from_an_unpinned_issuer_is_rejected_when_issuer_is_configured() throws Exception {
+        System.setProperty(EmbedAuthFilter.PROP_JWT_SECRET, JWT_SECRET);
+        System.setProperty(EmbedAuthFilter.PROP_JWT_ISSUER, "https://tenant-a.example");
+        try {
+            String jwt = mintJwt(
+                    "{\"sub\":\"u\",\"aud\":\"saiku-embed\",\"iss\":\"https://tenant-b.example\","
+                            + "\"saiku.resourceKind\":\"query\"," + "\"saiku.resourcePath\":\"/q.saiku\","
+                            + "\"saiku.owner\":\"admin\",\"exp\":" + future() + "}",
+                    JWT_SECRET);
+            MockHttpServletRequest req = new MockHttpServletRequest("GET", "/rest/saiku/api/embed/query/q.saiku");
+            req.addHeader(EmbedAuthFilter.TOKEN_HEADER, jwt);
+            MockHttpServletResponse resp = new MockHttpServletResponse();
+            TrackingChain chain = new TrackingChain();
+
+            filter.doFilter(req, resp, chain);
+
+            assertEquals(401, resp.getStatus());
+            assertFalse(chain.called);
+        } finally {
+            System.clearProperty(EmbedAuthFilter.PROP_JWT_ISSUER);
+        }
+    }
+
+    @Test
+    public void opaque_token_for_a_disabled_owner_is_invalid() throws Exception {
+        // The token record's ownerRolesSnapshot still says ROLE_ADMIN; the owner is gone.
+        // A disabled/deleted owner must lose guest access on the very next request.
+        EmbedToken t =
+                tokenStore.create("query", "/homes/admin/sales.saiku", "admin", List.of("ROLE_ADMIN"), 60_000L, null);
+        ownerResolver.present = false;
+        MockHttpServletRequest req =
+                new MockHttpServletRequest("GET", "/rest/saiku/api/embed/query/homes/admin/sales.saiku");
+        req.addHeader(EmbedAuthFilter.TOKEN_HEADER, t.token);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        TrackingChain chain = new TrackingChain();
+
+        filter.doFilter(req, resp, chain);
+
+        assertEquals(401, resp.getStatus());
+        assertTrue(resp.getContentAsString().contains("EMBED_INVALID"));
+        assertFalse(chain.called);
+    }
+
+    @Test
+    public void opaque_token_uses_the_live_owner_roles_not_the_snapshot() throws Exception {
+        EmbedToken t =
+                tokenStore.create("query", "/homes/admin/sales.saiku", "admin", List.of("ROLE_ADMIN"), 60_000L, null);
+        ownerResolver.roles = List.of("ROLE_USER");
+        MockHttpServletRequest req =
+                new MockHttpServletRequest("GET", "/rest/saiku/api/embed/query/homes/admin/sales.saiku");
+        req.addHeader(EmbedAuthFilter.TOKEN_HEADER, t.token);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        ContextCapturingChain chain = new ContextCapturingChain();
+
+        filter.doFilter(req, resp, chain);
+
+        assertTrue(chain.called);
+        EmbedGuestDetails d = (EmbedGuestDetails) chain.capturedAuth.getDetails();
+        assertEquals(List.of("ROLE_USER"), d.ownerRoles);
+    }
+
+    @Test
+    public void public_grant_from_a_disabled_owner_does_not_authenticate() throws Exception {
+        publicRegistry.grant("dashboard", "/homes/admin/exec.saikudash", "admin", List.of("ROLE_ADMIN"), "public exec");
+        ownerResolver.present = false;
+        MockHttpServletRequest req =
+                new MockHttpServletRequest("GET", "/rest/saiku/api/embed/dashboard/homes/admin/exec.saikudash");
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        TrackingChain chain = new TrackingChain();
+
+        filter.doFilter(req, resp, chain);
+
+        // Falls through to the Spring rules rather than authenticating a guest identity.
+        assertTrue("chain must still run so Spring applies its own 401", chain.called);
+        assertNull(SecurityContextHolder.getContext().getAuthentication());
+    }
+
+    @Test
+    public void missing_owner_resolver_fails_closed() throws Exception {
+        // A deployment that forgets to wire the resolver must lose guest reads, not
+        // silently fall back to the mint-time snapshot.
+        EmbedToken t =
+                tokenStore.create("query", "/homes/admin/sales.saiku", "admin", List.of("ROLE_ADMIN"), 60_000L, null);
+        EmbedAuthFilter unwired = new EmbedAuthFilter(tokenStore, publicRegistry, null);
+        MockHttpServletRequest req =
+                new MockHttpServletRequest("GET", "/rest/saiku/api/embed/query/homes/admin/sales.saiku");
+        req.addHeader(EmbedAuthFilter.TOKEN_HEADER, t.token);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        TrackingChain chain = new TrackingChain();
+
+        unwired.doFilter(req, resp, chain);
+
+        assertEquals(401, resp.getStatus());
+        assertFalse(chain.called);
+    }
+
     @Test
     public void forged_jwt_is_invalid() throws Exception {
         System.setProperty(EmbedAuthFilter.PROP_JWT_SECRET, JWT_SECRET);
         // signed with a different secret than the deployment's
         String jwt = mintJwt(
-                "{\"sub\":\"u\",\"saiku.resourceKind\":\"query\"," + "\"saiku.resourcePath\":\"/q.saiku\",\"exp\":"
+                "{\"sub\":\"u\",\"aud\":\"saiku-embed\",\"iss\":\"https://embedder.example\","
+                        + "\"saiku.resourceKind\":\"query\","
+                        + "\"saiku.resourcePath\":\"/q.saiku\",\"exp\":"
                         + future() + "}",
                 "a-totally-different-secret-key-32bytes-xx");
         MockHttpServletRequest req = new MockHttpServletRequest("GET", "/rest/saiku/api/embed/query/q.saiku");
@@ -394,7 +590,9 @@ public class EmbedAuthFilterTest {
     public void expired_jwt_is_invalid() throws Exception {
         System.setProperty(EmbedAuthFilter.PROP_JWT_SECRET, JWT_SECRET);
         String jwt = mintJwt(
-                "{\"sub\":\"u\",\"saiku.resourceKind\":\"query\"," + "\"saiku.resourcePath\":\"/q.saiku\",\"exp\":"
+                "{\"sub\":\"u\",\"aud\":\"saiku-embed\",\"iss\":\"https://embedder.example\","
+                        + "\"saiku.resourceKind\":\"query\","
+                        + "\"saiku.resourcePath\":\"/q.saiku\",\"exp\":"
                         + past() + "}",
                 JWT_SECRET);
         MockHttpServletRequest req = new MockHttpServletRequest("GET", "/rest/saiku/api/embed/query/q.saiku");
@@ -413,7 +611,8 @@ public class EmbedAuthFilterTest {
         // Replay: a JWT minted for sales.saiku presented against payroll.saiku.
         System.setProperty(EmbedAuthFilter.PROP_JWT_SECRET, JWT_SECRET);
         String jwt = mintJwt(
-                "{\"sub\":\"u\",\"saiku.resourceKind\":\"query\","
+                "{\"sub\":\"u\",\"aud\":\"saiku-embed\",\"iss\":\"https://embedder.example\","
+                        + "\"saiku.resourceKind\":\"query\","
                         + "\"saiku.resourcePath\":\"/homes/admin/sales.saiku\",\"exp\":" + future() + "}",
                 JWT_SECRET);
         MockHttpServletRequest req =
@@ -433,7 +632,9 @@ public class EmbedAuthFilterTest {
         // No PROP_JWT_SECRET set -> a presented JWT can't be verified -> reject
         // (fail-closed), never accept unverified input.
         String jwt = mintJwt(
-                "{\"sub\":\"u\",\"saiku.resourceKind\":\"query\"," + "\"saiku.resourcePath\":\"/q.saiku\",\"exp\":"
+                "{\"sub\":\"u\",\"aud\":\"saiku-embed\",\"iss\":\"https://embedder.example\","
+                        + "\"saiku.resourceKind\":\"query\","
+                        + "\"saiku.resourcePath\":\"/q.saiku\",\"exp\":"
                         + future() + "}",
                 JWT_SECRET);
         MockHttpServletRequest req = new MockHttpServletRequest("GET", "/rest/saiku/api/embed/query/q.saiku");

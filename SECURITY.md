@@ -59,17 +59,70 @@ short email and we'll reply with it.
 
 ## What we do on our side
 
-- **Dependency scanning:** Snyk on every push to `development`;
-  OWASP Dependency-Check via `mvn -P security verify` on release
-  builds. Findings above CVSS 7.0 block release.
-- **Secrets scanning:** GitHub secret scanning enabled repo-wide;
-  commit hooks reject common credential patterns.
+These are the controls that actually run today. If one of them is aspirational we
+say so rather than listing it as a fact — a security policy that overstates its
+own coverage is worse than a short one, because a reader stops checking.
+
+- **Dependency scanning (every push and PR).** `.github/workflows/security-scan.yml`
+  runs GitHub's `dependency-review-action` against the advisory database on every
+  pull request, failing the PR when it *introduces* a dependency with a
+  high-or-above vulnerability. The same workflow runs `gitleaks` over the full
+  commit history on every push, PR, and on a weekly schedule, so a newly published
+  advisory against an already-merged dependency still surfaces. Both actions are
+  pinned to commit SHAs.
+
+  What this is not: it is not a full vulnerability scan of the shipped artifact.
+  It reports the *delta* a change introduces, not the standing CVE count of the
+  dependency tree.
+
+- **OWASP Dependency-Check — opt-in, not automatic.** `mvn -P security verify`
+  runs the OWASP `dependency-check-maven` plugin (`check` goal) against the
+  authoritative NVD feed. It is **not** part of `release.yml` and does **not** run
+  on every push: the NVD download plus analysis takes roughly ten minutes, which
+  is the wrong trade to impose on every commit. Run it yourself before a release
+  cut, or ask us for the result of the most recent run. We do not currently
+  enforce a CVSS 7.0 release block automatically.
+
+- **Secrets scanning.** GitHub secret scanning and push protection are enabled
+  repo-wide (a repository setting, not a workflow in this tree). On top of that
+  the pre-commit hook installed by `./scripts/install-hooks.sh` runs
+  `scripts/check-secrets.sh`, which rejects a commit whose staged content matches
+  a common credential shape (AWS keys, GitHub tokens, Anthropic/OpenAI keys,
+  Slack tokens, Google API keys, private-key blocks, an inline embed-JWT secret).
+  That hook is a fast local pre-flight and a shape check, not a scanner: gitleaks
+  in CI is the authoritative check.
+
 - **Fail-closed defaults.** Non-obvious ones: the AI policy guard
   defaults to `SCHEMA_ONLY` in production so AI endpoints don't
   return aggregated data or raw rows without explicit operator
   opt-in; the launcher refuses to serve in production while the
-  default admin password (`admin/admin`) is unchanged; observability
-  is opt-in so no data leaves the box unless configured.
+  default admin password (`admin/admin`) is unchanged; share links and
+  embed tokens re-resolve the owner's live roles on every read, so a
+  disabled or demoted owner revokes guest access on the next request
+  (saiku#1920) rather than serving the mint-time role snapshot.
+
+- **Egress — opt-in, with named exceptions.** Observability is opt-in
+  (`saiku.telemetry.*`), so no data leaves the box unless you configure
+  it. Two integrations need naming so the claim isn't read as absolute:
+  the launcher ships a telemetry heartbeat that is **opt-out** (it
+  reports unless an operator disables it), and the demo instance runs
+  analytics. Neither applies to a hardened production deployment of
+  your own, and both can be turned off — see the configuration reference
+  in the docs.
+
+- **Review routing.** `.github/CODEOWNERS` routes changes to `.github/`
+  (including the workflows themselves), the web security packages, the
+  embed/share token stores, the launcher, and this file to the maintainers
+  for review.
+
+- **Bounded query execution.** Every OLAP execution path carries a
+  server-enforced statement timeout, drillthrough/export row ceiling,
+  and a byte budget for the Arrow allocators, independent of what a
+  client asks for. Tunable in `saiku.properties` — see
+  `saiku.olap.query.timeout.seconds`, `saiku.olap.max.rows`,
+  `saiku.olap.arrow.max.bytes` — with the deployment-wide backstop in
+  `mondrian.properties` (`mondrian.rolap.queryTimeout`,
+  `mondrian.result.limit`, `mondrian.rolap.iterationLimit`).
 - **Vulnerability triage.** Findings are logged internally with a
   planned fix window; the fix + disclosure ship together per the
   agreed timeline.

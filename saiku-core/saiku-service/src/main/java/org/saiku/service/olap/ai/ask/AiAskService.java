@@ -12,11 +12,16 @@ import java.util.List;
 import java.util.Objects;
 import org.saiku.olap.dto.resultset.CellDataSet;
 import org.saiku.olap.query2.ThinQuery;
+import org.saiku.service.mcp.outbound.McpOutboundClient;
+import org.saiku.service.mcp.outbound.McpOutboundToolCatalog;
+import org.saiku.service.mcp.outbound.McpOutboundToolDescriptor;
 import org.saiku.service.olap.ThinQueryService;
+import org.saiku.service.olap.ai.AiAxisSelection;
 import org.saiku.service.olap.ai.AiCubeMetadataService;
 import org.saiku.service.olap.ai.AiCubeRef;
 import org.saiku.service.olap.ai.AiDataKind;
 import org.saiku.service.olap.ai.AiFilterSelection;
+import org.saiku.service.olap.ai.AiMeasureSelection;
 import org.saiku.service.olap.ai.AiPolicyGuard;
 import org.saiku.service.olap.ai.AiQueryRequest;
 import org.saiku.service.olap.ai.AiRequestJsonSchema;
@@ -66,6 +71,14 @@ public class AiAskService {
     private AgentSpaceRegistry spaces;
 
     /**
+     * Certified-query catalogue (saiku#1430). Optional, injected via setter so the classic ask path
+     * keeps working on instances with no certified directory. When wired, an ask whose intent
+     * overlaps a certified {@code matchIntent} short-circuits to that query — executed verbatim,
+     * never re-derived by the model. See {@link #certifiedMatch} for the exact routing conditions.
+     */
+    private CertifiedQueryRegistry certifiedQueries;
+
+    /**
      * Dedicated LLM-egress guard (Option A). Answers "may cell data leave the box to a third-party
      * LLM vendor?" — resolved from {@code SAIKU_AI_LLM_EGRESS} / {@code ai.llm.egress}, SEPARATE
      * from the data-return {@link AiPolicyGuard} on {@code SAIKU_AI_POLICY}. Injected via setter so
@@ -99,6 +112,17 @@ public class AiAskService {
      */
     private KAnonymityFilter kAnonymityFilter;
 
+    /**
+     * Outbound MCP tool catalogue (saiku#1425) — admin-registered external servers whose ENABLED
+     * tools the {@link #askChained} loop offers to the LLM alongside the built-in emit_* tools, and
+     * dispatches through when the model calls one. Optional, setter-injected like {@link #skills} /
+     * {@link #spaces}; {@code null} means outbound MCP isn't configured on this instance, and the
+     * chained loop simply never advertises any {@code mcp__*} tools. NOT wired into the classic
+     * single-shot {@link #ask} path — that call has no execute-and-continue loop to dispatch a tool
+     * call through, so advertising one there would let the model "call" a tool that's never invoked.
+     */
+    private McpOutboundToolCatalog mcpOutbound;
+
     public AiAskService(AiCubeMetadataService metadataService, NlAskProvider provider) {
         this(metadataService, provider, defaultMapper());
     }
@@ -130,6 +154,26 @@ public class AiAskService {
     /** Agent-space catalogue, or {@code null} if the operator hasn't configured one. */
     public AgentSpaceRegistry spaces() {
         return spaces;
+    }
+
+    /** Spring setter — wired to {@code certifiedQueryRegistryBean} in {@code saiku-beans.xml}. */
+    public void setCertifiedQueries(CertifiedQueryRegistry certifiedQueries) {
+        this.certifiedQueries = certifiedQueries;
+    }
+
+    /** Certified-query catalogue used by this service, if wired. */
+    public CertifiedQueryRegistry certifiedQueries() {
+        return certifiedQueries;
+    }
+
+    /** Spring setter — wired to {@code mcpOutboundToolCatalogBean} in {@code saiku-beans.xml}. */
+    public void setMcpOutbound(McpOutboundToolCatalog mcpOutbound) {
+        this.mcpOutbound = mcpOutbound;
+    }
+
+    /** Outbound MCP tool catalogue, or {@code null} if the operator hasn't configured any servers. */
+    public McpOutboundToolCatalog mcpOutbound() {
+        return mcpOutbound;
     }
 
     /** Spring setter — wired to {@code aiLlmEgressGuard} in {@code saiku-beans.xml}. */
@@ -248,7 +292,13 @@ public class AiAskService {
      * Result of an {@link #ask(AiCubeRef, String, List)} call.
      *
      * <p>Exactly one of {@code request} / {@code insight} / {@code viewChange} / {@code
-     * emailDraft} is non-null on success (matched to {@link #kind()}); all are null on degraded.
+     * emailDraft} / {@code certifiedQuery} is non-null on success (matched to {@link #kind()});
+     * all are null on degraded.
+     *
+     * <p>saiku#1918 (17d, CWE-770): {@code inputTokens} / {@code outputTokens} are the provider's
+     * own reported usage for the turn ({@code -1} when it reported none). They exist so the web layer
+     * can charge a real budget against what was actually spent — a per-minute CALL cap cannot tell
+     * a 200-token question from a 90k-token schema dump, and only one of those is worth a dollar.
      */
     public record AskOutcome(
             Kind kind,
@@ -259,34 +309,184 @@ public class AiAskService {
             AiViewChange viewChange,
             AiEmailDraft emailDraft,
             String model,
-            SpaceAccess denial) {
+            SpaceAccess denial,
+            McpToolCallSummary mcpToolCall,
+            CertifiedQuery certifiedQuery,
+            int inputTokens,
+            int outputTokens) {
+
+        /** Back-compatible 12-component form (no reported token usage). */
+        public AskOutcome(
+                Kind kind,
+                boolean degraded,
+                String reason,
+                AiQueryRequest request,
+                AiInsight insight,
+                AiViewChange viewChange,
+                AiEmailDraft emailDraft,
+                String model,
+                SpaceAccess denial,
+                McpToolCallSummary mcpToolCall,
+                CertifiedQuery certifiedQuery) {
+            this(
+                    kind,
+                    degraded,
+                    reason,
+                    request,
+                    insight,
+                    viewChange,
+                    emailDraft,
+                    model,
+                    denial,
+                    mcpToolCall,
+                    certifiedQuery,
+                    -1,
+                    -1);
+        }
+
+        /** Back-compatible 10-component form (no certified query, no reported token usage). */
+        public AskOutcome(
+                Kind kind,
+                boolean degraded,
+                String reason,
+                AiQueryRequest request,
+                AiInsight insight,
+                AiViewChange viewChange,
+                AiEmailDraft emailDraft,
+                String model,
+                SpaceAccess denial,
+                McpToolCallSummary mcpToolCall) {
+            this(kind, degraded, reason, request, insight, viewChange, emailDraft, model, denial, mcpToolCall, null);
+        }
+
+        /** Back-compatible form carrying provider-reported usage but no MCP call or certified query. */
+        public AskOutcome(
+                Kind kind,
+                boolean degraded,
+                String reason,
+                AiQueryRequest request,
+                AiInsight insight,
+                AiViewChange viewChange,
+                AiEmailDraft emailDraft,
+                String model,
+                SpaceAccess denial,
+                int inputTokens,
+                int outputTokens) {
+            this(
+                    kind,
+                    degraded,
+                    reason,
+                    request,
+                    insight,
+                    viewChange,
+                    emailDraft,
+                    model,
+                    denial,
+                    null,
+                    null,
+                    inputTokens,
+                    outputTokens);
+        }
+
+        /** Back-compatible 9-component form (no MCP tool call, certified query or token usage). */
+        public AskOutcome(
+                Kind kind,
+                boolean degraded,
+                String reason,
+                AiQueryRequest request,
+                AiInsight insight,
+                AiViewChange viewChange,
+                AiEmailDraft emailDraft,
+                String model,
+                SpaceAccess denial) {
+            this(kind, degraded, reason, request, insight, viewChange, emailDraft, model, denial, null, null, -1, -1);
+        }
+
+        /** Total provider-reported tokens for this turn; {@code 0} when nothing was reported. */
+        public long totalTokens() {
+            if (inputTokens < 0 && outputTokens < 0) return 0L;
+            return Math.max(0, inputTokens) + Math.max(0, outputTokens);
+        }
 
         public enum Kind {
             QUERY,
             INSIGHT,
             VIEW_CHANGE,
-            EMAIL_DRAFT
+            EMAIL_DRAFT,
+            /**
+             * saiku#1430 — the ask matched a certified {@code matchIntent}, so the admin-approved
+             * query is executed verbatim instead of being re-derived by the model. Carries no
+             * {@code request}: there is no model-authored {@link AiQueryRequest} to convert, because
+             * the model was never asked. {@link #certifiedQuery()} is the authority.
+             */
+            CERTIFIED,
+            /**
+             * saiku#1425: the model called an admin-enabled outbound MCP tool. Intermediate-only —
+             * {@link #askChained} dispatches the call and loops again; this kind never terminates a
+             * chain by itself (a step cap or a later terminal tool does). Carries no {@link #request}
+             * / {@link #insight} / etc — see {@link #mcpToolCall} instead.
+             */
+            MCP_TOOL_CALL
         }
 
         public static AskOutcome ok(AiQueryRequest request, String model) {
-            return new AskOutcome(Kind.QUERY, false, null, request, null, null, null, model, SpaceAccess.OK);
+            return new AskOutcome(Kind.QUERY, false, null, request, null, null, null, model, SpaceAccess.OK, null);
+        }
+
+        public static AskOutcome ok(AiQueryRequest request, String model, int in, int out) {
+            return new AskOutcome(Kind.QUERY, false, null, request, null, null, null, model, SpaceAccess.OK, in, out);
         }
 
         public static AskOutcome okInsight(AiInsight insight, String model) {
-            return new AskOutcome(Kind.INSIGHT, false, null, null, insight, null, null, model, SpaceAccess.OK);
+            return new AskOutcome(Kind.INSIGHT, false, null, null, insight, null, null, model, SpaceAccess.OK, null);
+        }
+
+        public static AskOutcome okInsight(AiInsight insight, String model, int in, int out) {
+            return new AskOutcome(Kind.INSIGHT, false, null, null, insight, null, null, model, SpaceAccess.OK, in, out);
         }
 
         public static AskOutcome okViewChange(AiViewChange viewChange, String model) {
-            return new AskOutcome(Kind.VIEW_CHANGE, false, null, null, null, viewChange, null, model, SpaceAccess.OK);
+            return new AskOutcome(
+                    Kind.VIEW_CHANGE, false, null, null, null, viewChange, null, model, SpaceAccess.OK, null);
+        }
+
+        public static AskOutcome okViewChange(AiViewChange viewChange, String model, int in, int out) {
+            return new AskOutcome(
+                    Kind.VIEW_CHANGE, false, null, null, null, viewChange, null, model, SpaceAccess.OK, in, out);
         }
 
         public static AskOutcome okEmailDraft(AiEmailDraft emailDraft, String model) {
-            return new AskOutcome(Kind.EMAIL_DRAFT, false, null, null, null, null, emailDraft, model, SpaceAccess.OK);
+            return new AskOutcome(
+                    Kind.EMAIL_DRAFT, false, null, null, null, null, emailDraft, model, SpaceAccess.OK, null);
+        }
+
+        /** saiku#1425: the model called {@code mcpToolCall.qualifiedName()}; see {@link McpToolCallSummary}. */
+        public static AskOutcome okMcpToolCall(McpToolCallSummary mcpToolCall, String model) {
+            return new AskOutcome(
+                    Kind.MCP_TOOL_CALL, false, null, null, null, null, null, model, SpaceAccess.OK, mcpToolCall);
+        }
+
+        /**
+         * Certified-run outcome (saiku#1430). {@code model} is null: no LLM was consulted, which is
+         * the whole point — a certified answer is a fixed artefact, not a generation.
+         */
+        public static AskOutcome okCertified(CertifiedQuery certified) {
+            return new AskOutcome(
+                    Kind.CERTIFIED, false, null, null, null, null, null, null, SpaceAccess.OK, null, certified);
+        }
+
+        public static AskOutcome okEmailDraft(AiEmailDraft emailDraft, String model, int in, int out) {
+            return new AskOutcome(
+                    Kind.EMAIL_DRAFT, false, null, null, null, null, emailDraft, model, SpaceAccess.OK, in, out);
         }
 
         /** Provider-side degrade (transport/parse/refusal) — carries no space-scope denial. */
         public static AskOutcome degraded(String reason, String model) {
-            return new AskOutcome(null, true, reason, null, null, null, null, model, SpaceAccess.OK);
+            return new AskOutcome(null, true, reason, null, null, null, null, model, SpaceAccess.OK, null);
+        }
+
+        public static AskOutcome degraded(String reason, String model, int in, int out) {
+            return new AskOutcome(null, true, reason, null, null, null, null, model, SpaceAccess.OK, in, out);
         }
 
         /**
@@ -294,17 +494,50 @@ public class AiAskService {
          * HTTP status without prose-prefix matching on {@link #reason()}.
          */
         public static AskOutcome degraded(String reason, String model, SpaceAccess denial) {
-            return new AskOutcome(null, true, reason, null, null, null, null, model, denial);
+            return new AskOutcome(null, true, reason, null, null, null, null, model, denial, null);
         }
     }
+
+    /**
+     * saiku#1425: one outbound MCP tool call the chained-ask loop made on the model's behalf, kept
+     * for transparency in the step transcript the client renders (mirrors how a QUERY step shows the
+     * request it built).
+     *
+     * @param qualifiedName the {@code mcp__<server>__<tool>} name the model called.
+     * @param argumentsJson the raw arguments JSON the model emitted.
+     * @param resultDigest the (possibly truncated) text result fed back to the model; {@code null}
+     *     when the call failed — see {@code error}.
+     * @param error true when the call failed (unreachable server, remote tool error, …); {@code
+     *     resultDigest} then carries the failure reason instead of a result, matching what the model
+     *     was actually told.
+     */
+    public record McpToolCallSummary(String qualifiedName, String argumentsJson, String resultDigest, boolean error) {}
 
     /**
      * Ordered transcript of one chained ask: each step reuses the single-turn {@link AskOutcome}
      * (QUERY for a built+executed query, INSIGHT/VIEW_CHANGE/EMAIL_DRAFT for a terminal, or a
      * degraded step for an error / policy stop). {@code hitStepLimit} is true when the cap was
      * reached while the model was still emitting queries (no report produced).
+     *
+     * <p>saiku#1918 (17d): {@code providerCalls} and the token totals are the chain's real cost. A
+     * chain is billed as ONE unit by the per-minute limiter, but it is up to {@code maxSteps}
+     * provider round-trips, each re-sending the cube schema — so "one call" and "one call's worth
+     * of money" diverge by an order of magnitude. Charging the chain's actual usage is the only way
+     * a daily token budget means anything on this endpoint.
      */
-    public record AskChain(List<AskOutcome> steps, boolean hitStepLimit) {}
+    public record AskChain(
+            List<AskOutcome> steps, boolean hitStepLimit, int providerCalls, long inputTokens, long outputTokens) {
+
+        /** Legacy shape: a chain with no usage accounting. */
+        public AskChain(List<AskOutcome> steps, boolean hitStepLimit) {
+            this(steps, hitStepLimit, 0, 0L, 0L);
+        }
+
+        /** Total provider-reported tokens across every round-trip in the chain. */
+        public long totalTokens() {
+            return inputTokens + outputTokens;
+        }
+    }
 
     /**
      * Translate a natural-language question against the cube pointed to by {@code ref}.
@@ -349,7 +582,29 @@ public class AiAskService {
             String cellsetDigest,
             NlAskRequest.ForceTool forceTool,
             AiQueryRequest currentQuery) {
-        return askInternal(ref, question, history, cellsetDigest, forceTool, currentQuery, null);
+        return askInternal(ref, question, history, cellsetDigest, forceTool, currentQuery, null, null);
+    }
+
+    /**
+     * True per-token streaming variant of {@link #ask(AiCubeRef, String, List, String,
+     * NlAskRequest.ForceTool, AiQueryRequest)} (saiku#1484): the model's prose reaches
+     * {@code listener} while it is being written, and the returned {@link AskOutcome} is the same
+     * one the buffered call produces. Pass {@code null} for {@code listener} to get the buffered
+     * behaviour.
+     *
+     * <p>Every guard the buffered path applies — schema load, egress strip of the digest /
+     * currentQuery / history, slash-command expansion, space scoping — is applied identically here,
+     * because it is the same method with a sink attached.
+     */
+    public AskOutcome askStreaming(
+            AiCubeRef ref,
+            String question,
+            List<NlAskMessage> history,
+            String cellsetDigest,
+            NlAskRequest.ForceTool forceTool,
+            AiQueryRequest currentQuery,
+            NlAskStreamListener listener) {
+        return askInternal(ref, question, history, cellsetDigest, forceTool, currentQuery, null, listener);
     }
 
     /**
@@ -371,6 +626,24 @@ public class AiAskService {
             String cellsetDigest,
             NlAskRequest.ForceTool forceTool,
             AiQueryRequest currentQuery) {
+        return askInSpaceStreaming(spaceId, ref, question, history, cellsetDigest, forceTool, currentQuery, null);
+    }
+
+    /**
+     * Space-scoped ask with the model's prose streamed to {@code listener} as it is written
+     * (saiku#1484). Twin of {@link #askInSpace} — same allowlist enforcement, same pre-LLM scope
+     * decision, same post-LLM re-check of the cube the model actually emitted; the only difference
+     * is that the provider call streams.
+     */
+    public AskOutcome askInSpaceStreaming(
+            String spaceId,
+            AiCubeRef ref,
+            String question,
+            List<NlAskMessage> history,
+            String cellsetDigest,
+            NlAskRequest.ForceTool forceTool,
+            AiQueryRequest currentQuery,
+            NlAskStreamListener listener) {
         if (spaces == null) {
             return AskOutcome.degraded(
                     "agent spaces are not configured on this instance", null, SpaceAccess.SPACES_NOT_CONFIGURED);
@@ -396,7 +669,7 @@ public class AiAskService {
                     null,
                     SpaceAccess.FORBIDDEN);
         }
-        return askInternal(effectiveRef, question, history, cellsetDigest, forceTool, currentQuery, space);
+        return askInternal(effectiveRef, question, history, cellsetDigest, forceTool, currentQuery, space, listener);
     }
 
     /**
@@ -596,6 +869,23 @@ public class AiAskService {
             String cellsetDigest,
             NlAskRequest.ForceTool forceTool,
             AiQueryRequest currentQuery) {
+        return askChained(ref, question, history, cellsetDigest, forceTool, currentQuery, null);
+    }
+
+    /**
+     * Streaming variant of {@link #askChained} (saiku#1484): each step's prose reaches
+     * {@code listener} as the model writes it, tagged by {@link NlAskStreamListener#onStepStart(int)}
+     * so a multi-step consumer can tell the steps apart. The returned {@link AskChain} is the chain
+     * the buffered call would have produced.
+     */
+    public AskChain askChained(
+            AiCubeRef ref,
+            String question,
+            List<NlAskMessage> history,
+            String cellsetDigest,
+            NlAskRequest.ForceTool forceTool,
+            AiQueryRequest currentQuery,
+            NlAskStreamListener listener) {
 
         if (ref == null) {
             return new AskChain(List.of(AskOutcome.degraded("cube ref required", null)), false);
@@ -659,6 +949,13 @@ public class AiAskService {
             histLocal = dropAssistantTurns(histLocal);
         }
         final List<NlAskMessage> hist = histLocal;
+        // saiku#1425: admin-enabled outbound MCP tools, offered alongside the built-in emit_* tools
+        // on every AUTO/INSIGHT-forced turn (see the wantMcpTools gating in each provider) so the
+        // model can pull external context before or after building/reporting on a cube query — the
+        // "combined metrics + context in one turn" shape. Resolved ONCE per chain (not re-fetched
+        // every turn) so a slow/unreachable server can't add latency to every step; the catalogue
+        // itself is already refresh-cached — see McpOutboundToolCatalog.
+        final List<McpOutboundToolDescriptor> mcpToolsForChain = mcpOutbound != null ? mcpOutbound.tools() : List.of();
 
         // --- the loop ---
         List<AskOutcome> steps = new ArrayList<>();
@@ -674,8 +971,20 @@ public class AiAskService {
         final long chainStartNanos = nanoClock.getAsLong();
         final long chainDeadlineNanos = chainDeadlineSeconds() * 1_000_000_000L;
         String lastModel = null; // most recent provider model, for a clean degraded return on deadline
+        // saiku#1918 (17d): accumulate the chain's true cost. Every iteration below is a real
+        // provider round-trip, including the paced retries inside askWithPacedRetry and the turns
+        // that end in a degrade, so the counters are bumped the moment a response comes back rather
+        // than only on the success path.
+        int providerCalls = 0;
+        long inputTokens = 0L;
+        long outputTokens = 0L;
 
         for (int i = 0; i < cap; i++) {
+            // Streaming consumers (the chained SSE endpoint) need to know which step the following
+            // events belong to before the first token of it lands. No-op for a null listener.
+            if (listener != null) {
+                listener.onStepStart(i);
+            }
             // F3: stop the loop cleanly if the whole chain has blown its wall-clock budget. Checked
             // before each provider round-trip (and thus after the previous turn's paced-retry waits).
             // Mirrors the egress-denied early exit: append a degraded step and break — NEVER throw,
@@ -707,16 +1016,41 @@ public class AiAskService {
                     currentQueryJson,
                     skillsFragment,
                     null,
-                    List.copyOf(transcript));
+                    List.copyOf(transcript),
+                    mcpToolsForChain);
             // OPT-3: a rate-limited turn (HTTP 429) is paced + retried in place — the SAME request,
             // since a rate limit isn't the model's fault — up to a bounded retry count. A non-429
             // degrade never enters that loop. Shared with buildDashboard (see askWithPacedRetry).
-            NlAskResponse resp = askWithPacedRetry(req);
+            PaskedResponse asked = askWithPacedRetry(req, listener);
+            NlAskResponse resp = asked.response();
+            providerCalls += asked.providerCalls();
+            inputTokens += tokensOrZero(resp.inputTokens());
+            outputTokens += tokensOrZero(resp.outputTokens());
             lastModel = resp.model(); // remember for a clean deadline degrade on a later iteration
 
             if (resp.degraded()) {
                 steps.add(AskOutcome.degraded(resp.reason(), resp.model()));
                 break;
+            }
+
+            if (resp.kind() == NlAskResponse.Kind.MCP_TOOL) {
+                // saiku#1425: dispatch the outbound tool call server-side and feed the result back —
+                // the same execute-and-continue shape as a QUERY step, except NOTHING here touches
+                // turnDigest (that's reserved for cube cell data; an external tool's result is a
+                // different kind of context and doesn't unlock emit_insight/emit_view_change on its
+                // own). The step is recorded either way so the client can render "called X" in the
+                // transcript, matching the transparency a QUERY step gets.
+                McpToolCallSummary summary = dispatchMcpTool(resp);
+                steps.add(AskOutcome.okMcpToolCall(summary, resp.model()));
+                if (i == cap - 1) {
+                    hitStepLimit = true; // cap reached still pulling external context
+                    break;
+                }
+                String mcpCallId =
+                        (resp.toolCallId() != null && !resp.toolCallId().isBlank()) ? resp.toolCallId() : "call_" + i;
+                String fedBack = summary.error() ? "ERROR: " + summary.resultDigest() : summary.resultDigest();
+                transcript.add(new ToolTurn(mcpCallId, summary.qualifiedName(), resp.payloadJson(), fedBack));
+                continue;
             }
 
             AskOutcome outcome = routeResponse(resp, null, hadCellsetOnScreen);
@@ -741,8 +1075,9 @@ public class AiAskService {
             }
             AiQueryRequest parsed = outcome.request();
             CellDataSet cds;
+            AiSchema qSchema;
             try {
-                AiSchema qSchema = metadataService.getSchema(parsed.getCube());
+                qSchema = metadataService.getSchema(parsed.getCube());
                 ThinQuery tq = converter.convert(parsed, qSchema);
                 cds = thinQueryService.execute(tq);
             } catch (RuntimeException e) {
@@ -755,14 +1090,136 @@ public class AiAskService {
             if (kAnonymityFilter != null) {
                 kAnonymityFilter.applyToCellDataSet(cds);
             }
-            String resultDigest = CellsetDigestBuilder.digest(cds, CHAIN_DIGEST_MAX_ROWS);
+            // saiku#1918 (17a): the digest is the last hop before the cellset text reaches the
+            // provider, so it re-checks the PII posture of the query that produced it rather than
+            // trusting the converter to have been the only thing that got there. The converter
+            // already refuses a PII axis, so this is the second layer.
+            String resultDigest =
+                    CellsetDigestBuilder.digest(cds, CHAIN_DIGEST_MAX_ROWS, piiDigestPolicy(parsed, qSchema));
             String callId =
                     (resp.toolCallId() != null && !resp.toolCallId().isBlank()) ? resp.toolCallId() : "call_" + i;
             transcript.add(new ToolTurn(callId, "emit_query", resp.payloadJson(), resultDigest));
             turnDigest = resultDigest; // feed forward: unlocks emit_insight + supplies the data
             // else: loop again — the model now has the data and should emit_insight (the report).
         }
-        return new AskChain(List.copyOf(steps), hitStepLimit);
+        return new AskChain(List.copyOf(steps), hitStepLimit, providerCalls, inputTokens, outputTokens);
+    }
+
+    /** Provider-reported token counts use {@code -1} for "not reported"; charge nothing for those. */
+    private static long tokensOrZero(int reported) {
+        return reported < 0 ? 0L : reported;
+    }
+
+    /**
+     * saiku#1918 (17a) — derive the digest redaction policy for a query the chain is about to
+     * hand to the LLM.
+     *
+     * <p>Two things get redacted. A PII level on the row axis means column 0 of every digest row
+     * is a personal caption, so the whole row-header column is suppressed. A PII measure or
+     * column-axis level means a whole column is personal data, so its header name is registered
+     * and every cell under it is suppressed.
+     *
+     * <p>Name resolution goes through the same canonical-or-alias lookups the converter uses, so
+     * an alias that resolves to a PII column is caught here too. A name that resolves to nothing
+     * contributes nothing — an unresolvable axis is the converter's problem to report, not this
+     * method's to guess at.
+     */
+    private static CellsetDigestBuilder.DigestPolicy piiDigestPolicy(AiQueryRequest req, AiSchema schema) {
+        if (req == null || schema == null) return CellsetDigestBuilder.DigestPolicy.NONE;
+        // Only the ROWS axis puts a member caption in column 0; a PII level on the columns axis
+        // lands in a header cell, which is handled by the named-column list below.
+        boolean redactRowHeader = anyPiiLevel(req.getRows(), schema);
+        java.util.Set<String> piiHeaders = new java.util.LinkedHashSet<>();
+        if (req.getMeasures() != null) {
+            for (AiMeasureSelection m : req.getMeasures()) {
+                if (m == null) continue;
+                AiSchema.Measure resolved = schema.measures.get(AiSchema.key(m.getName()));
+                if (resolved == null) {
+                    String alias = schema.measureAliases.get(AiSchema.key(m.getName()));
+                    if (alias != null) resolved = schema.measures.get(alias);
+                }
+                if (resolved != null && resolved.pii) piiHeaders.add(resolved.name);
+            }
+        }
+        collectPiiColumnHeaders(req.getColumns(), schema, piiHeaders);
+        if (!redactRowHeader && piiHeaders.isEmpty()) return CellsetDigestBuilder.DigestPolicy.NONE;
+        return new CellsetDigestBuilder.DigestPolicy(redactRowHeader, piiHeaders);
+    }
+
+    private static boolean anyPiiLevel(List<AiAxisSelection> axes, AiSchema schema) {
+        if (axes == null) return false;
+        for (AiAxisSelection a : axes) {
+            if (a == null) continue;
+            AiSchema.Level lvl = resolveLevelQuietly(a, schema);
+            if (lvl != null && lvl.pii) return true;
+        }
+        return false;
+    }
+
+    private static void collectPiiColumnHeaders(
+            List<AiAxisSelection> axes, AiSchema schema, java.util.Set<String> out) {
+        if (axes == null) return;
+        for (AiAxisSelection a : axes) {
+            if (a == null) continue;
+            AiSchema.Level lvl = resolveLevelQuietly(a, schema);
+            if (lvl != null && lvl.pii) out.add(lvl.name);
+        }
+    }
+
+    /** Canonical-or-alias level resolution that returns {@code null} rather than throwing — the
+     *  digest policy is a defence-in-depth layer and must never turn a valid chain into a degrade
+     *  with a worse message than the converter's own. */
+    private static AiSchema.Level resolveLevelQuietly(AiAxisSelection a, AiSchema schema) {
+        if (a.getDimension() == null || a.getLevel() == null) return null;
+        AiSchema.Dimension d = schema.dimensions.get(AiSchema.key(a.getDimension()));
+        if (d == null) {
+            String alias = schema.dimensionAliases.get(AiSchema.key(a.getDimension()));
+            if (alias != null) d = schema.dimensions.get(alias);
+        }
+        if (d == null) return null;
+        AiSchema.Hierarchy h;
+        if (a.getHierarchy() == null || a.getHierarchy().isEmpty()) {
+            if (d.hierarchies.size() != 1) return null;
+            h = d.hierarchies.values().iterator().next();
+        } else {
+            h = d.hierarchies.get(AiSchema.key(a.getHierarchy()));
+            if (h == null) {
+                String alias = d.hierarchyAliases.get(AiSchema.key(a.getHierarchy()));
+                if (alias != null) h = d.hierarchies.get(alias);
+            }
+        }
+        if (h == null) return null;
+        AiSchema.Level lvl = h.levels.get(AiSchema.key(a.getLevel()));
+        if (lvl == null) {
+            String alias = h.levelAliases.get(AiSchema.key(a.getLevel()));
+            if (alias != null) lvl = h.levels.get(alias);
+        }
+        return lvl;
+    }
+
+    /**
+     * saiku#1425: dispatch a model-emitted outbound-MCP tool call through {@link #mcpOutbound}.
+     * Never throws — {@link McpOutboundToolCatalog#callTool} already converts every transport /
+     * validation failure into a typed {@code CallResult}, so an unreachable server or a stale tool
+     * name becomes an honest failure summary fed back to the model, not an exception that would
+     * abort the whole chain.
+     */
+    private McpToolCallSummary dispatchMcpTool(NlAskResponse resp) {
+        String qualifiedName = resp.mcpToolQualifiedName();
+        if (mcpOutbound == null || qualifiedName == null || qualifiedName.isBlank()) {
+            // Defensive only — the provider can't have advertised an mcp__* tool without a non-empty
+            // mcpToolsForChain, which requires mcpOutbound != null. Covers a hypothetical
+            // hallucinated tool name reaching here regardless. Never a blank/null qualifiedName in
+            // the summary — it feeds ToolTurn.toolName, which rejects blank.
+            String label = (qualifiedName == null || qualifiedName.isBlank()) ? "mcp__unknown" : qualifiedName;
+            return new McpToolCallSummary(label, resp.payloadJson(), "outbound MCP is not available", true);
+        }
+        McpOutboundClient.CallResult result = mcpOutbound.callTool(qualifiedName, resp.payloadJson());
+        if (!result.ok()) {
+            log.info("chained ask: outbound MCP tool call failed: {} ({})", qualifiedName, result.error());
+            return new McpToolCallSummary(qualifiedName, resp.payloadJson(), result.error(), true);
+        }
+        return new McpToolCallSummary(qualifiedName, resp.payloadJson(), result.resultText(), false);
     }
 
     /**
@@ -772,9 +1229,22 @@ public class AiAskService {
      * Extracted so {@link #askChained} and {@link #buildDashboard} share identical paced-retry
      * behaviour rather than duplicating the loop.
      */
-    private NlAskResponse askWithPacedRetry(NlAskRequest req) {
-        NlAskResponse resp = provider.ask(req);
+    private PaskedResponse askWithPacedRetry(NlAskRequest req) {
+        return askWithPacedRetry(req, null);
+    }
+
+    /**
+     * Provider call with the paced 429 / transient-tool-error retry loop, optionally streaming the
+     * model's prose to {@code listener} (saiku#1484).
+     *
+     * <p>Retrying a stream is safe precisely because a rate limit is decided before any content
+     * arrives: the HTTP status is known when the response headers do, so a re-ask starts from
+     * zero deltas and the client never sees a token twice.
+     */
+    private PaskedResponse askWithPacedRetry(NlAskRequest req, NlAskStreamListener listener) {
+        NlAskResponse resp = listener == null ? provider.ask(req) : provider.askStreaming(req, listener);
         int rlRetries = 0;
+        int calls = 1;
         while (resp.degraded() && resp.retryAfterMs() >= 0 && rlRetries < rateLimitRetries()) {
             long wait = resp.retryAfterMs() > 0 ? resp.retryAfterMs() : DEFAULT_RATE_LIMIT_WAIT_MS;
             wait = Math.min(wait, rateLimitMaxWaitMs());
@@ -785,11 +1255,19 @@ public class AiAskService {
                 break; // stop retrying; caller handles the degraded response
             }
             rlRetries++;
+            calls++;
             log.info("AI ask: LLM rate-limited, waited {}ms, retry {}/{}", wait, rlRetries, rateLimitRetries());
-            resp = provider.ask(req);
+            resp = listener == null ? provider.ask(req) : provider.askStreaming(req, listener);
         }
-        return resp;
+        return new PaskedResponse(resp, calls);
     }
+
+    /**
+     * saiku#1918 (17d): a paced provider turn plus how many provider round-trips it actually took.
+     * A rate-limit retry is a real, billed call, so "one ask" is not reliably "one call" — and the
+     * daily budget has to be charged for what was sent, not for what the endpoint counted.
+     */
+    private record PaskedResponse(NlAskResponse response, int providerCalls) {}
 
     /**
      * Cap on the number of tiles {@link #buildDashboard} will keep. Read from env
@@ -814,8 +1292,14 @@ public class AiAskService {
     /** Allowlisted dashboard tile kinds (MVP). Unknown values coerce to {@code table}. */
     private static final java.util.Set<String> TILE_TYPES = java.util.Set.of("chart", "table", "kpi");
 
-    /** Allowlisted chart subtypes for chart tiles. Unknown values coerce to {@code bar}. */
-    private static final java.util.Set<String> CHART_TYPES = java.util.Set.of("bar", "line", "pie", "area", "scatter");
+    /**
+     * Allowlisted chart subtypes for chart tiles — the canonical catalog
+     * ({@link AiViewChangeCatalog#CHART_TYPE_IDS}), i.e. every type the dashboard tile renderer can
+     * draw. It was a five-id MVP set (bar/line/pie/area/scatter) until issue #1481, which silently
+     * downgraded eleven renderable chart types to {@code bar} whenever a model picked one. Unknown
+     * values still coerce to {@code bar}.
+     */
+    private static final java.util.Set<String> CHART_TYPES = AiViewChangeCatalog.CHART_TYPE_IDS;
 
     private static final int DASHBOARD_TITLE_MAX = 120;
     private static final int TILE_TITLE_MAX = 80;
@@ -915,7 +1399,7 @@ public class AiAskService {
                 spaceSystemPrompt,
                 List.of());
 
-        NlAskResponse resp = askWithPacedRetry(req);
+        NlAskResponse resp = askWithPacedRetry(req).response();
         if (resp.degraded()) {
             // Provider transport/parse/refusal degrade — surface the reason (already generic /
             // OFF_TOPIC-prefixed) so the resource can render it.
@@ -1057,12 +1541,22 @@ public class AiAskService {
             String cellsetDigest,
             NlAskRequest.ForceTool forceTool,
             AiQueryRequest currentQuery,
-            AgentSpace space) {
+            AgentSpace space,
+            NlAskStreamListener listener) {
         if (ref == null) {
             return AskOutcome.degraded("cube ref required", null);
         }
         if (question == null || question.isBlank()) {
             return AskOutcome.degraded("question must be non-blank", null);
+        }
+
+        // saiku#1430 — certified short-circuit, BEFORE the schema load and before the provider is
+        // called. When the question is a data ask that overlaps a certified matchIntent, the
+        // admin-approved query wins outright: the model is never asked, so there is nothing for it
+        // to re-derive differently. See certifiedMatch() for the routing conditions.
+        AskOutcome certified = certifiedMatch(ref, question, cellsetDigest, forceTool);
+        if (certified != null) {
+            return certified;
         }
 
         AiSchema schema;
@@ -1173,10 +1667,15 @@ public class AiAskService {
                 skillsFragment,
                 spaceSystemPrompt,
                 List.of());
-        NlAskResponse resp = provider.ask(req);
+        // A null listener is the buffered path, byte for byte the call this method made before
+        // streaming existed (every provider's askStreaming short-circuits to ask in that case).
+        NlAskResponse resp = provider.askStreaming(req, listener);
 
         if (resp.degraded()) {
-            return AskOutcome.degraded(resp.reason(), resp.model());
+            // saiku#1918 (17d): a degraded turn still cost money at the provider — the request was
+            // sent and billed even though we couldn't use the answer. Report its usage so the
+            // budget reflects the spend.
+            return AskOutcome.degraded(resp.reason(), resp.model(), resp.inputTokens(), resp.outputTokens());
         }
         return routeResponse(resp, space, hadCellsetOnScreen);
     }
@@ -1211,7 +1710,7 @@ public class AiAskService {
                             resp.model(),
                             SpaceAccess.FORBIDDEN);
                 }
-                return AskOutcome.ok(parsed, resp.model());
+                return AskOutcome.ok(parsed, resp.model(), resp.inputTokens(), resp.outputTokens());
             }
             if (kind == NlAskResponse.Kind.INSIGHT) {
                 AiInsight insight = mapper.readValue(resp.payloadJson(), AiInsight.class);
@@ -1220,7 +1719,7 @@ public class AiAskService {
                         || insight.getMarkdown().isBlank()) {
                     return AskOutcome.degraded("provider emitted empty insight", resp.model());
                 }
-                return AskOutcome.okInsight(insight, resp.model());
+                return AskOutcome.okInsight(insight, resp.model(), resp.inputTokens(), resp.outputTokens());
             }
             if (kind == NlAskResponse.Kind.EMAIL_DRAFT) {
                 if (!hadCellsetOnScreen) {
@@ -1234,7 +1733,7 @@ public class AiAskService {
                         || draft.getSummary().isBlank()) {
                     return AskOutcome.degraded("provider emitted empty email draft", resp.model());
                 }
-                return AskOutcome.okEmailDraft(draft, resp.model());
+                return AskOutcome.okEmailDraft(draft, resp.model(), resp.inputTokens(), resp.outputTokens());
             }
             if (kind == NlAskResponse.Kind.VIEW_CHANGE) {
                 AiViewChange vc = mapper.readValue(resp.payloadJson(), AiViewChange.class);
@@ -1249,7 +1748,7 @@ public class AiAskService {
                     return AskOutcome.degraded(
                             "provider emitted unknown chartType '" + vc.getChartType() + "'", resp.model());
                 }
-                return AskOutcome.okViewChange(vc, resp.model());
+                return AskOutcome.okViewChange(vc, resp.model(), resp.inputTokens(), resp.outputTokens());
             }
             return AskOutcome.degraded("provider returned unexpected kind: " + kind, resp.model());
         } catch (JsonProcessingException e) {
@@ -1258,6 +1757,55 @@ public class AiAskService {
             // to the caller (#1282-class info-leak hardening). Kind is a safe enum.
             return AskOutcome.degraded("provider emitted invalid JSON for " + resp.kind(), resp.model());
         }
+    }
+
+    /**
+     * saiku#1430 — resolve the ask to a certified query, or return {@code null} to let the model
+     * handle it.
+     *
+     * <p>Short-circuits BEFORE the provider round-trip, not by prompting harder. A prompt
+     * instruction ("prefer the certified answer") is a request the model can weigh against its own
+     * judgement; a pre-LLM routing decision is a guarantee. The CFO's certified revenue number is
+     * either what comes back, or the ask wasn't a certified ask.
+     *
+     * <p>Deliberately narrow — certified routing fires only for a genuine data ask:
+     *
+     * <ul>
+     *   <li>No cellset digest on screen. A digest means the user is asking a follow-up about data
+     *       already rendered ("why did June drop?"); substituting a fresh certified query there
+     *       would answer a question nobody asked. {@code INSIGHT} / {@code VIEW_CHANGE} follow-ups
+     *       reach the model as usual.
+     *   <li>No explicit intent override that isn't {@code QUERY} — an operator who picked a mode in
+     *       the drawer has said what they want.
+     *   <li>The ask is against the same cube the certified query was approved for.
+     * </ul>
+     *
+     * <p>Returns {@code null} (rather than a degraded outcome) when nothing matches, so a
+     * non-certified ask takes the ordinary path with no behavioural difference.
+     */
+    private AskOutcome certifiedMatch(
+            AiCubeRef ref, String question, String cellsetDigest, NlAskRequest.ForceTool forceTool) {
+        if (certifiedQueries == null) {
+            return null;
+        }
+        if (cellsetDigest != null && !cellsetDigest.isBlank()) {
+            return null; // follow-up about data already on screen, not a data request
+        }
+        if (question.startsWith("/")) {
+            return null; // an explicit /skill invocation outranks a certified match
+        }
+        NlAskRequest.ForceTool ft = forceTool == null ? NlAskRequest.ForceTool.AUTO : forceTool;
+        if (ft != NlAskRequest.ForceTool.AUTO && ft != NlAskRequest.ForceTool.QUERY) {
+            return null; // the caller explicitly asked for insight / view change / dashboard
+        }
+        String cubeName = ref == null ? null : ref.getCubeName();
+        return certifiedQueries
+                .match(question, cubeName)
+                .<AskOutcome>map(cq -> {
+                    log.info("certified query '{}' matched the ask — executing verbatim (no model call)", cq.id());
+                    return AskOutcome.okCertified(cq);
+                })
+                .orElse(null);
     }
 
     /**
