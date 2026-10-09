@@ -67,7 +67,12 @@ public class EmbedAuthFilterAuthoringTest {
     @Before
     public void setUp() {
         tokenStore = new EmbedTokenStore((String) null);
-        filter = new EmbedAuthFilter(tokenStore, new EmbedPublicRegistry((String) null));
+        // saiku#1920: the filter re-resolves the token owner on every read. The owner here is still
+        // an active admin, which is what the tokens below were minted for.
+        filter = new EmbedAuthFilter(
+                tokenStore,
+                new EmbedPublicRegistry((String) null),
+                username -> org.saiku.web.schedule.OwnerIdentity.present(List.of("ROLE_ADMIN")));
         System.setProperty(EmbedAuthFilter.PROP_JWT_SECRET, SECRET);
     }
 
@@ -114,8 +119,9 @@ public class EmbedAuthFilterAuthoringTest {
 
     @Test
     public void jwt_without_a_tenant_claim_is_refused() throws Exception {
-        String jwt = mint("{\"sub\":\"u\",\"saiku.resourceKind\":\"authoring\","
-                + "\"saiku.resourcePath\":\"/" + CUBE + "\",\"exp\":" + future() + "}");
+        String jwt = mint(
+                "{\"sub\":\"u\",\"aud\":\"saiku-embed\",\"iss\":\"https://embedder.example\",\"saiku.resourceKind\":\"authoring\","
+                        + "\"saiku.resourcePath\":\"/" + CUBE + "\",\"exp\":" + future() + "}");
         assertRefused(doGet(PATH + "/context", jwt));
     }
 
@@ -147,15 +153,17 @@ public class EmbedAuthFilterAuthoringTest {
         ContextCapturingChain chain = doGet("/rest/saiku/api/embed/query/homes/admin/sales.saiku", t.token);
 
         assertTrue(chain.called);
-        assertEquals(List.of(EmbedAuthFilter.GUEST_ROLE), roles(chain.capturedAuth).stream().sorted().toList());
+        assertEquals(
+                List.of(EmbedAuthFilter.GUEST_ROLE),
+                roles(chain.capturedAuth).stream().sorted().toList());
         assertNull("a read token must carry no tenant", details(chain.capturedAuth).tenantId);
         assertFalse(details(chain.capturedAuth).isAuthoring());
     }
 
     @Test
     public void a_read_token_cannot_reach_the_authoring_prefix() throws Exception {
-        EmbedToken t = tokenStore.create(
-                "query", "/" + CUBE, "admin", List.of("ROLE_ADMIN"), 3600_000L, "read", null, null);
+        EmbedToken t =
+                tokenStore.create("query", "/" + CUBE, "admin", List.of("ROLE_ADMIN"), 3600_000L, "read", null, null);
         assertRefused(doGet(PATH + "/context", t.token));
     }
 
@@ -222,15 +230,18 @@ public class EmbedAuthFilterAuthoringTest {
         // Control: prove the harness CAN see an admission, so "no survivor" in
         // the loop below means something.
         ContextCapturingChain control = doGet(PATH + "/context", jwt("acme", CUBE));
-        assertTrue("control JWT must author", control.capturedAuth != null
-                && roles(control.capturedAuth).contains(EmbedAuthFilter.AUTHOR_ROLE));
+        assertTrue(
+                "control JWT must author",
+                control.capturedAuth != null && roles(control.capturedAuth).contains(EmbedAuthFilter.AUTHOR_ROLE));
         admitted++;
 
         for (int i = 0; i < 300; i++) {
             String tenant = tenants[rnd.nextInt(tenants.length)];
             String cube = cubes[rnd.nextInt(cubes.length)];
             String kind = kinds[rnd.nextInt(kinds.length)];
-            String payload = "{\"sub\":\"u" + i + "\",\"saiku.resourceKind\":\"" + kind + "\","
+            String payload = "{\"sub\":\"u" + i
+                    + "\",\"aud\":\"saiku-embed\",\"iss\":\"https://embedder.example\",\"saiku.resourceKind\":\"" + kind
+                    + "\","
                     + "\"saiku.resourcePath\":\"/" + cube + "\","
                     + (rnd.nextBoolean() ? "\"saiku.tenantId\":\"" + tenant + "\"," : "")
                     + "\"exp\":" + (rnd.nextBoolean() ? future() : past()) + "}";
@@ -242,7 +253,8 @@ public class EmbedAuthFilterAuthoringTest {
             String url = "/rest/saiku/api/embed/authoring/" + urlCube + "/context";
             ContextCapturingChain chain = doGet(url, mint(payload, secret));
 
-            boolean authorised = chain.called && chain.capturedAuth != null
+            boolean authorised = chain.called
+                    && chain.capturedAuth != null
                     && roles(chain.capturedAuth).contains(EmbedAuthFilter.AUTHOR_ROLE);
             // The ONLY shape that may author: the claim's cube matches the cube
             // the URL targets, the kind is exactly "authoring", the tenant is a
@@ -272,11 +284,12 @@ public class EmbedAuthFilterAuthoringTest {
     }
 
     private String jwt(String tenantId, String cube) {
-        return mint("{\"sub\":\"u\",\"saiku.resourceKind\":\"authoring\","
-                + "\"saiku.resourcePath\":\"/" + cube + "\","
-                + "\"saiku.owner\":\"admin\",\"saiku.ownerRoles\":[\"ROLE_ADMIN\"],"
-                + "\"saiku.tenantId\":\"" + tenantId + "\","
-                + "\"exp\":" + future() + "}");
+        return mint(
+                "{\"sub\":\"u\",\"aud\":\"saiku-embed\",\"iss\":\"https://embedder.example\",\"saiku.resourceKind\":\"authoring\","
+                        + "\"saiku.resourcePath\":\"/" + cube + "\","
+                        + "\"saiku.owner\":\"admin\",\"saiku.ownerRoles\":[\"ROLE_ADMIN\"],"
+                        + "\"saiku.tenantId\":\"" + tenantId + "\","
+                        + "\"exp\":" + future() + "}");
     }
 
     private static long future() {
@@ -328,7 +341,7 @@ public class EmbedAuthFilterAuthoringTest {
         return chain;
     }
 
-    private static void assertRefused(ContextCapturingChain chain) {
+    private static void assertRefused(ContextCapturingChain chain) throws Exception {
         assertFalse("no identity may be established", chain.called);
         assertEquals(401, chain.response.getStatus());
         assertTrue(chain.response.getContentAsString().contains("EMBED_INVALID"));

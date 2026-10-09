@@ -115,7 +115,8 @@ public final class AuthoringQueryValidator {
             v.add("queryModel is required");
             return new Result(v);
         }
-        if (!model.getCalculatedMembers().isEmpty() || !model.getCalculatedMeasures().isEmpty()) {
+        if (!model.getCalculatedMembers().isEmpty()
+                || !model.getCalculatedMeasures().isEmpty()) {
             v.add("calculated members / measures are not accepted");
         }
         if (!model.getNamedSets().isEmpty()) {
@@ -128,7 +129,9 @@ public final class AuthoringQueryValidator {
             }
         }
         ThinDetails details = model.getDetails();
-        if (details == null || details.getMeasures() == null || details.getMeasures().isEmpty()) {
+        if (details == null
+                || details.getMeasures() == null
+                || details.getMeasures().isEmpty()) {
             v.add("at least one measure is required");
         } else {
             for (ThinMeasure m : details.getMeasures()) {
@@ -148,6 +151,11 @@ public final class AuthoringQueryValidator {
         if (a.getFilters() != null && !a.getFilters().isEmpty()) {
             v.add("axis " + axis + ": filters are not accepted");
         }
+        // The axis-level sort expression is free text spliced into ORDER BY, exactly like the
+        // hierarchy-level one checked below — refusing only one of the two would leave the other open.
+        if (a.getSortEvaluationLiteral() != null) {
+            v.add("axis " + axis + ": sort expressions are not accepted");
+        }
         List<ThinHierarchy> hierarchies = a.getHierarchies();
         if (hierarchies == null || hierarchies.isEmpty()) {
             return;
@@ -161,7 +169,8 @@ public final class AuthoringQueryValidator {
                 v.add("axis " + axis + ": null hierarchy");
                 continue;
             }
-            if (notBlank(h.getMdx()) || (h.getFilters() != null && !h.getFilters().isEmpty())) {
+            if (notBlank(h.getMdx())
+                    || (h.getFilters() != null && !h.getFilters().isEmpty())) {
                 v.add("axis " + axis + ": filters / raw MDX are not accepted");
             }
             if (h.getSortEvaluationLiteral() != null) {
@@ -224,9 +233,8 @@ public final class AuthoringQueryValidator {
         if (notBlank(l.getMdx()) || (l.getFilters() != null && !l.getFilters().isEmpty())) {
             v.add("axis " + axis + ": filters / raw MDX are not accepted");
         }
-        if (l.getSortEvaluationLiteral() != null) {
-            v.add("axis " + axis + ": sort expressions are not accepted");
-        }
+        // A level carries no sort expression of its own (that lives on the hierarchy, checked above),
+        // so there is nothing further to refuse here.
         boolean levelInCube = false;
         for (AuthoringCubeCatalogue.Level known : dimension.levels) {
             if (known.name.equals(l.getName())) {

@@ -74,15 +74,19 @@ public class EmbedAuthoringScopeTest {
         for (String hostile : new String[] {
             "../../etc/passwd", "..", "a/../../b", "..\\..\\windows", "/etc/passwd", "a/b", "....//....//x"
         }) {
-            String path = EmbedAuthoringScope.resolve(scope, hostile, EmbedAuthoringScope.QUERY_EXT);
+            String path;
+            try {
+                path = EmbedAuthoringScope.resolve(scope, hostile, EmbedAuthoringScope.QUERY_EXT);
+            } catch (IllegalArgumentException refused) {
+                // A name that sanitises to nothing but separators ("..") is refused outright, which
+                // is just as safe as neutralising it: nothing is created outside the scope.
+                continue;
+            }
             assertTrue(
                     "resolved path escaped the scope for name '" + hostile + "': " + path,
                     EmbedAuthoringScope.isWithin(scope, path));
             // …and the separator count proves nothing nested was created.
-            assertEquals(
-                    "traversal name must not add a path segment: " + path,
-                    4,
-                    path.split("/").length - 1);
+            assertEquals("traversal name must not add a path segment: " + path, 4, path.split("/").length - 1);
         }
     }
 

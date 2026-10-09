@@ -236,6 +236,10 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
                             // the view resource can stamp the gateway-
                             // facing redaction-policy header.
                             token.redactionPolicy,
+                            // An opaque token has no JWT subject or forced filters; it does carry
+                            // the tenant an authoring token is pinned to (saiku#1435).
+                            null,
+                            null,
                             token.tenantId));
             return;
         }

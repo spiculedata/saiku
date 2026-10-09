@@ -65,6 +65,9 @@ public final class EmbedAuthoringScope {
      *  {@code '_'}. Notably absent: {@code .} (kills {@code ..} traversal and
      *  the Windows 8.3 / NTFS tail tricks saiku#1903 had to defend against),
      *  {@code /} and {@code \} (no separators at all). */
+    /** A plain file suffix: one dot and a short alphanumeric run, nothing that could be a path. */
+    private static final Pattern EXTENSION = Pattern.compile("^\\.[A-Za-z0-9]{1,16}$");
+
     private static final Pattern KEEP = Pattern.compile("[^A-Za-z0-9 _-]");
 
     private EmbedAuthoringScope() {}
@@ -129,10 +132,7 @@ public final class EmbedAuthoringScope {
         if (scope == null || scope.isBlank()) {
             throw new IllegalArgumentException("scope is required");
         }
-        if (extension == null
-                || extension.isBlank()
-                || KEEP.matcher(extension).find()
-                || !extension.startsWith(".")) {
+        if (extension == null || !EXTENSION.matcher(extension).matches()) {
             throw new IllegalArgumentException("extension is not a plain file suffix");
         }
         String base = normalize(scope);
@@ -143,7 +143,9 @@ public final class EmbedAuthoringScope {
             // turn this into a traversal sink.
             throw new IllegalArgumentException("resolved path escapes the authoring scope");
         }
-        return resolved;
+        // Keep the caller's form: a scope handed in as an absolute repository path ("/homes/...")
+        // yields an absolute object path, matching how homeFor() builds it.
+        return scope.trim().startsWith("/") ? "/" + resolved : resolved;
     }
 
     /**
@@ -189,6 +191,10 @@ public final class EmbedAuthoringScope {
                 if (out.length() == 0) {
                     throw new IllegalArgumentException("path escapes the repository root");
                 }
+                // Pop the previous segment. The builder always ends in a separator, so drop that
+                // first; otherwise lastIndexOf finds the trailing one and nothing is popped (".."
+                // would then be silently ignored instead of resolved).
+                out.setLength(out.length() - 1);
                 out.setLength(out.lastIndexOf("/") + 1);
                 continue;
             }

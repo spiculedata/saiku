@@ -163,10 +163,11 @@ public class EmbedAuthoringResource {
             @PathParam("catalog") String catalog,
             @PathParam("schema") String schema,
             @PathParam("cube") String cube) {
-        EmbedGuestDetails g = guard(connection, catalog, schema, cube);
-        if (g instanceof Response) {
-            return (Response) g;
+        Object guarded = guard(connection, catalog, schema, cube);
+        if (guarded instanceof Response) {
+            return (Response) guarded;
         }
+        EmbedGuestDetails g = (EmbedGuestDetails) guarded;
         AuthoringCubeCatalogue catalogue = catalogue(g, connection, catalog, schema, cube);
         if (catalogue == null) {
             return error("pinned cube is not available", Response.Status.NOT_FOUND);
@@ -201,10 +202,11 @@ public class EmbedAuthoringResource {
             @PathParam("cube") String cube,
             @QueryParam("format") String format,
             SaveQueryBody body) {
-        EmbedGuestDetails g = guard(connection, catalog, schema, cube);
-        if (g instanceof Response) {
-            return (Response) g;
+        Object guarded = guard(connection, catalog, schema, cube);
+        if (guarded instanceof Response) {
+            return (Response) guarded;
         }
+        EmbedGuestDetails g = (EmbedGuestDetails) guarded;
         if (body == null || body.query == null || body.query.isNull()) {
             return badRequest("query", "query is required");
         }
@@ -261,10 +263,11 @@ public class EmbedAuthoringResource {
             @PathParam("schema") String schema,
             @PathParam("cube") String cube,
             SaveQueryBody body) {
-        EmbedGuestDetails g = guard(connection, catalog, schema, cube);
-        if (g instanceof Response) {
-            return (Response) g;
+        Object guarded = guard(connection, catalog, schema, cube);
+        if (guarded instanceof Response) {
+            return (Response) guarded;
         }
+        EmbedGuestDetails g = (EmbedGuestDetails) guarded;
         if (body == null || body.name == null || body.name.isBlank()) {
             return badRequest("name", "name is required");
         }
@@ -341,10 +344,11 @@ public class EmbedAuthoringResource {
             @PathParam("schema") String schema,
             @PathParam("cube") String cube,
             SaveDashboardBody body) {
-        EmbedGuestDetails g = guard(connection, catalog, schema, cube);
-        if (g instanceof Response) {
-            return (Response) g;
+        Object guarded = guard(connection, catalog, schema, cube);
+        if (guarded instanceof Response) {
+            return (Response) guarded;
         }
+        EmbedGuestDetails g = (EmbedGuestDetails) guarded;
         if (body == null || body.name == null || body.name.isBlank()) {
             return badRequest("name", "name is required");
         }
@@ -393,10 +397,11 @@ public class EmbedAuthoringResource {
             @PathParam("catalog") String catalog,
             @PathParam("schema") String schema,
             @PathParam("cube") String cube) {
-        EmbedGuestDetails g = guard(connection, catalog, schema, cube);
-        if (g instanceof Response) {
-            return (Response) g;
+        Object guarded = guard(connection, catalog, schema, cube);
+        if (guarded instanceof Response) {
+            return (Response) guarded;
         }
+        EmbedGuestDetails g = (EmbedGuestDetails) guarded;
         String folder = scope(g);
         List<Map<String, Object>> out = new ArrayList<>();
         try {
@@ -422,11 +427,7 @@ public class EmbedAuthoringResource {
                     Map<String, Object> row = new LinkedHashMap<>();
                     row.put("name", name);
                     row.put("path", folder + "/" + name);
-                    row.put(
-                            "type",
-                            name.endsWith(EmbedAuthoringScope.DASHBOARD_EXT)
-                                    ? "dashboard"
-                                    : "query");
+                    row.put("type", name.endsWith(EmbedAuthoringScope.DASHBOARD_EXT) ? "dashboard" : "query");
                     row.put("date", file.getModified());
                     row.put("owner", file.getOwner() == null ? "" : file.getOwner());
                     out.add(row);
@@ -453,16 +454,17 @@ public class EmbedAuthoringResource {
             @PathParam("schema") String schema,
             @PathParam("cube") String cube,
             @QueryParam("name") String name) {
-        EmbedGuestDetails g = guard(connection, catalog, schema, cube);
-        if (g instanceof Response) {
-            return (Response) g;
+        Object guarded = guard(connection, catalog, schema, cube);
+        if (guarded instanceof Response) {
+            return (Response) guarded;
         }
+        EmbedGuestDetails g = (EmbedGuestDetails) guarded;
         String path = resolveExisting(g, name);
         if (path == null) {
             return badRequest("name", "name is not a readable object in your folder");
         }
-        String raw = sessionService.runAs(g.ownerUser, g.ownerRoles, () -> datasourceService.getFileData(
-                path, g.ownerUser, g.ownerRoles));
+        String raw = sessionService.runAs(
+                g.ownerUser, g.ownerRoles, () -> datasourceService.getFileData(path, g.ownerUser, g.ownerRoles));
         if (raw == null || raw.isBlank()) {
             return error("object is not readable", Response.Status.NOT_FOUND);
         }
@@ -482,10 +484,11 @@ public class EmbedAuthoringResource {
             @PathParam("schema") String schema,
             @PathParam("cube") String cube,
             @QueryParam("name") String name) {
-        EmbedGuestDetails g = guard(connection, catalog, schema, cube);
-        if (g instanceof Response) {
-            return (Response) g;
+        Object guarded = guard(connection, catalog, schema, cube);
+        if (guarded instanceof Response) {
+            return (Response) guarded;
         }
+        EmbedGuestDetails g = (EmbedGuestDetails) guarded;
         String path = resolveExisting(g, name);
         if (path == null) {
             return badRequest("name", "name is not a deletable object in your folder");
@@ -630,8 +633,7 @@ public class EmbedAuthoringResource {
         String key = connection + "/" + catalog + "/" + schema + "/" + cube;
         try {
             return catalogueCache.get(key, k -> {
-                SaikuCube c =
-                        new SaikuCube(connection, cube, cube, null, catalog.isEmpty() ? null : catalog, schema);
+                SaikuCube c = new SaikuCube(connection, cube, cube, null, catalog.isEmpty() ? null : catalog, schema);
                 return AuthoringCubeCatalogue.fromSaikuCube(c, olapDiscoverService);
             });
         } catch (RuntimeException e) {
@@ -648,11 +650,7 @@ public class EmbedAuthoringResource {
             return error("save was rejected for this object", Response.Status.INTERNAL_SERVER_ERROR);
         }
         log.info(
-                "embed authoring saved {} at {} (tenant={}, sub={})",
-                what,
-                path,
-                g.tenantId,
-                String.valueOf(g.jwtSub));
+                "embed authoring saved {} at {} (tenant={}, sub={})", what, path, g.tenantId, String.valueOf(g.jwtSub));
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("status", "OK");
         body.put("path", path);

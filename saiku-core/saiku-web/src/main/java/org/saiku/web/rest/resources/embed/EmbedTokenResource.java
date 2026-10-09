@@ -411,10 +411,12 @@ public class EmbedTokenResource {
         if (kind == null || kind.isBlank()) {
             return badRequest("resourceKind", "resourceKind required");
         }
-        if (!"query".equals(kind) && !"dashboard".equals(kind) && !"ai".equals(kind) && !"app".equals(kind)
+        if (!"query".equals(kind)
+                && !"dashboard".equals(kind)
+                && !"ai".equals(kind)
+                && !"app".equals(kind)
                 && !"authoring".equals(kind)) {
-            return badRequest(
-                    "resourceKind", "resourceKind must be 'query', 'dashboard', 'ai', 'app', or 'authoring'");
+            return badRequest("resourceKind", "resourceKind must be 'query', 'dashboard', 'ai', 'app', or 'authoring'");
         }
         if (path == null || path.isBlank()) {
             return badRequest("resourcePath", "resourcePath required");

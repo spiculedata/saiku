@@ -16,13 +16,13 @@ import org.junit.Test;
 import org.olap4j.impl.NamedListImpl;
 import org.saiku.olap.query2.Parameter;
 import org.saiku.olap.query2.ThinAxis;
+import org.saiku.olap.query2.ThinCalculatedMember;
 import org.saiku.olap.query2.ThinDetails;
 import org.saiku.olap.query2.ThinHierarchy;
 import org.saiku.olap.query2.ThinLevel;
 import org.saiku.olap.query2.ThinMeasure;
 import org.saiku.olap.query2.ThinMember;
 import org.saiku.olap.query2.ThinNamedSet;
-import org.saiku.olap.query2.ThinCalculatedMember;
 import org.saiku.olap.query2.ThinQuery;
 import org.saiku.olap.query2.ThinQueryModel;
 import org.saiku.olap.query2.ThinSelection;
@@ -64,7 +64,7 @@ public class AuthoringQueryValidatorTest {
     @Test
     public void accepts_a_query_with_no_member_selection() {
         ThinQuery q = okQuery();
-        rowLevel(q).setSelection(null);
+        withRowSelection(q, null);
         assertTrue(verdict(q).isValid());
     }
 
@@ -73,7 +73,11 @@ public class AuthoringQueryValidatorTest {
     @Test
     public void refuses_a_hierarchy_outside_the_catalogue() {
         ThinQuery q = okQuery();
-        q.getQueryModel().getAxis(ThinQueryModel.AxisLocation.ROWS).getHierarchies().get(0).setName("[NotACube].[X]");
+        q.getQueryModel()
+                .getAxis(ThinQueryModel.AxisLocation.ROWS)
+                .getHierarchies()
+                .get(0)
+                .setName("[NotACube].[X]");
         assertFalse(verdict(q).isValid());
     }
 
@@ -110,7 +114,7 @@ public class AuthoringQueryValidatorTest {
     @Test
     public void refuses_a_member_outside_the_catalogue() {
         ThinQuery q = okQuery();
-        rowLevel(q).setSelection(selection("[Store].[Atlantis]"));
+        withRowSelection(q, selection("[Store].[Atlantis]"));
         assertFalse(verdict(q).isValid());
     }
 
@@ -119,8 +123,9 @@ public class AuthoringQueryValidatorTest {
         // A crafted "member" that is really an MDX fragment. It is not in the
         // level's member list, so it never reaches the MDX generator.
         ThinQuery q = okQuery();
-        rowLevel(q)
-                .setSelection(selection(
+        withRowSelection(
+                q,
+                selection(
                         "}) ON 0 FROM ([Store].[USA] WHERE 1=1) SELECT 1 FROM [Store] WHERE ([Measures].[Unit Sales]"));
         assertFalse(verdict(q).isValid());
     }
@@ -178,7 +183,7 @@ public class AuthoringQueryValidatorTest {
         ThinQuery q = okQuery();
         q.getQueryModel()
                 .getAxis(ThinQueryModel.AxisLocation.ROWS)
-                .setSortEvaluationLiteral("1=1) SELECT 1 FROM (SELECT");
+                .sort(org.saiku.olap.query2.common.ThinSortableQuerySet.SortOrder.ASC, "1=1) SELECT 1 FROM (SELECT");
         assertFalse(verdict(q).isValid());
     }
 
@@ -199,7 +204,7 @@ public class AuthoringQueryValidatorTest {
     @Test
     public void refuses_typed_parameters() {
         ThinQuery q = okQuery();
-        q.getTypedParameters().add(new Parameter(Parameter.ParameterType.SIMPLE, "evil", "1"));
+        q.getTypedParameters().add(new Parameter("evil", Parameter.ParameterType.SIMPLE, "1"));
         assertFalse(verdict(q).isValid());
     }
 
@@ -235,10 +240,12 @@ public class AuthoringQueryValidatorTest {
     public void refuses_a_member_on_a_truncated_level() {
         // A level the catalogue could not enumerate is unselectable: we can't
         // vouch for a name we never saw, so we refuse rather than guess.
-        AuthoringCubeCatalogue.Level hidden = new AuthoringCubeCatalogue.Level(
-                "[Store].[Store City]", "Store City", List.of(), true);
+        AuthoringCubeCatalogue.Level hidden =
+                new AuthoringCubeCatalogue.Level("[Store].[Store City]", "Store City", List.of(), true);
         AuthoringCubeCatalogue.Dimension store = new AuthoringCubeCatalogue.Dimension(
-                "[Store]", "Store", List.of(hidden, catalogue.dimensions().get(0).levels().get(0)));
+                "[Store]",
+                "Store",
+                List.of(hidden, catalogue.dimensions().get(0).levels.get(0)));
         catalogue = new AuthoringCubeCatalogue(
                 catalogue.cubeUniqueName(), catalogue.cubeCaption(), List.of(store), catalogue.measures());
 
@@ -282,8 +289,7 @@ public class AuthoringQueryValidatorTest {
         tq.setType(ThinQuery.Type.QUERYMODEL);
         tq.setQueryType("OLAP");
 
-        ThinLevel storeLevel =
-                new ThinLevel("[Store].[Store]", "Store", selection("[Store].[USA]"), new ArrayList<>());
+        ThinLevel storeLevel = new ThinLevel("[Store].[Store]", "Store", selection("[Store].[USA]"), new ArrayList<>());
         Map<String, ThinLevel> storeLevels = new HashMap<>();
         storeLevels.put("[Store].[Store]", storeLevel);
         ThinHierarchy storeHierarchy = new ThinHierarchy("[Store]", "Store", "[Store]", storeLevels);
@@ -325,7 +331,21 @@ public class AuthoringQueryValidatorTest {
     }
 
     private ThinHierarchy rowHierarchy(ThinQuery tq) {
-        return tq.getQueryModel().getAxis(ThinQueryModel.AxisLocation.ROWS).getHierarchies().get(0);
+        return tq.getQueryModel()
+                .getAxis(ThinQueryModel.AxisLocation.ROWS)
+                .getHierarchies()
+                .get(0);
+    }
+
+    /**
+     * ThinLevel is constructor-only, so a test that wants a different member selection swaps in a
+     * rebuilt level under the same key.
+     */
+    private void withRowSelection(ThinQuery tq, ThinSelection selection) {
+        ThinLevel old = rowLevel(tq);
+        rowHierarchy(tq)
+                .getLevels()
+                .put(old.getName(), new ThinLevel(old.getName(), old.getCaption(), selection, new ArrayList<>()));
     }
 
     private ThinLevel rowLevel(ThinQuery tq) {
