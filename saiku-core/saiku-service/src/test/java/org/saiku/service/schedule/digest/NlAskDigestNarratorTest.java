@@ -60,8 +60,9 @@ public class NlAskDigestNarratorTest {
 
     private static ScriptedProvider insightProvider(String markdown) {
         ScriptedProvider p = new ScriptedProvider();
-        p.response = NlAskResponse.okInsight(
-                "{\"markdown\":\"" + markdown.replace("\"", "\\\"") + "\"}", "test-model", 10, 10);
+        // A real provider returns valid JSON, so quotes and newlines inside the markdown are escaped.
+        String escaped = markdown.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n");
+        p.response = NlAskResponse.okInsight("{\"markdown\":\"" + escaped + "\"}", "test-model", 10, 10);
         return p;
     }
 

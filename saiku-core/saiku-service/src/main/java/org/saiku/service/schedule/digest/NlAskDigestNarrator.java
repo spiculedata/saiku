@@ -265,7 +265,8 @@ public final class NlAskDigestNarrator implements DigestNarrator {
             }
             char c = line.charAt(marker);
             if ((c != '.' && c != ')') || !isAllDigits(line, 0, marker)) {
-                break;
+                // Not a marker at this width; a longer digit run ("12) text") may still be one.
+                continue;
             }
             int after = marker + 1;
             if (after < line.length() && line.charAt(after) == ' ') {

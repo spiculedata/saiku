@@ -19,6 +19,7 @@ import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import org.saiku.service.datasource.IDatasourceManager;
 import org.saiku.service.mail.MailConfig;
 import org.saiku.service.mail.MailMessage;
@@ -165,28 +166,41 @@ public final class DashboardDigestJobHandler implements JobHandler {
             return;
         }
 
-        // (1) Read each measure's current value under the owner's already-established SecurityContext.
-        List<DashboardDigestContent.MeasureLine> lines = new ArrayList<>();
-        for (DashboardDigestSpec.Measure m : spec.getMeasures()) {
-            double value = valueReader.readMeasure(m.getCube(), m.getMeasure(), m.getFilters());
-            lines.add(new DashboardDigestContent.MeasureLine(m.getLabel(), format(value)));
-        }
-
-        // (1a) saiku#1119 — the insight half: period-over-period deltas + "what changed" bullets.
-        // Only the period-bearing measures are re-read here; the table above is unchanged.
+        // (1) saiku#1119 — the insight half first: period-over-period deltas + "what changed" bullets.
+        // Only the period-bearing measures are read here, over their current and previous periods.
         List<String> bullets = List.of();
         List<DashboardDigestContent.DeltaLine> deltaLines = List.of();
+        List<MeasureDelta> deltas = List.of();
         if (spec.isInsightEnabled()) {
             DigestNarrator activeNarrator = spec.isInsightNarrate() ? narrator : new TemplateDigestNarrator();
             InsightDigestBuilder builder = new InsightDigestBuilder(valueReader, activeNarrator);
             InsightDigestBuilder.InsightDigest insight = builder.build(spec);
             bullets = insight.bullets();
+            deltas = insight.deltas();
             List<DashboardDigestContent.DeltaLine> rows = new ArrayList<>();
-            for (MeasureDelta d : insight.deltas()) {
+            for (MeasureDelta d : deltas) {
                 rows.add(new DashboardDigestContent.DeltaLine(
                         d.label(), d.formattedCurrent(), d.formattedPrevious(), changeText(d)));
             }
             deltaLines = rows;
+        }
+
+        // (1b) Each measure's current value under the owner's already-established SecurityContext. A
+        // measure the insight block already read for its current period reuses that value: it is the
+        // period-filtered one the digest is about, and reading it again would be a redundant query
+        // (the deltas arrive in measure order, so they are consumed in step with the measures).
+        List<DashboardDigestContent.MeasureLine> lines = new ArrayList<>();
+        int nextDelta = 0;
+        for (DashboardDigestSpec.Measure m : spec.getMeasures()) {
+            double value;
+            if (m.getPeriod() != null
+                    && nextDelta < deltas.size()
+                    && Objects.equals(deltas.get(nextDelta).label(), m.getLabel())) {
+                value = deltas.get(nextDelta++).current();
+            } else {
+                value = valueReader.readMeasure(m.getCube(), m.getMeasure(), m.getFilters());
+            }
+            lines.add(new DashboardDigestContent.MeasureLine(m.getLabel(), format(value)));
         }
 
         // (2) Build the deep link from the ops public base URL + the validated repo path (SSRF-safe).

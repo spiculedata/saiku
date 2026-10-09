@@ -311,6 +311,26 @@ public class DashboardDigestJobHandlerTest {
     }
 
     @Test
+    public void insightJob_readsEachPeriodExactlyOnce_andReusesTheCurrentValueForTheTable() throws Exception {
+        final List<String> reads = new java.util.concurrent.CopyOnWriteArrayList<>();
+        MeasureValueReader recording = (cube, measure, filters) -> {
+            String last = filters.get(filters.size() - 1).getValue();
+            reads.add(last);
+            return PeriodSpec.PREVIOUS_PRESET.equals(last) ? 1000.0 : 1200.0;
+        };
+        CapturingSender sender = new CapturingSender();
+        DashboardDigestJobHandler handler = new DashboardDigestJobHandler(
+                recording, multiService(false), sender, configWithSelf(), links, null, null);
+
+        handler.handle(insightJob("Unit Sales", false));
+
+        // One current-period read and one previous-period read: the headline table reuses the former
+        // rather than issuing a third, unfiltered query for the same measure.
+        assertEquals("exactly the two relative-period reads: " + reads, 2, reads.size());
+        assertTrue(sender.sent.get(0).htmlBody().contains("1,200"));
+    }
+
+    @Test
     public void anOptedOutOwnerIsNotQueriedAndNotEmailed() throws Exception {
         final AtomicBoolean queried = new AtomicBoolean(false);
         MeasureValueReader counting = (cube, measure, f) -> {
