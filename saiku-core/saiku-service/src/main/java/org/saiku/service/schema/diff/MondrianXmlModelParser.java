@@ -321,8 +321,7 @@ public final class MondrianXmlModelParser implements ModelParser {
             factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
             factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             factory.setXIncludeAware(false);
-            factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
-            factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
+            restrictExternalAccess(factory);
             DocumentBuilder builder = factory.newDocumentBuilder();
             builder.setEntityResolver((publicId, systemId) -> new InputSource(new StringReader("")));
             return builder.parse(new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8)));
@@ -331,6 +330,21 @@ public final class MondrianXmlModelParser implements ModelParser {
                     ModelDiffException.Reason.MALFORMED,
                     describe(sourceName) + " is not well-formed XML (" + e.getMessage() + ")",
                     e);
+        }
+    }
+
+    /**
+     * Belt and braces on top of {@code disallow-doctype-decl} (which already rejects every DTD, so no
+     * external entity or schema can be named in the first place): also forbid external DTD/schema
+     * access where the parser supports the JAXP properties. A Xerces on the classpath is one that
+     * does not, and it must not turn a hardened parse into a "not well-formed" failure.
+     */
+    private static void restrictExternalAccess(DocumentBuilderFactory factory) {
+        try {
+            factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
+        } catch (IllegalArgumentException unsupportedByThisParser) {
+            // disallow-doctype-decl and the empty entity resolver above still apply.
         }
     }
 

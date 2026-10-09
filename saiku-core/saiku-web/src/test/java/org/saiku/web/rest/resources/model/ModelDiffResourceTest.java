@@ -205,9 +205,7 @@ public class ModelDiffResourceTest {
     @Test
     public void nonAdminsAreRefused() {
         ModelDiffResource guarded = new ModelDiffResource(repositoryRoot);
-        UserService userService = org.mockito.Mockito.mock(UserService.class);
-        org.mockito.Mockito.when(userService.isAdmin()).thenReturn(false);
-        guarded.setUserService(userService);
+        guarded.setUserService(new FixedAdminUserService(false));
         try (Response response = guarded.diff("json", request(SCHEMA, SCHEMA))) {
             assertEquals(403, response.getStatus());
         }
@@ -216,11 +214,23 @@ public class ModelDiffResourceTest {
     @Test
     public void adminsAreAllowedThrough() {
         ModelDiffResource guarded = new ModelDiffResource(repositoryRoot);
-        UserService userService = org.mockito.Mockito.mock(UserService.class);
-        org.mockito.Mockito.when(userService.isAdmin()).thenReturn(true);
-        guarded.setUserService(userService);
+        guarded.setUserService(new FixedAdminUserService(true));
         try (Response response = guarded.diff("json", request(SCHEMA, SCHEMA))) {
             assertEquals(200, response.getStatus());
+        }
+    }
+    /** A {@link UserService} whose only behaviour is the admin answer the guard asks for. */
+    private static final class FixedAdminUserService extends UserService {
+        private static final long serialVersionUID = 1L;
+        private final boolean admin;
+
+        FixedAdminUserService(boolean admin) {
+            this.admin = admin;
+        }
+
+        @Override
+        public boolean isAdmin() {
+            return admin;
         }
     }
 }
