@@ -1136,8 +1136,7 @@ public class AiQueryResource {
     @GET
     @Path("/spaces/{id}")
     @Produces(MediaType.APPLICATION_JSON)
-    public Response getSpace(
-            @PathParam("id") String id, @QueryParam("full") @DefaultValue("false") boolean full) {
+    public Response getSpace(@PathParam("id") String id, @QueryParam("full") @DefaultValue("false") boolean full) {
         if (askService == null || askService.spaces() == null) {
             return Response.status(Response.Status.NOT_FOUND)
                     .entity(java.util.Map.of("error", "space not found"))

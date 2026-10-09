@@ -142,8 +142,7 @@ public class ShareTokenAuthFilter extends OncePerRequestFilter {
             OwnerIdentity id = ownerResolver.resolve(ownerUser);
             return (id != null && id.present()) ? id : null;
         } catch (RuntimeException e) {
-            log.warn(
-                    "Owner identity resolution threw for '{}' — refusing the share read (fail-closed).", ownerUser, e);
+            log.warn("Owner identity resolution threw for '{}' — refusing the share read (fail-closed).", ownerUser, e);
             return null;
         }
     }

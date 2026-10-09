@@ -77,8 +77,9 @@ public class EmbedAuthFilterTest {
         @Override
         public org.saiku.web.schedule.OwnerIdentity resolve(String username) {
             lastResolved = username;
-            return present ? org.saiku.web.schedule.OwnerIdentity.present(roles) : org.saiku.web.schedule.OwnerIdentity
-                    .absent();
+            return present
+                    ? org.saiku.web.schedule.OwnerIdentity.present(roles)
+                    : org.saiku.web.schedule.OwnerIdentity.absent();
         }
     }
 

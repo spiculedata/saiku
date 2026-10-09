@@ -10,6 +10,7 @@ import static org.junit.Assert.assertTrue;
 import jakarta.ws.rs.core.Response;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.junit.Before;
 import org.junit.Test;
 import org.saiku.database.dto.SaikuUser;
@@ -31,8 +32,8 @@ public class UsersResourceTest {
     @Before
     public void setUp() {
         resource = new UsersResource();
-        resource.setUserService(new StubUserService(List.of(user("alice", true), user("bob", true), user("carol", true),
-                user("dormant", false))));
+        resource.setUserService(new StubUserService(
+                List.of(user("alice", true), user("bob", true), user("carol", true), user("dormant", false))));
     }
 
     @Test

@@ -83,6 +83,7 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
     /** saiku#1920 — optional {@code iss} pin. When set, the JWT's {@code iss}
      *  claim MUST equal it; the {@code iss} claim itself is always required. */
     public static final String ENV_JWT_ISSUER = "SAIKU_EMBED_JWT_ISSUER";
+
     public static final String PROP_JWT_ISSUER = "saiku.embed.jwt.issuer";
 
     /** Read surface — query + dashboard. The mint surface lives elsewhere
@@ -281,8 +282,10 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
         // when it no longer resolves (account deleted, disabled, or demoted since mint).
         OwnerIdentity owner = resolveOwner(text(claims, "saiku.owner"));
         if (owner == null) {
-            LOG.warn("Embed JWT for {}{} names an owner that no longer resolves — refusing the read (fail-closed).",
-                    claimKind, claimPath);
+            LOG.warn(
+                    "Embed JWT for {}{} names an owner that no longer resolves — refusing the read (fail-closed).",
+                    claimKind,
+                    claimPath);
             writeInvalid(resp);
             return null;
         }
@@ -322,8 +325,7 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
             OwnerIdentity id = ownerResolver.resolve(ownerUser);
             return (id != null && id.present()) ? id : null;
         } catch (RuntimeException e) {
-            LOG.warn(
-                    "Owner identity resolution threw for '{}' — refusing the embed read (fail-closed).", ownerUser, e);
+            LOG.warn("Owner identity resolution threw for '{}' — refusing the embed read (fail-closed).", ownerUser, e);
             return null;
         }
     }
