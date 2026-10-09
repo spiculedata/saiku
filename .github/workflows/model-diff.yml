@@ -1,0 +1,144 @@
+name: model-diff
+
+# saiku#1434 — when a pull request touches a semantic model, diff it against the base branch and
+# report every saved query, dashboard and app the change would break.
+#
+# Deliberately NOT part of the required `ci` check:
+#   * it needs the base branch's model, so it cannot run on a push;
+#   * the finding is information for the reviewer, not a merge blocker — a rename that lands
+#     before the dashboards are updated is a normal (recoverable) state to be in.
+# The workflow posts a sticky PR comment and fails only if the validator itself cannot run.
+
+on:
+  pull_request:
+    paths:
+      - "**/*.xml"
+      - "**/*.yaml"
+      - "**/*.yml"
+      - "saiku-launcher/src/main/resources/seed/**"
+      - "saiku-core/saiku-service/src/main/java/org/saiku/service/schema/diff/**"
+      - ".github/workflows/model-diff.yml"
+
+concurrency:
+  group: model-diff-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+# Read the repo, write a comment. No other permission is used.
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  diff:
+    name: semantic model diff
+    runs-on: ubuntu-latest
+    steps:
+      # Full history: the baseline is a blob in the base branch, not in the checkout.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 22
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "22"
+          cache: maven
+
+      # The Spiculate dependencies live across three GitHub Packages registries, each needing a
+      # <server> entry; the auto-issued GITHUB_TOKEN cannot read packages across orgs, so the PAT
+      # secret is used. Same settings.xml shape as ci.yml.
+      - name: Configure Maven settings.xml
+        env:
+          GH_PACKAGES_USER: ${{ github.actor }}
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+        run: |
+          mkdir -p ~/.m2
+          cat > ~/.m2/settings.xml <<EOF
+          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+            <servers>
+              <server><id>github-mondrian-saiku</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-olap4j</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-olap4j-xmlaserver</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-saiku-query</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-ossie</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+            </servers>
+          </settings>
+          EOF
+
+      # Only saiku-service is built: the validator is self-contained there, so this job skips the
+      # SvelteKit bundle that saiku-webapp's frontend plugin would otherwise download and build.
+      - name: Build saiku-service
+        run: mvn -B -ntp -q -pl saiku-core/saiku-service -am -DskipTests -Dmaven.test.skip=true install
+
+      - name: Collect the repository content
+        run: |
+          set -euo pipefail
+          mkdir -p target/repository
+          # Everything under a repository/ directory in the tree: saved queries, dashboards, apps.
+          # (git ls-files keeps this deterministic and skips build output.)
+          while IFS= read -r file; do
+            case "$file" in
+              */repository/*|repository/*)
+                mkdir -p "target/repository/$(dirname "${file#*repository/}")"
+                cp "$file" "target/repository/${file#*repository/}"
+                ;;
+            esac
+          done < <(git ls-files)
+          echo "repository files: $(find target/repository -type f | wc -l)"
+
+      - name: Run the validator
+        id: validator
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -uo pipefail
+          BASE="origin/${BASE_REF}"
+          git fetch --no-tags origin "${BASE_REF}:refs/remotes/origin/${BASE_REF}" || true
+          MODEL="org.saiku.service.schema.diff.ModelDiffTool"
+          mvn -B -ntp -q -pl saiku-core/saiku-service dependency:build-classpath \
+            -Dmdep.outputFile="$PWD/target/classpath.txt"
+          CP="saiku-core/saiku-service/target/classes:$(cat target/classpath.txt)"
+
+          status=0
+          report=""
+          # Every model file the pull request touched, diffed against its base-branch version.
+          while IFS= read -r model; do
+            echo "--- $model"
+            if ! git cat-file -e "${BASE}:${model}" 2>/dev/null; then
+              echo "::notice::$model is new in this pull request — nothing to diff it against."
+              continue
+            fi
+            out=$(java -cp "$CP" "$MODEL" \
+              --from-git "$BASE" --from-git HEAD \
+              --before "$model" --after "$model" \
+              --repository target/repository --no-fail-on-broken 2>&1)
+            echo "$out"
+            report="${report}${out}"$'\n\n'
+          done < <(git diff --name-only --diff-filter=ACMR "origin/${BASE_REF}...HEAD" -- '*.xml' '*.yaml' '*.yml')
+          if [ -z "$report" ]; then
+            report="No semantic model changed in this pull request, so there was nothing to diff."
+          fi
+          printf '%s' "$report" > model-diff-report.md
+          echo "$report" >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+
+      - name: Comment the report
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('model-diff-report.md', 'utf8');
+            const marker = '<!-- saiku-model-diff saiku#1434 -->';
+            const body = `${marker}\n### Semantic model diff\n\n${report}\n<sub>saiku#1434 · reproduce locally with \`saiku model diff\`</sub>`;
+            const { data: comments } = await github.rest.issues.listComments({
+              ...context.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const existing = comments.find((c) => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ ...context.repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ ...context.repo, issue_number: context.issue.number, body });
+            }

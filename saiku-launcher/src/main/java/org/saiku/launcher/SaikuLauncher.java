@@ -45,7 +45,8 @@ import picocli.CommandLine.Option;
             SaikuLauncher.ServeCommand.class,
             OssieExportCommand.class,
             SqlServeCommand.class,
-            EvalCommand.class
+            EvalCommand.class,
+            ModelCommand.class
         })
 public class SaikuLauncher implements Callable<Integer> {
 
