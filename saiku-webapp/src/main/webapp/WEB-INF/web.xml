@@ -411,6 +411,18 @@
         <url-pattern>/ui/branding/*</url-pattern>
     </servlet-mapping>
 
+    <!-- The launcher ships no JSP engine, so Jetty's default *.jsp mapping answers every JSP URL
+         with a 500 ("JSP support not configured"). Every JSP has been removed from the WAR; this
+         mapping redirects the legacy /index.jsp landing URL to the SPA and 404s the rest. -->
+    <servlet>
+        <servlet-name>legacyJsp</servlet-name>
+        <servlet-class>org.saiku.web.servlet.LegacyJspServlet</servlet-class>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>legacyJsp</servlet-name>
+        <url-pattern>*.jsp</url-pattern>
+    </servlet-mapping>
+
     <!-- SvelteKit SPA fallback: any /ui/* request that the default
          servlet can't resolve to a real file (and isn't a static-asset
          extension) gets rewritten to /ui/index.html so the SPA can

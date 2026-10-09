@@ -31,6 +31,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.Before;
 import org.junit.Test;
+import org.saiku.service.datasource.IDatasourceManager;
 import org.saiku.service.mail.MailConfig;
 import org.saiku.service.mail.MailException;
 import org.saiku.service.mail.MailMessage;
@@ -254,5 +255,169 @@ public class DashboardDigestJobHandlerTest {
         DashboardDigestJobHandler handler =
                 new DashboardDigestJobHandler(READER, multiService(false), sender, noSelf, links);
         handler.handle(job(null));
+    }
+
+    // ---------------- saiku#1119: insight digests + per-user opt-out ----------------
+
+    /** An insight job: one period-bearing measure plus the {@code insight} block. */
+    private static ScheduledJobFile insightJob(String measure, boolean narrate) {
+        Map<String, Object> dash = new LinkedHashMap<>();
+        dash.put("path", "shared/exec.saikudash");
+        dash.put("title", "Executive Overview");
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("cube", "conn/cat/schema/Sales");
+        m.put("measure", measure);
+        m.put("label", "Total Units");
+        Map<String, Object> period = new LinkedHashMap<>();
+        period.put("dimension", "Time");
+        period.put("hierarchy", "Time");
+        period.put("level", "Quarter");
+        m.put("period", period);
+        Map<String, Object> insight = new LinkedHashMap<>();
+        insight.put("narrate", narrate);
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("dashboard", dash);
+        payload.put("measures", List.of(m));
+        payload.put("insight", insight);
+        ScheduledJobFile j = new ScheduledJobFile();
+        j.setId("job-insight");
+        j.setType("DASHBOARD_DIGEST");
+        j.setOwnerUsername("ada");
+        j.setPayload(payload);
+        return j;
+    }
+
+    /** Returns 1200 for the current-period read and 1000 for the previous-period read. */
+    private static final MeasureValueReader PERIOD_READER =
+            (AiCubeRef cube, String measure, List<AiFilterSelection> filters) -> {
+                String last = filters.get(filters.size() - 1).getValue();
+                return PeriodSpec.PREVIOUS_PRESET.equals(last) ? 1000.0 : 1200.0;
+            };
+
+    @Test
+    public void insightJob_sendsBulletsAndTheDeltaTable() throws Exception {
+        CapturingSender sender = new CapturingSender();
+        DashboardDigestJobHandler handler = new DashboardDigestJobHandler(
+                PERIOD_READER, multiService(false), sender, configWithSelf(), links, null, null);
+
+        handler.handle(insightJob("Unit Sales", false));
+
+        assertEquals(1, sender.sent.size());
+        String html = sender.sent.get(0).htmlBody();
+        assertTrue(html.contains("What changed since the previous period"));
+        assertTrue(html.contains("Total Units rose +20.0% to 1,200 (was 1,000)."));
+        assertTrue(html.contains("Period over period"));
+        assertTrue(html.contains("+200 (+20.0%)"));
+    }
+
+    @Test
+    public void insightJob_readsEachPeriodExactlyOnce_andReusesTheCurrentValueForTheTable() throws Exception {
+        final List<String> reads = new java.util.concurrent.CopyOnWriteArrayList<>();
+        MeasureValueReader recording = (cube, measure, filters) -> {
+            String last = filters.get(filters.size() - 1).getValue();
+            reads.add(last);
+            return PeriodSpec.PREVIOUS_PRESET.equals(last) ? 1000.0 : 1200.0;
+        };
+        CapturingSender sender = new CapturingSender();
+        DashboardDigestJobHandler handler = new DashboardDigestJobHandler(
+                recording, multiService(false), sender, configWithSelf(), links, null, null);
+
+        handler.handle(insightJob("Unit Sales", false));
+
+        // One current-period read and one previous-period read: the headline table reuses the former
+        // rather than issuing a third, unfiltered query for the same measure.
+        assertEquals("exactly the two relative-period reads: " + reads, 2, reads.size());
+        assertTrue(sender.sent.get(0).htmlBody().contains("1,200"));
+    }
+
+    @Test
+    public void anOptedOutOwnerIsNotQueriedAndNotEmailed() throws Exception {
+        final AtomicBoolean queried = new AtomicBoolean(false);
+        MeasureValueReader counting = (cube, measure, f) -> {
+            queried.set(true);
+            return 1200.0;
+        };
+        IDatasourceManager preferences = preferences("{\"dashboardDigestOptOut\":true}");
+        CapturingSender sender = new CapturingSender();
+        DashboardDigestJobHandler handler = new DashboardDigestJobHandler(
+                counting, multiService(false), sender, configWithSelf(), links, preferences, null);
+
+        handler.handle(insightJob("Unit Sales", false));
+
+        // The test plan's hard requirement: the opt-out suppresses the JOB, not just the mail.
+        assertFalse("no cube may be read for an opted-out user", queried.get());
+        assertTrue("nothing may be sent for an opted-out user", sender.sent.isEmpty());
+    }
+
+    @Test
+    public void aUserWhoHasNotOptedOutStillGetsTheirDigest() throws Exception {
+        IDatasourceManager preferences = preferences("{}");
+        CapturingSender sender = new CapturingSender();
+        DashboardDigestJobHandler handler = new DashboardDigestJobHandler(
+                PERIOD_READER, multiService(false), sender, configWithSelf(), links, preferences, null);
+
+        handler.handle(insightJob("Unit Sales", false));
+
+        assertEquals(1, sender.sent.size());
+    }
+
+    @Test
+    public void narrateOffUsesTheTemplateEvenWhenAnLlmNarratorIsWired() throws Exception {
+        final AtomicBoolean narratorCalled = new AtomicBoolean(false);
+        DigestNarrator spy = (title, deltas, cap) -> {
+            narratorCalled.set(true);
+            return List.of("model bullet");
+        };
+        CapturingSender sender = new CapturingSender();
+        DashboardDigestJobHandler handler = new DashboardDigestJobHandler(
+                PERIOD_READER, multiService(false), sender, configWithSelf(), links, null, spy);
+
+        handler.handle(insightJob("Unit Sales", false));
+
+        assertFalse("narrate=false must not call the LLM narrator", narratorCalled.get());
+        assertTrue(sender.sent.get(0).htmlBody().contains("Total Units rose"));
+    }
+
+    @Test
+    public void narrateOnUsesTheWiredNarrator() throws Exception {
+        DigestNarrator spy = (title, deltas, cap) ->
+                List.of("model bullet about " + deltas.get(0).label());
+        CapturingSender sender = new CapturingSender();
+        DashboardDigestJobHandler handler = new DashboardDigestJobHandler(
+                PERIOD_READER, multiService(false), sender, configWithSelf(), links, null, spy);
+
+        handler.handle(insightJob("Unit Sales", true));
+
+        assertTrue(sender.sent.get(0).htmlBody().contains("model bullet about Total Units"));
+    }
+
+    @Test
+    public void aPlainDigestJobIsUnchangedByThisFeature() throws Exception {
+        CapturingSender sender = new CapturingSender();
+        DashboardDigestJobHandler handler =
+                new DashboardDigestJobHandler(READER, multiService(false), sender, configWithSelf(), links, null, null);
+
+        handler.handle(job(null));
+
+        String html = sender.sent.get(0).htmlBody();
+        assertTrue(html.contains("Here is your scheduled summary of key measures."));
+        assertFalse(html.contains("What changed"));
+        assertFalse(html.contains("Period over period"));
+    }
+
+    /** A repository stand-in serving one fixed preferences document for the calling user. */
+    private static IDatasourceManager preferences(String json) {
+        return (IDatasourceManager) java.lang.reflect.Proxy.newProxyInstance(
+                DashboardDigestJobHandlerTest.class.getClassLoader(),
+                new Class<?>[] {IDatasourceManager.class},
+                (proxy, method, args) -> {
+                    if ("getInternalFileData".equals(method.getName())) {
+                        return json;
+                    }
+                    if ("toString".equals(method.getName())) {
+                        return "preferencesStub";
+                    }
+                    throw new UnsupportedOperationException(method.getName());
+                });
     }
 }

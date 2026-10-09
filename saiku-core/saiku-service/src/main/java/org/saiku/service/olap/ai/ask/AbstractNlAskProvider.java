@@ -14,9 +14,12 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.Iterator;
 import java.util.Optional;
+import java.util.function.LongSupplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 /**
  * Shared machinery for the HTTP-backed {@link NlAskProvider} implementations (Anthropic, OpenAI and
@@ -24,9 +27,11 @@ import java.util.regex.Pattern;
  *
  * <p>The {@link #ask(NlAskRequest)} orchestration — build body, POST, classify the response, and
  * convert every failure mode into a {@link NlAskResponse#degraded(String, String)} instead of
- * throwing — is identical across providers and lives here as a {@code final} method. Everything that
- * genuinely differs between providers (endpoint, auth headers, request-body JSON shape, response
- * parsing, system-prompt wording) is delegated to small abstract hooks the subclasses override.
+ * throwing — is identical across providers and lives here as a {@code final} method, as is its
+ * streaming twin {@link #askStreaming(NlAskRequest, NlAskStreamListener)} (saiku#1484). Everything
+ * that genuinely differs between providers (endpoint, auth headers, request-body JSON shape,
+ * response parsing, and how a stream of events folds back into a response body) is delegated to
+ * small abstract hooks the subclasses override.
  *
  * <p>Security: the only place the API key touches the outbound request is {@link
  * #applyAuthHeaders(HttpRequest.Builder)} (the {@code x-api-key} / {@code Authorization: Bearer}
@@ -72,9 +77,17 @@ abstract class AbstractNlAskProvider implements NlAskProvider {
      */
     protected static final String DASHBOARD_TOOL_NAME = "emit_dashboard";
 
-    /** Chart-subtype allowlist advertised for a dashboard tile's {@code chartType} (MVP set). */
+    /**
+     * Chart-subtype allowlist advertised for a dashboard tile's {@code chartType}. Issue #1481:
+     * this used to be a five-type "MVP set" (bar/line/pie/area/scatter) while the tile renderer
+     * has drawn every palette type since the shared #1076 option builder landed — so eleven
+     * chart types were unreachable as an AI-built dashboard tile while being fully renderable by
+     * hand. It is now the canonical catalog, taken straight from {@link AiViewChangeCatalog} so
+     * the dashboard tool and the view-change tool cannot drift, and the UI palette remains the
+     * single source of truth behind that catalog.
+     */
     protected static final java.util.List<String> DASHBOARD_CHART_TYPES =
-            java.util.List.of("bar", "line", "pie", "area", "scatter");
+            AiViewChangeCatalog.CHART_TYPE_IDS.stream().sorted().toList();
 
     /** Prefix on the degraded reason when the model refuses an off-topic question. */
     protected static final String REFUSAL_REASON_PREFIX = "OFF_TOPIC: ";
@@ -123,29 +136,36 @@ abstract class AbstractNlAskProvider implements NlAskProvider {
      */
     protected abstract NlAskResponse doParseToolResponse(String body, String model) throws IOException;
 
+    /**
+     * Build the per-request decoder that folds a provider's streaming event sequence back into a
+     * single non-streaming response body, calling the {@link NlAskStreamListener} as prose arrives
+     * (saiku#1484). The assembled body is fed through {@link #doParseToolResponse} so a streamed
+     * turn and a buffered turn run the <em>same</em> deserialisation — routing, degradation and
+     * token accounting can never drift between the two paths.
+     */
+    abstract StreamDecoder streamDecoder();
+
+    /**
+     * A tool whose input contains prose worth streaming to a client as it is written. The
+     * structured tools ({@code emit_query}, {@code emit_dashboard}) are excluded on purpose: half a
+     * JSON query is not something a user should see tokens of, and the SSE contract already
+     * documents that the QUERY intent carries no {@code chunk} events.
+     */
+    protected static boolean isProseTool(String toolName) {
+        return INSIGHT_TOOL_NAME.equals(toolName)
+                || EMAIL_DRAFT_TOOL_NAME.equals(toolName)
+                || VIEW_CHANGE_TOOL_NAME.equals(toolName);
+    }
+
     // ---------- orchestration (identical across providers) ----------
 
     @Override
     public final NlAskResponse ask(NlAskRequest request) {
         try {
             String body = buildRequestBody(request);
-            HttpRequest.Builder builder = HttpRequest.newBuilder()
-                    .uri(URI.create(endpoint()))
-                    .timeout(requestTimeout())
-                    .header("content-type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(body));
-            applyAuthHeaders(builder);
-            HttpRequest httpRequest = builder.build();
-            HttpResponse<String> response = http.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = http.send(postRequest(body), HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() / 100 != 2) {
-                String reason = "HTTP " + response.statusCode() + ": " + truncate(response.body(), 200);
-                if (response.statusCode() == 429) {
-                    return NlAskResponse.rateLimited(reason, model(), parseRetryAfterMs(response));
-                }
-                if (response.statusCode() == 400 && isTransientToolError(response.body())) {
-                    return NlAskResponse.retryableToolError(reason, model());
-                }
-                return NlAskResponse.degraded(reason, model());
+                return classifyHttpFailure(response.statusCode(), response.body(), retryAfterOf(response), model());
             }
             return doParseToolResponse(response.body(), model());
         } catch (IOException | InterruptedException e) {
@@ -156,6 +176,199 @@ abstract class AbstractNlAskProvider implements NlAskProvider {
         } catch (RuntimeException e) {
             return NlAskResponse.degraded("Unexpected error: " + e.getClass().getSimpleName(), model());
         }
+    }
+
+    /**
+     * True per-token streaming (saiku#1484): same request, {@code stream:true} added, response read
+     * as an event stream. Prose reaches {@code listener} as the model writes it, and the final
+     * {@link NlAskResponse} is produced by assembling the events back into a body and running the
+     * ordinary parser over it — so the caller sees exactly the response a buffered call would have
+     * returned, just sooner.
+     *
+     * <p>Every failure mode degrades exactly as {@link #ask} does: transport errors, non-2xx
+     * upstream (including the 429 and transient-tool-error classification), a mid-stream provider
+     * {@code error} event, and a sink that fails because the client hung up. A {@code null}
+     * listener short-circuits to the buffered path so callers that don't want tokens pay nothing.
+     */
+    @Override
+    public final NlAskResponse askStreaming(NlAskRequest request, NlAskStreamListener listener) {
+        if (listener == null) {
+            return ask(request);
+        }
+        try {
+            String body = withStreamingFlag(buildRequestBody(request));
+            HttpResponse<Stream<String>> response = http.send(postRequest(body), HttpResponse.BodyHandlers.ofLines());
+            if (response.statusCode() / 100 != 2) {
+                // The body is a Stream here, so materialise it before classifying — the error
+                // reason and the 429 wait hint both need the text.
+                return classifyHttpFailure(
+                        response.statusCode(), readAll(response.body()), retryAfterOf(response), model());
+            }
+            long deadlineNanos = requestTimeout().toNanos();
+            String assembled = consumeStream(
+                    response.body().iterator(), streamDecoder(), model(), listener, System::nanoTime, deadlineNanos);
+            return doParseToolResponse(assembled, model());
+        } catch (StreamAbort abort) {
+            return abort.response();
+        } catch (IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            return NlAskResponse.degraded("Transport error: " + e.getClass().getSimpleName(), model());
+        } catch (RuntimeException e) {
+            return NlAskResponse.degraded("Unexpected error: " + e.getClass().getSimpleName(), model());
+        }
+    }
+
+    /** Build the POST for this provider: endpoint, timeout, JSON content type, auth headers. */
+    private HttpRequest postRequest(String body) {
+        HttpRequest.Builder builder = HttpRequest.newBuilder()
+                .uri(URI.create(endpoint()))
+                .timeout(requestTimeout())
+                .header("content-type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body));
+        applyAuthHeaders(builder);
+        return builder.build();
+    }
+
+    /**
+     * Add the {@code stream} flag to an already-built request body. Both supported providers take
+     * the same boolean on the root object, so the default is shared; a provider that spells it
+     * differently can override.
+     */
+    String withStreamingFlag(String body) throws IOException {
+        com.fasterxml.jackson.databind.node.ObjectNode root =
+                (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.readTree(body);
+        root.put("stream", true);
+        return MAPPER.writeValueAsString(root);
+    }
+
+    /** Map a non-2xx upstream response onto the right degradation (rate limit / retryable / plain). */
+    private NlAskResponse classifyHttpFailure(int status, String body, Optional<String> retryAfter, String model) {
+        String reason = "HTTP " + status + ": " + truncate(body, 200);
+        if (status == 429) {
+            return NlAskResponse.rateLimited(reason, model, parseRetryAfterMs(retryAfter, body));
+        }
+        if (status == 400 && isTransientToolError(body)) {
+            return NlAskResponse.retryableToolError(reason, model);
+        }
+        return NlAskResponse.degraded(reason, model);
+    }
+
+    private static Optional<String> retryAfterOf(HttpResponse<?> response) {
+        return response.headers().firstValue("retry-after");
+    }
+
+    /** Materialise a streaming body — used only on the non-2xx branch, where we need the text. */
+    private static String readAll(Stream<String> lines) {
+        return lines.reduce(new StringBuilder(), (sb, line) -> sb.append(line).append('\n'), StringBuilder::append)
+                .toString();
+    }
+
+    // ---------- streaming event pump ----------
+
+    /**
+     * Folds a provider's SSE lines into {@code decoder}, notifying {@code listener} as prose
+     * arrives, and returns the assembled non-streaming response body.
+     *
+     * <p>Static and {@link Iterator}-based on purpose: the interesting behaviour (partial JSON,
+     * interleaved block indices, mid-stream {@code error} events, the non-SSE fallback) is all in
+     * here, and it is testable against a list of fixture lines with no HTTP involved.
+     *
+     * <p>Both vendors' streams end with a sentinel — {@code data: [DONE]} for OpenAI,
+     * {@code message_stop} for Anthropic — and both ignore lines that aren't {@code data:}. If a
+     * gateway answers a streaming request with a plain buffered JSON body instead (some
+     * OpenAI-compatible servers do), no event is ever decoded and the raw text is returned
+     * unchanged, so the call still succeeds with today's behaviour rather than degrading.
+     *
+     * @param clock monotonic nanosecond source; injectable so the deadline test is deterministic
+     * @param budgetNanos total wall-clock budget for the stream; {@code 0} disables the check
+     */
+    static String consumeStream(
+            Iterator<String> lines,
+            StreamDecoder decoder,
+            String model,
+            NlAskStreamListener listener,
+            LongSupplier clock,
+            long budgetNanos)
+            throws IOException {
+        StringBuilder raw = new StringBuilder();
+        int events = 0;
+        long started = clock.getAsLong();
+        while (lines.hasNext()) {
+            String line = lines.next();
+            if (line == null || line.isEmpty()) {
+                continue;
+            }
+            if (line.startsWith(":")) {
+                continue; // SSE comment / keep-alive
+            }
+            raw.append(line).append('\n');
+            if (!line.startsWith("data:")) {
+                continue; // event:, id:, retry: — the data line carries everything we parse
+            }
+            // Each `data:` line is treated as one complete JSON payload, which is what both
+            // vendors emit. The SSE grammar also allows a payload split across several `data:`
+            // lines to be joined with newlines; neither Anthropic nor OpenAI does that, and a
+            // joined buffer would have to be held until the blank separator line to be
+            // parseable — a wait that would defeat the point of streaming.
+            String data = line.length() > 5 && line.charAt(5) == ' ' ? line.substring(6) : line.substring(5);
+            if (data.isEmpty() || "[DONE]".equals(data)) {
+                continue;
+            }
+            if (budgetNanos > 0 && clock.getAsLong() - started > budgetNanos) {
+                throw new StreamAbort(NlAskResponse.degraded("provider stream timed out", model));
+            }
+            try {
+                decoder.accept(MAPPER.readTree(data), listener);
+            } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+                // JsonProcessingException is an IOException, so it has to be caught first —
+                // otherwise a malformed event would be reported as a client disconnect.
+                throw new StreamAbort(NlAskResponse.degraded("parse error: malformed stream event", model));
+            } catch (java.io.IOException e) {
+                // The sink is the client socket — a failure here is a disconnect, not a provider fault.
+                throw new StreamAbort(NlAskResponse.degraded("stream consumer failed", model));
+            }
+            events++;
+        }
+        return events == 0 ? raw.toString() : decoder.assembledBody();
+    }
+
+    /** Unchecked carrier for a degrade decided while streaming, so the pump can bail out early. */
+    static final class StreamAbort extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+        private final transient NlAskResponse response;
+
+        StreamAbort(NlAskResponse response) {
+            super(null, null, false, false);
+            this.response = response;
+        }
+
+        /** A stream-level failure the decoder decided on (e.g. a provider {@code error} event). */
+        static StreamAbort of(String reason, String model) {
+            return new StreamAbort(NlAskResponse.degraded(reason, model));
+        }
+
+        NlAskResponse response() {
+            return response;
+        }
+    }
+
+    /**
+     * Folds one provider's streaming events into a non-streaming response body. Implementations are
+     * per-provider and stateful (a decoder instance is used for exactly one request).
+     */
+    abstract static class StreamDecoder {
+
+        /** Handle one decoded {@code data:} payload; call {@code listener} for any prose it carries. */
+        abstract void accept(com.fasterxml.jackson.databind.JsonNode event, NlAskStreamListener listener)
+                throws java.io.IOException;
+
+        /**
+         * The assembled response body, shaped exactly like the provider's non-streaming response so
+         * the ordinary parser can consume it.
+         */
+        abstract String assembledBody() throws IOException;
     }
 
     // ---------- shared helpers ----------
@@ -333,7 +546,17 @@ abstract class AbstractNlAskProvider implements NlAskProvider {
         for (String id : DASHBOARD_CHART_TYPES) {
             chartEnum.add(id);
         }
-        chartType.put("description", "Chart subtype. Only meaningful when type='chart'; omit otherwise.");
+        // The per-id hints are appended here (not just to the view-change tool description): without
+        // them the model sees sixteen ids with no guidance and defaults to the first one. This is the
+        // same catalog text the view-change tool gets, so both tools reason identically (#1481).
+        chartType.put(
+                "description",
+                "Chart subtype. Only meaningful when type='chart'; omit otherwise. Pick the one that fits "
+                        + "the query's shape — e.g. line/area for a time dimension, bar/stackedBar for categorical "
+                        + "comparison, pie/donut/treemap for part-to-whole over few categories, heatmap for two "
+                        + "categorical dims, scatter/bubble for two or three measures, waterfall for sequential "
+                        + "+/- contributions, map for a geographic dimension. Full catalog:\n"
+                        + chartTypeCatalogText());
 
         // The tile query IS an AiQueryRequest — reference the same schema emit_query advertises so
         // the tile-query contract and the single-query contract can never drift.

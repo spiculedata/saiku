@@ -97,7 +97,7 @@ jobs:
           git fetch --no-tags origin "${BASE_REF}:refs/remotes/origin/${BASE_REF}" || true
           MODEL="org.saiku.service.schema.diff.ModelDiffTool"
           mvn -B -ntp -q -pl saiku-core/saiku-service dependency:build-classpath \
-            -Dmdep.outputFile=target/classpath.txt
+            -Dmdep.outputFile="$PWD/target/classpath.txt"
           CP="saiku-core/saiku-service/target/classes:$(cat target/classpath.txt)"
 
           status=0

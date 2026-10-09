@@ -173,6 +173,15 @@ public class InfoResource {
             mcp.put("enabled", true);
             mcp.put("url", mcpUrl);
             mcp.put("transport", "streamable-http");
+            // saiku#879: tells the SPA + DXT generator which manifest/credential
+            // shape to produce — "oauth" once -Dsaiku.oauth.issuerUri is set,
+            // "basic" (the #878 default) otherwise.
+            mcp.put(
+                    "authMode",
+                    org.saiku.web.security.oauth.OAuthResourceServerProperties.fromSystemProperties()
+                                    .isEnabled()
+                            ? "oauth"
+                            : "basic");
         } else {
             mcp.put("enabled", false);
         }

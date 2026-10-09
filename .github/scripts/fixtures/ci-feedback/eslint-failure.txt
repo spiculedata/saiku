@@ -1,0 +1,15 @@
+2026-10-04T12:00:00.0370000Z ##[group]Run npm run lint:eslint
+2026-10-04T12:00:00.0740000Z [36;1mnpm run lint:eslint[0m
+2026-10-04T12:00:00.1110000Z shell: /usr/bin/bash -e {0}
+2026-10-04T12:00:00.1480000Z ##[endgroup]
+2026-10-04T12:00:00.1850000Z 
+2026-10-04T12:00:00.2220000Z > saiku-ui@3.20.0 lint:eslint
+2026-10-04T12:00:00.2590000Z > eslint .
+2026-10-04T12:00:00.2960000Z 
+2026-10-04T12:00:00.3330000Z [0m
+2026-10-04T12:00:00.3700000Z [4m/home/runner/work/saiku/saiku/saiku-ui/src/lib/zzLint.ts[24m
+2026-10-04T12:00:00.4070000Z   [2m2:2[22m  [31merror[39m  Unexpected 'debugger' statement  [2mno-debugger[22m
+2026-10-04T12:00:00.4440000Z 
+2026-10-04T12:00:00.4810000Z [31m[1m✖ 1 problem (1 error, 0 warnings)[22m[39m
+2026-10-04T12:00:00.5180000Z [0m
+2026-10-04T12:00:00.5550000Z ##[error]Process completed with exit code 1.

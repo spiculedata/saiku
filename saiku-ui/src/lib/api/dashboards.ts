@@ -171,8 +171,13 @@ export interface TimeLevelRef {
 /** Comparison mode for the KPI tile's secondary callout.
  *  - "prior-period" — delta vs the preceding sibling at {@link KpiConfig.timeLevel}.
  *  - "year-over-year" — delta vs the same period one year earlier (#992);
- *    resolves the parallel-period member (e.g. Q2.1997 → Q2.1996). */
-export type KpiComparison = 'none' | 'prior-period' | 'year-over-year' | 'target';
+ *    resolves the parallel-period member (e.g. Q2.1997 → Q2.1996).
+ *  - "period-to-date" — delta vs the SAME PORTION of the preceding period
+ *    (#1749). A still-filling week compared against a whole one measures the
+ *    calendar, not the business; this truncates the baseline to the same
+ *    number of finer sub-periods, so the comparison is like-for-like. */
+export type KpiComparison =
+	'none' | 'prior-period' | 'year-over-year' | 'period-to-date' | 'target';
 
 /** Direction: "higher" means a bigger number is better (drives both the
  *  prior-period arrow colour and threshold green/red mapping). */
@@ -1061,9 +1066,12 @@ export interface SaikuUserRef {
 }
 
 /** Minimal authenticated user list (usernames only) — powers @-mention
- *  autocomplete in comments. */
-export async function getUsers(): Promise<SaikuUserRef[]> {
-	const res = await fetch('/rest/saiku/api/users', {
+ *  autocomplete in comments.
+ *
+ *  saiku#1920: the endpoint requires a search prefix of at least 2 characters
+ *  and returns only matches, so the directory can't be dumped wholesale. */
+export async function getUsers(query: string): Promise<SaikuUserRef[]> {
+	const res = await fetch(`/rest/saiku/api/users?q=${encodeURIComponent(query)}`, {
 		credentials: 'include',
 		headers: { Accept: 'application/json' }
 	});

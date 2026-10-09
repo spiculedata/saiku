@@ -28,6 +28,7 @@ public class EmbedJwtTest {
     private static final byte[] WRONG_SECRET =
             "a-totally-different-secret-key-32bytes-xx".getBytes(StandardCharsets.UTF_8);
     private static final String AUD = "saiku-embed";
+    private static final String ISS = "https://embedder.example";
     private static final long NOW = 1_750_000_000_000L; // fixed clock
     private static final long FUTURE = NOW / 1000L + 3600;
     private static final long PAST = NOW / 1000L - 3600;
@@ -56,8 +57,8 @@ public class EmbedJwtTest {
     }
 
     private static String validPayload() {
-        return "{\"sub\":\"u_1234\",\"tenantId\":\"acme\",\"saiku.cube\":\"Sales\",\"aud\":\"" + AUD
-                + "\",\"exp\":" + FUTURE
+        return "{\"sub\":\"u_1234\",\"tenantId\":\"acme\",\"saiku.cube\":\"Sales\",\"aud\":\"" + AUD + "\",\"iss\":\""
+                + ISS + "\",\"exp\":" + FUTURE
                 + ",\"saiku.filters\":[{\"dim\":\"[Customer].[Customer]\",\"op\":\"in\",\"values\":[\"acme\"]}]}";
     }
 
@@ -65,7 +66,7 @@ public class EmbedJwtTest {
 
     private static void assertRejected(String compact, String why) {
         try {
-            EmbedJwt.verify(compact, SECRET, AUD, NOW);
+            EmbedJwt.verify(compact, SECRET, AUD, ISS, NOW);
             fail("expected rejection: " + why);
         } catch (EmbedJwtException expected) {
             // good
@@ -74,7 +75,7 @@ public class EmbedJwtTest {
 
     @Test
     public void valid_token_verifies_and_exposes_claims() throws Exception {
-        JsonNode claims = EmbedJwt.verify(mint(HS256_HEADER, validPayload(), SECRET), SECRET, AUD, NOW);
+        JsonNode claims = EmbedJwt.verify(mint(HS256_HEADER, validPayload(), SECRET), SECRET, AUD, ISS, NOW);
         assertEquals("u_1234", claims.get("sub").asText());
         assertEquals("acme", claims.get("tenantId").asText());
         assertEquals("Sales", claims.get("saiku.cube").asText());
@@ -128,28 +129,62 @@ public class EmbedJwtTest {
 
     @Test
     public void not_yet_valid_nbf_is_rejected() {
-        String p = "{\"sub\":\"u\",\"aud\":\"" + AUD + "\",\"exp\":" + FUTURE + ",\"nbf\":" + FUTURE + "}";
+        String p = "{\"sub\":\"u\",\"aud\":\"" + AUD + "\",\"iss\":\"" + ISS + "\",\"exp\":" + FUTURE + ",\"nbf\":"
+                + FUTURE + "}";
         assertRejected(mint(HS256_HEADER, p, SECRET), "nbf in future");
     }
 
     @Test
     public void wrong_audience_is_rejected() {
-        String p = "{\"sub\":\"u\",\"aud\":\"some-other-app\",\"exp\":" + FUTURE + "}";
+        String p = "{\"sub\":\"u\",\"aud\":\"some-other-app\",\"iss\":\"" + ISS + "\",\"exp\":" + FUTURE + "}";
         assertRejected(mint(HS256_HEADER, p, SECRET), "aud mismatch");
     }
 
     @Test
     public void audience_as_array_is_accepted() throws Exception {
-        String p = "{\"sub\":\"u\",\"aud\":[\"x\",\"" + AUD + "\"],\"exp\":" + FUTURE + "}";
-        JsonNode claims = EmbedJwt.verify(mint(HS256_HEADER, p, SECRET), SECRET, AUD, NOW);
+        String p = "{\"sub\":\"u\",\"aud\":[\"x\",\"" + AUD + "\"],\"iss\":\"" + ISS + "\",\"exp\":" + FUTURE + "}";
+        JsonNode claims = EmbedJwt.verify(mint(HS256_HEADER, p, SECRET), SECRET, AUD, ISS, NOW);
+        assertEquals("u", claims.get("sub").asText());
+    }
+
+    // saiku#1920 — an unscoped token is one ANY relying party sharing the HS256 secret can
+    // mint and have this verifier honour, so the CLAIM is now mandatory even when the
+    // deployment pins no expected value. Only the equality check stays opt-in.
+    @Test
+    public void missing_aud_claim_is_rejected_even_without_an_expected_audience() {
+        String p = "{\"sub\":\"u\",\"iss\":\"" + ISS + "\",\"exp\":" + FUTURE + "}";
+        assertRejected(mint(HS256_HEADER, p, SECRET), "no aud claim, no expected audience");
+    }
+
+    @Test
+    public void missing_iss_claim_is_rejected() {
+        String p = "{\"sub\":\"u\",\"aud\":\"" + AUD + "\",\"exp\":" + FUTURE + "}";
+        assertRejected(mint(HS256_HEADER, p, SECRET), "no iss claim");
+    }
+
+    @Test
+    public void wrong_issuer_is_rejected() {
+        String p = "{\"sub\":\"u\",\"aud\":\"" + AUD + "\",\"iss\":\"https://evil.example\",\"exp\":" + FUTURE + "}";
+        assertRejected(mint(HS256_HEADER, p, SECRET), "iss mismatch");
+    }
+
+    @Test
+    public void unconfigured_issuer_accepts_any_present_iss() throws Exception {
+        String p = "{\"sub\":\"u\",\"aud\":\"" + AUD + "\",\"iss\":\"https://any.example\",\"exp\":" + FUTURE + "}";
+        JsonNode claims = EmbedJwt.verify(mint(HS256_HEADER, p, SECRET), SECRET, AUD, null, NOW);
         assertEquals("u", claims.get("sub").asText());
     }
 
     @Test
-    public void no_expected_audience_skips_aud_check() throws Exception {
-        String p = "{\"sub\":\"u\",\"exp\":" + FUTURE + "}";
-        JsonNode claims = EmbedJwt.verify(mint(HS256_HEADER, p, SECRET), SECRET, null, NOW);
-        assertEquals("u", claims.get("sub").asText());
+    public void null_aud_claim_is_rejected() {
+        String p = "{\"sub\":\"u\",\"aud\":null,\"iss\":\"" + ISS + "\",\"exp\":" + FUTURE + "}";
+        assertRejected(mint(HS256_HEADER, p, SECRET), "explicit null aud");
+    }
+
+    @Test
+    public void non_string_iss_claim_is_rejected() {
+        String p = "{\"sub\":\"u\",\"aud\":\"" + AUD + "\",\"iss\":[\"a\"],\"exp\":" + FUTURE + "}";
+        assertRejected(mint(HS256_HEADER, p, SECRET), "array iss");
     }
 
     @Test
@@ -165,7 +200,7 @@ public class EmbedJwtTest {
     @Test
     public void empty_secret_is_rejected() {
         try {
-            EmbedJwt.verify(mint(HS256_HEADER, validPayload(), SECRET), new byte[0], AUD, NOW);
+            EmbedJwt.verify(mint(HS256_HEADER, validPayload(), SECRET), new byte[0], AUD, ISS, NOW);
             fail("no secret must fail closed");
         } catch (EmbedJwtException expected) {
             // good
@@ -179,7 +214,7 @@ public class EmbedJwtTest {
         byte[] weak = "too-short-31-bytes-secret-aaaaa".getBytes(StandardCharsets.UTF_8); // 31 bytes
         String token = mint(HS256_HEADER, validPayload(), weak);
         try {
-            EmbedJwt.verify(token, weak, AUD, NOW);
+            EmbedJwt.verify(token, weak, AUD, ISS, NOW);
             fail("a sub-32-byte secret must fail closed");
         } catch (EmbedJwtException expected) {
             // good

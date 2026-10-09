@@ -164,17 +164,11 @@
         </fo:basic-link>
     </xsl:template>
 
-    <xsl:template match="xhtml:img|img|xhtml:input[@type='image']|input[@type='image']">
-        <fo:external-graphic content-type="{@type}" src="{concat(//base/@href,@src)}">
-            <xsl:call-template name="common-atts"/>
-        </fo:external-graphic>
-    </xsl:template>
-
-    <xsl:template match="xhtml:object[starts-with(@type,'image/')]|object[starts-with(@type,'image/')]">
-        <fo:external-graphic content-type="{@type}" src="{concat(//base/@href,@data)}">
-            <xsl:call-template name="common-atts"/>
-        </fo:external-graphic>
-    </xsl:template>
+    <!-- Query-result HTML may contain untrusted image URLs. FOP resolves
+         external-graphic sources from the server, so omit images from PDF
+         tables. Chart SVGs use the separate, guarded export path. -->
+    <xsl:template match="xhtml:img|img|xhtml:input[@type='image']|input[@type='image']"/>
+    <xsl:template match="xhtml:object[starts-with(@type,'image/')]|object[starts-with(@type,'image/')]"/>
 
     <!-- Tables -->
 

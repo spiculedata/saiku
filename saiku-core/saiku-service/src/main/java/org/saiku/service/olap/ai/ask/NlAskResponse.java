@@ -20,6 +20,10 @@ package org.saiku.service.olap.ai.ask;
  *       current cellset). Draft-only — the AI never sends.
  *   <li>{@link Kind#REFUSAL} — the model called the refusal tool (off-topic question). Surface
  *       {@link #reason()} verbatim to the user.
+ *   <li>{@link Kind#MCP_TOOL} — saiku#1425: the model called an outbound MCP tool advertised via
+ *       {@link NlAskRequest#mcpTools()}. {@link #mcpToolQualifiedName()} carries which one;
+ *       {@link #payloadJson()} carries the raw arguments JSON. {@link AiAskService#askChained}
+ *       dispatches the call and loops.
  * </ul>
  *
  * <p>Validation against the live cube happens in the existing {@code /ai/query} converter for the
@@ -64,7 +68,8 @@ public record NlAskResponse(
         int inputTokens,
         int outputTokens,
         String toolCallId,
-        long retryAfterMs) {
+        long retryAfterMs,
+        String mcpToolQualifiedName) {
 
     public enum Kind {
         QUERY,
@@ -72,7 +77,9 @@ public record NlAskResponse(
         VIEW_CHANGE,
         EMAIL_DRAFT,
         DASHBOARD,
-        REFUSAL
+        REFUSAL,
+        /** saiku#1425 — see the class javadoc. */
+        MCP_TOOL
     }
 
     public NlAskResponse {
@@ -85,19 +92,19 @@ public record NlAskResponse(
 
     public static NlAskResponse okQuery(
             String json, String model, int inputTokens, int outputTokens, String toolCallId) {
-        return new NlAskResponse(Kind.QUERY, json, false, "", model, inputTokens, outputTokens, toolCallId, -1L);
+        return new NlAskResponse(Kind.QUERY, json, false, "", model, inputTokens, outputTokens, toolCallId, -1L, null);
     }
 
     public static NlAskResponse okInsight(String json, String model, int inputTokens, int outputTokens) {
-        return new NlAskResponse(Kind.INSIGHT, json, false, "", model, inputTokens, outputTokens, null, -1L);
+        return new NlAskResponse(Kind.INSIGHT, json, false, "", model, inputTokens, outputTokens, null, -1L, null);
     }
 
     public static NlAskResponse okViewChange(String json, String model, int inputTokens, int outputTokens) {
-        return new NlAskResponse(Kind.VIEW_CHANGE, json, false, "", model, inputTokens, outputTokens, null, -1L);
+        return new NlAskResponse(Kind.VIEW_CHANGE, json, false, "", model, inputTokens, outputTokens, null, -1L, null);
     }
 
     public static NlAskResponse okEmailDraft(String json, String model, int inputTokens, int outputTokens) {
-        return new NlAskResponse(Kind.EMAIL_DRAFT, json, false, "", model, inputTokens, outputTokens, null, -1L);
+        return new NlAskResponse(Kind.EMAIL_DRAFT, json, false, "", model, inputTokens, outputTokens, null, -1L, null);
     }
 
     /**
@@ -107,19 +114,31 @@ public record NlAskResponse(
      * a single provider turn with no execute→feedback loop.
      */
     public static NlAskResponse okDashboard(String json, String model, int inputTokens, int outputTokens) {
-        return new NlAskResponse(Kind.DASHBOARD, json, false, "", model, inputTokens, outputTokens, null, -1L);
+        return new NlAskResponse(Kind.DASHBOARD, json, false, "", model, inputTokens, outputTokens, null, -1L, null);
+    }
+
+    /**
+     * saiku#1425: the model called the outbound-MCP tool {@code qualifiedName} (a
+     * {@code mcp__<server>__<tool>} name from {@link NlAskRequest#mcpTools()}). {@code json} is the
+     * raw arguments the model emitted, forwarded verbatim to {@link
+     * org.saiku.service.mcp.outbound.McpOutboundToolCatalog#callTool}.
+     */
+    public static NlAskResponse okMcpTool(
+            String qualifiedName, String json, String model, int inputTokens, int outputTokens, String toolCallId) {
+        return new NlAskResponse(
+                Kind.MCP_TOOL, json, false, "", model, inputTokens, outputTokens, toolCallId, -1L, qualifiedName);
     }
 
     public static NlAskResponse refusal(String reason, String model, int inputTokens, int outputTokens) {
-        return new NlAskResponse(Kind.REFUSAL, null, false, reason, model, inputTokens, outputTokens, null, -1L);
+        return new NlAskResponse(Kind.REFUSAL, null, false, reason, model, inputTokens, outputTokens, null, -1L, null);
     }
 
     public static NlAskResponse degraded(String reason) {
-        return new NlAskResponse(null, null, true, reason, null, -1, -1, null, -1L);
+        return new NlAskResponse(null, null, true, reason, null, -1, -1, null, -1L, null);
     }
 
     public static NlAskResponse degraded(String reason, String model) {
-        return new NlAskResponse(null, null, true, reason, model, -1, -1, null, -1L);
+        return new NlAskResponse(null, null, true, reason, model, -1, -1, null, -1L, null);
     }
 
     /**
@@ -129,7 +148,7 @@ public record NlAskResponse(
      * @param retryAfterMs suggested wait in ms; 0 when the provider gave no hint
      */
     public static NlAskResponse rateLimited(String reason, String model, long retryAfterMs) {
-        return new NlAskResponse(null, null, true, reason, model, -1, -1, null, Math.max(0, retryAfterMs));
+        return new NlAskResponse(null, null, true, reason, model, -1, -1, null, Math.max(0, retryAfterMs), null);
     }
 
     /** Short backoff for {@link #retryableToolError(String, String)} — the model call itself takes
@@ -143,7 +162,7 @@ public record NlAskResponse(
      * through the same paced-retry path as a rate limit.
      */
     public static NlAskResponse retryableToolError(String reason, String model) {
-        return new NlAskResponse(null, null, true, reason, model, -1, -1, null, TOOL_ERROR_BACKOFF_MS);
+        return new NlAskResponse(null, null, true, reason, model, -1, -1, null, TOOL_ERROR_BACKOFF_MS, null);
     }
 
     /**
