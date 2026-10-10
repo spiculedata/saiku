@@ -109,12 +109,25 @@ jobs:
               echo "::notice::$model is new in this pull request — nothing to diff it against."
               continue
             fi
+            # The path filter is deliberately broad (any xml/yaml), so most matches are NOT semantic
+            # models: workflows, poms, Spring XML. The tool exits 2 when it cannot read a file as a
+            # model; that means "not a model", not "the validator is broken", so skip it rather than
+            # fail every pull request that touches a workflow. (The step runs under `bash -e`, hence
+            # the explicit `|| rc=$?`.)
+            rc=0
             out=$(java -cp "$CP" "$MODEL" \
               --from-git "$BASE" --from-git HEAD \
               --before "$model" --after "$model" \
-              --repository target/repository --no-fail-on-broken 2>&1)
+              --repository target/repository --no-fail-on-broken 2>&1) || rc=$?
+            if [ "$rc" -eq 2 ]; then
+              echo "::notice::$model is not a semantic model — skipped."
+              continue
+            fi
             echo "$out"
             report="${report}${out}"$'\n\n'
+            if [ "$rc" -ne 0 ]; then
+              status="$rc"
+            fi
           done < <(git diff --name-only --diff-filter=ACMR "origin/${BASE_REF}...HEAD" -- '*.xml' '*.yaml' '*.yml')
           if [ -z "$report" ]; then
             report="No semantic model changed in this pull request, so there was nothing to diff."
