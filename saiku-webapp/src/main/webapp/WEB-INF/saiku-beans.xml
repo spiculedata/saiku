@@ -615,6 +615,28 @@
         <property name="userService" ref="userServiceBean"/>
     </bean>
 
+    <!-- saiku#1118: "explain this number" — POST /saiku/api/ai/explain. Request-scoped
+         (like aiQueryResource, above) because it reads the session-scoped thinQueryBean's
+         query context and may open a native connection to capture the cell's SQL.
+         olapDiscoverServiceBean is session-scoped and is only touched on the request thread,
+         which is where the explain runs. The askService is the SAME bean aiQueryResource
+         uses, so the LLM narrative inherits the configured provider, the egress policy and
+         the audit trail — and when it is a noop provider the deterministic narrative is
+         what the panel shows. -->
+    <bean id="cellExplainServiceBean" scope="request"
+          class="org.saiku.service.olap.ai.explain.CellExplainService">
+        <aop:scoped-proxy/>
+        <property name="thinQueryService" ref="thinQueryBean"/>
+        <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
+        <property name="askService" ref="aiAskServiceBean"/>
+    </bean>
+
+    <bean id="aiExplainResource" scope="request"
+          class="org.saiku.web.rest.resources.AiExplainResource">
+        <aop:scoped-proxy/>
+        <property name="explainService" ref="cellExplainServiceBean"/>
+    </bean>
+
     <!-- Ossie AI Query API (#1394) — parallel to aiQueryResource but for semantic-YAML
          Ossie models. R2 endpoints: GET /ai/ossie/models, GET /ai/ossie/schema/{c}/{m},
          POST /ai/ossie/query (+ ?format=matrix), POST /ai/ossie/query/preview, GET

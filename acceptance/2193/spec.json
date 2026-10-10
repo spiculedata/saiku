@@ -1,0 +1,61 @@
+{
+  "issue": 2193,
+  "title": "Explain this number returns the generated SQL, or says why it could not",
+  "kind": "api",
+  "auth": "session",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "a query has been executed in the session and the cell at row 0, column 0 is explained with includeSql",
+      "then": "the response carries a non-empty sql field holding a SELECT statement"
+    }
+  ],
+  "steps": [
+    {
+      "name": "run the query the cell belongs to",
+      "criterion": "C1",
+      "request": {
+        "method": "POST",
+        "path": "/query/execute",
+        "json": {
+          "name": "acceptance-2193",
+          "cube": {
+            "connection": "unknown_foodmart",
+            "catalog": "FoodMart",
+            "schema": "FoodMart",
+            "name": "Sales",
+            "uniqueName": "[Sales]"
+          },
+          "mdx": "SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY {[Product].[Products].[Product Family].Members} ON ROWS FROM [Sales]"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "explaining a cell returns the SQL Mondrian ran for it",
+      "criterion": "C1",
+      "request": {
+        "method": "POST",
+        "path": "/ai/explain",
+        "json": {
+          "queryName": "acceptance-2193",
+          "position": {
+            "row": 0,
+            "column": 0
+          },
+          "includeSql": true
+        }
+      },
+      "expect": {
+        "status": 200,
+        "json": {
+          "sql": {
+            "matches": "^(?:select|SELECT)\\s"
+          }
+        }
+      }
+    }
+  ]
+}

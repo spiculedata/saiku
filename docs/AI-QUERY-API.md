@@ -1838,3 +1838,109 @@ that silently de-certifies the numbers.
 Matching is deterministic token comparison over the authored
 `matchIntent` phrasings, not an LLM decision — that is what makes the
 approval a guarantee rather than a request.
+
+## "Explain this number" — `POST /ai/explain` (saiku#1118)
+
+The one endpoint on this surface aimed at a **person** rather than an agent:
+right-click any cell in the workspace grid (or any data point on a chart) →
+**Explain this number** → a side panel shows the number, its story, the
+structured findings behind the story, and the MDX + SQL that produced it.
+
+It answers from the cellset already cached for the named query, so opening
+the panel does not re-run the user's query.
+
+### Request
+
+```json
+{
+  "queryName": "foodmart-1",
+  "position": { "row": 2, "column": 0 },
+  "includeDrivers": true,
+  "includeNarrative": true,
+  "includeSql": true
+}
+```
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `queryName` | yes | A query in the **caller's own session** — the same name `/saiku/api/query/{name}` uses. `queryId` is accepted as an alias. |
+| `position` | yes | Zero-based data coordinates. `row` counts data rows and `column` data columns; **neither counts the header bands** — the same numbers a right-click hands you in the grid. |
+| `includeDrivers` | no (default `true`) | The structured findings. |
+| `includeNarrative` | no (default `true`) | The story. |
+| `includeSql` | no (default `true`) | Re-run the single-cell query with a planner log probe open to capture its SQL. Off means no query is re-run at all. |
+
+### Response
+
+```json
+{
+  "cube": "[FoodMart].[FoodMart].[Sales]",
+  "measure": "Store Sales",
+  "rowPath": "USA / CA / Altadena",
+  "columnPath": "1997 Q1",
+  "value": 26507.17,
+  "formatted": "$26,507.17",
+  "mdx": "SELECT NON EMPTY {[Measures].[Store Sales]} ON 0 FROM [Sales] WHERE ([Time].[1997])",
+  "cellMdx": "SELECT {[Measures].[Store Sales]} ON 0 FROM [Sales] WHERE ([Customers].[USA], [Time].[1997].[Q1])",
+  "sql": "select ... from \"FOODMART\".\"SALES\" ...",
+  "drivers": [
+    { "kind": "SHARE_OF_COLUMN", "caption": "Altadena", "detail": "share of the column total", "share": 0.124 },
+    { "kind": "RANK_IN_COLUMN", "caption": "Altadena", "detail": "3 of 17 rows with a value in this column" },
+    { "kind": "PREVIOUS_COLUMN", "caption": "1997 Q1", "detail": "change against the previous column of the same row", "delta": -1523.4, "deltaPct": -0.054 }
+  ],
+  "narrative": "Store Sales for USA / CA / Altadena / 1997 Q1 is $26,507.17. That is 12.40% of the column total. …",
+  "narrativeSource": "COMPUTED",
+  "notes": [],
+  "elapsedMs": 41
+}
+```
+
+Fields the server could not produce are **absent**, with a line in `notes`
+saying why. The panel never renders a placeholder number in their place.
+
+### Driver kinds
+
+| `kind` | Fields | Meaning |
+| --- | --- | --- |
+| `SHARE_OF_COLUMN` | `value`, `share` | How much of the column total this cell is. |
+| `SHARE_OF_ROW` | `value`, `share` | How much of the row total this cell is. |
+| `RANK_IN_COLUMN` | `value`, `detail` | Where it sits among the rows of its column (1 = highest). |
+| `PREVIOUS_COLUMN` | `value`, `delta`, `deltaPct` | Change against the column to its left, **only when the two are siblings** (same depth under a shared parent — two quarters of one year qualify, a year total next to a quarter does not). This is the period-over-period comparison, computed from the cellset on screen; no follow-up query. |
+| `ROW_PEAK` | `value`, `delta`, `share` | The largest cell in the same row, when it isn't this one. |
+
+### The narrative, and its fallback
+
+`narrative` is always present when `includeNarrative` is on, and
+`narrativeSource` says who wrote it:
+
+- `LLM` — the configured provider (the same one `/ai/ask` uses, with the same
+  egress policy and audit trail), pinned to the insight tool and handed the
+  computed findings rather than the raw cellset, so every figure it states is
+  one the server calculated.
+- `COMPUTED` — the deterministic summary built from the drivers. This is what
+  you get when no provider is configured, and what you fall back to when a
+  provider is configured but degrades, refuses, or returns an empty narrative.
+  The reason lands in `notes`.
+- `NONE` — only when `includeNarrative` was false.
+
+### Errors
+
+| Status | `code` | When |
+| --- | --- | --- |
+| 400 | `VALIDATION_ERROR` | Missing/blank `queryName`, missing or negative `position`, or a coordinate outside the cellset. |
+| 404 | `UNKNOWN_QUERY` | The session has no query by that name. |
+| 409 | `NOT_EXECUTED` | The query exists but has no result yet. |
+| 503 | `NOT_CONFIGURED` | The explain service isn't wired on this deployment. |
+| 500 | `EXPLAIN_FAILED` | Unexpected failure; details stay server-side. |
+
+### Why SQL is captured and not generated
+
+Saiku's Mondrian fork defaults to the Calcite backend. Generating SQL with
+Mondrian's own `SqlQuery` / `SqlGenerator` would render what the **legacy**
+planner would have run, which is a different statement from the one the
+deployment actually executed. So the service runs the single-cell query with a
+`java.util.logging` probe open on `mondrian.sql` / `mondrian.olap` and reports
+what the planner emitted. A backend that logs nothing there yields no `sql` and
+a `notes` line — a missing SQL, never a plausible-looking wrong one.
+
+The probe is scoped to that one query and restores every logger level it
+raised, so a cell explain does not leave Mondrian logging at `FINE` afterwards.
