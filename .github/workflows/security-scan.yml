@@ -67,8 +67,23 @@ jobs:
         with:
           # Full history — gitleaks can only find a secret in commits it can see.
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
+      # The gitleaks CLI is MIT-licensed and free for organisations. The gitleaks-action
+      # wrapper is not: it needs a GITLEAKS_LICENSE secret on any org repo, and failed every
+      # run without one. Same scanner, same full-history scan; the release tarball is pinned
+      # by version and verified against its published sha256 before it runs.
+      - name: Install gitleaks
         env:
-          # Never let the scanner print a detected secret into the job log.
-          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
-          GITLEAKS_NOTIFY_USER_LIST: ""
+          GITLEAKS_VERSION: "8.30.1"
+          GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+        run: |
+          set -euo pipefail
+          curl -sSfL -o gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+      # --redact: never print a detected secret into the job log. The baseline holds the findings
+      # that already existed when the scanner was fixed (mostly doc examples and test fixtures), so
+      # the job fails only on a NEW leak instead of on history nobody can rewrite.
+      - name: Scan history for committed secrets
+        run: gitleaks git --redact --no-banner --exit-code 1 --log-opts="--all" --baseline-path .gitleaks-baseline.json
