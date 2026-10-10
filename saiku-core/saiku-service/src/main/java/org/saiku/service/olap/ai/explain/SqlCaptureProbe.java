@@ -8,10 +8,14 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
-import java.util.logging.Handler;
-import java.util.logging.Level;
-import java.util.logging.LogRecord;
-import java.util.logging.Logger;
+import java.util.concurrent.atomic.AtomicLong;
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.core.LogEvent;
+import org.apache.logging.log4j.core.LoggerContext;
+import org.apache.logging.log4j.core.appender.AbstractAppender;
+import org.apache.logging.log4j.core.config.Configuration;
+import org.apache.logging.log4j.core.config.LoggerConfig;
 
 /**
  * Captures the SQL a single cell query makes Mondrian emit, so the explain panel can show the
@@ -22,20 +26,25 @@ import java.util.logging.Logger;
  * planner would have run. This fork defaults to Calcite ({@code docs/mondrian-fork.md}), and the
  * two backends produce different SQL from the same query; showing the legacy text on a Calcite
  * deployment would be a confidently wrong answer. There is no supported accessor on the olap4j
- * result path for the string the planner decided on, but the planner does log it at {@code FINE}
- * on {@code mondrian.sql} / {@code mondrian.olap}, so the honest way to surface it is to listen
- * for the duration of one execution.
+ * result path for the string the planner decided on, but {@code SqlStatement} logs every statement
+ * it executes at {@code DEBUG} on {@code mondrian.sql} ("&lt;id&gt;: executing sql [select …]"),
+ * so the honest way to surface it is to listen for the duration of one execution.
+ *
+ * <p><b>Which logging system.</b> Mondrian logs through slf4j, which this webapp binds to log4j2
+ * ({@code log4j-slf4j2-impl}); it does NOT use {@code java.util.logging}, so a JUL handler never
+ * sees a record (saiku#2193). The probe therefore attaches a log4j2 appender to the Mondrian
+ * loggers and lowers their level to {@code DEBUG} while it is open.
  *
  * <p><b>Cost and blast radius.</b> A probe only exists between {@link #open()} and {@link
- * #close()}, and closing restores every logger level it touched. {@code FINE} is chatty, which is
- * why the probe is scoped to the one cell query instead of being left on. This is deliberately NOT
- * {@link AutoCloseable}: a {@code close()} inside try-with-resources would hide the fact that
- * level restoration is a global side effect.
+ * #close()}, and closing detaches the appender, removes any logger config it created and restores
+ * every level it touched. {@code DEBUG} is chatty, which is why the probe is scoped to the one cell
+ * query instead of being left on; appenders already attached to those loggers will also see the
+ * extra records for that window. This is deliberately NOT {@link AutoCloseable}: a {@code close()}
+ * inside try-with-resources would hide the fact that level restoration is a global side effect.
  *
- * <p>Threading: {@code java.util.logging} publishes on the thread that logged the record, and the
- * cell query runs on the caller's thread, so no hand-off is involved. The list is synchronized
- * anyway — a probe that silently lost statements would produce a panel that quietly lies, which is
- * worse than the cost.
+ * <p>Threading: Mondrian may log from its own worker threads (segment loading), so the capture is
+ * not filtered by thread. The list is synchronized — a probe that silently lost statements would
+ * produce a panel that quietly lies, which is worse than the cost.
  */
 public final class SqlCaptureProbe {
 
@@ -47,23 +56,34 @@ public final class SqlCaptureProbe {
 
     private static final int DEFAULT_MAX_STATEMENTS = 5;
     private static final int MAX_CAPTURED_LENGTH = 20_000;
+    private static final String EXECUTING_MARKER = "executing sql [";
+    private static final AtomicLong SEQUENCE = new AtomicLong();
 
-    private final List<Logger> touched = new ArrayList<>();
+    private final LoggerContext context;
+    private final List<LoggerConfig> touched = new ArrayList<>();
     private final List<Level> previousLevels = new ArrayList<>();
+    private final List<Boolean> created = new ArrayList<>();
     private final List<String> statements = Collections.synchronizedList(new ArrayList<>());
     private final int maxStatements;
+    private final CaptureAppender appender;
     private volatile boolean open = true;
 
-    private final Handler handler = new Handler() {
+    private final class CaptureAppender extends AbstractAppender {
+        CaptureAppender() {
+            super(
+                    "saiku-sql-capture-" + SEQUENCE.incrementAndGet(),
+                    null,
+                    null,
+                    true,
+                    org.apache.logging.log4j.core.config.Property.EMPTY_ARRAY);
+        }
+
         @Override
-        public void publish(LogRecord record) {
-            if (record == null || !open) {
+        public void append(LogEvent event) {
+            if (!open || event == null || event.getMessage() == null) {
                 return;
             }
-            if (record.getLevel().intValue() > Level.FINE.intValue()) {
-                return;
-            }
-            String sql = extractSql(record);
+            String sql = extractSql(event.getMessage().getFormattedMessage());
             if (sql == null) {
                 return;
             }
@@ -73,37 +93,45 @@ public final class SqlCaptureProbe {
                 }
             }
         }
-
-        @Override
-        public void flush() {
-            // Nothing buffered.
-        }
-
-        @Override
-        public void close() {
-            // Level restoration belongs to the probe, not to the handler.
-        }
-    };
+    }
 
     private SqlCaptureProbe(int maxStatements) {
         this.maxStatements = Math.max(1, maxStatements);
+        this.context = (LoggerContext) LogManager.getContext(SqlCaptureProbe.class.getClassLoader(), false);
+        this.appender = new CaptureAppender();
     }
 
-    /** Open a probe, lowering the planner loggers to {@code FINE}. Must be {@link #close()}d. */
+    /** Open a probe, lowering the planner loggers to {@code DEBUG}. Must be {@link #close()}d. */
     public static SqlCaptureProbe open() {
         return open(DEFAULT_MAX_STATEMENTS);
     }
 
     public static SqlCaptureProbe open(int maxStatements) {
         SqlCaptureProbe probe = new SqlCaptureProbe(maxStatements);
-        for (String name : SQL_LOGGERS) {
-            Logger logger = Logger.getLogger(name);
-            probe.touched.add(logger);
-            probe.previousLevels.add(logger.getLevel());
-            logger.setLevel(Level.FINE);
-            logger.addHandler(probe.handler);
-        }
+        probe.attach();
         return probe;
+    }
+
+    private synchronized void attach() {
+        Configuration config = context.getConfiguration();
+        appender.start();
+        for (String name : SQL_LOGGERS) {
+            LoggerConfig existing = config.getLoggerConfig(name);
+            boolean ownConfig = name.equals(existing.getName());
+            LoggerConfig target = existing;
+            if (!ownConfig) {
+                // Only an ancestor (usually the root) configures this logger: give it a config of
+                // its own so lowering its level doesn't turn DEBUG on for the whole application.
+                target = new LoggerConfig(name, Level.DEBUG, true);
+                config.addLogger(name, target);
+            }
+            touched.add(target);
+            previousLevels.add(ownConfig ? target.getLevel() : null);
+            created.add(!ownConfig);
+            target.setLevel(Level.DEBUG);
+            target.addAppender(appender, Level.DEBUG, null);
+        }
+        context.updateLoggers();
     }
 
     /** Statements seen, in the order they were logged; empty when the backend logged nothing. */
@@ -135,42 +163,58 @@ public final class SqlCaptureProbe {
         return !statements().isEmpty();
     }
 
-    /** Detach the handler and restore every logger level. Idempotent. */
-    public void close() {
+    /** Detach the appender and restore every logger level. Idempotent. */
+    public synchronized void close() {
         if (!open) {
             return;
         }
         open = false;
+        Configuration config = context.getConfiguration();
         for (int i = 0; i < touched.size(); i++) {
-            Logger logger = touched.get(i);
-            logger.removeHandler(handler);
-            logger.setLevel(previousLevels.get(i));
+            LoggerConfig target = touched.get(i);
+            target.removeAppender(appender.getName());
+            if (created.get(i)) {
+                config.removeLogger(target.getName());
+            } else {
+                target.setLevel(previousLevels.get(i));
+            }
         }
+        appender.stop();
+        context.updateLoggers();
     }
 
     /**
-     * Pull a SQL statement out of a planner log record.
+     * Pull a SQL statement out of a planner log message.
      *
-     * <p>The record text carries a run id and a label ("SqlQuery: select …", "Executing SQL:
-     * select …") whose exact form shifts between Mondrian versions, so rather than strip a format
-     * that isn't stable, everything from the first {@code select} onwards is taken and a trailing
-     * newline cut. Records without a {@code select} in them are not statements.
+     * <p>Mondrian logs "&lt;id&gt;: executing sql [select …]", possibly across several lines, and
+     * the label differs between versions. When the bracketed form is present the whole bracket body
+     * is the statement; otherwise everything from the first {@code select} to the end of its line is
+     * taken. Messages without a {@code select} in them are not statements.
      */
-    static String extractSql(LogRecord record) {
-        String message = record.getMessage();
+    static String extractSql(String message) {
         if (message == null) {
             return null;
         }
-        int select = message.toLowerCase(Locale.ROOT).indexOf("select");
-        if (select < 0) {
-            return null;
+        String lower = message.toLowerCase(Locale.ROOT);
+        String sql;
+        int marker = lower.indexOf(EXECUTING_MARKER);
+        if (marker >= 0) {
+            sql = message.substring(marker + EXECUTING_MARKER.length()).trim();
+            if (sql.endsWith("]")) {
+                sql = sql.substring(0, sql.length() - 1).trim();
+            }
+        } else {
+            int select = lower.indexOf("select");
+            if (select < 0) {
+                return null;
+            }
+            sql = message.substring(select).trim();
+            int newline = sql.indexOf('\n');
+            if (newline >= 0) {
+                sql = sql.substring(0, newline).trim();
+            }
         }
-        String sql = message.substring(select).trim();
-        int newline = sql.indexOf('\n');
-        if (newline >= 0) {
-            sql = sql.substring(0, newline).trim();
-        }
-        if (sql.length() < MIN_SQL_LENGTH) {
+        if (sql.length() < MIN_SQL_LENGTH || !sql.toLowerCase(Locale.ROOT).startsWith("select")) {
             return null;
         }
         if (sql.length() > MAX_CAPTURED_LENGTH) {

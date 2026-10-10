@@ -214,7 +214,14 @@ public class CellExplainService {
             }
             statement = connection.createStatement();
             statement.executeOlapQuery(cellMdx);
-            return new Sql(probe.representativeStatement(), notes);
+            String captured = probe.representativeStatement();
+            if (captured == null) {
+                // Never a silently absent field: the panel would otherwise look as if SQL were
+                // simply not offered. A warm Mondrian cache answers the cell without any SQL.
+                notes.add("SQL was not captured: no statement was logged for this cell"
+                        + " (it may have been answered from Mondrian's cache)");
+            }
+            return new Sql(captured, notes);
         } catch (OlapException | RuntimeException e) {
             // Note carries the class, not the message: planner messages quote the whole MDX and
             // member names, which this panel is about to display anyway, but the log should stay
