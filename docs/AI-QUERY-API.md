@@ -1904,8 +1904,15 @@ saying why. The panel never renders a placeholder number in their place.
 | `SHARE_OF_COLUMN` | `value`, `share` | How much of the column total this cell is. |
 | `SHARE_OF_ROW` | `value`, `share` | How much of the row total this cell is. |
 | `RANK_IN_COLUMN` | `value`, `detail` | Where it sits among the rows of its column (1 = highest). |
-| `PREVIOUS_COLUMN` | `value`, `delta`, `deltaPct` | Change against the column to its left, **only when the two are siblings** (same depth under a shared parent — two quarters of one year qualify, a year total next to a quarter does not). This is the period-over-period comparison, computed from the cellset on screen; no follow-up query. |
-| `ROW_PEAK` | `value`, `delta`, `share` | The largest cell in the same row, when it isn't this one. |
+| `PREVIOUS_COLUMN` | `value`, `delta`, `deltaPct` | Change against the column to its left, **only when the two are siblings** (same depth under a shared parent — two quarters of one year qualify, a year total next to a quarter does not) **and hold the same measure**. This is the period-over-period comparison, computed from the cellset on screen; no follow-up query. |
+| `ROW_PEAK` | `value`, `delta`, `share` | The largest cell of the same measure in the same row, when it isn't this one. |
+
+Every comparison is scoped to cells of the **clicked cell's own measure** (saiku#2192). A row
+holding Unit Sales and Store Sales cells has no row total — units and dollars do not add — so the
+row-wise drivers only count cells of the same measure, and when a direction is left with a single
+such cell the driver is omitted, like every other comparison the view can't make. `measure` (and
+the narrative's subject) is always the measure of the cell that was clicked, wherever it sits on
+the axes.
 
 ### The narrative, and its fallback
 

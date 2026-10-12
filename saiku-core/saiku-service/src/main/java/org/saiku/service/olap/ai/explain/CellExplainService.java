@@ -102,7 +102,10 @@ public class CellExplainService {
         SaikuCube cube = resolved.query.getCube();
         List<CellMember> rowHeader = view.rowHeader(row);
         List<CellMember> columnHeader = view.columnHeader(column);
-        CellMember measure = view.measure();
+        // The measure of the cell that was clicked, from its own coordinate — not the first
+        // column's measure, which with more than one measure on an axis is the wrong name
+        // for every other cell (saiku#2192).
+        CellMember measure = view.measure(row, column);
         List<CellMember> coordinate = new ArrayList<>(rowHeader);
         coordinate.addAll(columnHeader);
 

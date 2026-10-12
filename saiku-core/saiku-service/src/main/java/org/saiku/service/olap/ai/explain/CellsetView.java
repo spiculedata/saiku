@@ -45,13 +45,24 @@ public interface CellsetView {
         return row >= 0 && column >= 0 && row < rowCount() && column < columnCount();
     }
 
-    /** Caption of the single measure on the column axis, or {@code null} when there isn't one. */
-    default CellMember measure() {
-        if (columnCount() == 0) {
-            return null;
+    /**
+     * The measure of the cell at {@code (row, column)}: a measure member on that cell's own column
+     * coordinate, else one on its row coordinate (a measure can sit on either axis), or
+     * {@code null} when the axes declare no measure for it.
+     *
+     * <p>This is deliberately per cell and not per cellset (saiku#2192): with more than one
+     * measure on the columns, the first column's header names the wrong measure for every other
+     * column, so the coordinate of the cell being explained is the only place to ask.
+     */
+    default CellMember measure(int row, int column) {
+        for (int i = columnHeader(column).size() - 1; i >= 0; i--) {
+            CellMember m = columnHeader(column).get(i);
+            if (m.measure()) {
+                return m;
+            }
         }
-        for (int i = columnHeader(0).size() - 1; i >= 0; i--) {
-            CellMember m = columnHeader(0).get(i);
+        for (int i = rowHeader(row).size() - 1; i >= 0; i--) {
+            CellMember m = rowHeader(row).get(i);
             if (m.measure()) {
                 return m;
             }
