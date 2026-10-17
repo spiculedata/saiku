@@ -148,9 +148,14 @@ jobs:
           </settings>
           EOF
       # Tests are already covered by the java job; this lane only needs the
-      # resolved dependency graph. NVD_API_KEY is optional but strongly
-      # recommended: without it the NVD feed download is rate-limited and can
-      # time out unattended. Add it as a repo secret to make this lane reliable.
+      # resolved dependency graph. dependency-check 13 requires an NVD API key
+      # for the feed update: with none configured it aborts with
+      # "NvdApiException: Invalid API Key, length of 0" instead of merely
+      # rate-limiting (saiku#2161), so until the NVD_API_KEY repo secret is
+      # added we degrade to a non-fatal scan (-DfailOnError=false) instead of
+      # leaving this lane permanently red. The fallback is self-disarming:
+      # once the secret exists the strict -DnvdApiKey path runs and any real
+      # NVD error fails the job again.
       - name: OWASP dependency-check
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
@@ -160,7 +165,8 @@ jobs:
           if [[ -n "${NVD_API_KEY:-}" ]]; then
             args+=("-DnvdApiKey=${NVD_API_KEY}")
           else
-            echo "::warning::NVD_API_KEY is not set; the NVD download may be rate-limited"
+            echo "::warning::NVD_API_KEY is not set; NVD feed errors are downgraded to non-fatal (scan may run without CVE data) - add the NVD_API_KEY repo secret for the strict scan (saiku#2161)"
+            args+=("-DfailOnError=false")
           fi
           mvn "${args[@]}" verify
       - name: Upload dependency-check reports
