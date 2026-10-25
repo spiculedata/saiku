@@ -1371,7 +1371,7 @@ Provider defaults: `anthropic` → `claude-sonnet-4-6`,
 provider refuses to construct otherwise so the key can't accidentally
 leak to the wrong host).
 
-`GET /saiku/info/diagnostics` (saiku#904) reports the resolved provider,
+Admin-only `GET /saiku/info/diagnostics` (saiku#904) reports the resolved provider,
 model, endpoint and a live reachability probe for both this ask layer and
 the schema-generation enrichment pipeline (`saiku.schemagen.llm.provider`,
 which accepts the same `openai`/`ollama` values) — never the API key — so

@@ -259,11 +259,14 @@
 	         legacy `isAnonymous() or isFullyAuthenticated()` pattern. -->
 	    <security:intercept-url pattern="/rest/saiku/session" access="permitAll" />
 	    <security:intercept-url pattern="/rest/saiku/session/**" access="permitAll" />
-	    <!-- /rest/saiku/info and its sub-paths are anonymous-accessible.
+	    <!-- /rest/saiku/info and its public sub-paths are anonymous-accessible.
 	         The SPA's login page reads /info/capabilities pre-auth to decide
 	         whether to surface the demo-mode connection panel (saiku#871).
-	         /info itself is the plugin-list endpoint the SPA pings on boot. -->
+	         /info itself is the plugin-list endpoint the SPA pings on boot.
+	         Diagnostics contains the configured AI upstream URL and reachability,
+	         so its exact admin-only rule must precede the public wildcard. -->
 	    <security:intercept-url pattern="/rest/saiku/info" access="permitAll" />
+	    <security:intercept-url pattern="/rest/saiku/info/diagnostics" access="hasRole('ADMIN')" />
 	    <security:intercept-url pattern="/rest/saiku/info/**" access="permitAll" />
 	    <!-- saiku#879: OAuth protected-resource discovery metadata (RFC 9728) for
 	         the MCP endpoint. A client fetches this BEFORE it has any token, so it

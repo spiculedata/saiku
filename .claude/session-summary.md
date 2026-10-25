@@ -201,3 +201,8 @@ written from the conversation rather than from `git status` / `git log`, records
 what the agent remembers doing instead of what the tree actually contains. Check
 the tree first.
 **Refs:** #2101
+
+## 2026-10-25 — info diagnostics access restriction — issue #2296
+**Was doing:** restricted `/rest/saiku/info/diagnostics` to admins in the Spring URL chain and on the Jersey method, while retaining public `/info` and `/info/capabilities`. Added launcher integration coverage and updated the AI API documentation.
+**Now:** review the security fix for #2296. XML parsing and security-rule ordering checks passed; the Java integration suite could not run locally because Java and Maven are absent.
+**Refs:** #2296
