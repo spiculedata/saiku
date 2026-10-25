@@ -17,6 +17,7 @@ package org.saiku.web.rest.resources;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.qmino.miredot.annotations.ReturnType;
+import jakarta.annotation.security.RolesAllowed;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.HEAD;
 import jakarta.ws.rs.Path;
@@ -224,6 +225,7 @@ public class InfoResource {
      */
     @GET
     @Path("/diagnostics")
+    @RolesAllowed("ROLE_ADMIN")
     @Produces({"application/json"})
     public Response getDiagnostics() {
         Map<String, Object> body = new LinkedHashMap<>();
