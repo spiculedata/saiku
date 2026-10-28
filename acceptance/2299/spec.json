@@ -1,0 +1,29 @@
+{
+  "issue": 2299,
+  "title": "CI feedback uses only the current PR's runs and never clears its comment from unrelated runs",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "a green PR run and newer failed or pending runs for another PR on the same SHA",
+      "then": "the current PR's feedback stays green and the unrelated run details are not fetched"
+    },
+    {
+      "id": "C2",
+      "given": "scheduled or push runs whose REST pull_requests array names the current PR",
+      "then": "those non-PR runs do not enter the PR's feedback"
+    },
+    {
+      "id": "C3",
+      "given": "a requested PR with no matching pull_request run",
+      "then": "the collector leaves PR identity unset and an existing sticky comment is not refreshed"
+    },
+    {
+      "id": "C4",
+      "given": "collection without a requested PR",
+      "then": "the collector retains commit-wide run selection"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 30
+}

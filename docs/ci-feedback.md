@@ -16,12 +16,13 @@ need the first **real** error, not log scraping. For every commit CI now publish
 
 `.github/workflows/ci-feedback.yml` reacts (`workflow_run`, `completed`) to every PR-gating workflow: `ci`,
 `docker`, `design-system`, `release-prep`, and the two that are still on open PR branches
-(`security-scan`, `model-diff`). Each time one finishes it re-reads **all** the runs for that commit, so the
-document is the same whichever workflow finished last and a newer run simply supersedes an older one.
+(`security-scan`, `model-diff`). For a PR it re-reads the `pull_request` runs linked to that PR and head SHA;
+when no PR number is supplied, it reads all runs for the commit. A newer run of the same workflow supersedes
+an older one within that scope. An empty PR scope cannot refresh a sticky comment.
 
 `.github/scripts/ci-feedback.mjs` does the work (log analysis is in `ci-feedback-log.mjs`):
 
-1. List the newest run of each workflow for the head SHA, their jobs and artifacts.
+1. List the newest run of each workflow for the head SHA and current PR (when known), then its jobs and artifacts.
 2. For each failing job (failure, timed_out, startup_failure, action_required; cancelled does not count)
    download the log tail (last 8 MiB; at most 12 job logs per document, any further failing job is listed without
    an excerpt).
