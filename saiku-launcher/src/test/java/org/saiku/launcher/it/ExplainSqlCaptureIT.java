@@ -47,9 +47,19 @@ public class ExplainSqlCaptureIT {
                 "name": "Sales",
                 "uniqueName": "[Sales]"
               },
-              "mdx": "SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY {[Product].[Products].[Product Family].Members} ON ROWS FROM [Sales]"
+              "mdx": "SELECT NON EMPTY {[Measures].[Unit Sales]} ON COLUMNS, NON EMPTY {[Product].[Products].[Product Family].Members} ON ROWS FROM [Sales]"
             }
             """;
+
+    /*
+     * Why Unit Sales and not the Store Sales every other FoodMart IT runs: a warm Mondrian
+     * segment cache answers the explain probe's cell query without emitting any SQL, which is
+     * legitimate product behavior but fails this test's nonblank-SQL assertion (saiku#2291).
+     * Segments are keyed per measure, so a measure no other IT exercises keeps the cell's
+     * segment cold regardless of what the shared harness ran earlier — deterministic either
+     * way, still failing if the capture probe cannot observe an emitted statement. If another
+     * IT starts using Unit Sales, pick a different unused measure here.
+     */
 
     /**
      * The explain endpoint reads the query the SAME session ran, and the shared harness client keeps
