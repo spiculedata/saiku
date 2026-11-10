@@ -32,12 +32,21 @@
       "request": {
         "method": "POST",
         "path": "/rest/saiku/sql-workbench/query",
-        "headers": { "Content-Type": "application/json" },
-        "body": { "datasource": "foodmart", "sql": "EXPLAIN ANALYZE DELETE FROM customer" }
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "json": {
+          "datasource": "foodmart",
+          "sql": "EXPLAIN ANALYZE DELETE FROM customer"
+        }
       },
       "expect": {
         "status": 400,
-        "json": { "code": { "equals": "READ_ONLY_VIOLATION" } }
+        "json": {
+          "code": {
+            "equals": "READ_ONLY_VIOLATION"
+          }
+        }
       }
     },
     {
@@ -46,12 +55,21 @@
       "request": {
         "method": "POST",
         "path": "/rest/saiku/sql-workbench/query",
-        "headers": { "Content-Type": "application/json" },
-        "body": { "datasource": "foodmart", "sql": "WITH d AS (DELETE FROM customer RETURNING 1) SELECT * FROM d" }
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "json": {
+          "datasource": "foodmart",
+          "sql": "WITH d AS (DELETE FROM customer RETURNING 1) SELECT * FROM d"
+        }
       },
       "expect": {
         "status": 400,
-        "json": { "code": { "equals": "READ_ONLY_VIOLATION" } }
+        "json": {
+          "code": {
+            "equals": "READ_ONLY_VIOLATION"
+          }
+        }
       }
     },
     {
@@ -60,12 +78,21 @@
       "request": {
         "method": "POST",
         "path": "/rest/saiku/sql-workbench/query",
-        "headers": { "Content-Type": "application/json" },
-        "body": { "datasource": "foodmart", "sql": "SELECT FILE_WRITE(STRINGTOUTF8('pwned'), '/tmp/saiku-pwned')" }
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "json": {
+          "datasource": "foodmart",
+          "sql": "SELECT FILE_WRITE(STRINGTOUTF8('pwned'), '/tmp/saiku-pwned')"
+        }
       },
       "expect": {
         "status": 400,
-        "json": { "code": { "equals": "READ_ONLY_VIOLATION" } }
+        "json": {
+          "code": {
+            "equals": "READ_ONLY_VIOLATION"
+          }
+        }
       }
     },
     {
@@ -74,12 +101,21 @@
       "request": {
         "method": "POST",
         "path": "/rest/saiku/sql-workbench/query",
-        "headers": { "Content-Type": "application/json" },
-        "body": { "datasource": "foodmart", "sql": "SELECT 1" }
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "json": {
+          "datasource": "foodmart",
+          "sql": "SELECT 1"
+        }
       },
       "expect": {
         "status": 200,
-        "json": { "rowCount": { "equals": 1 } }
+        "json": {
+          "rowCount": {
+            "equals": 1
+          }
+        }
       }
     }
   ]
