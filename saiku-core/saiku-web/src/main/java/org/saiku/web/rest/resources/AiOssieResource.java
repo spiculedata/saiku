@@ -925,6 +925,11 @@ public class AiOssieResource {
             }
             OssieModelDto semantic = ossieDiscoverService.getModel(req.getConnection());
             if (req.getModel() == null || req.getModel().isBlank()) req.setModel(semantic.getName());
+            // saiku#2323 (CWE-863) — validate against the role-filtered model, same as the AI
+            // schema endpoint, so a field/metric the caller's roles deny is rejected with the
+            // VALIDATION_ERROR envelope at submit time instead of failing (or, worse, succeeding
+            // unscoped) on the worker.
+            semantic = OssieRoleContext.filterHidden(semantic, Set.copyOf(SessionRoles.currentRoles()));
             OssieAiSchema schema = projector.project(req.getConnection(), semantic, null);
             validator.validate(req, schema);
             OssieQueryModel internal = toInternal(req, semantic);
