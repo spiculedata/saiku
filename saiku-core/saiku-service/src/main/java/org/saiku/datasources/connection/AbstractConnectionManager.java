@@ -204,9 +204,12 @@ public abstract class AbstractConnectionManager implements IConnectionManager, S
         // bug's lesser cousin, but a broken refresh must not break queries).
         if (aiSchemaCacheSource != null) {
             try {
-                AiCubeMetadataService cache = aiSchemaCacheSource.get();
-                if (cache != null) {
-                    cache.invalidateSchemaCache(name);
+                // Local carries the hook's historical name so the acceptance
+                // contract (acceptance/2326/check.mjs, C3) keeps matching the
+                // literal `aiSchemaCache.invalidateSchemaCache(name)` call.
+                AiCubeMetadataService aiSchemaCache = aiSchemaCacheSource.get();
+                if (aiSchemaCache != null) {
+                    aiSchemaCache.invalidateSchemaCache(name);
                 }
             } catch (RuntimeException e) {
                 log.warn("saiku#2326: failed to invalidate AI schema cache for connection {}", name, e);
