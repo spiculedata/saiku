@@ -102,12 +102,10 @@ public class ConnectionRefreshEpochWiringTest {
         StubConnectionManager mgr = new StubConnectionManager();
         mgr.setDataSourceManager(datasourceManagerServing("lazy-ai-conn"));
         RecordingAiCache cache = new RecordingAiCache();
-        mgr.setAiSchemaCacheSource(
-                (ObjectFactory<AiCubeMetadataService>)
-                        () -> {
-                            cache.resolved++;
-                            return cache;
-                        });
+        mgr.setAiSchemaCacheSource((ObjectFactory<AiCubeMetadataService>) () -> {
+            cache.resolved++;
+            return cache;
+        });
 
         mgr.refreshConnection("lazy-ai-conn");
 
@@ -134,8 +132,9 @@ public class ConnectionRefreshEpochWiringTest {
     public void aFailingAiSchemaCacheSourceMustNotBreakTheRefresh() {
         StubConnectionManager mgr = new StubConnectionManager();
         mgr.setDataSourceManager(datasourceManagerServing("lazy-ai-boom"));
-        mgr.setAiSchemaCacheSource(
-                (ObjectFactory<AiCubeMetadataService>) () -> { throw new IllegalStateException("cache down"); });
+        mgr.setAiSchemaCacheSource((ObjectFactory<AiCubeMetadataService>) () -> {
+            throw new IllegalStateException("cache down");
+        });
 
         long before = CubeMetadataVersions.epoch("lazy-ai-boom");
         mgr.refreshConnection("lazy-ai-boom");

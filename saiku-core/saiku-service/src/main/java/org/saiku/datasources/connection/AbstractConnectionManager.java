@@ -62,8 +62,7 @@ public abstract class AbstractConnectionManager implements IConnectionManager, S
      *  name into an ObjectFactory, which is a java.util.function.Supplier, so
      *  no direct edge connectionManager → aiCubeMetadataServiceBean exists at
      *  wiring time. */
-    public void setAiSchemaCacheSource(
-            org.springframework.beans.factory.ObjectFactory<AiCubeMetadataService> source) {
+    public void setAiSchemaCacheSource(org.springframework.beans.factory.ObjectFactory<AiCubeMetadataService> source) {
         this.aiSchemaCacheSource = source == null ? null : source::getObject;
     }
 
