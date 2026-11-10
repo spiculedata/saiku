@@ -79,6 +79,11 @@
         <property name="userService" ref="userServiceBean"/>
         <property name="dataSourceManager" ref="repositoryDsManager"/>
         <property name="sessionService" ref="sessionService"/>
+        <!-- saiku#2326: refreshConnection drops the named connection's role-scoped
+             AI schema entries. aiCubeMetadataServiceBean (below) is wired back to
+             this bean as its visibilityContext; the cycle is setter-injection
+             only, which Spring's singleton early-reference handles. -->
+        <property name="aiSchemaCache" ref="aiCubeMetadataServiceBean"/>
     </bean>
 
     <bean id="datasourceServiceBean" class="org.saiku.service.datasource.DatasourceService">
@@ -503,6 +508,11 @@
           class="org.saiku.service.olap.ai.OlapAiCubeMetadataService">
         <property name="discoverService" ref="olapDiscoverServiceBean"/>
         <property name="enrichmentProvider" ref="aiEnrichmentProvider"/>
+        <!-- saiku#2326 (CWE-284/524/863): scope the schema cache by the caller's
+             visibility (resolved Mondrian role fingerprint / passthrough identity)
+             so one caller's describe never serves another role's cube structure or
+             sample members, and a caller without a grant never gets a cache hit. -->
+        <property name="aiVisibilityContext" ref="connectionManager"/>
         <!-- Phase 1.C: cascade-drop levels that return zero members at
              schema-build time (saiku#810 trap — closure-dim levels
              that the converter accepts shape-wise but Mondrian rejects

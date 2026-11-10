@@ -274,6 +274,20 @@ The response is dense — this is what makes the API self-describing:
    request named, so per-hierarchy is correct), but the top-level
    overview is what an agent inspects when constructing the query.
 
+**The schema you get is scoped to YOUR role (saiku#2326).** On a
+security-enabled datasource the structure, the hierarchies and the sample
+members are exactly what the calling user's Mondrian role (and workspace /
+datasource grant) permits — the same body a cold-cache call returns for
+that user, every time. The typed-schema cache is keyed by a visibility
+fingerprint of the caller (resolved Mondrian role set; per-principal for
+credential-passthrough datasources), so two callers with different role
+sets never share an entry, and every cache hit re-resolves the cube
+against the caller's own enumeration — a caller who holds no grant on the
+datasource gets the same 400 `Unknown cube` whether or not another user
+has already described the cube. A connection refresh (admin refresh,
+datasource save/update) invalidates the refreshed connection's entries.
+`MCP describe_cube` behaves identically.
+
 ---
 
 ## Step 3 — execute a query

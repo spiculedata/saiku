@@ -29,6 +29,7 @@ import org.saiku.olap.util.exception.SaikuOlapException;
 import org.saiku.service.datasource.IDatasourceManager;
 import org.saiku.service.datasource.IDatasourceProcessor;
 import org.saiku.service.datasource.JdbcUrlPolicy;
+import org.saiku.service.olap.ai.AiCubeMetadataService;
 import org.saiku.service.user.UserService;
 import org.saiku.service.util.exception.SaikuAccessDeniedException;
 import org.saiku.service.util.exception.SaikuServiceException;
@@ -41,6 +42,15 @@ public abstract class AbstractConnectionManager implements IConnectionManager, S
     private static final Logger log = LoggerFactory.getLogger(AbstractConnectionManager.class);
     private transient IDatasourceManager ds;
     private UserService userService;
+
+    /** saiku#2326: optional AI schema cache hook — refreshConnection drops the
+     *  named connection's role-scoped entries. Wired in saiku-beans.xml; null
+     *  in unit tests and in deployments without the AI surface. */
+    private transient AiCubeMetadataService aiSchemaCache;
+
+    public void setAiSchemaCache(AiCubeMetadataService aiSchemaCache) {
+        this.aiSchemaCache = aiSchemaCache;
+    }
 
     public void setDataSourceManager(IDatasourceManager ds) {
         this.ds = ds;
@@ -174,6 +184,17 @@ public abstract class AbstractConnectionManager implements IConnectionManager, S
         // connection's metadata epoch so QueryCacheKey.cubeVersion changes and the
         // cellset cache stops serving pre-reload results.
         org.saiku.service.cache.CubeMetadataVersions.bump(name);
+        // saiku#2326 (CWE-284/524/863): a refresh can change what a role sees on
+        // this connection, so its role-scoped AI schema snapshots are stale. Drop
+        // them for this connection only (fail-soft — a stale schema is the old
+        // bug's lesser cousin, but a broken refresh must not break queries).
+        if (aiSchemaCache != null) {
+            try {
+                aiSchemaCache.invalidateSchemaCache(name);
+            } catch (RuntimeException e) {
+                log.warn("saiku#2326: failed to invalidate AI schema cache for connection {}", name, e);
+            }
+        }
     }
 
     public Map<String, ISaikuConnection> getAllConnections() throws SaikuOlapException {

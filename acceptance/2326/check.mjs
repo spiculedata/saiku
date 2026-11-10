@@ -42,6 +42,9 @@ const service = read(
   'saiku-core/saiku-service/src/main/java/org/saiku/service/olap/ai/OlapAiCubeMetadataService.java',
 );
 const seam = read('saiku-core/saiku-service/src/main/java/org/saiku/service/olap/ai/AiVisibilityContext.java');
+const metadataInterface = read(
+  'saiku-core/saiku-service/src/main/java/org/saiku/service/olap/ai/AiCubeMetadataService.java',
+);
 const connections = read(
   'saiku-core/saiku-service/src/main/java/org/saiku/datasources/connection/AbstractConnectionManager.java',
 );
@@ -101,7 +104,7 @@ claim(
 claim(
   'C3',
   'the AiCubeMetadataService interface carries the per-connection invalidation hook',
-  /default void invalidateSchemaCache\(String connectionName\)/.test(service),
+  /default void invalidateSchemaCache\(String connectionName\)/.test(metadataInterface),
 );
 claim(
   'C3',
