@@ -45,11 +45,26 @@ public abstract class AbstractConnectionManager implements IConnectionManager, S
 
     /** saiku#2326: optional AI schema cache hook — refreshConnection drops the
      *  named connection's role-scoped entries. Wired in saiku-beans.xml; null
-     *  in unit tests and in deployments without the AI surface. */
-    private transient AiCubeMetadataService aiSchemaCache;
+     *  in unit tests and in deployments without the AI surface.
+     *
+     *  Injected as an {@link ObjectFactory} rather than a direct bean
+     *  reference ON PURPOSE: connectionManager → aiCubeMetadataService →
+     *  olapDiscoverService → datasourceService → connectionManager is a bean
+     *  cycle, and an eager `aiSchemaCache` property makes Spring hand
+     *  olapDiscoverService a half-built datasourceService (its
+     *  connectionManager property not yet injected), so OlapDiscoverService
+     *  captured `new OlapMetaExplorer(null)` — a final null field, NPE on
+     *  every later getAllCubes(). The factory defers the lookup to first
+     *  refresh, when the context is fully built. */
+    private transient java.util.function.Supplier<AiCubeMetadataService> aiSchemaCacheSource;
 
-    public void setAiSchemaCache(AiCubeMetadataService aiSchemaCache) {
-        this.aiSchemaCache = aiSchemaCache;
+    /** XML wiring seam: {@code ObjectFactoryCreatingFactoryBean} turns a bean
+     *  name into an ObjectFactory, which is a java.util.function.Supplier, so
+     *  no direct edge connectionManager → aiCubeMetadataServiceBean exists at
+     *  wiring time. */
+    public void setAiSchemaCacheSource(
+            org.springframework.beans.factory.ObjectFactory<AiCubeMetadataService> source) {
+        this.aiSchemaCacheSource = source == null ? null : source::getObject;
     }
 
     public void setDataSourceManager(IDatasourceManager ds) {
@@ -188,9 +203,12 @@ public abstract class AbstractConnectionManager implements IConnectionManager, S
         // this connection, so its role-scoped AI schema snapshots are stale. Drop
         // them for this connection only (fail-soft — a stale schema is the old
         // bug's lesser cousin, but a broken refresh must not break queries).
-        if (aiSchemaCache != null) {
+        if (aiSchemaCacheSource != null) {
             try {
-                aiSchemaCache.invalidateSchemaCache(name);
+                AiCubeMetadataService cache = aiSchemaCacheSource.get();
+                if (cache != null) {
+                    cache.invalidateSchemaCache(name);
+                }
             } catch (RuntimeException e) {
                 log.warn("saiku#2326: failed to invalidate AI schema cache for connection {}", name, e);
             }

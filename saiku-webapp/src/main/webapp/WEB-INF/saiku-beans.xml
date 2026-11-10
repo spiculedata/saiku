@@ -80,10 +80,19 @@
         <property name="dataSourceManager" ref="repositoryDsManager"/>
         <property name="sessionService" ref="sessionService"/>
         <!-- saiku#2326: refreshConnection drops the named connection's role-scoped
-             AI schema entries. aiCubeMetadataServiceBean (below) is wired back to
-             this bean as its visibilityContext; the cycle is setter-injection
-             only, which Spring's singleton early-reference handles. -->
-        <property name="aiSchemaCache" ref="aiCubeMetadataServiceBean"/>
+             AI schema entries. The cache bean is NOT wired as a direct reference:
+             connectionManager → aiCubeMetadataService → olapDiscoverService →
+             datasourceService → connectionManager is a bean cycle, and an eager
+             reference hands olapDiscoverService a half-built datasourceService
+             (connectionManager property not yet injected), so it captured
+             `new OlapMetaExplorer(null)` and every later getAllCubes() NPEd.
+             The ObjectFactory defers the lookup to the first refresh, when the
+             context is fully built. -->
+        <property name="aiSchemaCacheSource">
+            <bean class="org.springframework.beans.factory.config.ObjectFactoryCreatingFactoryBean">
+                <property name="targetBeanName" value="aiCubeMetadataServiceBean"/>
+            </bean>
+        </property>
     </bean>
 
     <bean id="datasourceServiceBean" class="org.saiku.service.datasource.DatasourceService">

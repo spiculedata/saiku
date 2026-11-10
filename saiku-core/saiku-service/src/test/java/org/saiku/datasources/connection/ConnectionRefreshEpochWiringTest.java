@@ -7,12 +7,16 @@ package org.saiku.datasources.connection;
 import static org.junit.Assert.assertEquals;
 
 import java.lang.reflect.Proxy;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
 import org.junit.Test;
 import org.saiku.datasources.datasource.SaikuDatasource;
 import org.saiku.olap.util.exception.SaikuOlapException;
 import org.saiku.service.cache.CubeMetadataVersions;
 import org.saiku.service.datasource.IDatasourceManager;
+import org.saiku.service.olap.ai.AiCubeMetadataService;
+import org.springframework.beans.factory.ObjectFactory;
 
 /**
  * saiku#1483 — call-site/wiring test: {@link AbstractConnectionManager#refreshConnection}
@@ -82,5 +86,76 @@ public class ConnectionRefreshEpochWiringTest {
         mgr.refreshConnection("wiring-repeat");
         mgr.refreshConnection("wiring-repeat");
         assertEquals(before + 2, CubeMetadataVersions.epoch("wiring-repeat"));
+    }
+
+    /** saiku#2326 — a refresh must drop the connection's role-scoped AI schema
+     *  snapshots, resolved through the LAZY source (saiku#2326 wiring follow-up:
+     *  a direct bean reference created a connectionManager → aiCubeMetadata →
+     *  olapDiscover → datasourceService → connectionManager cycle whose early
+     *  references handed olapDiscoverService a half-built datasourceService, so
+     *  OlapMetaExplorer was constructed with a final null connection manager and
+     *  every getAllCubes() NPEd — saiku#2326's own IT gate caught it). The lazy
+     *  ObjectFactory defers the lookup to refresh time, and this test pins the
+     *  funnel: the invalidation still reaches the cache with the refreshed name. */
+    @Test
+    public void refreshConnectionInvalidatesTheAiSchemaCacheThroughTheLazySource() {
+        StubConnectionManager mgr = new StubConnectionManager();
+        mgr.setDataSourceManager(datasourceManagerServing("lazy-ai-conn"));
+        RecordingAiCache cache = new RecordingAiCache();
+        mgr.setAiSchemaCacheSource(
+                (ObjectFactory<AiCubeMetadataService>)
+                        () -> {
+                            cache.resolved++;
+                            return cache;
+                        });
+
+        mgr.refreshConnection("lazy-ai-conn");
+
+        assertEquals(1, cache.resolved);
+        assertEquals(java.util.Collections.singletonList("lazy-ai-conn"), cache.invalidated);
+    }
+
+    /** No source wired (unit tests, deployments without the AI surface) — refresh
+     *  must be unaffected. */
+    @Test
+    public void aMissingAiSchemaCacheSourceIsAHardNoOp() {
+        StubConnectionManager mgr = new StubConnectionManager();
+        mgr.setDataSourceManager(datasourceManagerServing("lazy-ai-none"));
+
+        long before = CubeMetadataVersions.epoch("lazy-ai-none");
+        mgr.refreshConnection("lazy-ai-none");
+
+        assertEquals(before + 1, CubeMetadataVersions.epoch("lazy-ai-none"));
+    }
+
+    /** A source that explodes must not break the refresh — fail-soft, matching
+     *  the hook's own catch. */
+    @Test
+    public void aFailingAiSchemaCacheSourceMustNotBreakTheRefresh() {
+        StubConnectionManager mgr = new StubConnectionManager();
+        mgr.setDataSourceManager(datasourceManagerServing("lazy-ai-boom"));
+        mgr.setAiSchemaCacheSource(
+                (ObjectFactory<AiCubeMetadataService>) () -> { throw new IllegalStateException("cache down"); });
+
+        long before = CubeMetadataVersions.epoch("lazy-ai-boom");
+        mgr.refreshConnection("lazy-ai-boom");
+
+        assertEquals("the refresh must still bump the epoch", before + 1, CubeMetadataVersions.epoch("lazy-ai-boom"));
+    }
+
+    /** Counts how often the lazy source is resolved and what it was asked to drop. */
+    private static final class RecordingAiCache implements AiCubeMetadataService {
+        int resolved;
+        final List<String> invalidated = new ArrayList<>();
+
+        @Override
+        public org.saiku.service.olap.ai.AiSchema getSchema(org.saiku.service.olap.ai.AiCubeRef ref) {
+            throw new UnsupportedOperationException("not exercised by this test");
+        }
+
+        @Override
+        public void invalidateSchemaCache(String connectionName) {
+            invalidated.add(connectionName);
+        }
     }
 }
