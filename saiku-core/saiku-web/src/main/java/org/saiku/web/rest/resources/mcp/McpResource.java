@@ -180,7 +180,29 @@ public class McpResource {
             return rpcError(idNode, RPC_METHOD_NOT_FOUND, e.getMessage(), sessionId);
         } catch (InvalidArgsException e) {
             return rpcError(idNode, RPC_INVALID_PARAMS, e.getMessage(), sessionId);
+        } catch (org.saiku.service.olap.ai.AiPolicyViolation e) {
+            // saiku#2322: an operator's SAIKU_AI_POLICY denial is not an internal error — it is a
+            // tool-level failure the host agent must see as such. MCP models this as a tool
+            // result with isError:true (not a -32603 RPC error), carrying the same
+            // PERMISSION_DENIED envelope the REST endpoints return via AiPolicyViolationMapper.
+            return rpcResult(idNode, wrapPolicyDeniedToolResult(e), sessionId);
         }
+    }
+
+    /** Build the isError CallToolResult for an {@link AiPolicyViolation}: structuredContent is
+     *  the PERMISSION_DENIED envelope (status / field / available) agents already know from the
+     *  REST 403, and the text block carries the same JSON for hosts that only read text. */
+    ObjectNode wrapPolicyDeniedToolResult(org.saiku.service.olap.ai.AiPolicyViolation e) {
+        org.saiku.service.olap.ai.AiQueryResponse denied = new org.saiku.service.olap.ai.AiQueryResponse();
+        denied.setStatus(org.saiku.service.olap.ai.AiQueryResponse.Status.PERMISSION_DENIED);
+        denied.setField("ai.policy");
+        denied.setAvailable(java.util.List.of(e.getRequired().displayName()));
+        denied.setError(e.getMessage()
+                + " Set " + org.saiku.service.olap.ai.AiPolicy.PROP + "="
+                + e.getRequired().displayName() + " (or higher) to permit it.");
+        ObjectNode result = wrapToolResult(MAPPER.valueToTree(denied));
+        result.put("isError", true);
+        return result;
     }
 
     /* ----------------------------- tool dispatch ---------------------------- */

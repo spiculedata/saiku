@@ -27,6 +27,9 @@ public class AiOssieAskGuardTest {
     @Before
     public void setUp() {
         resource = new AiOssieResource();
+        // saiku#2322: the pre-wiring guard default is now the fail-closed schema-only; these
+        // tests exercise the size/rate guards, so hand the resource an explicit permissive guard.
+        resource.setAiPolicyGuard(new org.saiku.service.olap.ai.AiPolicyGuard(org.saiku.service.olap.ai.AiPolicy.FULL));
         // A "configured" ask service so the endpoint gets past the 503 gate and reaches the guards.
         resource.setAskService(new OssieAiAskService() {
             @Override

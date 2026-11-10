@@ -292,6 +292,36 @@ public class McpResourceTest {
         return init.getHeaderString(SESSION_HEADER);
     }
 
+    /** saiku#2322: a policy denial on the Ossie tools must surface as an isError tool result
+     *  carrying the PERMISSION_DENIED envelope — not the generic -32603 "Internal error" branch
+     *  (see also #1920's exception-echo concern), and not a successful empty result. */
+    @Test
+    public void runOssieQueryUnderSchemaOnlyReturnsPermissionDeniedToolError() throws Exception {
+        org.saiku.web.rest.resources.AiOssieResource guarded = new org.saiku.web.rest.resources.AiOssieResource();
+        guarded.setAiPolicyGuard(
+                new org.saiku.service.olap.ai.AiPolicyGuard(org.saiku.service.olap.ai.AiPolicy.SCHEMA_ONLY));
+        resource.setAiOssieResource(guarded);
+        String sid = openSession();
+
+        ObjectNode args = MAPPER.createObjectNode();
+        args.put("connection", "Flights");
+        args.putArray("rows").addObject().put("dataset", "flight").put("field", "carrier_id");
+        args.putArray("values").addObject().put("metric", "flight_count");
+        Response resp = resource.handle(rpc("tools/call", 4, callParams("run_ossie_query", args)), sid);
+        JsonNode body = MAPPER.valueToTree(resp.getEntity());
+
+        assertEquals("a policy denial is a tool-level result, not an RPC error", 200, resp.getStatus());
+        assertNull("no JSON-RPC error envelope", body.get("error"));
+        JsonNode result = body.path("result");
+        assertTrue(result.path("isError").asBoolean());
+        JsonNode structured = result.path("structuredContent");
+        assertEquals("PERMISSION_DENIED", structured.path("status").asText());
+        assertEquals("ai.policy", structured.path("field").asText());
+        // run_ossie_query is the aggregate surface — schema-only must be told to raise to
+        // 'aggregated' (row-detail's raw rows would say 'full').
+        assertEquals("aggregated", structured.path("available").get(0).asText());
+    }
+
     private ObjectNode callParams(String tool, ObjectNode args) {
         ObjectNode params = MAPPER.createObjectNode();
         params.put("name", tool);
