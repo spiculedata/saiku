@@ -133,3 +133,20 @@ follow-up phases of saiku#1393:
   PG-wire surface.
 - An intersection-mode config switch (all-roles-must-agree, instead of
   today's union-of-roles).
+
+### How it's verified
+
+- `OssieRoleSecurityIT` (saiku-sql) runs the real `OssieQueryService.execute` path
+  against a live H2 warehouse with the caller authenticated the way production does —
+  Spring authorities on the `SecurityContextHolder`.
+- `OssieFuzzIT` carries the fuzz-side half of the acceptance criteria: the Pharma
+  fixture's `geography` dataset names two predicate roles, and every fuzz case runs
+  twice — unrestricted, then as a caller holding both roles (a window that excludes
+  half the fixture). The restricted run must be a strict row subset, never show a
+  region outside the window, and leave shelves that never touch the restricted
+  dataset byte-identical; hand-computed window totals pin the injected clause to the
+  declared predicates.
+- `saiku-ui/e2e/ossie-role-visibility.spec.ts` covers the UI half of the invariant
+  with a mocked enforcing server: a restricted session renders the filtered schema
+  tree and a strict row subset in the result grid, while an unrestricted session sees
+  the full model.
