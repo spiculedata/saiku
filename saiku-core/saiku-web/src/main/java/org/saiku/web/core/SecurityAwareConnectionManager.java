@@ -30,6 +30,8 @@ import org.saiku.datasources.connection.SaikuConnectionFactory;
 import org.saiku.datasources.datasource.SaikuDatasource;
 import org.saiku.olap.util.exception.SaikuOlapException;
 import org.saiku.service.ISessionService;
+import org.saiku.service.datasource.IDatasourceManager;
+import org.saiku.service.olap.ai.AiVisibilityContext;
 import org.saiku.service.user.UserService;
 import org.saiku.service.util.exception.SaikuAccessDeniedException;
 import org.saiku.service.util.security.MondrianRolePolicy;
@@ -42,7 +44,8 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.context.request.RequestContextHolder;
 
-public class SecurityAwareConnectionManager extends AbstractConnectionManager implements Serializable {
+public class SecurityAwareConnectionManager extends AbstractConnectionManager
+        implements AiVisibilityContext, Serializable {
 
     /**
      * serialisation UID
@@ -252,6 +255,115 @@ public class SecurityAwareConnectionManager extends AbstractConnectionManager im
             }
         }
         return name;
+    }
+
+    /**
+     * saiku#2326 (CWE-284/524/863) — a stable fingerprint of what the CURRENT caller may see
+     * on the named datasource, used by {@code OlapAiCubeMetadataService} to scope the AI
+     * schema cache. The schema is built through the caller's role-applied connection, so a
+     * cached snapshot is only valid for callers whose effective Mondrian role set resolves
+     * to the same visibility; without this fingerprint the first caller's snapshot (hidden
+     * hierarchies, real member unique names) was served to everyone, and a caller denied the
+     * datasource entirely got a cache hit because the hit path never re-resolved the cube.
+     *
+     * <p>Fingerprints:
+     * <ul>
+     *   <li>not security-enabled: {@code ""} — visibility does not vary by caller, the cache
+     *       key collapses to the role-less base key;</li>
+     *   <li>security-enabled, one2one/lookup: {@code "roles:<sorted Spring authorities>"}.
+     *       Mondrian role resolution (one2one intersection, lookup mapping) is deterministic
+     *       in the caller's authorities, so same-authority callers share an entry and
+     *       different role sets never do. A caller whose authorities resolve to no Mondrian
+     *       role keeps a distinct key: on a cache hit the re-resolution via {@code findCube}
+     *       denies them, and an admin keeps root only in that same branch — the same key
+     *       would otherwise hand a denied caller an admin's root snapshot;</li>
+     *   <li>security-enabled passthrough: {@code "user:<canonical identity>"} — the caller's
+     *       own warehouse credentials connect, so member visibility can differ per user even
+     *       at the same role set;</li>
+     *   <li>FAIL-CLOSED: a security-enabled datasource that cannot be resolved (unknown or
+     *       decorated name, repository hiccup) gets the per-identity key — worst case the
+     *       cache fragments, never that snapshots are shared across callers.</li>
+     * </ul>
+     */
+    @Override
+    public String visibilityKey(String connectionName) {
+        SaikuDatasource datasource = lookupDatasource(connectionName);
+        if (datasource == null) {
+            // FAIL-CLOSED: a security-enabled datasource we cannot classify must never
+            // collapse onto the shared key — per-identity, so the worst case is a
+            // fragmented cache, never a snapshot served across callers.
+            return "user:" + callerIdentity();
+        }
+        if (!isDatasourceSecurityEnabled(datasource)) {
+            // No security on this datasource — every caller sees the same schema.
+            return "";
+        }
+        if (isDatasourceSecurity(datasource, ISaikuConnection.SECURITY_TYPE_PASSTHROUGH_VALUE)) {
+            return "user:" + callerIdentity();
+        }
+        List<String> roles = getSpringRoles();
+        if (roles.isEmpty()) {
+            // No authorities at all: never collapse onto a shared key — per-identity,
+            // so an unauthenticated warm-up slot cannot serve a caller's snapshot.
+            return "user:" + callerIdentity();
+        }
+        List<String> sorted = new ArrayList<>(roles);
+        Collections.sort(sorted);
+        return "roles:" + String.join(",", sorted);
+    }
+
+    /**
+     * The datasource for a caller-supplied connection name, tolerating the workspace
+     * decoration (saiku#1871) on either side. Returns {@code null} when the repository is
+     * unavailable or the name resolves to nothing — callers treat that as fail-closed.
+     */
+    private SaikuDatasource lookupDatasource(String connectionName) {
+        if (connectionName == null) {
+            return null;
+        }
+        IDatasourceManager dsManager = getDataSourceManager();
+        if (dsManager == null) {
+            return null;
+        }
+        try {
+            SaikuDatasource datasource = dsManager.getDatasource(connectionName, false);
+            if (datasource != null) {
+                return datasource;
+            }
+            for (SaikuDatasource candidate :
+                    dsManager.getDatasources(new String[0]).values()) {
+                if (org.saiku.service.datasource.DatasourceNameDecoration.sameConnection(
+                        candidate.getName(), connectionName)) {
+                    return candidate;
+                }
+            }
+            return null;
+        } catch (Exception e) {
+            log.debug("saiku#2326: datasource lookup failed for {} — failing closed", connectionName, e);
+            return null;
+        }
+    }
+
+    /**
+     * The canonical caller identity used by the fail-closed and passthrough visibility keys —
+     * the session "username" first, then the SecurityContext principal, matching
+     * {@link #resolveConnectionKey}'s precedence (saiku#1970). Falls back to a fixed marker
+     * when there is no identity at all (start-up warm-up): such callers cannot share a slot
+     * with a named principal, which is the fail-closed direction.
+     */
+    private String callerIdentity() {
+        if (sessionService != null) {
+            Map<String, Object> session = sessionService.getAllSessionObjects();
+            String username = session == null ? null : (String) session.get("username");
+            if (username != null) {
+                return Usernames.canonicalize(username);
+            }
+        }
+        String principal = currentPrincipalName();
+        if (principal != null) {
+            return Usernames.canonicalize(principal);
+        }
+        return "anonymous";
     }
 
     /**
