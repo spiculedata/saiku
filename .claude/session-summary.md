@@ -75,6 +75,12 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-11-10 — feature/1393-role-security-verification — fuzz + E2E coverage for #1393
+**Was doing:** shipped the two remaining acceptance-criteria tests for the Ossie role security (row-predicate fuzz cases in OssieFuzzIT with a two-role restricted pass + hand-computed window totals, and a mocked-backend Playwright spec `ossie-role-visibility.spec.ts` with per-caller fixture overrides).
+**Now:** watch PR CI — the Java side could not compile locally: the hive token has no `read:packages` scope (GitHub Packages returns bare 401 for `bi.saiku.ossie:ossie-sql:0.1.0` and `avatica-server:1.28.0.jar`), so CI is the first compile pass. Prettier + `tsc --strict` on the e2e files pass locally; Chromium cannot launch here (missing libglib-2.0.so.0).
+**Watch out:** a local JDK 22 + Maven 3.9.12 were installed under `/home/dev/tools/` this session — they are NOT on the default PATH; export JAVA_HOME and PATH before any mvn run.
+**Refs:** #1393, PR against development (prior enforcement: #2057)
+
 ## 2026-10-11 — UI coverage reports for #2196
 **Was doing:** added opt-in Vitest LCOV, source-map-remapped mocked-browser LCOV, provenance, and a per-line comparison command.
 **Now:** run the mocked Chromium coverage command in CI; local Chromium cannot launch because libglib-2.0.so.0 is missing.
