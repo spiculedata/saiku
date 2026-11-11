@@ -7,6 +7,8 @@ package org.saiku.service.schedule.digest;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+import java.text.DecimalFormat;
+import java.text.NumberFormat;
 import java.util.List;
 import org.junit.Test;
 
@@ -14,6 +16,7 @@ import org.junit.Test;
 public class TemplateDigestNarratorTest {
 
     private final TemplateDigestNarrator narrator = new TemplateDigestNarrator();
+    private NumberFormat df = DecimalFormat.getInstance();
 
     private static MeasureDelta delta(String label, double current, double previous) {
         return new MeasureDelta(null, label, current, previous);
@@ -23,19 +26,23 @@ public class TemplateDigestNarratorTest {
     public void statesMovementWithBothNumbers() {
         List<String> bullets = narrator.narrate("Exec", List.of(delta("Total Units", 1200d, 1000d)), 3);
         assertEquals(1, bullets.size());
-        assertEquals("Total Units rose +20.0% to 1,200 (was 1,000).", bullets.get(0));
+
+        String expected = String.format("Total Units rose +20.0%% to %s (was %s).", df.format(1200), df.format(1000));
+        assertEquals(expected, bullets.get(0));
     }
 
     @Test
     public void statesADrop() {
         List<String> bullets = narrator.narrate(null, List.of(delta("Total Units", 800d, 1000d)), 3);
-        assertEquals("Total Units fell -20.0% to 800 (was 1,000).", bullets.get(0));
+        String expected = String.format("Total Units fell -20.0%% to 800 (was %s).", df.format(1000));
+        assertEquals(expected, bullets.get(0));
     }
 
     @Test
     public void statesAnUnchangedMeasure() {
         List<String> bullets = narrator.narrate(null, List.of(delta("Total Units", 1000d, 1000d)), 3);
-        assertEquals("Total Units was unchanged at 1,000.", bullets.get(0));
+        String expected = String.format("Total Units was unchanged at %s.", df.format(1000));
+        assertEquals(expected, bullets.get(0));
     }
 
     @Test
