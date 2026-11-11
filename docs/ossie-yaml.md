@@ -110,6 +110,9 @@ datasets:
 | `GET /ai/ossie/schema/{connection}/{model}` | ✅ filtered | — |
 | `POST /query/execute` (queryType `OSSIE`) | ✅ 403 on denied reference | ✅ injected |
 | `POST /query/preview-sql` (queryType `OSSIE`) | ✅ 403 on denied reference | ✅ injected |
+| `POST /ai/ossie/query` | ✅ 403 on denied reference | ✅ injected |
+| `POST /ai/ossie/query/preview` | ✅ 403 on denied reference | ✅ injected |
+| `POST /ai/ossie/query/execute-async` | ✅ 400 `VALIDATION_ERROR` on denied reference at submit; denied references that reach the worker anyway fail the handle with an access-denied error (saiku#2323) | ✅ injected — the caller's Spring `SecurityContext` is captured on the submitting request thread and re-established on the worker |
 | Other `/ai/ossie/*` endpoints (anomaly, forecast, ask, values-search, …) | not yet wired | not yet wired |
 | PG-wire (`saiku-sql serve`) | out of scope — admin surface, own auth story | out of scope |
 

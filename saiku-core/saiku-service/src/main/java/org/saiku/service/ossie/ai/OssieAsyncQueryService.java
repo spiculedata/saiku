@@ -21,8 +21,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.saiku.olap.dto.resultset.CellDataSet;
 import org.saiku.olap.query2.ThinQuery;
 import org.saiku.service.ossie.OssieQueryService;
+import org.saiku.service.util.exception.SaikuAccessDeniedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 /**
  * Lightweight async wrapper around {@link OssieQueryService} so the AI resource can hand out a
@@ -38,6 +41,13 @@ import org.slf4j.LoggerFactory;
  * poll immediately-after-DONE without racing GC. The evict pass runs on every read; there's no
  * background thread. For scale we can add one, but the AI use case is one query at a time per
  * principal so contention on the map is negligible.
+ *
+ * <p>Security context: {@link #submit} captures the caller's Spring {@link SecurityContext} on
+ * the submitting (request) thread and re-establishes it on the worker, cleared in a {@code
+ * finally} so the pooled thread does not leak it into the next task (saiku#1968 parity, saiku#2323
+ * / CWE-863). Without it, {@code OssieQueryService.getSpringRoles()} resolves to the empty set on
+ * the worker and every {@code saiku.roles} control — row predicates and field/metric deny lists —
+ * silently evaluates as unrestricted. See {@code AsyncQueryService} for the MDX-side original.
  */
 public class OssieAsyncQueryService {
 
@@ -68,22 +78,42 @@ public class OssieAsyncQueryService {
         String id = "ossie-ai-async-" + UUID.randomUUID().toString().substring(0, 8);
         Handle h = new Handle(id, principalName, tq, Instant.now());
         handles.put(id, h);
+        // saiku#1968 parity (CWE-863, saiku#2323): capture the caller's Spring SecurityContext on
+        // THIS (request) thread and re-establish it on the worker. The executor thread has no
+        // security context of its own, so without this getSpringRoles() resolves to the empty set
+        // on the worker and every saiku.roles control (row_predicates, field/metric deny lists)
+        // evaluates as unrestricted. The pool reuses threads, so we clear the context in a finally
+        // to prevent it leaking into the next task. (SecurityContextHolder default mode is
+        // thread-local, not inheritable, and pooled threads defeat inheritable-thread-local
+        // anyway, so a manual capture/set/clear is required.)
+        final SecurityContext capturedSecurityContext = SecurityContextHolder.getContext();
         h.future = executor.submit(() -> {
+            SecurityContextHolder.setContext(capturedSecurityContext);
             try {
-                h.status = Status.RUNNING;
-                CellDataSet cds = queryService.execute(tq);
-                h.result = cds;
-                h.status = Status.DONE;
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                h.status = Status.CANCELLED;
-                h.errorMessage = "interrupted";
-            } catch (Exception e) {
-                log.warn("Ossie async execution failed for {}: {}", id, e.getMessage());
-                h.status = Status.FAILED;
-                h.errorMessage = e.getMessage();
+                try {
+                    h.status = Status.RUNNING;
+                    CellDataSet cds = queryService.execute(tq);
+                    h.result = cds;
+                    h.status = Status.DONE;
+                } catch (SaikuAccessDeniedException e) {
+                    // Stable, self-describing message — do not bury it in a generic failure echo
+                    // (see the #1920 comment on exception echoing).
+                    log.warn("Ossie async execution denied for {}: {}", id, e.getMessage());
+                    h.status = Status.FAILED;
+                    h.errorMessage = e.getMessage();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    h.status = Status.CANCELLED;
+                    h.errorMessage = "interrupted";
+                } catch (Exception e) {
+                    log.warn("Ossie async execution failed for {}: {}", id, e.getMessage());
+                    h.status = Status.FAILED;
+                    h.errorMessage = e.getMessage();
+                }
+            } finally {
+                SecurityContextHolder.clearContext();
+                h.completedAt = Instant.now();
             }
-            h.completedAt = Instant.now();
             return h;
         });
         return h;
