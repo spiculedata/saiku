@@ -15,7 +15,7 @@
 # re-tagged or tampered upstream can't change what we build on. To roll the
 # base forward, resolve the new multi-arch index digest and update both here:
 #   docker buildx imagetools inspect eclipse-temurin:21-jre-noble
-FROM eclipse-temurin:21-jre-noble@sha256:000fd431958bc81a24abe1e8e5f0f0fd3ae365a594bd50aadb20696805f9408c
+FROM eclipse-temurin:21-jre-noble@sha256:35501d3f93173b420ac9001658eb68157e813316b865087e345c187fca422c4c
 ARG JAR_PATH=build-context/saiku.jar
 ARG OTEL_AGENT_VERSION=2.28.1
 ARG OTEL_AGENT_SHA256=faa89bdeebf9b1f52be4a4374689176717b02a59df2d8f8b6eb9aa39f9292589
