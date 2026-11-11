@@ -103,8 +103,8 @@ public record ModelDiffReport(
         return switch (change.type()) {
             case ADDED -> "Added " + change.kind().label() + ": " + change.path();
             case REMOVED -> "Removed " + change.kind().label() + ": " + change.path();
-            case RENAMED -> "Renamed " + change.kind().label() + ": " + change.fromName() + " \u2192 "
-                    + change.toName();
+            case RENAMED ->
+                "Renamed " + change.kind().label() + ": " + change.fromName() + " \u2192 " + change.toName();
             case MODIFIED -> "Modified " + change.kind().label() + ": " + change.path();
         };
     }

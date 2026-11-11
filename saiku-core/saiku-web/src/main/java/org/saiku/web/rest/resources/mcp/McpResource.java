@@ -239,7 +239,7 @@ public class McpResource {
                 // behaviour; per-cell position is the dashboard UI path, saiku#930).
                 return unwrap(aiQueryResource.drillthrough(queryId, maxrows, firstRowset, null, returns));
             }
-                // -------- Ossie tools --------
+            // -------- Ossie tools --------
             case "list_ossie_models": {
                 requireOssie();
                 // AiOssieResource.listModels returns a List<Map>; wrap for MCP structuredContent.
