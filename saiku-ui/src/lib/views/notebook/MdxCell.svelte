@@ -35,6 +35,7 @@
 	let { mdx, cube, readOnly = false, onChange, initialResult = null }: Props = $props();
 
 	let running = $state(false);
+	// svelte-ignore state_referenced_locally — capturing the initial readOnly/initialResult to seed the result state is intentional; subsequent updates flow through the $effect below.
 	let result = $state<QueryResult | null>(readOnly ? initialResult : null);
 
 	$effect(() => {

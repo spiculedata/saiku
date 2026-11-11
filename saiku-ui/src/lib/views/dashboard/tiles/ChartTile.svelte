@@ -931,10 +931,4 @@
 		pointer-events: none;
 		max-width: calc(100% - 0.5rem);
 	}
-	code {
-		background: hsl(var(--bg-subtle));
-		padding: 0.0625em 0.25em;
-		border-radius: 3px;
-		font-size: 0.85em;
-	}
 </style>
