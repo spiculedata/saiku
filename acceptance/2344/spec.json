@@ -1,0 +1,24 @@
+{
+  "issue": 2344,
+  "title": "ScopedRepo no longer falls back to another user's HttpSession: with no request-bound session it returns null (fail closed) and SessionService stops publishing the last form-login's session",
+  "kind": "command",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "ScopedRepo",
+      "then": "it holds no cached fallback session and has no setSession()/HttpSessionCreatedEvent listener: getSession() answers only from the current request"
+    },
+    {
+      "id": "C2",
+      "given": "SessionService.login",
+      "then": "it no longer registers the logging-in user's HttpSession as a process-wide session"
+    },
+    {
+      "id": "C3",
+      "given": "the regression tests",
+      "then": "ScopedRepoTest and the SessionService cross-session tests exist"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}

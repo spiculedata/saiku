@@ -154,6 +154,47 @@ public class SessionServiceSessionPersistenceTest {
         assertTrue(svc.getSession().isEmpty());
     }
 
+    /**
+     * #2344: a request with no HttpSession of its own must never reach another user's session.
+     * Alice logs in (which used to publish her session as a process-wide fallback), then Bob's
+     * session-less request clears his sessions: Alice's persisted map has to survive.
+     */
+    @Test
+    public void clearSessions_requestWithoutSession_doesNotTouchOtherSessions() throws Exception {
+        FakeSession alice = loginAs("alice");
+        SessionService svc = newService();
+        svc.login(request(alice), "alice", "pw"); // same JVM, same ScopedRepo wiring as production
+        assertNotNull(alice.attributes.get(SessionService.SESSION_MAP_ATTRIBUTE));
+
+        SecurityContextHolder.clearContext();
+        authenticateAs("bob");
+        HttpServletRequest sessionless = requestWithoutSession();
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(sessionless));
+
+        svc.clearSessions(sessionless, "bob", "pw");
+
+        assertNotNull(
+                "Alice's persisted session map must survive Bob's session-less clear",
+                alice.attributes.get(SessionService.SESSION_MAP_ATTRIBUTE));
+    }
+
+    @Test
+    public void resolveSessionMap_requestWithoutSession_doesNotReadOtherSessions() {
+        FakeSession alice = loginAs("alice");
+        SessionService svc = newService();
+        svc.login(request(alice), "alice", "pw");
+        alice.reads.clear();
+
+        SecurityContextHolder.clearContext();
+        authenticateAs("bob");
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(requestWithoutSession()));
+
+        assertTrue(svc.getAllSessionObjects().isEmpty());
+        assertFalse(
+                "Bob's request must not consult Alice's HttpSession",
+                alice.reads.contains(SessionService.SESSION_MAP_ATTRIBUTE));
+    }
+
     // ---- helpers ------------------------------------------------------
 
     private static SessionService newService() {
@@ -162,6 +203,20 @@ public class SessionServiceSessionPersistenceTest {
         svc.setAuthorisationPredicate(auth -> true);
         svc.setSessionRepo(new ScopedRepo());
         return svc;
+    }
+
+    private static FakeSession loginAs(String username) {
+        FakeSession session = new FakeSession();
+        authenticateAs(username);
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request(session)));
+        return session;
+    }
+
+    private static HttpServletRequest requestWithoutSession() {
+        return (HttpServletRequest) Proxy.newProxyInstance(
+                SessionServiceSessionPersistenceTest.class.getClassLoader(),
+                new Class<?>[] {HttpServletRequest.class},
+                new RequestHandler(null));
     }
 
     private static void authenticateAs(String username) {
@@ -199,6 +254,7 @@ public class SessionServiceSessionPersistenceTest {
      */
     private static final class FakeSession {
         private final Map<String, Object> attributes = new HashMap<>();
+        private final List<String> reads = new ArrayList<>();
 
         HttpSession proxy() {
             return (HttpSession) Proxy.newProxyInstance(
@@ -209,6 +265,7 @@ public class SessionServiceSessionPersistenceTest {
                             case "getId":
                                 return "test-session-id";
                             case "getAttribute":
+                                reads.add((String) args[0]);
                                 return attributes.get((String) args[0]);
                             case "setAttribute":
                                 attributes.put((String) args[0], args[1]);
