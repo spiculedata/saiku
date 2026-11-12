@@ -423,4 +423,68 @@ public class OssieShelfSqlTranslatorTest {
         m.setMetric(name);
         return m;
     }
+
+    // ---- saiku#2319: backslash literals on backslash-escaping warehouses ----
+
+    private OssieQueryModel modelFilteringRegion(String op, String value, List<String> values) {
+        OssieQueryModel m = new OssieQueryModel();
+        m.setConnection("SALES");
+        m.setModel("SALES");
+        m.setFactDataset("orders");
+        m.setRows(List.of(fieldRef("customers", "region")));
+        m.setValues(List.of(metric("revenue")));
+        OssieQueryModel.FilterExpr f = new OssieQueryModel.FilterExpr();
+        f.setDataset("customers");
+        f.setField("region");
+        f.setOp(op);
+        f.setValue(value);
+        if (values != null) f.setValues(values);
+        m.setFilters(List.of(f));
+        return m;
+    }
+
+    @Test
+    public void backslashFilterValueIsRejectedOnMysql() {
+        for (String url : new String[] {"jdbc:mysql://db/sales", "jdbc:mariadb://db/sales", null, "jdbc:weird:x"}) {
+            try {
+                translator.translate(modelFilteringRegion("EQ", "\\' OR 1=1 -- ", null), semantic, Set.of(), url);
+                org.junit.Assert.fail("expected backslash rejection for " + url);
+            } catch (IllegalArgumentException expected) {
+                assertTrue(
+                        expected.getMessage(),
+                        expected.getMessage().toLowerCase().contains("backslash"));
+            }
+        }
+    }
+
+    @Test
+    public void backslashInInAndBetweenValuesIsRejectedOnMysql() {
+        String mysql = "jdbc:mysql://db/sales";
+        try {
+            translator.translate(modelFilteringRegion("IN", null, List.of("ok", "a\\b")), semantic, Set.of(), mysql);
+            org.junit.Assert.fail("IN value with backslash must be rejected");
+        } catch (IllegalArgumentException expected) {
+            // expected
+        }
+        try {
+            translator.translate(modelFilteringRegion("BETWEEN", null, List.of("a", "b\\")), semantic, Set.of(), mysql);
+            org.junit.Assert.fail("BETWEEN value with backslash must be rejected");
+        } catch (IllegalArgumentException expected) {
+            // expected
+        }
+    }
+
+    @Test
+    public void backslashFilterValueStillWorksOnStandardConformingWarehouses() {
+        String sql = translator.translate(
+                modelFilteringRegion("EQ", "C:\\data", null), semantic, Set.of(), "jdbc:postgresql://db/sales");
+        assertTrue(sql, sql.contains("= 'C:\\data'"));
+    }
+
+    @Test
+    public void valuesWithoutBackslashAreUnaffectedOnMysql() {
+        String sql = translator.translate(
+                modelFilteringRegion("EQ", "O'Neil", null), semantic, Set.of(), "jdbc:mysql://db/sales");
+        assertTrue(sql, sql.contains("= 'O''Neil'"));
+    }
 }
