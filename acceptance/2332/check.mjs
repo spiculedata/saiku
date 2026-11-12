@@ -18,7 +18,7 @@ const failures = [];
 const all = method('refreshConnections');
 const one = method('refreshConnection');
 const guardedBefore = (body, call) => {
-  const g = body.indexOf('isAdmin');
+  const g = body.search(/ADMIN_ROLE|isAdmin/);
   const c = body.indexOf(call);
   return g >= 0 && c >= 0 && g < c;
 };
