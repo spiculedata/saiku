@@ -136,16 +136,79 @@ saiku-embed {
    resource publicly embeddable server-side and omit `token`. See
    [public grants](../../saiku-ui/src/embed/README.md#server-side-public-grants).
 
+## Cross-origin setup (CORS)
+
+If the host page is not served from the Saiku origin you have two safe options.
+
+**Option A, preferred: make it same-origin.** Proxy a path on your own site to
+Saiku (for example `https://wiki.example.com/saiku/` to the Saiku server) and
+point `server` at that path. No CORS is needed and nothing below applies.
+
+**Option B: scoped CORS on the guest embed prefixes only.** The embed read
+endpoints are bearer-token endpoints, so they can be made cross-origin readable
+without exposing anything cookie-authenticated. Apply CORS to these paths and
+nothing else:
+
+- `/rest/saiku/api/embed/query/`
+- `/rest/saiku/api/embed/dashboard/`
+- `/rest/saiku/api/embed/app/`
+
+with this response policy (never enable `Access-Control-Allow-Credentials`):
+
+| Header | Value |
+|---|---|
+| `Access-Control-Allow-Origin` | one explicit origin per response, taken from a fixed allowlist (for example `https://wiki.example.com`) |
+| `Access-Control-Allow-Headers` | `X-Saiku-Embed-Token` (plus `Content-Type` if you use app/AI posts) |
+| `Access-Control-Allow-Methods` | `GET, POST, OPTIONS` (only what the kinds you embed need) |
+| `Vary` | `Origin` |
+| `Access-Control-Allow-Credentials` | **never set it** |
+
+Nginx sketch (allowlist via `map`, so the `Origin` header is only echoed when it
+is one of your hosts):
+
+```nginx
+map $http_origin $saiku_embed_origin {
+    default                      "";
+    "https://wiki.example.com"   $http_origin;
+}
+
+location ~ ^/rest/saiku/api/embed/(query|dashboard|app)/ {
+    add_header Access-Control-Allow-Origin  $saiku_embed_origin always;
+    add_header Access-Control-Allow-Headers "X-Saiku-Embed-Token, Content-Type" always;
+    add_header Access-Control-Allow-Methods "GET, POST, OPTIONS" always;
+    add_header Vary Origin always;
+    if ($request_method = OPTIONS) { return 204; }
+    proxy_pass http://saiku;
+}
+```
+
+> **Warning: do not reflect the request `Origin` and enable credentials on
+> `/rest/**`.** The copy-paste CORS recipe (`Access-Control-Allow-Origin:
+> $http_origin` together with `Access-Control-Allow-Credentials: true`, applied
+> to the whole REST API) lets any website make credentialed requests to Saiku
+> and read the responses. Saiku's CSRF protection does not check `GET`, so a
+> visitor's session would let that site read the repository, saved queries and
+> query results, and the `X-XSRF-TOKEN` header becomes addable from any origin.
+> Saiku's CSRF model relies on Saiku never granting cross-origin credentialed
+> access. Likewise never set the session cookie to `SameSite=None` just to make
+> embedding work: the embed does not use the session cookie at all. Never
+> allow-list `*` or `null` together with credentials either.
+
 ## Common gotchas
 
 - **CSP on the host page.** The host's Content-Security-Policy needs
   `script-src` to allow the Saiku origin (for `saiku-embed.js`, unless you
   npm-bundle) and `connect-src` to allow it (for the data fetches). If the
   embed renders nothing and the console shows CSP violations, this is it.
-- **Cross-origin is the normal case, not a special one.** The component
-  fetches with `credentials: "omit"` — the token is the only auth carrier, so
-  no cookie/CORS-credential complications. Just make sure the Saiku origin is
-  reachable from the *viewer's browser* (not merely from your server).
+- **Cross-origin needs CORS, and Saiku does not ship any.** The component
+  fetches with `credentials: "omit"`, but it sends the token in the custom
+  `X-Saiku-Embed-Token` header, so the browser sends a CORS **preflight**
+  (`OPTIONS`) first. Saiku does not ship any CORS configuration (it answers no `Access-Control-*` headers), so on a
+  host page served from another origin the embed renders nothing until you add
+  CORS in front of Saiku (reverse proxy, ingress or servlet filter). Do it
+  narrowly; see [Cross-origin setup (CORS)](#cross-origin-setup-cors) below.
+  Also make sure the Saiku origin is reachable from the *viewer's browser*
+  (not merely from your server).
 - **Web component, not an iframe.** Host CSS can't bleed in (shadow root), and
   you don't need to widen Saiku's own framing headers — the web component
   fetches data over XHR. If you specifically need iframe-style process
