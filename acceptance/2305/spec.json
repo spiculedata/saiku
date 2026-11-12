@@ -1,0 +1,24 @@
+{
+  "issue": 2305,
+  "title": "The model-diff workflow runs no PR-controlled Maven code while the Packages credential is on disk, and does not persist the checkout token",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "model-diff.yml checks out the pull request",
+      "then": "the checkout does not persist the job's GitHub token (persist-credentials: false)"
+    },
+    {
+      "id": "C2",
+      "given": "the step that writes ~/.m2/settings.xml with GH_PACKAGES_TOKEN",
+      "then": "it is preceded by a step that checks out the trusted base commit, so every Maven run that sees the credential builds base code"
+    },
+    {
+      "id": "C3",
+      "given": "the steps after the credential is written",
+      "then": "the settings file is removed before the PR commit is checked out again, and no mvn command runs after that removal"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}
