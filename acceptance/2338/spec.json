@@ -1,0 +1,36 @@
+{
+  "issue": 2338,
+  "title": "POST /rest/saiku/session/clear is no longer an anonymous, unthrottled password oracle and second login path",
+  "kind": "api",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "an anonymous caller posting credentials to /rest/saiku/session/clear",
+      "then": "the request is refused (403 CSRF required, or 404/405 once the route is gone); it never reaches a credential check and never answers 200 or 500"
+    }
+  ],
+  "steps": [
+    {
+      "name": "the legacy /session/clear route no longer reaches a credential check",
+      "criterion": "C1",
+      "request": {
+        "method": "POST",
+        "path": "/rest/saiku/session/clear",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "json": {
+          "username": "admin",
+          "password": "not-the-password"
+        }
+      },
+      "expect": {
+        "status": [
+          403,
+          404,
+          405
+        ]
+      }
+    }
+  ]
+}
