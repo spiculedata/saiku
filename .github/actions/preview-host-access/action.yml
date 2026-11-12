@@ -36,7 +36,11 @@ runs:
         oauth-client-id: ${{ inputs.oauth-client-id }}
         oauth-secret: ${{ inputs.oauth-secret }}
         tags: tag:ci
-        version: latest
+        # Pin the client, not just the action (saiku#2336). Bump both lines together:
+        #   v=<stable x.y.z from https://pkgs.tailscale.com/stable/>
+        #   curl -sL https://pkgs.tailscale.com/stable/tailscale_${v}_amd64.tgz.sha256
+        version: 1.104.6
+        sha256sum: 82a85429f733e52fd1a95dedb2c8dd8cd46d6603504e566a56b1779c9a7a4809
 
     # The action above does not fail when it never joins, so assert it here and
     # fail with an actionable message.
