@@ -18,6 +18,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import org.saiku.web.demo.DemoGate;
 import org.saiku.web.demo.DemoGateCookie;
+import org.saiku.web.security.RequestPaths;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.context.WebApplicationContext;
@@ -66,8 +67,7 @@ public class DemoGateFilter implements Filter {
             return;
         }
 
-        String path = pathWithinApp(req);
-        if (!requiresVerification(path)) {
+        if (!requiresVerification(req)) {
             chain.doFilter(request, response);
             return;
         }
@@ -90,8 +90,17 @@ public class DemoGateFilter implements Filter {
      * allowlisted so the SPA can bootstrap and clear the gate. Package-visible
      * and pure for unit tests.
      */
+    static boolean requiresVerification(HttpServletRequest req) {
+        return requiresVerification(RequestPaths.pathWithinApplication(req));
+    }
+
+    /**
+     * A {@code null} path is one that could not be normalised (#2342); it fails closed, so it
+     * is gated rather than waved through.
+     */
     static boolean requiresVerification(String path) {
-        if (path == null || !path.startsWith(SAIKU_PREFIX)) return false;
+        if (path == null) return true;
+        if (!path.startsWith(SAIKU_PREFIX)) return false;
         return !isAllowlisted(path);
     }
 
@@ -111,15 +120,6 @@ public class DemoGateFilter implements Filter {
             }
         }
         return false;
-    }
-
-    private static String pathWithinApp(HttpServletRequest req) {
-        String path = req.getRequestURI();
-        String ctx = req.getContextPath();
-        if (ctx != null && !ctx.isEmpty() && path.startsWith(ctx)) {
-            path = path.substring(ctx.length());
-        }
-        return path;
     }
 
     /**

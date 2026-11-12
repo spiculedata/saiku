@@ -1,0 +1,24 @@
+{
+  "issue": 2342,
+  "title": "Pre-auth, CSRF and gate filters decide on the decoded, normalised application path (the one the container and Spring Security route on), failing closed on a path that cannot be normalised",
+  "kind": "command",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "the saiku-web filters that decide whether a request belongs to a protected surface (CSRF matcher, demo gate, embed, share, OAuth bearer, SCIM, SPA fallback)",
+      "then": "none of them reads the raw, percent-encoded request URI: getRequestURI() is only used by the audit logger and by the shared RequestPaths helper"
+    },
+    {
+      "id": "C2",
+      "given": "the shared RequestPaths.pathWithinApplication helper",
+      "then": "it decodes percent-encoding, strips ;path-parameters, drops '.' segments, collapses '//' and rejects '..', encoded slashes, backslashes and NUL (returning null so callers fail closed)"
+    },
+    {
+      "id": "C3",
+      "given": "the regression tests for the helper and for the CSRF matcher and demo gate",
+      "then": "they exist and cover the percent-encoded /%72est prefix"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}
