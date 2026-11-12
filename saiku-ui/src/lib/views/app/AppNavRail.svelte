@@ -54,6 +54,7 @@
 		onSettings
 	}: Props = $props();
 
+	// svelte-ignore state_referenced_locally — capturing the initial defaultCollapsed to seed the state is intentional
 	let collapsed = $state(defaultCollapsed);
 	let renamingId = $state<string | null>(null);
 	let draft = $state('');

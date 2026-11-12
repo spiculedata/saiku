@@ -573,4 +573,67 @@ public class RepositoryDatasourceManagerTest {
 
         return repo;
     }
+
+    /** saiku#2318 — the role-visibility decision, driven only by the datasource's security properties. */
+    private static SaikuDatasource datasourceWithSecurity(String type, String mapping) {
+        Properties props = new Properties();
+        props.setProperty(ISaikuConnection.SECURITY_ENABLED_KEY, "true");
+        if (type != null) {
+            props.setProperty(ISaikuConnection.SECURITY_TYPE_KEY, type);
+        }
+        if (mapping != null) {
+            props.setProperty(ISaikuConnection.SECURITY_LOOKUP_KEY, mapping);
+        }
+        return new SaikuDatasource("secured", SaikuDatasource.Type.OLAP, props);
+    }
+
+    @Test
+    public void testRoleVisibility_securityDisabledIsVisibleToEveryCaller() {
+        SaikuDatasource ds = new SaikuDatasource("plain", SaikuDatasource.Type.OLAP, new Properties());
+        assertTrue(RepositoryDatasourceManager.isVisibleTo(new String[] {"ROLE_USER"}, ds));
+        assertTrue(RepositoryDatasourceManager.isVisibleTo(new String[0], ds));
+    }
+
+    @Test
+    public void testRoleVisibility_lookupWithoutGrantIsHiddenFromNonAdmin() {
+        SaikuDatasource ds = datasourceWithSecurity("lookup", "ROLE_ANALYST=MondrianAnalyst");
+        assertFalse(RepositoryDatasourceManager.isVisibleTo(new String[] {"ROLE_USER"}, ds));
+        assertTrue(RepositoryDatasourceManager.isVisibleTo(new String[] {"ROLE_ANALYST"}, ds));
+        assertFalse(RepositoryDatasourceManager.isVisibleTo(new String[0], ds));
+    }
+
+    @Test
+    public void testRoleVisibility_lookupWithMultipleGrantsIsVisible() {
+        SaikuDatasource ds = datasourceWithSecurity("lookup", "ROLE_A=MondrianOne;ROLE_B=MondrianTwo");
+        assertTrue(RepositoryDatasourceManager.isVisibleTo(new String[] {"ROLE_B"}, ds));
+        assertFalse(RepositoryDatasourceManager.isVisibleTo(new String[] {"ROLE_C"}, ds));
+    }
+
+    @Test
+    public void testRoleVisibility_blankMappingGrantIsNotARole() {
+        // saiku#1972: ROLE_A= maps to nothing — a caller holding only ROLE_A sees nothing.
+        SaikuDatasource ds = datasourceWithSecurity("lookup", "ROLE_A=");
+        assertFalse(RepositoryDatasourceManager.isVisibleTo(new String[] {"ROLE_A"}, ds));
+    }
+
+    @Test
+    public void testRoleVisibility_one2oneStaysVisibleUntilTheSchemaCanDecide() {
+        // one2one resolution needs the schema's role list, which only the connection path has —
+        // the connection-time check still denies. Enumeration must not hide these either.
+        SaikuDatasource ds = datasourceWithSecurity("one2one", null);
+        assertTrue(RepositoryDatasourceManager.isVisibleTo(new String[] {"ROLE_USER"}, ds));
+    }
+
+    @Test
+    public void testRoleVisibility_unknownSecurityTypeIsHiddenFromNonAdmin() {
+        // saiku#1972: security on, type unrecognised — connection time denies, so do not offer it.
+        SaikuDatasource ds = datasourceWithSecurity("garbage", null);
+        assertFalse(RepositoryDatasourceManager.isVisibleTo(new String[] {"ROLE_USER"}, ds));
+    }
+
+    @Test
+    public void testRoleVisibility_passthroughIsVisible() {
+        SaikuDatasource ds = datasourceWithSecurity("passthrough", null);
+        assertTrue(RepositoryDatasourceManager.isVisibleTo(new String[] {"ROLE_USER"}, ds));
+    }
 }

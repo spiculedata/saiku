@@ -200,6 +200,7 @@
 	// Opening/duplicating a saved schema from the library (loadFromLibrary bumps
 	// store.chatResetNonce) starts a fresh DimSum conversation — the connection's
 	// restored chat belonged to a different schema/draft.
+	// svelte-ignore state_referenced_locally — capturing the initial nonce as the baseline is intentional; later changes are tracked in the $effect below.
 	let lastChatResetNonce = store.chatResetNonce;
 	$effect(() => {
 		const n = store.chatResetNonce;

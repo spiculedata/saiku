@@ -5,9 +5,9 @@
 //
 // Structured CI failure feedback for automated fixers.
 //
-// For one commit, gathers every GitHub Actions run, its jobs, the logs of the failing
-// jobs and the artifacts, and writes ONE machine-readable `ci-feedback.json` plus the
-// markdown of a sticky PR comment. A worker (human or agent) reads that one file and
+// For one PR, gathers its GitHub Actions runs for the head commit; without a PR,
+// gathers runs for the whole commit. It writes ONE machine-readable `ci-feedback.json`
+// plus the markdown of a sticky PR comment. A worker (human or agent) reads that file and
 // knows what broke and how to reproduce it without scraping a 4000-line log.
 //
 // Why it exists: Hive re-dispatched a fix six times because the only failure text it
@@ -394,6 +394,7 @@ export function createApi({ token, baseUrl = 'https://api.github.com', fetchImpl
 
 const REPO_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const SHA_PATTERN = /^[0-9a-f]{40}$/;
+const PR_PATTERN = /^[1-9]\d{0,8}$/;
 
 /** Newest run per workflow name (a re-run or a later push supersedes an earlier run). */
 function latestPerWorkflow(runs) {
@@ -409,9 +410,18 @@ function latestPerWorkflow(runs) {
 export async function collectInput({ api, repo, sha, pullRequest = null, selfPath = '.github/workflows/ci-feedback.yml', previewUrl = null, feedbackUrl = null, branch = null }) {
   if (!REPO_PATTERN.test(String(repo))) throw new Error(`invalid --repo "${repo}"`);
   if (!SHA_PATTERN.test(String(sha))) throw new Error(`invalid --sha "${sha}"`);
+  const pr = pullRequest === null || pullRequest === undefined || pullRequest === '' ? null : String(pullRequest);
+  if (pr !== null && !PR_PATTERN.test(pr)) throw new Error(`invalid --pr "${pullRequest}"`);
 
   const listed = await api.paginate(`/repos/${repo}/actions/runs?head_sha=${sha}`, 'workflow_runs');
-  const picked = latestPerWorkflow(listed.filter((run) => run.path !== selfPath)).slice(0, MAX_RUNS);
+  const eligible = listed.filter((run) =>
+    run.path !== selfPath &&
+    (pr === null ||
+      (run.event === 'pull_request' &&
+        Array.isArray(run.pull_requests) &&
+        run.pull_requests.some((linked) => String(linked?.number) === pr)))
+  );
+  const picked = latestPerWorkflow(eligible).slice(0, MAX_RUNS);
 
   let logBudget = MAX_LOG_JOBS;
   const runs = [];
@@ -448,7 +458,7 @@ export async function collectInput({ api, repo, sha, pullRequest = null, selfPat
       }))
     });
   }
-  return { repository: repo, sha, branch, pullRequest, runs, previewUrl, feedbackUrl };
+  return { repository: repo, sha, branch, pullRequest: pr !== null && runs.length > 0 ? Number(pr) : null, runs, previewUrl, feedbackUrl };
 }
 
 /**
@@ -458,7 +468,9 @@ export async function collectInput({ api, repo, sha, pullRequest = null, selfPat
  */
 export async function upsertComment({ api, repo, pr, feedback }) {
   if (!REPO_PATTERN.test(String(repo))) throw new Error(`invalid --repo "${repo}"`);
-  if (!/^\d{1,9}$/.test(String(pr))) throw new Error(`invalid --pr "${pr}"`);
+  if (!PR_PATTERN.test(String(pr))) throw new Error(`invalid --pr "${pr}"`);
+  // A push or an incomplete run listing must never clear an existing PR failure.
+  if (feedback?.repository !== repo || String(feedback?.pullRequest?.number ?? '') !== String(Number(pr))) return 'skipped';
   const body = renderMarkdown(feedback);
   const comments = await api.paginate(`/repos/${repo}/issues/${pr}/comments`);
   // Only our own bot's comment counts: a person quoting the marker must not be edited.

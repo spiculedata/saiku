@@ -42,4 +42,21 @@ public class InfoEndpointIT {
         HttpResponse<String> resp = harness.getAnon("/rest/saiku/info");
         assertEquals(200, resp.statusCode());
     }
+
+    @Test
+    public void diagnostics_requiresAdminWhilePublicInfoRemainsAvailable() throws Exception {
+        HttpResponse<String> capabilities = harness.getAnon("/rest/saiku/info/capabilities");
+        assertEquals(200, capabilities.statusCode());
+
+        HttpResponse<String> anonymous = harness.getAnon("/rest/saiku/info/diagnostics");
+        assertTrue(
+                "anonymous diagnostics must be rejected, got: " + anonymous.statusCode(),
+                anonymous.statusCode() == 401 || anonymous.statusCode() == 403);
+
+        HttpResponse<String> admin = harness.getAuth("/rest/saiku/info/diagnostics");
+        assertEquals(200, admin.statusCode());
+        JsonNode body = harness.parse(admin);
+        assertTrue(body.has("ask"));
+        assertTrue(body.has("schemaGen"));
+    }
 }

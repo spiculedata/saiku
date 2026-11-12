@@ -7,10 +7,13 @@ package org.saiku.service.schedule.digest;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 
+import java.text.DecimalFormat;
+import java.text.NumberFormat;
 import org.junit.Test;
 
 /** The period-over-period arithmetic behind every digest bullet (saiku#1119). */
 public class MeasureDeltaTest {
+    NumberFormat df = DecimalFormat.getInstance();
 
     private static MeasureDelta delta(String label, double current, double previous) {
         return new MeasureDelta(null, label, current, previous);
@@ -55,8 +58,8 @@ public class MeasureDeltaTest {
     @Test
     public void formatsGroupedAndSigned() {
         MeasureDelta d = delta("Sales", 1200d, 1000d);
-        assertEquals("1,200", d.formattedCurrent());
-        assertEquals("1,000", d.formattedPrevious());
+        assertEquals(df.format(1200), d.formattedCurrent());
+        assertEquals(df.format(1000), d.formattedPrevious());
         assertEquals("+200", d.formattedChange());
         assertEquals("+20.0%", d.formattedPercent());
     }

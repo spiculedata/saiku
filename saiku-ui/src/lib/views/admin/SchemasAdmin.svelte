@@ -135,9 +135,4 @@
 		margin: 0;
 	}
 	/* .data-grid / .data-grid__actions / .data-grid__empty come from app.css */
-	.xml {
-		font-family: var(--font-mono);
-		font-size: var(--fs-sm);
-		resize: vertical;
-	}
 </style>

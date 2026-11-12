@@ -152,6 +152,44 @@ public class CellExplainServiceTest {
         assertTrue(result.getNotes().isEmpty());
     }
 
+    /* ---- saiku#2192: the explained cell names its own measure ---- */
+
+    /**
+     * With Unit Sales and Store Sales on the columns, the Store Sales cell must be explained
+     * under Store Sales — the first column's measure is the wrong name for every other column.
+     */
+    @Test
+    public void explainsTheCellUnderTheMeasureThatWasClicked() {
+        CellsetView view = new FakeCellsetView(new double[] {24597d, 409035.59d})
+                .column(0, CellMember.measure("[Measures].[Unit Sales]", "Unit Sales"))
+                .column(1, SALES)
+                .row(0, CellMember.of("[Product].[Food]", "Food"));
+
+        CellExplainResult result = service(context(stubCellSet()), view).explain(request("q1", 0, 1));
+
+        assertEquals("Store Sales", result.getMeasure());
+        assertTrue(result.getNarrative(), result.getNarrative().startsWith("Store Sales for Food"));
+        assertFalse(result.getNarrative(), result.getNarrative().contains("Unit Sales"));
+        // a row holding cells of two measures has no row total to share and no row peak to name
+        assertTrue(result.getDrivers().stream().noneMatch(d -> d.kind() == ExplainDriver.Kind.SHARE_OF_ROW));
+        assertTrue(result.getDrivers().stream().noneMatch(d -> d.kind() == ExplainDriver.Kind.ROW_PEAK));
+    }
+
+    /** The first column of the same cellset names its own measure, Unit Sales. */
+    @Test
+    public void theFirstMeasureColumnIsNoLongerTheNameForEveryCell() {
+        CellsetView view = new FakeCellsetView(new double[] {24597d, 409035.59d})
+                .column(0, CellMember.measure("[Measures].[Unit Sales]", "Unit Sales"))
+                .column(1, SALES)
+                .row(0, CellMember.of("[Product].[Food]", "Food"));
+
+        assertEquals(
+                "Unit Sales",
+                service(context(stubCellSet()), view)
+                        .explain(request("q1", 0, 0))
+                        .getMeasure());
+    }
+
     /* ---- Phase 3: the LLM narrative and its fallback ---- */
 
     @Test
@@ -232,12 +270,14 @@ public class CellExplainServiceTest {
 
     /** The service under test with a fake view and a thin-query stub that serves {@code context}. */
     private static CellExplainService service(QueryContext context) {
+        return service(context, defaultView());
+    }
+
+    private static CellExplainService service(QueryContext context, CellsetView view) {
         CellExplainService service = new CellExplainService() {
             @Override
             protected CellsetView viewFor(CellSet cellSet) {
-                return new FakeCellsetView(new double[] {1234.5d, 2000d})
-                        .column(0, Q1, SALES)
-                        .row(0, CellMember.of("[Customers].[USA]", "USA"));
+                return view;
             }
         };
         ThinQueryService queries = new ThinQueryService() {
@@ -248,6 +288,12 @@ public class CellExplainServiceTest {
         };
         service.setThinQueryService(queries);
         return service;
+    }
+
+    private static CellsetView defaultView() {
+        return new FakeCellsetView(new double[] {1234.5d, 2000d})
+                .column(0, Q1, SALES)
+                .row(0, CellMember.of("[Customers].[USA]", "USA"));
     }
 
     private static QueryContext context(CellSet result) {

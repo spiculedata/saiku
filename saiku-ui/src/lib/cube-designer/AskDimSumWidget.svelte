@@ -131,6 +131,7 @@
 	     `role="button"` + keydown handles the collapse toggle. In
 	     fillContainer mode the body never collapses, so the wrapper drops
 	     its button semantics + cursor + chevron. -->
+	<!-- svelte-ignore a11y_no_noninteractive_tabindex — when fillContainer is false the div has role="button" (interactive) with tabindex=0; the checker cannot resolve the conditional. -->
 	<div
 		role={fillContainer ? undefined : 'button'}
 		tabindex={fillContainer ? undefined : 0}
