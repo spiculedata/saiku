@@ -1,0 +1,13 @@
+{
+  "issue": 1920,
+  "title": "Ossie AI endpoints, the async status/result and the MCP handler no longer echo exception messages (SQL, RLS predicates, JDBC URLs) to callers",
+  "kind": "ui",
+  "criteria": [
+    { "id": "C1", "given": "AiOssieResource catch-all branches", "then": "no 5xx body is built from Throwable.getMessage(); each carries a stable SERVER_ERROR code and a ref that is also logged" },
+    { "id": "C2", "given": "OssieAsyncQueryService failures other than SaikuAccessDeniedException", "then": "the handle stores a generic message with a ref, not the exception text" },
+    { "id": "C3", "given": "McpResource JSON-RPC internal errors", "then": "the -32603 message carries a ref, not the exception message" },
+    { "id": "C4", "given": "the typed paths", "then": "VALIDATION_ERROR and SaikuAccessDeniedException messages are unchanged" }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 30
+}
