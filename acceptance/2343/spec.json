@@ -1,0 +1,24 @@
+{
+  "issue": 2343,
+  "title": "Guest (embed/share/SCIM) tokens carry a distinct ROLE_TOKEN_PRINCIPAL authority and every isFullyAuthenticated() fallback rule requires a real user, so a guest is confined by the URL rules even if a filter's URI-prefix check slips",
+  "kind": "command",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "the embed, share and SCIM filters that mint a PreAuthenticatedAuthenticationToken",
+      "then": "each adds the ROLE_TOKEN_PRINCIPAL marker authority next to its specific guest role"
+    },
+    {
+      "id": "C2",
+      "given": "the main security chain in applicationContext-saiku.xml (and the /xmla chain)",
+      "then": "no intercept-url admits on a bare isFullyAuthenticated(): every such rule also excludes the TOKEN_PRINCIPAL marker, so the /embed/**, /share/**, /rest/** and /** fallbacks reject a guest"
+    },
+    {
+      "id": "C3",
+      "given": "the Spring URL-rule regression test",
+      "then": "it exists and evaluates the real XML rules for an embed guest, a share guest and a real user"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}
