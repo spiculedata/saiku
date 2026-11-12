@@ -46,9 +46,9 @@ public class SaikuCsrfRequestMatcher implements RequestMatcher {
 
     /**
      * Login endpoint — exempt from CSRF because no session cookie exists yet when
-     * it's called. Matches {@code /rest/saiku/session} and {@code /rest/saiku/session/clear}.
+     * it's called. Matches exactly {@code /rest/saiku/session}; sub-paths are not exempt.
      */
-    private static final Pattern LOGIN_PATH = Pattern.compile("^/rest/saiku/session(/.*)?$");
+    private static final Pattern LOGIN_PATH = Pattern.compile("^/rest/saiku/session$");
 
     /** {@code EmbedAuthFilter.TOKEN_HEADER} — the sole credential on the embed guest surface. */
     private static final String EMBED_TOKEN_HEADER = "X-Saiku-Embed-Token";
