@@ -44,6 +44,33 @@ POST endpoints require the CSRF cookie/header pair.
 
 ---
 
+## Data exposure policy — `SAIKU_AI_POLICY` (saiku#2322)
+
+Every Ossie endpoint that returns data consults the operator's
+AI data-exposure policy (resolved from `SAIKU_AI_POLICY` / `-Dai.policy`,
+default `schema-only`) **before** the warehouse is touched. A denial is
+HTTP 403 with the `PERMISSION_DENIED` envelope: `field: "ai.policy"`,
+`available: [<tier to raise to>]`. The MDX side behaves the same way
+(see [`AI-QUERY-API.md`](AI-QUERY-API.md)).
+
+| Tier required | Endpoints |
+| --- | --- |
+| `schema-only` (the default — never blocks) | `GET /models`, `GET /schema/{c}/{m}`, `GET /ontology/{c}/{m}`, `POST /query/preview` (SQL text, no data), `GET /values/search` (PII-filtered fields only) |
+| `aggregated` | `POST /query`, `POST /query/execute-async`, `GET /query/result/{id}`, `POST /anomaly`, `POST /forecast`, `POST /ask` |
+| `full` | `POST /row-detail` (raw warehouse rows — the Ossie drillthrough) |
+
+On the MCP surface the same gate applies: a tool denied by the policy
+returns a tool result with `isError: true` and the same
+`PERMISSION_DENIED` envelope in `structuredContent` (metadata tools —
+`list_ossie_models`, `describe_ossie_model`, `describe_ossie_ontology`,
+`preview_ossie_query`, `search_field_values` — keep working under
+`schema-only`).
+
+Note the launcher relaxes the default to `aggregated` in demo mode
+(`SAIKU_DEMO=true`); raw-row endpoints still require `full` there.
+
+---
+
 ## Step 1 — list the models
 
 ```http

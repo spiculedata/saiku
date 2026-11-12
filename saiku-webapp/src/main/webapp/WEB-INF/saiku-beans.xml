@@ -675,6 +675,10 @@
         <property name="askService" ref="ossieAiAskServiceBean"/>
         <!-- saiku#1913: singleton limiter — a per-request instance never trips. -->
         <property name="askRateLimiter" ref="aiOssieAskRateLimiter"/>
+        <!-- saiku#2322: SAIKU_AI_POLICY / ai.policy gate — same parity contract as aiQueryResource.
+             Without this injection the resource would keep its (now fail-closed) schema-only
+             pre-wiring default and an operator's configured tier would be ignored for Ossie. -->
+        <property name="aiPolicyGuard" ref="aiPolicyGuard"/>
     </bean>
     <!-- R5: Ossie natural-language ask. Reads saiku.ai.ask.provider + API key from env/props;
          disabled by default (health returns configured=false; /ask returns 503). -->
@@ -706,8 +710,9 @@
         <property name="aiQueryResource" ref="aiQueryResource"/>
         <property name="aiOssieResource" ref="aiOssieResource"/>
         <!-- Makes the AGGREGATED_RESULT_VALUES policy check explicit at the GraphQL layer.
-             The delegated AiQueryResource / AiOssieResource re-check it, but wiring it here
-             means audit logs show the policy gate at the entry point too. -->
+             The delegated AiQueryResource / AiOssieResource re-check it (AiOssieResource calls
+             the guard at every data endpoint since saiku#2322), but wiring it here means audit
+             logs show the policy gate at the entry point too. -->
         <property name="aiPolicyGuard" ref="aiPolicyGuard"/>
         <property name="serverVersion" value="${saiku.version:4.6.0}"/>
     </bean>

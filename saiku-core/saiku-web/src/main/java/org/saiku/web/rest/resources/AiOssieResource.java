@@ -133,13 +133,19 @@ public class AiOssieResource {
     /**
      * saiku#1459: the same cost-DoS + policy guards the MDX ask endpoints carry. Without these the
      * Ossie {@code /ask} was a bypass surface — a client 429'd or 413'd on {@code /ai/ask} could
-     * switch to {@code /ai/ossie/ask} and reach the paid LLM provider unbounded. Defaults mirror
-     * {@link AiQueryResource} so the guard is on even before Spring wires the shared beans.
-     * Production wires the {@code aiOssieAskRateLimiter} SINGLETON (saiku#1913); a per-request
-     * limiter would never trip.
+     * switch to {@code /ai/ossie/ask} and reach the paid LLM provider unbounded. Production wires
+     * the {@code aiOssieAskRateLimiter} SINGLETON (saiku#1913); a per-request limiter would never
+     * trip.
+     *
+     * <p>saiku#2322: the pre-wiring guard default FAILS CLOSED at {@link AiPolicy#DEFAULT}
+     * (schema-only) — the previous {@code FULL} initialiser made an unwired instance a policy
+     * no-op, and every production wiring (launcher, Docker, WAR) forgot to inject the shared
+     * {@code aiPolicyGuard} bean, so {@code SAIKU_AI_POLICY} was silently ignored on this class.
+     * The {@code saiku-beans.xml} {@code aiOssieResource} definition now injects the singleton,
+     * and an unwired instance refuses aggregated data instead of serving it.
      */
     private org.saiku.service.olap.ai.AiPolicyGuard aiPolicyGuard =
-            new org.saiku.service.olap.ai.AiPolicyGuard(org.saiku.service.olap.ai.AiPolicy.FULL);
+            new org.saiku.service.olap.ai.AiPolicyGuard(org.saiku.service.olap.ai.AiPolicy.DEFAULT);
 
     private org.saiku.web.security.ratelimit.AiRateLimiter askRateLimiter =
             new org.saiku.web.security.ratelimit.AiRateLimiter();
@@ -386,6 +392,9 @@ public class AiOssieResource {
             @PathParam("connection") String connectionName,
             @PathParam("model") String modelName,
             @jakarta.ws.rs.QueryParam("refresh") Boolean refresh) {
+        // saiku#2322: schema metadata is the schema-only tier — never blocks, recorded for
+        // symmetry with AiQueryResource's /ai/schema gate (AiQueryResource.java:670).
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.SCHEMA_METADATA);
         if (ossieDiscoverService == null) {
             return error("Ossie discover not wired");
         }
@@ -433,6 +442,8 @@ public class AiOssieResource {
     @Path("/ontology/{connection}/{model}")
     @Produces(MediaType.APPLICATION_JSON)
     public Response getOntology(@PathParam("connection") String connectionName, @PathParam("model") String modelName) {
+        // saiku#2322: ontology is schema metadata — same symmetry gate as /schema.
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.SCHEMA_METADATA);
         if (ossieDiscoverService == null) {
             return error("Ossie discover not wired");
         }
@@ -514,6 +525,9 @@ public class AiOssieResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response executeAi(OssieAiQueryRequest req, @jakarta.ws.rs.QueryParam("format") String format) {
+        // saiku#2322: aggregated result values require the aggregated tier. Before the try so
+        // AiPolicyViolation reaches AiPolicyViolationMapper (403), not the generic catch (500).
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.AGGREGATED_RESULT_VALUES);
         try {
             if (req == null) {
                 return badRequest("body", "request body required", List.of());
@@ -745,6 +759,8 @@ public class AiOssieResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response detectAnomalies(org.saiku.service.ossie.ai.OssieAiAnomalyRequest body) {
+        // saiku#2322: anomaly series carry aggregated values — aggregated tier or higher.
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.AGGREGATED_RESULT_VALUES);
         long start = System.currentTimeMillis();
         try {
             if (body == null) return badRequest("body", "request body required", List.of());
@@ -792,6 +808,8 @@ public class AiOssieResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response forecast(org.saiku.service.ossie.ai.OssieAiForecastRequest body) {
+        // saiku#2322: forecast series carry aggregated values — aggregated tier or higher.
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.AGGREGATED_RESULT_VALUES);
         long start = System.currentTimeMillis();
         try {
             if (body == null) return badRequest("body", "request body required", List.of());
@@ -843,6 +861,9 @@ public class AiOssieResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response rowDetail(OssieAiQueryRequest req, @jakarta.ws.rs.QueryParam("maxrows") Integer maxrows) {
+        // saiku#2322: row-detail is Ossie's drillthrough — RAW_ROW_DATA needs the full tier,
+        // exactly as MDX /ai/drillthrough does (AiQueryResource.java:2615).
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.RAW_ROW_DATA);
         try {
             if (req == null) return badRequest("body", "request body required", List.of());
             if (req.getConnection() == null) {
@@ -884,6 +905,8 @@ public class AiOssieResource {
      * produces a records-format response ready for augmentation.
      */
     private OssieAiQueryResponse runInternalQuery(OssieAiQueryRequest req, long start) throws Exception {
+        // saiku#2322: belt-and-braces gate for any future caller of this shared executor.
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.AGGREGATED_RESULT_VALUES);
         if (req.getConnection() == null) {
             throw new OssieAiValidationException("query.connection", "connection is required", List.of());
         }
@@ -916,6 +939,9 @@ public class AiOssieResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response executeAsync(OssieAiQueryRequest req) {
+        // saiku#2322: async submit is the same data-return surface as the sync /query — gate it
+        // here so a policy that forbids aggregated values can't be walked around via execute-async.
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.AGGREGATED_RESULT_VALUES);
         if (asyncQueryService == null) {
             return error("async service not configured");
         }
@@ -974,6 +1000,10 @@ public class AiOssieResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response asyncResult(
             @PathParam("queryId") String queryId, @jakarta.ws.rs.QueryParam("format") String format) {
+        // saiku#2322: the stored result is aggregated data like any other — and gating the fetch
+        // too means a policy tightened between submit and fetch (restart with a new env) still
+        // fails closed.
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.AGGREGATED_RESULT_VALUES);
         if (asyncQueryService == null) return error("async service not configured");
         OssieAsyncQueryService.Handle h = asyncQueryService.getOwned(queryId, currentPrincipal(), currentUserIsAdmin());
         if (h == null) return Response.status(Response.Status.NOT_FOUND).build();
@@ -1111,6 +1141,9 @@ public class AiOssieResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response previewAi(OssieAiQueryRequest req) {
+        // saiku#2322: preview returns generated SQL, no data — schema-only tier, recorded for
+        // symmetry with the MDX preview gate.
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.SCHEMA_METADATA);
         try {
             if (req == null) {
                 return badRequest("body", "request body required", List.of());
@@ -1173,6 +1206,10 @@ public class AiOssieResource {
             @jakarta.ws.rs.QueryParam("field") String fieldName,
             @jakarta.ws.rs.QueryParam("q") String q,
             @jakarta.ws.rs.QueryParam("limit") Integer limit) {
+        // saiku#2322: distinct-value search is SAMPLE_MEMBERS (PII-filtered upstream by the
+        // field skip below) — allowed under schema-only, asserted so the kind is enforced and
+        // audited consistently with MDX /ai/members/search.
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.SAMPLE_MEMBERS);
         try {
             if (connectionName == null || connectionName.isBlank()) {
                 return badRequest("connection", "connection is required", List.of());
