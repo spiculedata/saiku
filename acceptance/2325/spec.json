@@ -1,0 +1,52 @@
+{
+  "issue": 2325,
+  "title": "Member search is clamped server-side to the advertised maximum of 500, whatever limit the caller sends",
+  "kind": "api",
+  "auth": "session",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "an authenticated caller searching the 10k-member FoodMart Customers.Name level with limit=2000000000",
+      "then": "the server returns at most 500 members (the advertised schema maximum), not the whole level"
+    },
+    {
+      "id": "C2",
+      "given": "the same search with a small limit",
+      "then": "the limit is still honoured, so the clamp narrows nothing a legitimate caller relied on"
+    }
+  ],
+  "steps": [
+    {
+      "name": "an enormous limit is clamped to 500 members",
+      "criterion": "C1",
+      "request": {
+        "method": "GET",
+        "path": "/ai/members/search?cubeId=unknown_foodmart/FoodMart/FoodMart/Sales&dimension=Customers&level=Name&limit=2000000000"
+      },
+      "expect": {
+        "status": 200,
+        "json": {
+          "$": {
+            "length": 500
+          }
+        }
+      }
+    },
+    {
+      "name": "a small limit is still honoured",
+      "criterion": "C2",
+      "request": {
+        "method": "GET",
+        "path": "/ai/members/search?cubeId=unknown_foodmart/FoodMart/FoodMart/Sales&dimension=Customers&level=Name&limit=5"
+      },
+      "expect": {
+        "status": 200,
+        "json": {
+          "$": {
+            "length": 5
+          }
+        }
+      }
+    }
+  ]
+}
