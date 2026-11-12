@@ -50,10 +50,6 @@
         <param-name>earthquakes.password</param-name>
         <param-value></param-value>
     </context-param>
-    <context-param>
-        <param-name>db.tcpServer</param-name>
-        <param-value>-tcpAllowOthers</param-value>
-    </context-param>
 
     <context-param>
      <param-name>contextConfigLocation</param-name>
@@ -66,6 +62,12 @@
 		     wires a FileSessionDataStore (saiku-home/sessions/) so sessions
 		     also survive across server restarts. -->
 		<session-timeout>10080</session-timeout>
+		<!-- saiku#2348: the session cookie is never readable from script. Operators
+		     should also add <secure>true</secure> behind TLS and set the container's
+		     SameSite policy (Tomcat CookieProcessor sameSiteCookies="lax"). -->
+		<cookie-config>
+			<http-only>true</http-only>
+		</cookie-config>
 	</session-config>
 
     <!-- saiku#1029: demo email gate. Declared BEFORE the Spring Security
