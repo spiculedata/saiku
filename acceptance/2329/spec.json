@@ -1,0 +1,29 @@
+{
+  "issue": 2329,
+  "title": "Explain endpoint sends cell values and member captions to the LLM vendor even under SAIKU_AI_LLM_EGRESS=schema-only",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "LLM egress is schema-only (cell data not permitted to leave the box) and a narrative is requested",
+      "then": "CellExplainService does not call the LLM provider at all: the question carries the cell value and member captions, so the deterministic narrative is kept and a note says why"
+    },
+    {
+      "id": "C2",
+      "given": "LLM egress permits aggregated cell data",
+      "then": "the LLM narrative path is unchanged"
+    },
+    {
+      "id": "C3",
+      "given": "the egress gate",
+      "then": "it is the same AiAskService.permitsCellDataEgress() decision the ask path uses for the digest, current query and history, not a second copy"
+    },
+    {
+      "id": "C4",
+      "given": "the regression tests for the fix",
+      "then": "CellExplainServiceTest covers schema-only (no provider call, COMPUTED narrative) and an unwired egress guard failing closed"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}

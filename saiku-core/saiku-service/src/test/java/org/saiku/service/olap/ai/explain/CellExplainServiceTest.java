@@ -246,6 +246,47 @@ public class CellExplainServiceTest {
         assertNotNull(result.getNarrative());
     }
 
+    /** saiku#2329: the question itself carries the value and captions, so schema-only means no call. */
+    @Test
+    public void schemaOnlyEgressKeepsTheProviderUncalledAndTheComputedNarrative() {
+        AtomicReference<NlAskRequest> seen = new AtomicReference<>();
+        AiAskService ask = askService(request -> {
+            seen.set(request);
+            return NlAskResponse.okInsight("{\"markdown\":\"x\"}", "m", 3, 4);
+        });
+        ask.setEgressGuard(new AiPolicyGuard(AiPolicy.SCHEMA_ONLY));
+
+        CellExplainService service = service(context(stubCellSet()));
+        service.setAskService(ask);
+
+        CellExplainResult result = service.explain(request("q1", 0, 0));
+
+        assertNull("no request may reach the vendor: " + seen.get(), seen.get());
+        assertEquals(CellExplainResult.NarrativeSource.COMPUTED, result.getNarrativeSource());
+        assertTrue(result.getNarrative(), result.getNarrative().contains("1,234.50"));
+        assertTrue(
+                String.join(" ", result.getNotes()),
+                String.join(" ", result.getNotes()).contains("egress"));
+    }
+
+    @Test
+    public void unwiredEgressGuardFailsClosed() {
+        AtomicReference<NlAskRequest> seen = new AtomicReference<>();
+        AiAskService ask = askService(request -> {
+            seen.set(request);
+            return NlAskResponse.okInsight("{\"markdown\":\"x\"}", "m", 3, 4);
+        });
+        ask.setEgressGuard(null);
+
+        CellExplainService service = service(context(stubCellSet()));
+        service.setAskService(ask);
+
+        CellExplainResult result = service.explain(request("q1", 0, 0));
+
+        assertNull(seen.get());
+        assertEquals(CellExplainResult.NarrativeSource.COMPUTED, result.getNarrativeSource());
+    }
+
     /* ---- helpers ---- */
 
     private void expect(CellExplainRequest request, CellExplainException.Code code) {
