@@ -140,7 +140,8 @@ public class SaikuOssieConnection implements ISaikuConnection {
             }
         }
 
-        String calciteUrl = buildCalciteConnectString(Path.of(ossieYaml), modelName, warehouseUrl, user, password);
+        String calciteUrl = buildCalciteConnectString(
+                Path.of(ossieYaml), modelName, JdbcUrlPolicy.confineFileEngines(warehouseUrl), user, password);
         // The Calcite driver reads the model + operand from the URL — no user/pass params
         // needed here since we baked the warehouse creds into the operand. This URL is assembled
         // by Saiku around a temp model file it just wrote (jdbc:calcite: is deliberately NOT a

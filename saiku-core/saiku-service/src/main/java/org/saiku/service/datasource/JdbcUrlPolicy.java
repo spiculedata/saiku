@@ -218,7 +218,7 @@ public final class JdbcUrlPolicy {
      * {@code Mondrian=4} marker). A key opens the body or follows a {@code ;}; a value runs to the
      * next such key, which is what lets an inner {@code Jdbc=} URL carry its own {@code ;}-params.
      */
-    private static final Pattern MONDRIAN_KEY = Pattern.compile("(?i)(?:^|;)\\s*(Provider|Jdbc|JdbcDrivers|JdbcUser|"
+    static final Pattern MONDRIAN_KEY = Pattern.compile("(?i)(?:^|;)\\s*(Provider|Jdbc|JdbcDrivers|JdbcUser|"
             + "JdbcPassword|Catalog|CatalogContent|CatalogName|DataSource|PoolNeeded|Role|UseContentChecksum|"
             + "DynamicSchemaProcessor|Locale|DataSourceChangeListener|Ignore|Instance|JdbcConnectionUuid|"
             + "PinSchemaTimeout|AggregateScanSchema|AggregateScanCatalog|UseSchemaPool|Mondrian)\\s*=");
@@ -267,10 +267,20 @@ public final class JdbcUrlPolicy {
         checkUrl(url, 0);
     }
 
+    /**
+     * Lock down the file/lakehouse engine in {@code url} (DuckDB external access and
+     * configuration; see {@link FileEngineConfinement}). Applied by {@link #openConnection}; call
+     * it on a URL that is handed to a driver some other way (Calcite model operands). Returns
+     * {@code url} unchanged for other engines or when the operator opted out.
+     */
+    public static String confineFileEngines(String url) {
+        return FileEngineConfinement.confine(url);
+    }
+
     /** Validate, then {@link DriverManager#getConnection(String, String, String)}. */
     public static Connection openConnection(String url, String user, String password) throws SQLException {
         validate(url);
-        return DriverManager.getConnection(url, user, password);
+        return DriverManager.getConnection(confineFileEngines(url), user, password);
     }
 
     /**
@@ -374,6 +384,11 @@ public final class JdbcUrlPolicy {
         rejectDangerousH2Tokens(decoded);
         rejectDeniedProperties(url, scheme);
         rejectDeniedProperties(decoded, scheme);
+        if ("h2".equals(scheme)) {
+            // saiku#2320: an H2 file database must live under saiku.home (or an operator root).
+            FileEngineConfinement.rejectH2PathOutsideRoots(url);
+            FileEngineConfinement.rejectH2PathOutsideRoots(decoded);
+        }
 
         if (wrapper) {
             checkMondrianWrapper(url, depth);
