@@ -449,7 +449,11 @@ public class OlapMetaExplorer {
                             ResultSet rs = SaikuMondrianHelper.getSQLMemberLookup(
                                     con, MondrianDictionary.SQLMemberLookup, l, searchString);
                             try {
-                                simpleMembers = ObjectUtil.convert2simple(rs);
+                                // saiku#2331: the SQL runs on the raw DataSource, outside Mondrian's
+                                // role evaluation, so re-check each hit against the role-applied cube
+                                // and apply the caller's limit.
+                                simpleMembers =
+                                        restrictToRoleAndLimit(nativeCube, ObjectUtil.convert2simple(rs), searchLimit);
                                 log.debug("Found " + simpleMembers.size() + " members using SQL lookup for level "
                                         + level);
                             } finally {
@@ -509,6 +513,46 @@ public class OlapMetaExplorer {
         }
 
         return new ArrayList<>();
+    }
+
+    /** Upper bound on SQLMemberLookup hits when the caller passes no (or a non-positive) limit. */
+    static final int MAX_SQL_LOOKUP_RESULTS = 1000;
+
+    /**
+     * saiku#2331: keep only the SQL-lookup hits the caller's Mondrian role can see, up to the limit.
+     * The annotation SQL runs against the warehouse directly, so a member the role hides
+     * ({@code access='none'}, outside a member grant) would otherwise be returned. A hit is kept only
+     * when the role-applied cube resolves its unique name; an unresolvable name or a lookup failure
+     * drops the hit (fail closed). A non-positive {@code searchLimit} falls back to
+     * {@link #MAX_SQL_LOOKUP_RESULTS}.
+     */
+    static List<SimpleCubeElement> restrictToRoleAndLimit(
+            Cube nativeCube, List<SimpleCubeElement> hits, int searchLimit) {
+        int cap = searchLimit > 0 ? Math.min(searchLimit, MAX_SQL_LOOKUP_RESULTS) : MAX_SQL_LOOKUP_RESULTS;
+        List<SimpleCubeElement> visible = new ArrayList<>();
+        for (SimpleCubeElement hit : hits) {
+            if (visible.size() >= cap) {
+                break;
+            }
+            if (isVisibleToRole(nativeCube, hit.getUniqueName())) {
+                visible.add(hit);
+            }
+        }
+        return visible;
+    }
+
+    private static boolean isVisibleToRole(Cube nativeCube, String uniqueName) {
+        if (uniqueName == null || uniqueName.isEmpty()) {
+            return false;
+        }
+        try {
+            return nativeCube.lookupMember(
+                            IdentifierNode.parseIdentifier(uniqueName).getSegmentList())
+                    != null;
+        } catch (Exception e) {
+            log.debug("SQL member lookup hit {} not resolvable under the caller's role: {}", uniqueName, e.toString());
+            return false;
+        }
     }
 
     /**
