@@ -31,12 +31,16 @@ permissions:
   contents: read
 
 jobs:
-  publish:
-    name: Build, verify, publish to npm
+  # saiku#2335: the build runs the untrusted npm lifecycle (saiku-ui's whole transitive tree), so
+  # it holds no id-token and no npm token. The publish job below only handles the packed tarball.
+  build:
+    name: Build + verify (unprivileged)
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      id-token: write # OIDC token for `npm publish --provenance`
+      contents: read # NO id-token and no registry credential in this job
+    outputs:
+      version: ${{ steps.verify.outputs.version }}
+      exists: ${{ steps.registry.outputs.exists }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -44,18 +48,17 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24"
-          registry-url: "https://registry.npmjs.org"
           cache: npm
           cache-dependency-path: saiku-ui/package-lock.json
 
       - name: Install + build
         working-directory: saiku-ui
-        # design-system is an npm workspace of saiku-ui, so `npm ci` at the app
-        # root installs it and runs its `prepare` (svelte-package), which is
-        # what populates dist/. Build explicitly anyway so a future change to
-        # `prepare` can't silently ship an empty package.
+        # --ignore-scripts: no third-party install/postinstall/prepare runs. The
+        # design-system is built explicitly below (svelte-package needs no
+        # lifecycle script). If a dependency ever needs a native rebuild, list
+        # it here by name with `npm rebuild <pkg>` so the list stays reviewable.
         run: |
-          npm ci --no-audit --no-fund
+          npm ci --no-audit --no-fund --ignore-scripts
           npm run build --workspace @concepttocloud/saiku-design-system
 
       - name: Type-check the package
@@ -99,16 +102,20 @@ jobs:
             echo "::notice::@concepttocloud/saiku-design-system@$VERSION is not on the registry — will publish."
           fi
 
-      - name: Publish
-        if: steps.registry.outputs.exists == 'false' && !inputs.dry_run
+      - name: Pack the publishable tarball
+        # Scripts off: the artefact is exactly the verified dist/, so the privileged
+        # job never needs to run prepare/prepack.
         working-directory: saiku-ui/design-system
-        # NPM_TOKEN is an Automation token on the npm org, already used by the
-        # embed packages in release.yml. `--provenance` needs `id-token:
-        # write` (granted on this job) and attaches a signed SLSA statement
-        # npm displays on the package page and `npm audit signatures` checks.
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --access public --provenance
+        run: npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP/pack"
+
+      - name: Upload tarball
+        if: steps.registry.outputs.exists == 'false' && !inputs.dry_run
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: design-system-tgz
+          path: ${{ runner.temp }}/pack/*.tgz
+          retention-days: 7
+          if-no-files-found: error
 
       - name: Summary
         env:
@@ -121,5 +128,42 @@ jobs:
           elif [ "$DRY_RUN" = "true" ]; then
             echo "🧪 Dry run — @concepttocloud/saiku-design-system@$VERSION built and verified, not published." >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "✅ Published @concepttocloud/saiku-design-system@$VERSION" >> "$GITHUB_STEP_SUMMARY"
+            echo "📦 @concepttocloud/saiku-design-system@$VERSION built and packed — the publish job follows." >> "$GITHUB_STEP_SUMMARY"
           fi
+
+  publish:
+    name: Publish to npm (artefact only)
+    needs: [build]
+    if: needs.build.outputs.exists == 'false' && !inputs.dry_run
+    runs-on: ubuntu-latest
+    # Create the `npm-publish` environment with required reviewers (repository settings) and
+    # move NPM_TOKEN into it, or enable npm Trusted Publishing and delete NPM_TOKEN.
+    environment: npm-publish
+    permissions:
+      contents: read # no checkout at all
+      id-token: write # OIDC token for npm provenance; only this job can mint one
+    steps:
+      - name: Set up Node 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Download tarball
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: design-system-tgz
+          path: pkg
+
+      - name: Publish
+        # NPM_TOKEN is an Automation token on the npm org, already used by the
+        # embed packages in release.yml. `--provenance` needs `id-token: write`
+        # (granted on this job) and attaches a signed SLSA statement. The
+        # tarball path plus --ignore-scripts means no lifecycle script can run
+        # with the token in the environment.
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          npm publish pkg/*.tgz --access public --provenance --ignore-scripts
+          echo "Published @concepttocloud/saiku-design-system@${{ needs.build.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"

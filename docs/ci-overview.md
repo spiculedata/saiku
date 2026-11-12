@@ -118,7 +118,7 @@ Every file under `.github/workflows/`.
 | `preview-reaper.yml` | hourly, manual | tears down idle previews (dry run by default when dispatched) | same |
 | `preview-infra.yml` | PR / push touching preview tooling, manual | offline tests of the preview tooling | same |
 | `ghcr-tag-retention.yml` | Mondays 03:17 UTC, manual | prunes expired `pr-<n>` / bare-SHA tags | [ci-images.md](ci-images.md) |
-| `design-system.yml` | push to `development` / `main` under `saiku-ui/design-system/**`, manual | publishes `@concepttocloud/saiku-design-system` to npm if the version is new | AGENTS.md |
+| `design-system.yml` | push to `development` / `main` under `saiku-ui/design-system/**`, manual | builds the design system unprivileged (`npm ci --ignore-scripts`, no id-token) and publishes the packed tarball to npm from a separate `npm-publish` job if the version is new | AGENTS.md |
 | `release-prep.yml` | push to `release/*`, PR into `main` | `mvn verify` before tagging | [releasing.md](releasing.md) |
 | `release.yml` | tag `v*`, manual | JAR, GitHub Packages, ghcr release images, npm embed packages, docs changelog PR | [releasing.md](releasing.md) |
 | `nightly-compliance.yml` | daily 02:43 UTC, manual | full java + ui + OWASP sweep of `development`; one tracking issue (`nightly-compliance`) on red | AGENTS.md |
@@ -205,7 +205,7 @@ Names only; never put a value in the repo or in a PR.
 | `GITHUB_TOKEN` | most workflows | automatic per-run token | GitHub | n/a |
 | `GH_PACKAGES_TOKEN` | `ci`, `acceptance` (as the shared workflows' `BUILD_TOKEN`), `docker`, `release`, `release-prep`, `nightly-compliance`, `quality-report` | classic PAT with `read:packages`; reads the Spicule artifacts on GitHub Packages (the auto token cannot read cross-org) | owner | Maven cannot resolve dependencies; build jobs fail. Required. See AGENTS.md |
 | `CLAUDE_CODE_OAUTH_TOKEN` | `claude`, `claude-code-review`, `auto-review` | authenticates Claude Code | owner | those three workflows cannot run; nothing gating depends on them |
-| `NPM_TOKEN` | `release` (npm embed packages), `design-system` | npm Automation token for the `@concepttocloud` scope | owner | `npm publish` cannot authenticate; the design-system publish step and the release npm jobs fail |
+| `NPM_TOKEN` | `release` (npm embed packages), `design-system` (`publish` job only, environment `npm-publish`) | npm Automation token for the `@concepttocloud` scope | owner | `npm publish` cannot authenticate; the design-system publish step and the release npm jobs fail |
 | `DOCS_SITE_PAT` | `release` (`docs-changelog`) | PAT with `repo` on `spiculedata/saiku-cloud` to open the changelog PR | owner | the job logs a warning and skips the docs PR; the release does not fail |
 | `PREVIEW_SSH_PRIVATE_KEY` | `preview-env`, `preview-command`, `preview-reaper` | SSH key authorised on the preview box only | owner | with `PREVIEW_SSH_TARGET` set, the host-access step fails; with it empty the workflows skip first |
 | `TAILSCALE_OAUTH_CLIENT_ID`, `TAILSCALE_OAUTH_SECRET` | same three | OAuth client owning `tag:ci`, to put the runner on the tailnet | owner | as above |
