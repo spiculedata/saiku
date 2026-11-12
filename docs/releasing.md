@@ -34,6 +34,28 @@ publishes with `npm publish --provenance` like the embed packages (see
 *dependency* graph is still described: it is an npm workspace of `saiku-ui`, so
 it shows up as a component in the UI SBOM below.
 
+## Who may release: the `guard` job and tag protection (saiku#2333)
+
+Provenance only proves *which workflow and ref* built an artifact, so a release must
+also be restricted to commits that went through the release process. `release.yml`
+starts with a credential-free `guard` job that every other job depends on. It fails
+the run, before any `packages: write`, `id-token: write` or `NPM_TOKEN` job starts,
+unless:
+
+- the tag matches `vMAJOR.MINOR.PATCH[-suffix]` and exists;
+- on a tag push, the tag resolves to the pushed commit;
+- the tagged commit is an ancestor of `origin/main`.
+
+Every build and publish job then checks out the commit the guard verified
+(`needs.guard.outputs.sha`), so a manual `workflow_dispatch` of `release.yml` from a
+feature branch builds the tagged commit on `main`, not the branch. Re-running a
+release for an existing tag on `main` (the repair path) still works.
+
+Maintainer settings that are not in git (repository admin): add a **tag ruleset**
+named `release tags` targeting `refs/tags/v*` with *Restrict creations*, *Restrict
+updates* and *Restrict deletions*, bypass limited to the Repository admin role; and
+put the publishing jobs behind a `release` environment with required reviewers.
+
 ## Credential scoping: no write token during a build (saiku#1993)
 
 The `jar` job is the *untrusted* job: it runs `mvn verify` (the full test
