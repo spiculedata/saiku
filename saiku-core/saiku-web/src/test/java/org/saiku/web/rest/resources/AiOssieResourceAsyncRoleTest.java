@@ -47,8 +47,7 @@ public class AiOssieResourceAsyncRoleTest {
         // This class exercises the submit-time ROLE guards (saiku#2323), not the AI policy. Wire an
         // explicit FULL guard — otherwise the schema-only policy gate on executeAsync (saiku#2322)
         // refuses AGGREGATED_RESULT_VALUES before the role validation this test is here to assert.
-        resource.setAiPolicyGuard(
-                new org.saiku.service.olap.ai.AiPolicyGuard(org.saiku.service.olap.ai.AiPolicy.FULL));
+        resource.setAiPolicyGuard(new org.saiku.service.olap.ai.AiPolicyGuard(org.saiku.service.olap.ai.AiPolicy.FULL));
         // The worker never runs in the deny test (validation fails first); the stub query service
         // returning null is fine for the accept case, which only asserts the 202 envelope.
         async = new OssieAsyncQueryService(new OssieQueryService());
