@@ -24,7 +24,6 @@ currently run a paid bug bounty program.
 ## What's in scope
 
 - The current major version (Saiku 4.x) of the open-source build
-- [Saiku Cloud](https://cloud.saiku.bi) production endpoints
 - The AI Query API surfaces (`/rest/saiku/api/ai/*`)
 - The MCP endpoint (`/rest/saiku/api/mcp`)
 - The Ossie library

@@ -287,10 +287,12 @@ Ossie models live at `/rest/saiku/api/ai/ossie/models`:
 tools plus five Ossie tools. Ask "what Ossie models are available?"
 and let the agent take it from there.
 
-**Saiku Cloud** — the same Ossie surface ships in [Saiku
-Cloud](https://cloud.saiku.bi/) alongside the OLAP tooling. Point it
-at your dbt project, or write your own Ossie YAML from scratch, and
-you get the whole workbench + AI query + MCP surface out of the box.
+**Self-hosted** — the same Ossie surface ships in the open-source
+server alongside the OLAP tooling. Point it at your dbt project, or
+write your own Ossie YAML from scratch, and you get the whole
+workbench + AI query + MCP surface out of the box. (This section
+originally pointed at Saiku Cloud, which was discontinued in November
+2026.)
 
 ## What's next
 
@@ -349,7 +351,7 @@ find us in the Ossie working group.
 ---
 
 **Try it now:**
-- [Saiku Cloud](https://cloud.saiku.bi) — production, your data
+- `docker run -p 8080:8080 ghcr.io/spiculedata/saiku` — production, your data (Saiku Cloud, previously listed here, was discontinued in November 2026)
 - [demo.saiku.bi](https://demo.saiku.bi) — live demo, three Ossie models, no signup
 - [docs.saiku.bi/api/ai-ossie](https://docs.saiku.bi/api/ai-ossie/) — full API reference
 - [docs.saiku.bi/api/dbt-hookup](https://docs.saiku.bi/api/dbt-hookup/) — dbt integration guide
