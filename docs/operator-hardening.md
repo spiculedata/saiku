@@ -1,9 +1,10 @@
 # Operator hardening knobs
 
 Configuration reference for the guardrails an operator is expected to tune:
-the SMTP relay SSRF gate on the admin mail wizard, and the daily LLM cost
-budget on the AI ask surface. Both were added under
-[#1918](https://github.com/spiculedata/saiku/issues/1918).
+the SMTP relay SSRF gate on the admin mail wizard, the daily LLM cost
+budget on the AI ask surface (both added under
+[#1918](https://github.com/spiculedata/saiku/issues/1918)), and the OLAP query
+guardrails (added under [#1914](https://github.com/spiculedata/saiku/issues/1914)).
 
 For the PII annotation contract — which is schema metadata rather than
 deployment configuration — see
@@ -136,3 +137,27 @@ does **not** — telling one tenant that other tenants are spending is nobody's
 useful information, and "try later" is the only actionable answer either way.
 No refusal carries a token count, so the API can't be used to read the ceiling
 back out.
+
+---
+
+## OLAP query guardrails (`saiku.olap.*`)
+
+Every execute path applies server-side limits so a single authenticated request
+cannot run unbounded or exhaust the heap (CWE-400 / CWE-770). They are on by
+default; set them in `saiku.properties` or with `-Dsaiku.olap.<key>=<value>`.
+
+| Property | Default | Effect |
+|---|---|---|
+| `saiku.olap.query.timeout.seconds` | `300` | JDBC statement timeout on every OLAP statement. `0` disables it. A negative or unparseable value falls back to the default. |
+| `saiku.olap.max.rows` | `100000` | Ceiling on drillthrough and export rows and on raw `DRILLTHROUGH` bodies. A client asking for more, or for "everything", gets this value. Not positive falls back to the default; hard maximum 10,000,000. |
+| `saiku.olap.arrow.max.bytes` | `268435456` (256 MiB) | Byte budget of the Arrow allocators behind the cellset and drillthrough IPC writers. |
+
+Mondrian's own deployment-wide backstops in `mondrian.properties` ship with
+non-zero values too: `mondrian.rolap.queryTimeout=300`,
+`mondrian.result.limit=1000000`, `mondrian.rolap.iterationLimit=100000000`.
+Raise them only if a legitimate report needs more, and prefer raising the
+`saiku.olap.*` ceilings above first.
+
+The Docker image and `dist/run.sh` / `dist/run.bat` start the JVM with
+`-XX:+ExitOnOutOfMemoryError -XX:MaxRAMPercentage=75`, so an out-of-memory
+condition restarts the process instead of leaving it limping.
