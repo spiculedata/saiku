@@ -41,7 +41,12 @@ jobs:
     # Bot-authored PRs (Dependabot et al) can't run this: the action refuses
     # non-human actors, and bot PRs read from a separate secret store that has
     # no CLAUDE_CODE_OAUTH_TOKEN in it. Skipping keeps their checks clean.
-    if: github.event.pull_request.user.type != 'Bot'
+    #
+    # Same-repository PRs only: the trigger is deliberately `pull_request` (not `_target`) and
+    # a fork PR must never reach this job's secrets (saiku#2334).
+    if: >-
+      github.event.pull_request.user.type != 'Bot' &&
+      github.event.pull_request.head.repo.full_name == github.repository
 
     runs-on: ubuntu-latest
     permissions:
