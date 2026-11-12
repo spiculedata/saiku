@@ -29,6 +29,7 @@ import org.saiku.repository.ScopedRepo;
 import org.saiku.service.ISessionService;
 import org.saiku.service.util.security.Usernames;
 import org.saiku.service.util.security.authorisation.AuthorisationPredicate;
+import org.saiku.web.security.account.AccountStatusFilter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
@@ -47,7 +48,7 @@ import org.springframework.security.web.context.HttpSessionSecurityContextReposi
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.web.context.request.RequestContextHolder;
 
-public class SessionService implements ISessionService {
+public class SessionService implements ISessionService, AccountStatusFilter.SessionHooks {
 
     private static final Logger log = LoggerFactory.getLogger(SessionService.class);
 
@@ -459,6 +460,26 @@ public class SessionService implements ISessionService {
                 }
             }
         }
+    }
+
+    /** saiku#2345: the account was disabled in the managed store; end this login now. */
+    @Override
+    public void onDisabled(HttpServletRequest req) {
+        logout(req);
+    }
+
+    /** saiku#2345: the account was demoted; the cached session roles must not keep advertising the old ones. */
+    @Override
+    public void onDemoted(Authentication reduced) {
+        Map<String, Object> cached = reduced == null ? null : sessionHolder.get(reduced.getPrincipal());
+        if (cached == null) {
+            return;
+        }
+        List<String> roles = new ArrayList<>();
+        for (GrantedAuthority ga : reduced.getAuthorities()) {
+            roles.add(ga.getAuthority());
+        }
+        cached.put("roles", roles);
     }
 
     public void setSessionRepo(org.saiku.repository.ScopedRepo sessionRepo) {
