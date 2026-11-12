@@ -1,0 +1,29 @@
+{
+  "issue": 2327,
+  "title": "A raw DRILLTHROUGH preceded by an MDX comment is row-capped like any other: capRawDrillthrough skips comments, the ResultSet conversion is bounded, and the statement carries setMaxRows",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "a raw DRILLTHROUGH body whose keyword is preceded by an MDX comment (/* */, -- or //)",
+      "then": "capRawDrillthrough skips the comment, recognises the drillthrough and emits MAXROWS no larger than the server ceiling"
+    },
+    {
+      "id": "C2",
+      "given": "RestUtil.convert(ResultSet) called without an explicit limit",
+      "then": "it materialises at most QueryGuardrails.maxRows() rows"
+    },
+    {
+      "id": "C3",
+      "given": "the raw drillthrough execution path in ThinQueryService",
+      "then": "the JDBC statement is bounded with setMaxRows(QueryGuardrails.maxRows()) as well as the MDX MAXROWS"
+    },
+    {
+      "id": "C4",
+      "given": "the regression tests for C1 and C2",
+      "then": "they ship with the fix"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}
