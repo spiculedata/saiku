@@ -399,14 +399,15 @@ public class AiOssieResource {
             }
             // saiku#1393 — strip fields/metrics the caller's roles deny before the agent-facing
             // schema is built, same as the workbench discover endpoint.
-            semantic = OssieRoleContext.filterHidden(semantic, Set.copyOf(SessionRoles.currentRoles()));
+            Set<String> callerRoles = Set.copyOf(SessionRoles.currentRoles());
+            semantic = OssieRoleContext.filterHidden(semantic, callerRoles);
             // #1404 — ?refresh=true drops the projector's cached samples for this model so the
             // next fetch re-runs the SELECT DISTINCTs against the warehouse.
             if (Boolean.TRUE.equals(refresh)) {
                 projector.invalidateSampleCache(connectionName, semantic.getName());
             }
             Connection jdbc = openWarehouseConnection(connectionName);
-            OssieAiSchema schema = projector.project(connectionName, semantic, jdbc);
+            OssieAiSchema schema = projector.project(connectionName, semantic, jdbc, callerRoles);
             return Response.ok(schema).type(MediaType.APPLICATION_JSON).build();
         } catch (IllegalArgumentException e) {
             return badRequest("connection", e.getMessage(), List.of());
@@ -671,7 +672,12 @@ public class AiOssieResource {
         try {
             OssieModelDto semantic = ossieDiscoverService.getModel(connection);
             if (modelName == null || modelName.isBlank()) modelName = semantic.getName();
-            OssieAiSchema schema = projector.project(connection, semantic, openWarehouseConnection(connection));
+            // saiku#2324 — same role scoping as GET /schema: denied fields (and their sample
+            // values) must not reach the LLM prompt, and samples honour the row predicates.
+            Set<String> callerRoles = Set.copyOf(SessionRoles.currentRoles());
+            semantic = OssieRoleContext.filterHidden(semantic, callerRoles);
+            OssieAiSchema schema =
+                    projector.project(connection, semantic, openWarehouseConnection(connection), callerRoles);
 
             org.saiku.service.ossie.ai.OssieAiAskService.AskResult ar =
                     askService.ask(question, schema, connection, modelName, history);
@@ -1189,6 +1195,11 @@ public class AiOssieResource {
             if (modelName != null && !modelName.isBlank() && !modelName.equalsIgnoreCase(semantic.getName())) {
                 return badRequest("model", "unknown model '" + modelName + "'", List.of(semantic.getName()));
             }
+            // saiku#2324 — resolve the field from the caller's role-filtered view (a denied field
+            // is "unknown", same as in GET /schema) and scope the query to their row predicates.
+            Set<String> callerRoles = Set.copyOf(SessionRoles.currentRoles());
+            OssieRoleContext roleContext = OssieRoleContext.resolve(callerRoles, semantic);
+            semantic = OssieRoleContext.filterHidden(semantic, callerRoles);
             OssieModelDto.Dataset ds = null;
             for (OssieModelDto.Dataset d : semantic.getDatasets()) {
                 if (d.getName().equalsIgnoreCase(datasetName)) {
@@ -1221,7 +1232,8 @@ public class AiOssieResource {
                 return error("could not open warehouse connection for '" + connectionName + "'");
             }
             try {
-                List<String> matches = runValuesSearch(jdbc, ds, field, q, cap);
+                List<String> matches =
+                        runValuesSearch(jdbc, ds, field, q, cap, roleContext.combinedRowPredicateFor(ds.getName()));
                 Map<String, Object> body = new LinkedHashMap<>();
                 body.put("connection", connectionName);
                 body.put("model", semantic.getName());
@@ -1246,14 +1258,20 @@ public class AiOssieResource {
     }
 
     private List<String> runValuesSearch(
-            Connection jdbc, OssieModelDto.Dataset ds, OssieModelDto.Field field, String q, int cap) throws Exception {
+            Connection jdbc,
+            OssieModelDto.Dataset ds,
+            OssieModelDto.Field field,
+            String q,
+            int cap,
+            String rowPredicate)
+            throws Exception {
         // Ossie's Calcite schema exposes tables under their DATASET name (e.g. "payer"), not
         // their raw source name (e.g. "DIM_PAYER"). Quote it so caseSensitive=false doesn't
         // matter; column stays unquoted so we get the same case-insensitive resolution the
         // projector's sample-value query relies on.
         String src = "\"" + ds.getName() + "\"";
         String col = field.getName();
-        String sql = buildValuesSearchSql(col, src, q, cap);
+        String sql = buildValuesSearchSql(col, src, q, cap, rowPredicate);
         List<String> out = new ArrayList<>();
         try (java.sql.Statement st = jdbc.createStatement();
                 java.sql.ResultSet rs = st.executeQuery(sql)) {
@@ -1277,12 +1295,23 @@ public class AiOssieResource {
      * region is asserted by {@code SearchValuesSqlFuzzTest}.
      */
     static String buildValuesSearchSql(String col, String src, String q, int cap) {
+        return buildValuesSearchSql(col, src, q, cap, null);
+    }
+
+    /**
+     * As above, ANDed with the caller's combined {@code saiku.roles} row predicate (saiku#2324)
+     * when one applies. The predicate is operator-authored model YAML, not caller input, and is
+     * parenthesised so an OR inside it cannot widen the {@code LIKE} filter.
+     */
+    static String buildValuesSearchSql(String col, String src, String q, int cap, String rowPredicate) {
+        String scope = rowPredicate == null ? null : "(" + rowPredicate + ")";
         if (q == null || q.isBlank()) {
-            return "SELECT DISTINCT " + col + " FROM " + src + " LIMIT " + cap;
+            return "SELECT DISTINCT " + col + " FROM " + src + (scope == null ? "" : " WHERE " + scope) + " LIMIT "
+                    + cap;
         }
         String escaped = q.toUpperCase(java.util.Locale.ROOT).replace("'", "''");
-        return "SELECT DISTINCT " + col + " FROM " + src + " WHERE UPPER(CAST(" + col + " AS VARCHAR)) LIKE '%"
-                + escaped + "%' LIMIT " + cap;
+        return "SELECT DISTINCT " + col + " FROM " + src + " WHERE " + (scope == null ? "" : scope + " AND ")
+                + "UPPER(CAST(" + col + " AS VARCHAR)) LIKE '%" + escaped + "%' LIMIT " + cap;
     }
 
     // -------------------------------------------------------------------
