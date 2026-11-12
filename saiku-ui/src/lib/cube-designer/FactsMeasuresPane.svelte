@@ -178,6 +178,7 @@
 	                     read-only "Table name + chosen measures"
 	     The whole pane's Edit pill governs state 4; the inner Confirm
 	     gates the 2→3 transition; Measures' Edit pill toggles inside 3. -->
+		<!-- svelte-ignore a11y_no_static_element_interactions -- drag-and-drop reorder target for the facts pane -->
 		<section
 			class="flex min-w-0 flex-1 flex-col overflow-hidden rounded-md border bg-elev-1 transition-colors {isReorderTarget
 				? 'border-primary'
@@ -261,6 +262,7 @@
 					     handle + the whole row are the drag source. -->
 						<div class="flex flex-col gap-1">
 							{#each numericCols.filter((c) => factsSelectedMeasures.has(c.name)) as col (col.name)}
+								<!-- svelte-ignore a11y_no_static_element_interactions -- draggable measure chip -->
 								<div
 									class="flex cursor-grab items-center gap-1.5 rounded border bg-elev-2 px-1.5 py-1 text-[11px] hover:bg-accent/30 active:cursor-grabbing"
 									style:border-color="hsl(var(--border))"
@@ -567,6 +569,7 @@
 		<!-- 2x width vs the calculations pane: MG editor now hosts the
 			     fact + measures + dimensions sub-columns side-by-side, so it
 			     needs the bulk of the horizontal real estate. -->
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<section
 			class="flex min-w-0 flex-[2] flex-col overflow-hidden rounded-md border bg-elev-1 transition-colors {isReorderTarget
 				? 'border-primary'
@@ -667,6 +670,7 @@
 												     so flipping the const back to `true` re-enables BOTH the
 												     source-side drag affordance and the calc-pane drop target
 												     in lockstep — nothing visual happens while the flag is off. -->
+											<!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
 											<li
 												role="button"
 												tabindex="0"
@@ -823,6 +827,7 @@
 	     measureColumns. -->
 		<!-- Builder is always accessible — measure tokens come from
 			     drag-from-MG-chip via FACTS_MEASURE_MIME. -->
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<section
 			class="flex min-w-0 flex-1 flex-col overflow-hidden rounded-md border bg-elev-1 transition-colors {isReorderTarget
 				? 'border-primary'
@@ -1513,6 +1518,7 @@
 									>
 										<div class="flex min-w-0 flex-1 flex-col leading-tight">
 											{#if isEditing}
+												<!-- svelte-ignore a11y_autofocus -->
 												<input
 													type="text"
 													class="w-full rounded border bg-background px-1 py-0.5 text-[12px] font-medium"
@@ -1545,10 +1551,11 @@
 												     rename mode.  Cursor stays `pointer` from
 												     the row so the whole area reads as one
 												     clickable target with no dead zones. -->
+												<!-- svelte-ignore a11y_no_static_element_interactions -->
 												<span
 													class="truncate font-medium select-none"
-													ondblclick={() => (editingMeasureCaption = `${g.id}::${col}`)}
 													data-testid="workbench-mg-measure-caption"
+													ondblclick={() => (editingMeasureCaption = `${g.id}::${col}`)}
 												>
 													{caption}
 												</span>

@@ -548,6 +548,7 @@
 	// (Step 2 reopened on a cube that's already partly authored) and to
 	// 'edit' when nothing's saved yet — so the empty state reads as
 	// "pick something" rather than a blank list.
+	// svelte-ignore state_referenced_locally — capturing the initial store state to seed the pane mode is intentional
 	let dimensionPaneMode = $state<'edit' | 'saved'>(store.dimensions.length > 0 ? 'saved' : 'edit');
 	// Which source row in the dim picker is currently expanded to preview its
 	// columns/attributes.  One at a time — clicking another row collapses the
@@ -980,6 +981,7 @@
 	// Prefer the store's active cube so the selection SURVIVES the
 	// DimSum-triggered remount (workbenchKey bump); fall back to the loaded
 	// default. store.activeCubeId is kept in sync by the effect below.
+	// svelte-ignore state_referenced_locally — capturing the initial store state to seed the selection is intentional
 	const _resolvedSelectedCubeId =
 		store.activeCubeId && _cubesInit.cubes.some((c) => c.id === store.activeCubeId)
 			? store.activeCubeId
@@ -4456,6 +4458,7 @@
 
 {#snippet dimensionTreeRow(dim: SchemaCanvasDimension)}
 	{@const isCollapsed = collapsedTreeDimensions.has(dim.id)}
+	<!-- svelte-ignore a11y_no_static_element_interactions — drag-and-drop target, keyboard alternatives provided by the inner buttons -->
 	<div
 		class="group flex flex-col rounded transition-colors {dropRingFor({
 			kind: 'dim',
@@ -4661,6 +4664,7 @@
 
 {#snippet hierarchyTreeRow(dim: SchemaCanvasDimension, hier: SchemaCanvasHierarchy)}
 	{@const isCollapsed = collapsedTreeHierarchies.has(hier.id)}
+	<!-- svelte-ignore a11y_no_static_element_interactions — drag-and-drop target, keyboard alternatives provided by the inner buttons -->
 	<div
 		class="group flex flex-col rounded transition-colors {dropRingFor({
 			kind: 'hierarchy',

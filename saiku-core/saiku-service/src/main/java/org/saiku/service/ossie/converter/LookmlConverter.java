@@ -238,17 +238,22 @@ public class LookmlConverter implements VendorModelConverter {
                 case "view", "explore" -> {
                     /* handled above */
                 }
-                case "include" -> diags.add(ConversionDiagnostic.info(
-                        "INCLUDE_IGNORED",
-                        String.valueOf(block.getValue()),
-                        "`include:` is resolved by Looker, not by this converter — upload the included files too."));
-                case "map", "datagroup", "connection", "access_grant", "explore_plus" -> diags.add(
-                        ConversionDiagnostic.info(
-                                "NON_MODEL_BLOCK",
-                                key,
-                                "LookML `" + key + ":` block carries no Ossie equivalent — ignored."));
-                default -> diags.add(ConversionDiagnostic.info(
-                        "UNRECOGNISED_BLOCK", key, "Unrecognised top-level LookML block `" + key + ":` — ignored."));
+                case "include" ->
+                    diags.add(
+                            ConversionDiagnostic.info(
+                                    "INCLUDE_IGNORED",
+                                    String.valueOf(block.getValue()),
+                                    "`include:` is resolved by Looker, not by this converter — upload the included files too."));
+                case "map", "datagroup", "connection", "access_grant", "explore_plus" ->
+                    diags.add(ConversionDiagnostic.info(
+                            "NON_MODEL_BLOCK",
+                            key,
+                            "LookML `" + key + ":` block carries no Ossie equivalent — ignored."));
+                default ->
+                    diags.add(ConversionDiagnostic.info(
+                            "UNRECOGNISED_BLOCK",
+                            key,
+                            "Unrecognised top-level LookML block `" + key + ":` — ignored."));
             }
         }
 
