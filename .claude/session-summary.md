@@ -75,6 +75,11 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-11-12 — fix/2322-ossie-ai-policy-gate — PR #2355 formatting rework
+**Was doing:** fixed the async role test fixture's Spotless violation; local Spotless and licence checks pass, but focused Maven tests stop during dependency resolution with GitHub Packages 401.
+**Now:** use the latest PR #2355 CI result to verify the full build and focused tests; no local edits remain after the rework push.
+**Refs:** #2322, PR #2355
+
 ## 2026-11-10 — feature/1393-role-security-verification — fuzz + E2E coverage for #1393
 **Was doing:** shipped the two remaining acceptance-criteria tests for the Ossie role security (row-predicate fuzz cases in OssieFuzzIT with a two-role restricted pass + hand-computed window totals, and a mocked-backend Playwright spec `ossie-role-visibility.spec.ts` with per-caller fixture overrides).
 **Now:** watch PR CI — the Java side could not compile locally: the hive token has no `read:packages` scope (GitHub Packages returns bare 401 for `bi.saiku.ossie:ossie-sql:0.1.0` and `avatica-server:1.28.0.jar`), so CI is the first compile pass. Prettier + `tsc --strict` on the e2e files pass locally; Chromium cannot launch here (missing libglib-2.0.so.0).
