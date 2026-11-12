@@ -945,6 +945,8 @@ public class ThinQueryService implements Serializable {
             final OlapConnection con = olapDiscoverService.getNativeConnection(cube.getConnection());
             stmt = con.createStatement();
             QueryGuardrails.applyQueryTimeout(stmt);
+            // saiku#2327: JDBC-level bound too, in case the MDX cap is bypassed or ignored.
+            stmt.setMaxRows(QueryGuardrails.maxRows());
             // saiku#1914: the caller supplied raw DRILLTHROUGH MDX with no server cap.
             // Inject/clamp a MAXROWS bound so the fact-table scan is bounded regardless
             // of what the request body asked for.
