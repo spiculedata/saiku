@@ -229,7 +229,8 @@ public class AiOssieResource {
                     summary.put("metricCount", model.getMetrics().size());
                 } catch (Exception e) {
                     log.warn("listing Ossie model failed for connection '{}': {}", c.getName(), e.getMessage());
-                    summary.put("error", e.getMessage());
+                    // saiku#1920: detail stays in the log above; the caller sees only that it failed.
+                    summary.put("error", "model unavailable");
                 }
                 out.add(summary);
             }
@@ -273,7 +274,7 @@ public class AiOssieResource {
             return badRequest("root", e.getMessage(), List.of());
         } catch (Exception e) {
             log.warn("Ossie graph traversal failed (connection='{}', root='{}')", connectionName, root, e);
-            return error("graph traversal failed: " + e.getMessage());
+            return serverError("graph traversal", e);
         }
     }
 
@@ -301,7 +302,7 @@ public class AiOssieResource {
                     .build();
         } catch (Exception e) {
             log.warn("Ossie entity search failed (connection='{}', q='{}')", connectionName, q, e);
-            return error("search failed: " + e.getMessage());
+            return serverError("search", e);
         }
     }
 
@@ -336,7 +337,7 @@ public class AiOssieResource {
             return badRequest("id", e.getMessage(), List.of());
         } catch (Exception e) {
             log.warn("Ossie entity profile failed (connection='{}', id='{}')", connectionName, id, e);
-            return error("entity profile failed: " + e.getMessage());
+            return serverError("entity profile", e);
         }
     }
 
@@ -366,7 +367,7 @@ public class AiOssieResource {
             return badRequest("model", e.getMessage(), List.of());
         } catch (Exception e) {
             log.warn("Ossie signals failed (connection='{}')", connectionName, e);
-            return error("signals failed: " + e.getMessage());
+            return serverError("signals", e);
         }
     }
 
@@ -496,7 +497,7 @@ public class AiOssieResource {
             return badRequest("connection", e.getMessage(), List.of());
         } catch (Exception e) {
             log.error("Ossie semantic export failed for connection='{}' tool='{}'", connectionName, tool, e);
-            return error("semantic export failed: " + e.getMessage());
+            return serverError("semantic export", e);
         }
     }
 
@@ -564,7 +565,7 @@ public class AiOssieResource {
             return badRequest("body", e.getMessage(), List.of());
         } catch (Exception e) {
             log.error("Ossie AI query failed", e);
-            return error("query failed: " + e.getMessage());
+            return serverError("query", e);
         }
     }
 
@@ -778,7 +779,7 @@ public class AiOssieResource {
             return badRequest(e.getField(), e.getMessage(), e.getAvailable());
         } catch (Exception e) {
             log.error("Ossie AI anomaly failed", e);
-            return error("anomaly detection failed: " + e.getMessage());
+            return serverError("anomaly detection", e);
         }
     }
 
@@ -829,7 +830,7 @@ public class AiOssieResource {
             return badRequest(e.getField(), e.getMessage(), e.getAvailable());
         } catch (Exception e) {
             log.error("Ossie AI forecast failed", e);
-            return error("forecast failed: " + e.getMessage());
+            return serverError("forecast", e);
         }
     }
 
@@ -875,7 +876,7 @@ public class AiOssieResource {
             return badRequest(e.getField(), e.getMessage(), e.getAvailable());
         } catch (Exception e) {
             log.error("Ossie AI row-detail failed", e);
-            return error("row-detail failed: " + e.getMessage());
+            return serverError("row-detail", e);
         }
     }
 
@@ -951,7 +952,7 @@ public class AiOssieResource {
             return badRequest(e.getField(), e.getMessage(), e.getAvailable());
         } catch (Exception e) {
             log.error("Ossie AI async submit failed", e);
-            return error("submit failed: " + e.getMessage());
+            return serverError("submit", e);
         }
     }
 
@@ -1139,7 +1140,7 @@ public class AiOssieResource {
             return badRequest("body", e.getMessage(), List.of());
         } catch (Exception e) {
             log.error("Ossie AI query preview failed", e);
-            return error("preview failed: " + e.getMessage());
+            return serverError("preview", e);
         }
     }
 
@@ -1241,7 +1242,7 @@ public class AiOssieResource {
             return badRequest("body", e.getMessage(), List.of());
         } catch (Exception e) {
             log.error("Ossie AI values-search failed", e);
-            return error("values-search failed: " + e.getMessage());
+            return serverError("values-search", e);
         }
     }
 
@@ -1657,6 +1658,26 @@ public class AiOssieResource {
         body.put("message", message);
         body.put("available", available == null ? List.of() : available);
         return Response.status(Response.Status.BAD_REQUEST)
+                .entity(body)
+                .type(MediaType.APPLICATION_JSON)
+                .build();
+    }
+
+    /**
+     * 500 envelope for the catch-all branches (saiku#1920). The exception text can carry the full
+     * SQL (including the caller's row-level-security predicate), JDBC URLs and vendor details, so
+     * it goes to the server log only; the caller gets a stable code and a {@code ref} that appears
+     * in the same log line.
+     */
+    private Response serverError(String op, Exception e) {
+        String ref = UUID.randomUUID().toString().substring(0, 8);
+        log.error("Ossie AI {} failed [ref={}]", op, ref, e);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("error", "SERVER_ERROR");
+        body.put("op", op);
+        body.put("ref", ref);
+        body.put("message", op + " failed; see server log for ref " + ref);
+        return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
                 .entity(body)
                 .type(MediaType.APPLICATION_JSON)
                 .build();

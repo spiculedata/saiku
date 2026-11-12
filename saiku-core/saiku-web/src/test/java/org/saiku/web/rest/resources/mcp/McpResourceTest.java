@@ -234,6 +234,25 @@ public class McpResourceTest {
         assertEquals(0, shortTtl.size());
     }
 
+    /* ----------------------- error echo (saiku#1920) ---------------------- */
+
+    @Test
+    public void internalErrorDoesNotEchoExceptionMessage() throws Exception {
+        String sid = initSession();
+        stubAi.listCubesFailure = new IllegalStateException("jdbc:postgresql://warehouse:5432/dw?password=hunter2");
+
+        ObjectNode params = MAPPER.createObjectNode();
+        params.put("name", "list_cubes");
+        params.set("arguments", MAPPER.createObjectNode());
+        Response resp = resource.handle(rpc("tools/call", 2, params), sid);
+        JsonNode body = MAPPER.valueToTree(resp.getEntity());
+
+        String message = body.path("error").path("message").asText();
+        assertFalse("must not echo the exception text: " + message, message.contains("jdbc:"));
+        assertFalse("must not echo the exception text: " + message, message.contains("hunter2"));
+        assertTrue("must carry a log correlation ref: " + message, message.contains("ref="));
+    }
+
     /* ------------------------------ helpers ------------------------------ */
 
     private String initSession() {
@@ -347,12 +366,16 @@ public class McpResourceTest {
 
     private static final class StubAiQueryResource extends AiQueryResource {
         Response cubesResponse = Response.ok(List.of()).build();
+        RuntimeException listCubesFailure;
         Response executeResponse = Response.ok(new AiQueryResponse()).build();
         final AtomicReference<AiQueryRequest> executeRequest = new AtomicReference<>();
         final AtomicReference<String> executeFormat = new AtomicReference<>();
 
         @Override
         public Response listCubes() {
+            if (listCubesFailure != null) {
+                throw listCubesFailure;
+            }
             return cubesResponse;
         }
 
