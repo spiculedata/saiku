@@ -20,7 +20,7 @@ Publishing is entirely CI-driven. Pushing a `v*` tag runs `release.yml`, which p
    ```bash
    git tag vX.Y.Z origin/main && git push origin vX.Y.Z
    ```
-   If you tagged the wrong commit: `gh run cancel` the release run, `git push origin :refs/tags/vX.Y.Z`, `git tag -d vX.Y.Z`, then re-tag correctly.
+   `release.yml`'s `guard` job refuses any tag whose commit is not reachable from `main`, so tag only the merged `main` HEAD (see docs/releasing.md). If you tagged the wrong commit: `gh run cancel` the release run, `git push origin :refs/tags/vX.Y.Z`, `git tag -d vX.Y.Z`, then re-tag correctly.
 6. **Replace the auto-generated release notes** (a raw commit list) with the changelog section: `gh release edit vX.Y.Z --notes-file <file>`.
 7. **Back-merge `main` into `development`** via a `chore/back-merge-X.Y.Z` PR.
 8. **Post-release:** bump `LATEST_VERSION` in `telemetry/wrangler.toml` (PR to `development`), and redeploy the demo box.
