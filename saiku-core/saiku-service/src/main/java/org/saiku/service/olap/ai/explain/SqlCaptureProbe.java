@@ -42,9 +42,16 @@ import org.apache.logging.log4j.core.config.LoggerConfig;
  * extra records for that window. This is deliberately NOT {@link AutoCloseable}: a {@code close()}
  * inside try-with-resources would hide the fact that level restoration is a global side effect.
  *
- * <p>Threading: Mondrian may log from its own worker threads (segment loading), so the capture is
- * not filtered by thread. The list is synchronized — a probe that silently lost statements would
- * produce a panel that quietly lies, which is worse than the cost.
+ * <p><b>Whose statements (saiku#2328).</b> The loggers are process-global, so while a probe is
+ * open every concurrent user's SQL reaches its appender. The appender therefore accepts an event
+ * only when the probe's {@link Scope} claims it. A scope is evaluated on the LOGGING thread, so it
+ * can recognise Mondrian worker threads (shepherd, segment loading) that are running the explained
+ * execution; the default scope claims only the thread that opened the probe. A statement that is
+ * not provably this execution's is dropped: a panel that misses a line is acceptable, one that
+ * shows another user's SQL (filter literals, role predicates) is not.
+ *
+ * <p>The list is synchronized — a probe that silently lost its own statements would produce a
+ * panel that quietly lies, which is worse than the cost.
  */
 public final class SqlCaptureProbe {
 
@@ -66,7 +73,22 @@ public final class SqlCaptureProbe {
     private final List<String> statements = Collections.synchronizedList(new ArrayList<>());
     private final int maxStatements;
     private final CaptureAppender appender;
+    private final Scope scope;
     private volatile boolean open = true;
+
+    /**
+     * Decides, on the thread that is logging, whether the event being delivered belongs to the
+     * execution this probe was opened for.
+     */
+    @FunctionalInterface
+    public interface Scope {
+        boolean owns();
+
+        /** Claims only events logged by {@code thread} (the default for a probe). */
+        static Scope thread(Thread thread) {
+            return () -> Thread.currentThread() == thread;
+        }
+    }
 
     private final class CaptureAppender extends AbstractAppender {
         CaptureAppender() {
@@ -80,7 +102,7 @@ public final class SqlCaptureProbe {
 
         @Override
         public void append(LogEvent event) {
-            if (!open || event == null || event.getMessage() == null) {
+            if (!open || event == null || event.getMessage() == null || !ownsCurrentEvent()) {
                 return;
             }
             String sql = extractSql(event.getMessage().getFormattedMessage());
@@ -95,19 +117,34 @@ public final class SqlCaptureProbe {
         }
     }
 
-    private SqlCaptureProbe(int maxStatements) {
+    private boolean ownsCurrentEvent() {
+        try {
+            return scope.owns();
+        } catch (RuntimeException e) {
+            // Fail closed: when ownership cannot be established the statement is not shown.
+            return false;
+        }
+    }
+
+    private SqlCaptureProbe(int maxStatements, Scope scope) {
         this.maxStatements = Math.max(1, maxStatements);
+        this.scope = scope;
         this.context = (LoggerContext) LogManager.getContext(SqlCaptureProbe.class.getClassLoader(), false);
         this.appender = new CaptureAppender();
     }
 
     /** Open a probe, lowering the planner loggers to {@code DEBUG}. Must be {@link #close()}d. */
     public static SqlCaptureProbe open() {
-        return open(DEFAULT_MAX_STATEMENTS);
+        return open(Scope.thread(Thread.currentThread()));
     }
 
-    public static SqlCaptureProbe open(int maxStatements) {
-        SqlCaptureProbe probe = new SqlCaptureProbe(maxStatements);
+    /** Open a probe that captures only the events {@code scope} claims. */
+    public static SqlCaptureProbe open(Scope scope) {
+        return open(DEFAULT_MAX_STATEMENTS, scope);
+    }
+
+    public static SqlCaptureProbe open(int maxStatements, Scope scope) {
+        SqlCaptureProbe probe = new SqlCaptureProbe(maxStatements, scope);
         probe.attach();
         return probe;
     }
