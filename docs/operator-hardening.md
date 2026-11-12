@@ -136,3 +136,34 @@ does **not** — telling one tenant that other tenants are spending is nobody's
 useful information, and "try later" is the only actionable answer either way.
 No refusal carries a token count, so the API can't be used to read the ceiling
 back out.
+
+## Login lockout and running behind a reverse proxy (`saiku.auth.trustedProxyHops`)
+
+Failed logins (form login, HTTP Basic, XMLA and the demo email gate share one limiter) are counted in three
+independent budgets inside a 15-minute window, and any one of them blocks further attempts with `429`:
+
+| Budget | Limit | Purpose |
+|---|---|---|
+| (client IP, username) | 5 | one user's typos do not lock out colleagues behind the same NAT or proxy |
+| username, from any IP | 20 | still stops a distributed guessing attack on one account |
+| client IP, any username | 50 | still stops one source enumerating many usernames |
+
+A successful login clears the (IP, username) and username counters.
+
+By default the client IP is the TCP peer and `X-Forwarded-For` is ignored, which is right when Saiku is exposed
+directly. Behind a reverse proxy every user then shares the proxy's address, so the per-IP budgets are shared as
+well. Tell Saiku how many trusted proxies are in front of it:
+
+```bash
+JAVA_OPTS="-Dsaiku.auth.trustedProxyHops=1"
+```
+
+`trustedProxyHops=n` means the last `n` hops are proxies you control, counting the immediate TCP peer. The client
+is the `n`-th entry from the **right** of `X-Forwarded-For`; entries to its left are supplied by the caller and are
+never used. If the header has fewer than `n` entries the peer address is used. Examples:
+
+- one proxy that appends the client address (nginx `proxy_add_x_forwarded_for`, most ingresses): `1`
+- a CDN in front of a load balancer in front of Saiku, each appending: `2`
+
+`saiku.auth.trustForwardedFor=true` is a deprecated alias for `saiku.auth.trustedProxyHops=1`. Never set either
+when clients can reach Saiku without going through the proxy.

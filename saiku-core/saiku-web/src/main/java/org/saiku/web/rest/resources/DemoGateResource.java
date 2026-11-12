@@ -71,14 +71,14 @@ public class DemoGateResource {
         if (!enabled()) return disabled();
         // Rate-limit sends too, so a bot can't make us blast WorkOS (which would
         // bill us per send/verify) — same per-IP limiter as login + verify.
-        if (rateLimiter.isBlocked(req)) return rateLimited();
         String email = email(body);
+        if (rateLimiter.isBlocked(req, email)) return rateLimited();
         if (email == null) return badEmail();
         try {
             gate.provider().sendCode(email);
             return Response.noContent().build();
         } catch (DemoGateException e) {
-            rateLimiter.recordFailure(req);
+            rateLimiter.recordFailure(req, email);
             log.warn("demo gate send failed for {}: {}", email, e.getMessage());
             return providerError("Could not send the code. Please try again.");
         }
@@ -90,8 +90,8 @@ public class DemoGateResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response verify(@Context HttpServletRequest req, Map<String, String> body) {
         if (!enabled()) return disabled();
-        if (rateLimiter.isBlocked(req)) return rateLimited();
         String email = email(body);
+        if (rateLimiter.isBlocked(req, email)) return rateLimited();
         if (email == null) return badEmail();
         String code = body == null ? null : trim(body.get("code"));
         if (code == null || code.isBlank()) {
@@ -102,10 +102,10 @@ public class DemoGateResource {
         try {
             boolean ok = gate.provider().verifyCode(email, code, firstName, lastName);
             if (!ok) {
-                rateLimiter.recordFailure(req);
+                rateLimiter.recordFailure(req, email);
                 return error(400, "INVALID_CODE", "That code is invalid or has expired.", "code");
             }
-            rateLimiter.recordSuccess(req);
+            rateLimiter.recordSuccess(req, email);
             String setCookie = gate.cookie().setCookieHeader(email, secureCookie);
             return Response.noContent().header("Set-Cookie", setCookie).build();
         } catch (DemoGateException e) {

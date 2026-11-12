@@ -74,7 +74,7 @@ public class SessionResource {
             @FormParam("username") String username,
             @FormParam("password") String password) {
         // Rate-limit BEFORE touching the auth manager so attackers can't hammer it.
-        if (rateLimiter.isBlocked(req)) {
+        if (rateLimiter.isBlocked(req, username)) {
             AuditLogger.rateLimitTriggered(req, username);
             return Response.status(429)
                     .header("Retry-After", String.valueOf(rateLimiter.getWindowMs() / 1000))
@@ -83,11 +83,11 @@ public class SessionResource {
         }
         try {
             sessionService.login(req, username, password);
-            rateLimiter.recordSuccess(req);
+            rateLimiter.recordSuccess(req, username);
             AuditLogger.loginSuccess(req, username);
             return Response.ok().build();
         } catch (Exception e) {
-            rateLimiter.recordFailure(req);
+            rateLimiter.recordFailure(req, username);
             AuditLogger.loginFailure(req, username, e.getClass().getSimpleName());
             log.debug("Error logging in:" + username, e);
             return Response.status(Status.UNAUTHORIZED)

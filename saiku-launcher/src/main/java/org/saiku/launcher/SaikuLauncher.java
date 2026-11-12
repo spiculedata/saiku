@@ -245,7 +245,7 @@ public class SaikuLauncher implements Callable<Integer> {
             //    (setForwardedForHeader(null)). Saiku binds plain HTTP directly
             //    by default (no proxy assumed), and LoginRateLimiter / AuditLogger
             //    intentionally key off getRemoteAddr() and only honour
-            //    X-Forwarded-For when saiku.auth.trustForwardedFor=true. If the
+            //    X-Forwarded-For when saiku.auth.trustedProxyHops is set (n > 0). If the
             //    customizer rewrote getRemoteAddr() from X-Forwarded-For, any
             //    client could spoof its IP per request and evade the login rate
             //    limit + forge the audit trail. So we restore only the scheme/host
