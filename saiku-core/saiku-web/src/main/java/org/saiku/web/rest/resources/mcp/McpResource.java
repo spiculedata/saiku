@@ -19,6 +19,7 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.saiku.service.olap.ai.AiQueryRequest;
+import org.saiku.service.olap.ai.OlapAiCubeMetadataService;
 import org.saiku.web.rest.resources.AiQueryResource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -214,7 +215,7 @@ public class McpResource {
                 String hierarchy = optionalString(args, "hierarchy");
                 String level = requiredString(args, "level");
                 String q = optionalString(args, "q");
-                int limit = optionalInt(args, "limit", 20);
+                int limit = Math.min(optionalInt(args, "limit", 20), SEARCH_MEMBERS_MAX);
                 // Same array-wrap as list_cubes — AiQueryResource returns a
                 // List<SimpleCubeElement>; MCP structuredContent must be an
                 // object so the host's validator accepts it.
@@ -333,6 +334,11 @@ public class McpResource {
         // doesn't know about it (it's a query-string param on the REST API).
         ObjectNode copy = args.isObject() ? ((ObjectNode) args).deepCopy() : MAPPER.createObjectNode();
         copy.remove("format");
+        // saiku#2325: an omitted limit would mean "no cap" (0). Bound it for agents; an
+        // explicit limit (including 0) is still honoured.
+        if (!copy.hasNonNull("limit")) {
+            copy.put("limit", RUN_QUERY_DEFAULT_LIMIT);
+        }
         try {
             return MAPPER.treeToValue(copy, AiQueryRequest.class);
         } catch (JsonProcessingException e) {
@@ -350,6 +356,12 @@ public class McpResource {
             + "\"description\":\"The cube id from list_cubes: connection/catalog/schema/cubeName.\"}},"
             + "\"additionalProperties\":false}";
 
+    /** Server-enforced ceiling for {@code search_members}; the schema advertises the same value. */
+    static final int SEARCH_MEMBERS_MAX = OlapAiCubeMetadataService.MAX_SEARCH_LIMIT;
+
+    /** Row limit applied to {@code run_query} / {@code preview_query} when the caller omits one. */
+    static final int RUN_QUERY_DEFAULT_LIMIT = 100;
+
     private static final String SEARCH_MEMBERS_SCHEMA = "{\"type\":\"object\","
             + "\"required\":[\"cube\",\"dimension\",\"level\"],"
             + "\"properties\":{"
@@ -360,7 +372,7 @@ public class McpResource {
             + "\"level\":{\"type\":\"string\"},"
             + "\"q\":{\"type\":\"string\","
             + "\"description\":\"Optional substring filter. Omit to list all members on the level up to limit.\"},"
-            + "\"limit\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":500,\"default\":20}"
+            + "\"limit\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":" + SEARCH_MEMBERS_MAX + ",\"default\":20}"
             + "},\"additionalProperties\":false}";
 
     private static final String RUN_QUERY_SCHEMA = "{\"type\":\"object\",\"required\":[\"cube\",\"measures\"],"
@@ -374,7 +386,9 @@ public class McpResource {
             + "\"columns\":{\"type\":\"array\"},"
             + "\"filters\":{\"type\":\"array\"},"
             + "\"order\":{\"type\":\"array\"},"
-            + "\"limit\":{\"type\":\"integer\"},"
+            + "\"limit\":{\"type\":\"integer\",\"default\":" + RUN_QUERY_DEFAULT_LIMIT + ","
+            + "\"description\":\"Max rows. Defaults to " + RUN_QUERY_DEFAULT_LIMIT
+            + " when omitted; pass a larger value up to 10000, or 0 for no cap.\"},"
             + "\"visualTotals\":{\"type\":\"boolean\"},"
             + "\"nonEmpty\":{\"type\":\"boolean\"},"
             + "\"format\":{\"type\":\"string\",\"enum\":[\"records\",\"matrix\"],"
@@ -385,7 +399,8 @@ public class McpResource {
             + "\"properties\":{"
             + "\"cube\":{},\"measures\":{\"type\":\"array\"},\"rows\":{\"type\":\"array\"},"
             + "\"columns\":{\"type\":\"array\"},\"filters\":{\"type\":\"array\"},"
-            + "\"order\":{\"type\":\"array\"},\"limit\":{\"type\":\"integer\"},"
+            + "\"order\":{\"type\":\"array\"},\"limit\":{\"type\":\"integer\",\"default\":" + RUN_QUERY_DEFAULT_LIMIT
+            + "},"
             + "\"visualTotals\":{\"type\":\"boolean\"},\"nonEmpty\":{\"type\":\"boolean\"}"
             + "},\"additionalProperties\":true}";
 
