@@ -51,6 +51,26 @@ public class SvgSecurityTest {
     }
 
     @Test
+    public void rejectsCssImportInEveryQuotingForm() {
+        rejected("<svg><style>@import \"http://evil/x.css\";</style></svg>");
+        rejected("<svg><style>@import 'http://evil/x.css';</style></svg>");
+        rejected("<svg><style>@import \"file:///etc/passwd\";</style></svg>");
+        rejected("<svg><style>@IMPORT   \"//evil/x.css\";</style></svg>");
+        rejected("<svg><style>@import url(http://evil/x.css);</style></svg>");
+    }
+
+    @Test
+    public void rejectsXmlStylesheetProcessingInstruction() {
+        rejected("<?xml-stylesheet href=\"http://evil/x.css\" type=\"text/css\"?><svg/>");
+        rejected("<?xml-stylesheet type=\"text/css\" href=\"#local\"?><svg/>");
+    }
+
+    @Test
+    public void allowsInlineStyleWithoutImport() {
+        SvgSecurity.requireSafe("<svg><style>.a{fill:red}</style><path class=\"a\" d=\"M0 0\"/></svg>");
+    }
+
+    @Test
     public void allowsSelfContainedSvg() {
         // No refs at all — the normal ECharts chart export.
         SvgSecurity.requireSafe("<svg xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M0 0 L10 10\"/></svg>");

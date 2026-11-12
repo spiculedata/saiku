@@ -35,6 +35,9 @@ public final class SvgSecurity {
                     + "|url\\(\\s*['\"]?([^'\")]*)",
             Pattern.CASE_INSENSITIVE);
 
+    /** Any CSS {@code @import} rule, whatever its target syntax (saiku#2347). */
+    private static final Pattern CSS_IMPORT = Pattern.compile("@\\s*import\\b");
+
     /**
      * @throws IllegalArgumentException if the SVG contains a DOCTYPE or any
      *     external (non-{@code data:}, non-{@code #fragment}) reference.
@@ -45,6 +48,16 @@ public final class SvgSecurity {
         }
         if (svg.toLowerCase(Locale.ROOT).contains("<!doctype")) {
             throw new IllegalArgumentException("SVG DOCTYPE declarations are not allowed");
+        }
+        String lower = svg.toLowerCase(Locale.ROOT);
+        // Chart SVGs are self-contained: no stylesheet ever needs @import (any syntax) or an
+        // xml-stylesheet PI, and the quoted-string form of @import is not caught by REFERENCE.
+        if (CSS_IMPORT.matcher(lower).find()) {
+            throw new IllegalArgumentException("CSS @import is not allowed in exported SVG");
+        }
+        if (lower.contains("<?xml-stylesheet")) {
+            throw new IllegalArgumentException(
+                    "xml-stylesheet processing instructions are not allowed in exported SVG");
         }
         Matcher m = REFERENCE.matcher(svg);
         while (m.find()) {
