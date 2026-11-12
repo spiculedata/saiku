@@ -9,6 +9,8 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
@@ -30,6 +32,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
  */
 public class LoginRateLimitFilter extends OncePerRequestFilter {
 
+    private static final String BASIC_PREFIX = "Basic ";
+
     private final LoginRateLimiter limiter;
 
     public LoginRateLimitFilter(LoginRateLimiter limiter) {
@@ -40,7 +44,7 @@ public class LoginRateLimitFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest req, HttpServletResponse resp, FilterChain chain)
             throws ServletException, IOException {
         String auth = req.getHeader("Authorization");
-        if (auth != null && !auth.isEmpty() && limiter.isBlocked(req)) {
+        if (auth != null && !auth.isEmpty() && limiter.isBlocked(req, basicUsername(auth))) {
             resp.setStatus(429);
             // Window expressed in seconds for Retry-After; conservative
             // upper bound is the full window length.
@@ -52,5 +56,23 @@ public class LoginRateLimitFilter extends OncePerRequestFilter {
             return;
         }
         chain.doFilter(req, resp);
+    }
+
+    /** The username of an HTTP Basic header, or null when it is another scheme or malformed. */
+    static String basicUsername(String authorization) {
+        if (authorization == null || authorization.length() < BASIC_PREFIX.length()) return null;
+        if (!authorization.regionMatches(true, 0, BASIC_PREFIX, 0, BASIC_PREFIX.length())) return null;
+        try {
+            String decoded = new String(
+                    Base64.getDecoder()
+                            .decode(authorization
+                                    .substring(BASIC_PREFIX.length())
+                                    .trim()),
+                    StandardCharsets.UTF_8);
+            int colon = decoded.indexOf(':');
+            return colon > 0 ? decoded.substring(0, colon) : null;
+        } catch (IllegalArgumentException malformed) {
+            return null;
+        }
     }
 }
