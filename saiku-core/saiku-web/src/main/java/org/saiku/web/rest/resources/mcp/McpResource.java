@@ -125,8 +125,11 @@ public class McpResource {
         } catch (SessionRequiredException e) {
             return rpcError(idNode, RPC_INVALID_REQUEST, e.getMessage(), null);
         } catch (RuntimeException e) {
-            log.error("MCP request handling failed for method={}", method, e);
-            return rpcError(idNode, RPC_INTERNAL_ERROR, "Internal error: " + e.getMessage(), sessionId);
+            // saiku#1920: the message can carry SQL, JDBC URLs or RLS predicates and an MCP host
+            // feeds it to the model. Log it with a ref; return only the ref.
+            String ref = java.util.UUID.randomUUID().toString().substring(0, 8);
+            log.error("MCP request handling failed for method={} [ref={}]", method, ref, e);
+            return rpcError(idNode, RPC_INTERNAL_ERROR, "Internal error (ref=" + ref + ")", sessionId);
         }
     }
 
