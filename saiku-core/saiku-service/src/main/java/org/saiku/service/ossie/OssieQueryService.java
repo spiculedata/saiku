@@ -87,6 +87,23 @@ public class OssieQueryService {
     }
 
     /**
+     * The warehouse JDBC URL of an Ossie connection, so the translator can decide how string
+     * literals must be treated for that dialect (saiku#2319). Null when it cannot be resolved,
+     * which the translator treats as an unknown (backslash-escaping) dialect.
+     */
+    private String warehouseJdbcUrl(String connectionName) {
+        try {
+            ISaikuConnection conn = olapDiscoverService.getConnectionManager().getConnection(connectionName);
+            return conn == null || conn.getProperties() == null
+                    ? null
+                    : conn.getProperties().getProperty(ISaikuConnection.URL_KEY);
+        } catch (Exception e) {
+            log.debug("could not resolve the warehouse URL of '{}': {}", connectionName, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
      * Translate {@code model} into the SQL string that {@link #execute} would dispatch, without
      * touching the connection or running anything. Powers the workbench's "Show SQL" affordance
      * so users can inspect the SQL their shelf state produces.
@@ -98,7 +115,7 @@ public class OssieQueryService {
             throw new IllegalArgumentException("OssieQueryModel.connection is required");
         }
         OssieModelDto semantic = discoverService.getModel(connectionName);
-        return translator.translate(model, semantic, getSpringRoles());
+        return translator.translate(model, semantic, getSpringRoles(), warehouseJdbcUrl(connectionName));
     }
 
     /**
@@ -116,7 +133,7 @@ public class OssieQueryService {
             throw new IllegalArgumentException("OssieQueryModel.connection is required");
         }
         OssieModelDto semantic = discoverService.getModel(connectionName);
-        String sql = translator.translate(model, semantic, getSpringRoles());
+        String sql = translator.translate(model, semantic, getSpringRoles(), warehouseJdbcUrl(connectionName));
         log.info("Ossie execute (query='{}', connection='{}'): {}", tq.getName(), connectionName, sql);
 
         long startMs = System.currentTimeMillis();
