@@ -21,6 +21,7 @@ import org.saiku.web.embed.EmbedToken;
 import org.saiku.web.embed.EmbedTokenStore;
 import org.saiku.web.schedule.OwnerIdentity;
 import org.saiku.web.schedule.OwnerIdentityResolver;
+import org.saiku.web.security.TokenPrincipals;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -290,6 +291,8 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
             throws IOException, ServletException {
         List<SimpleGrantedAuthority> authorities = new ArrayList<>();
         authorities.add(new SimpleGrantedAuthority(GUEST_ROLE));
+        // saiku#2343: marker so the fallback URL rules (real users only) reject this guest.
+        authorities.add(new SimpleGrantedAuthority(TokenPrincipals.TOKEN_PRINCIPAL_ROLE));
         // saiku#1435: the author role is added ONLY for an authoring identity, and
         // only after the tenant pin above has been proven. It is what opens the
         // /embed/authoring/** Spring rule, so a read token structurally cannot

@@ -81,8 +81,8 @@ public class ScimAuthFilterTest {
         Authentication auth = seen.get();
         assertNotNull("the chain must run with a SCIM principal", auth);
         assertEquals(
-                ScimAuthFilter.SCIM_ROLE,
-                auth.getAuthorities().iterator().next().getAuthority());
+                java.util.Set.of(ScimAuthFilter.SCIM_ROLE, org.saiku.web.security.TokenPrincipals.TOKEN_PRINCIPAL_ROLE),
+                auth.getAuthorities().stream().map(a -> a.getAuthority()).collect(java.util.stream.Collectors.toSet()));
         // The token metadata is what the audit line carries (label + IdP), and the resources
         // read it from the same place.
         assertNotNull(token.get());
