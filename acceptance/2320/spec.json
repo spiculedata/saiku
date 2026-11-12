@@ -1,0 +1,24 @@
+{
+  "issue": 2320,
+  "title": "No DuckDB/H2 file-engine confinement in core: admin datasource + schema can read host files and reach the network",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "a DuckDB datasource opened by Saiku with default settings",
+      "then": "core adds enable_external_access=false, an allowed_directories list confined to saiku.home and lock_configuration=true, and applies it in every connection-open path"
+    },
+    {
+      "id": "C2",
+      "given": "an H2 datasource URL whose database file lies outside saiku.home",
+      "then": "the JdbcUrlPolicy chokepoint rejects it unless the operator has opted out"
+    },
+    {
+      "id": "C3",
+      "given": "an operator who needs the previous behaviour",
+      "then": "an explicit saiku.jdbc.fileEngineConfinement=false opt-out exists and is documented in docs/operator-hardening.md"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 30
+}
