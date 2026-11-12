@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.util.List;
 import org.saiku.web.schedule.OwnerIdentity;
 import org.saiku.web.schedule.OwnerIdentityResolver;
+import org.saiku.web.security.RequestPaths;
 import org.saiku.web.share.ShareToken;
 import org.saiku.web.share.ShareTokenStore;
 import org.slf4j.Logger;
@@ -71,7 +72,7 @@ public class ShareTokenAuthFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest req, HttpServletResponse resp, FilterChain chain)
             throws ServletException, IOException {
-        String path = pathWithinApp(req);
+        String path = RequestPaths.pathWithinApplication(req);
         if (!path.startsWith(VIEW_PREFIX)) {
             chain.doFilter(req, resp);
             return;
@@ -156,17 +157,6 @@ public class ShareTokenAuthFilter extends OncePerRequestFilter {
     private static String extractToken(HttpServletRequest req) {
         String h = req.getHeader(TOKEN_HEADER);
         return (h == null || h.isBlank()) ? null : h.trim();
-    }
-
-    /** Request URI minus the context path, so matching is independent of the
-     *  deployment context (the launcher serves at root, a WAR may not). */
-    private static String pathWithinApp(HttpServletRequest req) {
-        String uri = req.getRequestURI();
-        String ctx = req.getContextPath();
-        if (ctx != null && !ctx.isEmpty() && uri.startsWith(ctx)) {
-            return uri.substring(ctx.length());
-        }
-        return uri;
     }
 
     /** Immutable carrier for the token-pinned dashboard + the owner's data scope. */

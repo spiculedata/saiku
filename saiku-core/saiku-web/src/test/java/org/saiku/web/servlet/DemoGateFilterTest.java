@@ -7,6 +7,7 @@ package org.saiku.web.servlet;
 import static org.junit.Assert.*;
 
 import org.junit.Test;
+import org.springframework.mock.web.MockHttpServletRequest;
 
 /** Path-classification logic for the demo gate — the security-critical part. */
 public class DemoGateFilterTest {
@@ -39,10 +40,32 @@ public class DemoGateFilterTest {
     }
 
     @Test
-    public void nonSaikuAndNullPathsAreNotGated() {
+    public void nonSaikuPathsAreNotGated() {
         assertFalse(DemoGateFilter.requiresVerification("/ui/index.html"));
         assertFalse(DemoGateFilter.requiresVerification("/rest/other/thing"));
-        assertFalse(DemoGateFilter.requiresVerification(null));
+    }
+
+    @Test
+    public void nullPathFailsClosed() {
+        // null = the path could not be normalised (#2342); never wave it through.
+        assertTrue(DemoGateFilter.requiresVerification((String) null));
+    }
+
+    @Test
+    public void percentEncodedPrefix_isStillGated() {
+        assertTrue(DemoGateFilter.requiresVerification(new MockHttpServletRequest("POST", "/%72est/saiku/session")));
+        assertTrue(DemoGateFilter.requiresVerification(new MockHttpServletRequest("GET", "/rest//saiku/./session")));
+    }
+
+    @Test
+    public void percentEncodedAllowlistEntry_isStillAllowlisted() {
+        assertFalse(DemoGateFilter.requiresVerification(new MockHttpServletRequest("GET", "/%72est/saiku/info")));
+    }
+
+    @Test
+    public void nonNormalisableRequestPath_isGated() {
+        assertTrue(
+                DemoGateFilter.requiresVerification(new MockHttpServletRequest("GET", "/rest/saiku/info/../session")));
     }
 
     @Test

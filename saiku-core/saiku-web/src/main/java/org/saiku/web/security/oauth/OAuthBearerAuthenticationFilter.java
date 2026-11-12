@@ -10,6 +10,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.List;
+import org.saiku.web.security.RequestPaths;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.GrantedAuthority;
@@ -68,7 +69,8 @@ public class OAuthBearerAuthenticationFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
 
-        if (!pathWithinApp(request).startsWith(MCP_PATH_PREFIX)) {
+        String path = RequestPaths.pathWithinApplication(request);
+        if (path == null || !path.startsWith(MCP_PATH_PREFIX)) {
             chain.doFilter(request, response);
             return;
         }
@@ -110,16 +112,5 @@ public class OAuthBearerAuthenticationFilter extends OncePerRequestFilter {
         response.setHeader("WWW-Authenticate", "Bearer error=\"invalid_token\"");
         response.setContentType("application/json");
         response.getWriter().write("{\"error\":\"invalid_token\"}");
-    }
-
-    /** Request URI minus the context path — independent of deployment context, mirrors {@code
-     *  EmbedAuthFilter}'s helper of the same name. */
-    private static String pathWithinApp(HttpServletRequest req) {
-        String uri = req.getRequestURI();
-        String ctx = req.getContextPath();
-        if (ctx != null && !ctx.isEmpty() && uri.startsWith(ctx)) {
-            return uri.substring(ctx.length());
-        }
-        return uri;
     }
 }

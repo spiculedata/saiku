@@ -8,6 +8,7 @@ package org.saiku.web.security.csrf;
 
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.regex.Pattern;
+import org.saiku.web.security.RequestPaths;
 import org.springframework.security.web.util.matcher.RequestMatcher;
 
 /**
@@ -72,10 +73,10 @@ public class SaikuCsrfRequestMatcher implements RequestMatcher {
         if (auth != null && !auth.isEmpty()) {
             return false;
         }
-        String uri = request.getRequestURI();
-        String ctx = request.getContextPath();
-        if (ctx != null && !ctx.isEmpty() && uri.startsWith(ctx)) {
-            uri = uri.substring(ctx.length());
+        String uri = RequestPaths.pathWithinApplication(request);
+        if (uri == null) {
+            // Cannot be normalised: fail closed, demand the CSRF token.
+            return true;
         }
         if (LOGIN_PATH.matcher(uri).matches()) {
             return false;
