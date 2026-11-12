@@ -217,13 +217,13 @@ public class AiAskService {
      * AiDataKind#AGGREGATED_RESULT_VALUES}, returns {@code false} — the digest is stripped and the
      * prompt is schema-only.
      */
-    private boolean egressPermitsCellData() {
+    public boolean permitsCellDataEgress() {
         return egressGuard != null && egressGuard.canSend(AiDataKind.AGGREGATED_RESULT_VALUES);
     }
 
     /**
      * Send-time re-gate of the conversation {@code history} (saiku#1553). When the active egress
-     * posture forbids aggregated cell data ({@code !egressPermitsCellData()}), DROP every
+     * posture forbids aggregated cell data ({@code !permitsCellDataEgress()}), DROP every
      * assistant-role turn and keep only the user's own words. Assistant turns replay the model's
      * previously emitted figures ({@code emit_insight} / {@code emit_email_draft} markdown carrying
      * cell-derived values); replaying them back to the LLM would egress that data even at
@@ -249,7 +249,7 @@ public class AiAskService {
 
     /**
      * Send-time re-gate of the {@code currentQuery} snapshot (saiku#1553). When the active egress
-     * posture forbids aggregated cell data ({@code !egressPermitsCellData()}), redact a COPY of the
+     * posture forbids aggregated cell data ({@code !permitsCellDataEgress()}), redact a COPY of the
      * query whose {@code filters[].members} lists (the MDX member unique names like
      * {@code [Customers].[John Smith]} — a cell-derived selection) are cleared, while KEEPING the
      * query structure: measures / rows / columns / cube / filter dimension+hierarchy+level refs. The
@@ -917,13 +917,13 @@ public class AiAskService {
         }
         final boolean hadCellsetOnScreen = cellsetDigest != null && !cellsetDigest.isBlank();
         String effectiveDigest = cellsetDigest;
-        if (hadCellsetOnScreen && !egressPermitsCellData()) effectiveDigest = null;
+        if (hadCellsetOnScreen && !permitsCellDataEgress()) effectiveDigest = null;
 
         // #1553: send-time re-gate of currentQuery — same as askInternal. Redact a COPY (members
         // cleared, structure kept) when egress forbids aggregated cell data; never mutate the
         // caller's object; fail-closed on an unwired/denying guard.
         AiQueryRequest effectiveQuery = currentQuery;
-        if (currentQuery != null && !egressPermitsCellData()) {
+        if (currentQuery != null && !permitsCellDataEgress()) {
             effectiveQuery = redactFilterMembers(currentQuery);
         }
         String currentQueryJson = null;
@@ -945,7 +945,7 @@ public class AiAskService {
         // when egress forbids aggregated cell data, keeping the user's turns. New list, computed
         // once here and reused on every loop turn; the caller's history is never mutated.
         List<NlAskMessage> histLocal = history == null ? List.of() : history;
-        if (!egressPermitsCellData()) {
+        if (!permitsCellDataEgress()) {
             histLocal = dropAssistantTurns(histLocal);
         }
         final List<NlAskMessage> hist = histLocal;
@@ -1066,7 +1066,7 @@ public class AiAskService {
 
             // SEC: never execute or digest when egress is denied — schema-only stops honestly here
             // (also avoids a wasted Mondrian execution).
-            if (!egressPermitsCellData()) {
+            if (!permitsCellDataEgress()) {
                 steps.add(AskOutcome.degraded(
                         "Query built. Enable aggregated AI egress (SAIKU_AI_LLM_EGRESS=aggregated) for an "
                                 + "AI report on the results.",
@@ -1382,7 +1382,7 @@ public class AiAskService {
         // guard the report path uses. The dashboard carries no cellset digest / currentQuery, so
         // history is the only cell-derived egress vector on this seam.
         List<NlAskMessage> effectiveHistory = history == null ? List.of() : history;
-        if (!egressPermitsCellData()) {
+        if (!permitsCellDataEgress()) {
             effectiveHistory = dropAssistantTurns(effectiveHistory);
         }
 
@@ -1595,7 +1595,7 @@ public class AiAskService {
         // still runs — degraded (ungrounded), never refused. Fail-closed: an unwired guard denies
         // egress, so any doubt strips.
         String effectiveDigest = cellsetDigest;
-        if (cellsetDigest != null && !cellsetDigest.isBlank() && !egressPermitsCellData()) {
+        if (cellsetDigest != null && !cellsetDigest.isBlank() && !permitsCellDataEgress()) {
             effectiveDigest = null;
             // No data in the log — just the fact that the digest was withheld by policy.
             log.debug("Cellset digest withheld from LLM by egress policy; ask proceeds schema-only");
@@ -1606,7 +1606,7 @@ public class AiAskService {
         // cell-derived) while keeping the query structure. Copy-not-mutate — the caller's object is
         // untouched. Fail-closed: an unwired/denying guard strips.
         AiQueryRequest effectiveQuery = currentQuery;
-        if (currentQuery != null && !egressPermitsCellData()) {
+        if (currentQuery != null && !permitsCellDataEgress()) {
             effectiveQuery = redactFilterMembers(currentQuery);
         }
         // Serialise the current query into JSON for the provider to embed in the prompt.
@@ -1651,7 +1651,7 @@ public class AiAskService {
         // own words. New list — the caller's history is never mutated. Fail-closed via the same
         // guard as the digest / currentQuery strips.
         List<NlAskMessage> effectiveHistory = history == null ? List.of() : history;
-        if (!egressPermitsCellData()) {
+        if (!permitsCellDataEgress()) {
             effectiveHistory = dropAssistantTurns(effectiveHistory);
         }
 
