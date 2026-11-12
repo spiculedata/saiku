@@ -203,6 +203,11 @@
         <listener-class>org.springframework.web.context.request.RequestContextListener</listener-class>
     </listener>
 
+    <!-- saiku#2341: drop the Saiku session entry (and zero its pass-through credential) when an HTTP session ends. -->
+    <listener>
+        <listener-class>org.saiku.web.service.SessionSecretCleanupListener</listener-class>
+    </listener>
+
 
     <!-- ====================================================================== -->
     <!-- J C R R E M O T I N G S E R V L E T -->

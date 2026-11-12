@@ -397,10 +397,11 @@ public class SecurityAwareConnectionManager extends AbstractConnectionManager
         }
 
         if (username != null) {
-            String password = (String) session.get("password");
+            // saiku#2341: the credential is held outside the session map and read only here.
+            char[] password = sessionService.passthroughCredential();
             datasource.getProperties().setProperty("username", username);
             if (password != null) {
-                datasource.getProperties().setProperty("password", password);
+                datasource.getProperties().setProperty("password", new String(password));
             }
             return datasource;
         }
