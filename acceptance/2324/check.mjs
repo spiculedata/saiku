@@ -70,7 +70,7 @@ claim('C3', 'the sample cache key carries the row predicate', /cacheKey[^;]*rowP
 
 // ---- C4 ------------------------------------------------------------------
 claim('C4', 'ask filters the semantic model by caller roles', /OssieRoleContext\.filterHidden\(/.test(askMethod));
-claim('C4', 'ask projects with the caller roles', /projector\.project\([^;]*SessionRoles/.test(askMethod));
+claim('C4', 'ask projects with the caller roles', /SessionRoles\.currentRoles\(\)/.test(askMethod) && /projector\.project\([^;]*callerRoles/.test(askMethod));
 
 // ---- C5 ------------------------------------------------------------------
 claim('C5', 'row-scoped sample + cache isolation tests exist', /sampleCache|cacheIsolation|differentRowScope/i.test(projectorTest));
