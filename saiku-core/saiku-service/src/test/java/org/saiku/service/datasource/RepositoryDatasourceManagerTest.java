@@ -20,6 +20,11 @@ public class RepositoryDatasourceManagerTest {
 
     private RepositoryDatasourceManager rdManager;
 
+    @org.junit.After
+    public void unbindRequest() {
+        MockHttpSession.unbindRequest();
+    }
+
     @Before
     public void init() {
         rdManager = new RepositoryDatasourceManager();
@@ -569,7 +574,7 @@ public class RepositoryDatasourceManagerTest {
     private ScopedRepo createScopedRepo(Map<String, Object> sessionAttributes) {
         ScopedRepo repo = new ScopedRepo();
 
-        repo.setSession(new MockHttpSession(sessionAttributes));
+        MockHttpSession.bindRequest(sessionAttributes);
 
         return repo;
     }

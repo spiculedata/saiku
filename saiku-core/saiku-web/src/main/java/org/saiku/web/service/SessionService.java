@@ -99,7 +99,6 @@ public class SessionService implements ISessionService {
     public Map<String, Object> login(HttpServletRequest req, String username, String password) {
         HttpSession session = ((HttpServletRequest) req).getSession(true);
         session.getId();
-        sessionRepo.setSession(session);
 
         if (authenticationManager != null) {
             authenticate(req, username, password);
