@@ -1,0 +1,24 @@
+{
+  "issue": 2348,
+  "title": "Security hygiene follow-ups: export filename sanitiser, dead db.tcpServer config, WAR session cookie HttpOnly",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "an export endpoint whose filename comes from a request parameter (chart, xls, csv, pdf, admin download)",
+      "then": "the Content-Disposition header is built by ContentDispositions, which strips everything outside letters, digits and . _ - space, quotes the filename and adds an RFC 5987 filename* form"
+    },
+    {
+      "id": "C2",
+      "given": "saiku-webapp web.xml",
+      "then": "the unread db.tcpServer=-tcpAllowOthers context-param is gone"
+    },
+    {
+      "id": "C3",
+      "given": "a WAR deployment without the launcher's cookie hardening",
+      "then": "web.xml declares the session cookie HttpOnly"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}

@@ -31,6 +31,7 @@ import java.util.*;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.saiku.olap.query2.ThinQuery;
+import org.saiku.web.rest.util.ContentDispositions;
 import org.saiku.web.rest.util.ServletUtil;
 import org.saiku.web.svg.Converter;
 import org.slf4j.Logger;
@@ -280,7 +281,7 @@ public class ExporterResource {
             }
             return Response.ok(b)
                     .type(converter.getContentType())
-                    .header("content-disposition", "attachment; filename = " + name + "." + converter.getExtension())
+                    .header("content-disposition", ContentDispositions.attachment(name, converter.getExtension()))
                     .header("content-length", b.length)
                     .build();
 
