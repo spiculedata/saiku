@@ -9,6 +9,8 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.core.LoggerContext;
@@ -158,6 +160,76 @@ public class SqlCaptureProbeTest {
         SqlCaptureProbe probe = SqlCaptureProbe.open();
         try {
             assertEquals(before, unrelated.isDebugEnabled());
+        } finally {
+            probe.close();
+        }
+    }
+
+    /** saiku#2328: another user's statement, logged on another thread, must never be captured. */
+    @Test
+    public void ignoresAStatementLoggedByAnotherThread() throws Exception {
+        SqlCaptureProbe probe = SqlCaptureProbe.open();
+        try {
+            MONDRIAN_SQL.debug("1: executing sql [select \"mine\" from \"T\" where \"x\" = 1]");
+            Thread stranger = new Thread(() -> MONDRIAN_SQL.debug(
+                    "2: executing sql [select \"other_users_secret\" from \"T\" where \"country\" = 'Italy' and 1=1]"));
+            stranger.start();
+            stranger.join();
+            assertEquals(1, probe.statements().size());
+            assertEquals("select \"mine\" from \"T\" where \"x\" = 1", probe.representativeStatement());
+        } finally {
+            probe.close();
+        }
+    }
+
+    /** Mondrian logs from worker pools, so a scope may claim a worker thread's event as its own. */
+    @Test
+    public void capturesAWorkerThreadStatementWhenTheScopeClaimsIt() throws Exception {
+        AtomicBoolean mine = new AtomicBoolean(true);
+        SqlCaptureProbe probe = SqlCaptureProbe.open(mine::get);
+        try {
+            Thread worker = new Thread(() -> MONDRIAN_SQL.debug("3: executing sql [select 1 from OWN_WORKER_TABLE]"));
+            worker.start();
+            worker.join();
+            mine.set(false);
+            Thread other = new Thread(() -> MONDRIAN_SQL.debug("4: executing sql [select 1 from FOREIGN_TABLE]"));
+            other.start();
+            other.join();
+            assertEquals(List.of("select 1 from OWN_WORKER_TABLE"), probe.statements());
+        } finally {
+            probe.close();
+        }
+    }
+
+    @Test
+    public void interleavedProbesDoNotCrossFeed() throws Exception {
+        SqlCaptureProbe.Scope onlyA = () -> "A".equals(Thread.currentThread().getName());
+        SqlCaptureProbe.Scope onlyB = () -> "B".equals(Thread.currentThread().getName());
+        SqlCaptureProbe probeA = SqlCaptureProbe.open(onlyA);
+        SqlCaptureProbe probeB = SqlCaptureProbe.open(onlyB);
+        try {
+            Thread a = new Thread(() -> MONDRIAN_SQL.debug("5: executing sql [select 'from_a' from TABLE_A]"), "A");
+            Thread b = new Thread(() -> MONDRIAN_SQL.debug("6: executing sql [select 'from_b' from TABLE_B]"), "B");
+            a.start();
+            b.start();
+            a.join();
+            b.join();
+            assertEquals(List.of("select 'from_a' from TABLE_A"), probeA.statements());
+            assertEquals(List.of("select 'from_b' from TABLE_B"), probeB.statements());
+        } finally {
+            probeB.close();
+            probeA.close();
+        }
+    }
+
+    @Test
+    public void aScopeThatThrowsIsTreatedAsNotMine() {
+        SqlCaptureProbe probe = SqlCaptureProbe.open(() -> {
+            throw new IllegalStateException("boom");
+        });
+        try {
+            MONDRIAN_SQL.debug("7: executing sql [select 1 from SOMEBODY_ELSE]");
+            assertFalse(probe.captured());
         } finally {
             probe.close();
         }
