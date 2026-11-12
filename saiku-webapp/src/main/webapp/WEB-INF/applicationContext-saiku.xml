@@ -81,6 +81,7 @@
       <security:intercept-url pattern="/**" access="isFullyAuthenticated()" />
       <security:http-basic entry-point-ref="xmlaBasicAuthChallenge"/>
       <security:custom-filter ref="loginRateLimitFilter" before="BASIC_AUTH_FILTER"/>
+      <security:custom-filter ref="accountStatusFilter" before="FILTER_SECURITY_INTERCEPTOR"/>
       <security:anonymous/>
     </security:http>
 
@@ -448,6 +449,8 @@
            late slot in the chain) so the request attribute is already
            installed by the time we read it. -->
       <security:custom-filter ref="csrfCookieMaterializerFilter" after="BASIC_AUTH_FILTER"/>
+      <!-- saiku#2345: refuse a user disabled in the managed store and drop admin authority removed there. -->
+      <security:custom-filter ref="accountStatusFilter" before="FILTER_SECURITY_INTERCEPTOR"/>
       <security:anonymous/>
     </security:http>
 

@@ -148,20 +148,17 @@ public class JdbcUserDAO extends JdbcDaoSupport implements UserDAO {
         String newsql = prop.getProperty("maxUser");
         String encrypt = servletContext.getInitParameter("db.encryptpassword");
 
+        // saiku#2345: carry the CURRENT flag through; the legacy statements take it as a parameter and
+        // used to pass TRUE, so a role/email edit silently reactivated a deactivated account.
+        Boolean enabled = Boolean.valueOf(currentlyEnabled(user.getId()));
         if (updatepassword) {
             if (encrypt.equals("true")) {
                 user.setPassword(passwordEncoder.encode(user.getPassword()));
             }
             getJdbcTemplate()
-                    .update(
-                            sql,
-                            user.getUsername(),
-                            user.getPassword(),
-                            user.getEmail(),
-                            Boolean.valueOf(true),
-                            user.getId());
+                    .update(sql, user.getUsername(), user.getPassword(), user.getEmail(), enabled, user.getId());
         } else {
-            getJdbcTemplate().update(sql, user.getUsername(), user.getEmail(), Boolean.valueOf(true), user.getId());
+            getJdbcTemplate().update(sql, user.getUsername(), user.getEmail(), enabled, user.getId());
         }
 
         Integer name = getJdbcTemplate().queryForObject(newsql, new Object[] {user.getUsername()}, Integer.class);
@@ -174,6 +171,15 @@ public class JdbcUserDAO extends JdbcDaoSupport implements UserDAO {
 
         insertRole(user);
         return user;
+    }
+
+    /** The row's ENABLED flag; a missing row reads as enabled so the legacy behaviour is unchanged. */
+    private boolean currentlyEnabled(int userId) {
+        try {
+            return findByUserId(userId).isEnabled();
+        } catch (RuntimeException noSuchRow) {
+            return true;
+        }
     }
 
     public void updateRoles(SaikuUser user) {

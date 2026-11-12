@@ -136,3 +136,22 @@ does **not** — telling one tenant that other tenants are spending is nobody's
 useful information, and "try later" is the only actionable answer either way.
 No refusal carries a token count, so the API can't be used to read the ceiling
 back out.
+
+## Disabling and demoting users (admin console, SCIM)
+
+Saiku has two user stores. The bundled authenticator reads `users.properties` (who can log in, with which
+password and roles); the admin console and SCIM write the H2 `USERS` / `USER_ROLES` tables. For an account
+that exists in **both**, the H2 row now wins for revocation:
+
+- `enabled = false` (SCIM `active:false` or `DELETE`, which deactivates) refuses form login and HTTP Basic
+  (`/rest/**`, `/xmla/**`) with `401`, and ends an existing session on its next request.
+- Removing `ROLE_ADMIN` from the row removes admin authority from that user's next request (the admin
+  endpoints answer `403`, `GET /rest/saiku/session` reports `isadmin:false`) without a re-login.
+- Editing a user's roles or email no longer re-enables a deactivated account.
+
+Changes are picked up within about two seconds (lookups are cached briefly).
+
+What this does **not** do: an account that has no H2 row is governed by the authenticator alone;
+**deleting** a row (`DELETE /rest/saiku/admin/users/{id}`) removes it from the managed store, so it does not
+by itself stop that user logging in. To deprovision, deactivate (SCIM) and remove the entry from
+`users.properties` (or the external directory). Passwords are still those of the authenticator.
