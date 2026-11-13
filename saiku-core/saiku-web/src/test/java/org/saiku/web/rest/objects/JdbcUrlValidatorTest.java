@@ -7,9 +7,29 @@ package org.saiku.web.rest.objects;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 
 public class JdbcUrlValidatorTest {
+
+    private String savedHome;
+
+    @Before
+    public void setSaikuHome() {
+        // saiku#2320: H2 file URLs (here relative to the working directory) must sit under saiku.home.
+        savedHome = System.getProperty("saiku.home");
+        System.setProperty("saiku.home", System.getProperty("user.dir"));
+    }
+
+    @After
+    public void restoreSaikuHome() {
+        if (savedHome == null) {
+            System.clearProperty("saiku.home");
+        } else {
+            System.setProperty("saiku.home", savedHome);
+        }
+    }
 
     @Test
     public void rejectsH2InitRunscript() {
