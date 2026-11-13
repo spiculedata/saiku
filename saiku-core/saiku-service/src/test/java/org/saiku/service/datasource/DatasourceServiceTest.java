@@ -68,6 +68,49 @@ public class DatasourceServiceTest {
         assertEquals("id-new", manager.addCalls.get(0).getProperties().getProperty("id"));
     }
 
+    private static SaikuDatasource blobDs(String name, String id, String password) {
+        SaikuDatasource d = ds(name, id);
+        d.getProperties().setProperty("advanced", "true");
+        if (password != null) {
+            d.getProperties().setProperty("password", password);
+        }
+        return d;
+    }
+
+    @Test
+    public void addDatasource_overwriteBlobWithoutPassword_keepsStoredPassword() throws Exception {
+        manager.seed(blobDs("w", "id-old", "stored-pw"));
+
+        svc.addDatasource(blobDs("w", "id-old", null), true, new String[0]);
+
+        assertEquals("stored-pw", manager.addCalls.get(0).getProperties().getProperty("password"));
+    }
+
+    @Test
+    public void addDatasource_overwriteBlobWithEmptyPassword_keepsStoredPassword() throws Exception {
+        manager.seed(blobDs("w", "id-old", "stored-pw"));
+
+        svc.addDatasource(blobDs("w", "id-old", ""), true, new String[0]);
+
+        assertEquals("stored-pw", manager.addCalls.get(0).getProperties().getProperty("password"));
+    }
+
+    @Test
+    public void addDatasource_overwriteBlobWithNewPassword_replacesStored() throws Exception {
+        manager.seed(blobDs("w", "id-old", "stored-pw"));
+
+        svc.addDatasource(blobDs("w", "id-old", "new-pw"), true, new String[0]);
+
+        assertEquals("new-pw", manager.addCalls.get(0).getProperties().getProperty("password"));
+    }
+
+    @Test
+    public void addDatasource_createBlobWithoutPassword_staysEmpty() throws Exception {
+        svc.addDatasource(blobDs("w", "id-1", null), false, new String[0]);
+
+        assertNull(manager.addCalls.get(0).getProperties().getProperty("password"));
+    }
+
     @Test
     public void fetchDataSourceById_returnsMatch() throws Exception {
         manager.seed(ds("alpha", "id-aaa"));

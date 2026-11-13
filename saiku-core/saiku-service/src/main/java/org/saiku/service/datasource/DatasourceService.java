@@ -52,12 +52,36 @@ public class DatasourceService implements Serializable {
             datasources.addDatasource(datasource);
         } else {
             if (overwrite) {
+                SaikuDatasource toStore = keepStoredPassword(datasource, ds);
                 datasources.removeDatasource(ds.getProperties().getProperty("id"));
-                datasources.addDatasource(datasource);
+                datasources.addDatasource(toStore);
             } else {
                 throw new Exception("Datasource Name Already Exists!");
             }
         }
+    }
+
+    /**
+     * saiku#2340: admin responses no longer carry the {@code password=} line of an advanced/csv blob,
+     * so an edit saved without re-typing it arrives with no password. For such a datasource, carry the
+     * stored password over; an explicit non-empty password still replaces it.
+     */
+    static SaikuDatasource keepStoredPassword(SaikuDatasource incoming, SaikuDatasource existing) {
+        java.util.Properties in = incoming.getProperties();
+        java.util.Properties old = existing.getProperties();
+        if (in == null || old == null) {
+            return incoming;
+        }
+        boolean blobMode = "true".equals(in.getProperty("advanced")) || "true".equals(in.getProperty("csv"));
+        String incomingPw = in.getProperty("password");
+        String storedPw = old.getProperty("password");
+        if (!blobMode || (incomingPw != null && !incomingPw.isEmpty()) || storedPw == null || storedPw.isEmpty()) {
+            return incoming;
+        }
+        java.util.Properties merged = new java.util.Properties();
+        merged.putAll(in);
+        merged.setProperty("password", storedPw);
+        return new SaikuDatasource(incoming.getName(), incoming.getType(), merged);
     }
 
     public SaikuDatasource fetchDataSourceById(String id, String[] roles) throws SaikuDataSourceNotFoundException {
