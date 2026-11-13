@@ -84,9 +84,12 @@ every connection path shares it: `JdbcUrlPolicy`. **On by default.**
 - **H2** file databases (`jdbc:h2:<path>`, `file:`, `nio:`, `split:`, `zip:`) must
   live under an allowed root, or the URL is rejected. `mem:`, `tcp:` and `ssl:`
   URLs are not file URLs and are unaffected.
-- **Allowed roots** are `${saiku.home}` plus `saiku.jdbc.allowedFileRoots`. If
-  `saiku.home` is unset, H2 paths cannot be confined and are left alone (as
-  `SchemaFileAccessGuard` does); DuckDB then only gets the other two options.
+- **Allowed roots** are `${saiku.home}` plus `saiku.jdbc.allowedFileRoots`. The
+  launcher always sets `saiku.home`. If neither is set, confinement **fails
+  closed**: H2 file URLs are rejected with an error naming `saiku.home`, and
+  DuckDB still gets `enable_external_access=false` and `lock_configuration=true`
+  with no allowed directories, so it cannot read local files at all. Set
+  `saiku.home` (or `saiku.jdbc.allowedFileRoots`), or opt out below.
 
 | Property | Default | Meaning |
 |---|---|---|

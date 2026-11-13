@@ -111,8 +111,14 @@ final class FileEngineConfinement {
             return url;
         }
         String base = url.endsWith(";") ? url.substring(0, url.length() - 1) : url;
-        return base + ";enable_external_access=false;allowed_directories=" + duckDbDirectoryList() + ";"
-                + LOCKED_MARKER;
+        // No known root: still lock external access, with no allowed directories (fail closed).
+        String dirs = allowedRoots().isEmpty() ? "" : ";allowed_directories=" + duckDbDirectoryList();
+        if (dirs.isEmpty()) {
+            LOG.warn(
+                    "saiku.home is unset and {} is empty: DuckDB local file access is fully disabled",
+                    ALLOWED_ROOTS_PROPERTY);
+        }
+        return base + ";enable_external_access=false" + dirs + ";" + LOCKED_MARKER;
     }
 
     private static String confineMondrianWrapper(String url) {
@@ -177,20 +183,24 @@ final class FileEngineConfinement {
 
     /**
      * Refuse an H2 file database outside the allowed roots. {@code h2Url} is a {@code jdbc:h2:}
-     * URL (not a wrapper). Unconfined when confinement is off or no root can be determined (a
-     * plain WAR without {@code saiku.home}), mirroring {@link SchemaFileAccessGuard}.
+     * URL (not a wrapper). Unconfined only when confinement is off; when no root can be determined (a
+     * plain WAR without {@code saiku.home}) it fails closed: the URL is rejected.
      */
     static void rejectH2PathOutsideRoots(String h2Url) {
         if (!isEnabled()) {
             return;
         }
-        List<Path> roots = allowedRoots();
-        if (roots.isEmpty()) {
-            return;
-        }
         String path = h2FilePath(h2Url);
         if (path == null) {
             return;
+        }
+        List<Path> roots = allowedRoots();
+        if (roots.isEmpty()) {
+            // Fail closed: with no root to anchor against, "confined" would mean "anywhere".
+            LOG.warn("Rejected H2 file database: saiku.home is unset and {} is empty", ALLOWED_ROOTS_PROPERTY);
+            throw new IllegalArgumentException("Invalid datasource JDBC URL: H2 file databases need the saiku.home"
+                    + " system property (or -D" + ALLOWED_ROOTS_PROPERTY + ") to be set (or opt out with -D"
+                    + CONFINEMENT_PROPERTY + "=false)");
         }
         SchemaFileAccessGuard guard = new SchemaFileAccessGuard(roots);
         if (!guard.isAllowed(resolve(path))) {

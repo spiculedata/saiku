@@ -195,8 +195,28 @@ public class FileEngineConfinementTest {
     }
 
     @Test
-    public void h2IsNotConfinedWhenNoRootCanBeDetermined() {
+    public void h2FileUrlIsRejectedWhenSaikuHomeIsUnset() {
         System.clearProperty("saiku.home");
-        JdbcUrlPolicy.validate("jdbc:h2:file:/anywhere/db");
+        try {
+            JdbcUrlPolicy.validate("jdbc:h2:file:/anywhere/db");
+            fail("must fail closed without saiku.home");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage(), expected.getMessage().contains("saiku.home"));
+        }
+        JdbcUrlPolicy.validate("jdbc:h2:mem:x"); // not a file URL
+        System.setProperty(FileEngineConfinement.CONFINEMENT_PROPERTY, "false");
+        JdbcUrlPolicy.validate("jdbc:h2:file:/anywhere/db"); // explicit opt-out
+    }
+
+    @Test
+    public void duckDbWithoutAnyRootStillLocksExternalAccess() {
+        System.clearProperty("saiku.home");
+        String out = JdbcUrlPolicy.confineFileEngines("jdbc:duckdb:");
+        assertTrue(out, out.contains("enable_external_access=false"));
+        assertTrue(out, out.endsWith("lock_configuration=true"));
+        assertFalse(out, out.contains("allowed_directories"));
+
+        System.setProperty(FileEngineConfinement.ALLOWED_ROOTS_PROPERTY, home.toString());
+        assertTrue(JdbcUrlPolicy.confineFileEngines("jdbc:duckdb:").contains("allowed_directories=['" + home + "']"));
     }
 }
