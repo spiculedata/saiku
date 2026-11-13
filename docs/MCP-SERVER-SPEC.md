@@ -173,6 +173,8 @@ Maps to: `GET /saiku/api/ai/schema/{cubeId}`.
 `hierarchy` is optional when the dimension has only one. `q` is optional;
 omit it to list all members on the level up to `limit`.
 
+**Server-enforced limits (saiku#2325):** `limit` is clamped to a maximum of 500 on the server (the schema advertises the same value); `run_query` / `preview_query` default to `limit: 100` when it is omitted (a larger value is honoured up to 10000; `0`, negative or larger values are clamped to 10000, so no-cap is not reachable over MCP). Active sessions are capped by `saiku.mcp.session.max` (default 1000, alongside `saiku.mcp.session.idleTimeoutSeconds`); when full, idle sessions are dropped, then the least recently active one.
+
 **Output:**
 
 ```json
