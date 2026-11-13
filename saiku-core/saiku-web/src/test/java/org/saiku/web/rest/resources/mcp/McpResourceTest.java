@@ -324,9 +324,21 @@ public class McpResourceTest {
     }
 
     @Test
-    public void runQueryExplicitZeroLimitIsPreserved() throws Exception {
+    public void runQueryZeroLimitResolvesToServerMaximum() throws Exception {
         callTool("run_query", runQueryArgs().put("limit", 0));
-        assertEquals(0, stubAi.executeRequest.get().getLimit());
+        assertEquals(10_000, stubAi.executeRequest.get().getLimit());
+    }
+
+    @Test
+    public void runQueryNegativeLimitResolvesToServerMaximum() throws Exception {
+        callTool("run_query", runQueryArgs().put("limit", -3));
+        assertEquals(10_000, stubAi.executeRequest.get().getLimit());
+    }
+
+    @Test
+    public void runQueryHugeLimitIsClampedToServerMaximum() throws Exception {
+        callTool("run_query", runQueryArgs().put("limit", 2_000_000_000));
+        assertEquals(10_000, stubAi.executeRequest.get().getLimit());
     }
 
     /** Minimal stub — captures arguments and returns canned responses. */

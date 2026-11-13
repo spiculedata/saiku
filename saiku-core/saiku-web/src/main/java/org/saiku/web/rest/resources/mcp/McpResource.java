@@ -19,6 +19,7 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.saiku.service.olap.ai.AiQueryRequest;
+import org.saiku.service.olap.ai.AiSchemaConverter;
 import org.saiku.service.olap.ai.OlapAiCubeMetadataService;
 import org.saiku.web.rest.resources.AiQueryResource;
 import org.slf4j.Logger;
@@ -334,10 +335,13 @@ public class McpResource {
         // doesn't know about it (it's a query-string param on the REST API).
         ObjectNode copy = args.isObject() ? ((ObjectNode) args).deepCopy() : MAPPER.createObjectNode();
         copy.remove("format");
-        // saiku#2325: an omitted limit would mean "no cap" (0). Bound it for agents; an
-        // explicit limit (including 0) is still honoured.
+        // saiku#2325: omitted -> default; 0/negative/huge -> server maximum. "No cap" is never
+        // reachable from an MCP caller (an agent can be steered into sending limit:0).
         if (!copy.hasNonNull("limit")) {
             copy.put("limit", RUN_QUERY_DEFAULT_LIMIT);
+        } else {
+            int requested = copy.get("limit").asInt(0);
+            copy.put("limit", requested <= 0 ? RUN_QUERY_MAX_LIMIT : Math.min(requested, RUN_QUERY_MAX_LIMIT));
         }
         try {
             return MAPPER.treeToValue(copy, AiQueryRequest.class);
@@ -361,6 +365,9 @@ public class McpResource {
 
     /** Row limit applied to {@code run_query} / {@code preview_query} when the caller omits one. */
     static final int RUN_QUERY_DEFAULT_LIMIT = 100;
+
+    /** Maximum row limit for {@code run_query} / {@code preview_query}; 0 and larger values resolve to it. */
+    static final int RUN_QUERY_MAX_LIMIT = AiSchemaConverter.AI_QUERY_LIMIT_MAX;
 
     private static final String SEARCH_MEMBERS_SCHEMA = "{\"type\":\"object\","
             + "\"required\":[\"cube\",\"dimension\",\"level\"],"
@@ -388,7 +395,8 @@ public class McpResource {
             + "\"order\":{\"type\":\"array\"},"
             + "\"limit\":{\"type\":\"integer\",\"default\":" + RUN_QUERY_DEFAULT_LIMIT + ","
             + "\"description\":\"Max rows. Defaults to " + RUN_QUERY_DEFAULT_LIMIT
-            + " when omitted; pass a larger value up to 10000, or 0 for no cap.\"},"
+            + " when omitted; values above " + RUN_QUERY_MAX_LIMIT + " (and 0) are clamped to " + RUN_QUERY_MAX_LIMIT
+            + ".\"},"
             + "\"visualTotals\":{\"type\":\"boolean\"},"
             + "\"nonEmpty\":{\"type\":\"boolean\"},"
             + "\"format\":{\"type\":\"string\",\"enum\":[\"records\",\"matrix\"],"
