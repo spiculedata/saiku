@@ -402,8 +402,9 @@ public class DataSourceMapper {
         this.path = path;
     }
 
+    /** saiku#2340: serialised view of the blob, with the {@code password=} line removed. */
     public String getAdvanced() {
-        return advanced;
+        return redactPassword(advanced);
     }
 
     public void setAdvanced(String advanced) {
@@ -434,8 +435,27 @@ public class DataSourceMapper {
         this.enabled = enabled;
     }
 
+    /** saiku#2340: serialised view of the blob, with the {@code password=} line removed. */
     public String getCsv() {
-        return csv;
+        return redactPassword(csv);
+    }
+
+    /**
+     * Drop every {@code password=} line from an advanced/csv property blob so the backend credential
+     * never leaves the server (saiku#2340; the discrete {@code password} field is WRITE_ONLY since
+     * saiku#1165). {@link #toSaikuDataSource()} reads the raw fields, so inbound blobs still parse.
+     */
+    private static String redactPassword(String blob) {
+        if (blob == null) {
+            return null;
+        }
+        StringBuilder out = new StringBuilder(blob.length());
+        for (String line : blob.split("(?<=\\n)")) {
+            if (!line.startsWith("password=")) {
+                out.append(line);
+            }
+        }
+        return out.toString();
     }
 
     public void setCsv(String csv) {
