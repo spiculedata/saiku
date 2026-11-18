@@ -59,6 +59,46 @@ jobs:
           fail-on-severity: high
           comment-summary-in-pr: on-failure
 
+  npm-audit:
+    name: npm audit (saiku-ui, production deps)
+    # Unlike dependency-review (which diffs a PR), this reads the lockfile as it is, so an advisory
+    # published against an already-merged dependency surfaces on the weekly schedule (saiku#2337).
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+      - name: Audit saiku-ui production dependencies
+        working-directory: saiku-ui
+        run: npm audit --omit=dev --audit-level=high
+
+  osv-scan:
+    name: osv-scanner (Java and npm lockfiles)
+    # The OWASP dependency-check lane is opt-in and slow (see header); osv-scanner reads the
+    # poms and lockfiles against the OSV database in seconds, so it can run weekly.
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install osv-scanner
+        env:
+          OSV_SCANNER_VERSION: "2.7.1"
+          OSV_SCANNER_SHA256: "fb7dab19a8bd9bbe5c3189f09d4b7ee1820c9553a23bac202648a56efd2f6ee8"
+        run: |
+          set -euo pipefail
+          curl -sSfL -o osv-scanner \
+            "https://github.com/google/osv-scanner/releases/download/v${OSV_SCANNER_VERSION}/osv-scanner_linux_amd64"
+          echo "${OSV_SCANNER_SHA256}  osv-scanner" | sha256sum -c -
+          sudo install -m 0755 osv-scanner /usr/local/bin/osv-scanner
+      - name: Scan dependency manifests for known advisories
+        run: osv-scanner scan source --recursive .
+
   gitleaks:
     name: gitleaks (committed secrets)
     runs-on: ubuntu-latest

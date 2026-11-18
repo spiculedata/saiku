@@ -176,6 +176,32 @@ public class SearchValuesSqlFuzzTest {
         return out.toString();
     }
 
+    @Test
+    public void rowPredicateScopesTheQueryWithAndWithoutSearchTerm() {
+        String scoped = AiOssieResource.buildValuesSearchSql("country", "\"geography\"", null, 20, "REGION = 'APAC'");
+        assertEquals("SELECT DISTINCT country FROM \"geography\" WHERE (REGION = 'APAC') LIMIT 20", scoped);
+
+        String searched = AiOssieResource.buildValuesSearchSql("country", "\"geography\"", "au", 20, "REGION = 'APAC'");
+        assertEquals(
+                "SELECT DISTINCT country FROM \"geography\" WHERE (REGION = 'APAC') AND UPPER(CAST(country AS VARCHAR))"
+                        + " LIKE ? LIMIT 20",
+                searched);
+    }
+
+    @Test
+    public void rowPredicateOrIsParenthesisedSoItCannotWidenTheSearch() {
+        String sql = AiOssieResource.buildValuesSearchSql(
+                "country", "\"geography\"", "x", 5, "(REGION = 'APAC' OR REGION = 'EMEA')");
+        assertTrue(sql, sql.contains("WHERE ((REGION = 'APAC' OR REGION = 'EMEA')) AND UPPER("));
+    }
+
+    @Test
+    public void nullRowPredicateKeepsTheUnscopedShape() {
+        assertEquals(
+                AiOssieResource.buildValuesSearchSql("country", "\"geography\"", "x", 5),
+                AiOssieResource.buildValuesSearchSql("country", "\"geography\"", "x", 5, null));
+    }
+
     // ------------------------------------------------------------
     // Column + source pickers. Column names are validated against the model before this method
     // fires in production, so we bias toward realistic identifiers. Source strings are always

@@ -71,7 +71,13 @@ case "${1:-serve}" in
     # accurate connection instructions. Empty values are passed through
     # as empty strings so the resource code's blank-check treats them
     # as "not configured".
-    JAVA_OPTS=()
+    #
+    # -XX:-UseBASE64Intrinsics: interim mitigation for CVE-2026-114938 (HotSpot
+    # x86-64 Base64 decode intrinsic). Also set in the Dockerfile's
+    # JAVA_TOOL_OPTIONS; repeated here so it survives a run-time
+    # JAVA_TOOL_OPTIONS that replaces the image's value. Remove once the base
+    # image carries Temurin 21.0.13.1 or later.
+    JAVA_OPTS=(-XX:-UseBASE64Intrinsics)
     if [[ -n "${SAIKU_DEMO:-}" ]]; then
       JAVA_OPTS+=("-Dsaiku.demo=${SAIKU_DEMO}")
     fi

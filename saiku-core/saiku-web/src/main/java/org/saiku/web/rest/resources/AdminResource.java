@@ -42,6 +42,7 @@ import org.saiku.service.user.UserService;
 import org.saiku.service.util.exception.SaikuDataSourceException;
 import org.saiku.service.util.exception.SaikuServiceException;
 import org.saiku.web.rest.objects.DataSourceMapper;
+import org.saiku.web.rest.util.ContentDispositions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -450,7 +451,7 @@ public class AdminResource {
         }
 
         return Response.ok(p.getBytes(), MediaType.APPLICATION_OCTET_STREAM)
-                .header("content-disposition", "attachment; filename = " + id)
+                .header("content-disposition", ContentDispositions.attachment(id))
                 .build();
     }
 

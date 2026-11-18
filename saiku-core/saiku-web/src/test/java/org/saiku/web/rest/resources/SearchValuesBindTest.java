@@ -67,6 +67,6 @@ public class SearchValuesBindTest {
         ds.setName("payer");
         OssieModelDto.Field field = new OssieModelDto.Field();
         field.setName("NAME");
-        return AiOssieResource.runValuesSearch(calcite, ds, field, q, 50);
+        return AiOssieResource.runValuesSearch(calcite, ds, field, q, 50, null);
     }
 }
