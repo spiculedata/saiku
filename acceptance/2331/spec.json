@@ -1,0 +1,19 @@
+{
+  "issue": 2331,
+  "title": "SQLMemberLookup member search applies the caller's Mondrian role member access and the result limit",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "a level annotated SQLMemberLookup is searched through OlapMetaExplorer.getAllMembers",
+      "then": "each SQL hit is resolved through the role-applied cube and dropped when the caller's role cannot see it"
+    },
+    {
+      "id": "C2",
+      "given": "the same search with a limit",
+      "then": "the number of returned members is clamped to the limit"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}

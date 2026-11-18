@@ -1,0 +1,24 @@
+{
+  "issue": 2333,
+  "title": "release.yml publishes only a v* tag whose commit is reachable from main: a guard job gates every publishing job and every build checks out the verified commit",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "release.yml",
+      "then": "it has a credential-free guard job that resolves the tag to a commit, requires it to match the pushed commit on a tag push, and requires it to be an ancestor of origin/main"
+    },
+    {
+      "id": "C2",
+      "given": "every other job in release.yml",
+      "then": "it depends (directly or transitively) on the guard job, so a failed guard stops all publishing on both the tag push and the workflow_dispatch path"
+    },
+    {
+      "id": "C3",
+      "given": "the jobs that build or publish (jar, deploy-packages, docker, npm-embed-build)",
+      "then": "each checks out the commit the guard verified rather than whatever branch the dispatcher picked"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}
