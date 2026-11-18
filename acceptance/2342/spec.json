@@ -1,7 +1,7 @@
 {
   "issue": 2342,
   "title": "Pre-auth, CSRF and gate filters decide on the decoded, normalised application path (the one the container and Spring Security route on), failing closed on a path that cannot be normalised",
-  "kind": "command",
+  "kind": "ui",
   "criteria": [
     {
       "id": "C1",
