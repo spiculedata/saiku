@@ -664,28 +664,6 @@ public class OlapQueryService implements Serializable {
         }
     }
 
-    public byte[] exportDrillthroughCsv(String queryName, int maxrows) {
-        OlapStatement stmt = null;
-        try {
-            final OlapConnection con = olapDiscoverService.getNativeConnection(
-                    getQuery(queryName).getCube().getConnection());
-            stmt = con.createStatement();
-            QueryGuardrails.applyQueryTimeout(stmt);
-            // saiku#1914: server-clamped cap; no bare-DRILLTHROUGH escape hatch.
-            String mdx = "DRILLTHROUGH MAXROWS " + QueryGuardrails.clampMaxRows(maxrows) + " " + getMDXQuery(queryName);
-
-            ResultSet rs = stmt.executeQuery(mdx);
-            return CsvExporter.exportCsv(rs);
-        } catch (SQLException e) {
-            throw new SaikuServiceException("Error DRILLTHROUGH: " + queryName, e);
-        } finally {
-            try {
-                if (stmt != null) stmt.close();
-            } catch (Exception e) {
-            }
-        }
-    }
-
     public byte[] exportResultSetCsv(ResultSet rs) {
         return CsvExporter.exportCsv(rs);
     }

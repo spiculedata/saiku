@@ -14,6 +14,7 @@ import jakarta.ws.rs.core.Response;
 import java.lang.reflect.Proxy;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
+import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Types;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -93,6 +94,37 @@ public class RawDrillthroughResultSetCloseTest {
         assertTrue("Statement must be closed on the failure path", t.stmtClosed.get());
     }
 
+    // ---- legacy QueryResource drillthrough CSV export ----------------------------------------
+
+    @Test
+    public void legacyDrillthroughCsv_closesResultSetAndStatement_afterExport() {
+        TrackingResultSet t = new TrackingResultSet(false);
+        Response resp = legacyCsvExport(t.rs);
+
+        assertEquals(200, resp.getStatus());
+        assertTrue("ResultSet must be closed", t.rsClosed.get());
+        assertTrue("Statement must be closed", t.stmtClosed.get());
+    }
+
+    @Test
+    public void legacyDrillthroughCsv_closesResultSet_whenGetStatementFails() {
+        TrackingResultSet t = new TrackingResultSet(false, true, false);
+        Response resp = legacyCsvExport(t.rs);
+
+        assertEquals(200, resp.getStatus());
+        assertTrue("ResultSet must be closed when getStatement() throws", t.rsClosed.get());
+    }
+
+    @Test
+    public void legacyDrillthroughCsv_closesResultSet_whenStatementCloseFails() {
+        TrackingResultSet t = new TrackingResultSet(false, false, true);
+        Response resp = legacyCsvExport(t.rs);
+
+        assertEquals(200, resp.getStatus());
+        assertTrue("ResultSet must be closed when the statement close throws", t.rsClosed.get());
+        assertTrue("Statement close must be attempted", t.stmtClosed.get());
+    }
+
     // ---- AI Query API drillthrough -----------------------------------------------------------
 
     @Test
@@ -152,6 +184,31 @@ public class RawDrillthroughResultSetCloseTest {
         };
     }
 
+    /** Calls the legacy whole-result drillthrough CSV export with a service that reads {@code rs}. */
+    private static Response legacyCsvExport(final ResultSet rs) {
+        QueryResource resource = new QueryResource();
+        resource.setOlapQueryService(new OlapQueryService() {
+            @Override
+            public ResultSet drillthrough(String queryName, int maxrows, String returns) {
+                return rs;
+            }
+
+            @Override
+            public byte[] exportResultSetCsv(ResultSet r) {
+                try {
+                    StringBuilder out = new StringBuilder();
+                    while (r.next()) {
+                        out.append(r.getString(1)).append('\n');
+                    }
+                    return out.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                } catch (SQLException e) {
+                    throw new IllegalStateException(e);
+                }
+            }
+        });
+        return resource.getDrillthroughExport("q", 1, null, null);
+    }
+
     private static OlapQueryService rawDrillthroughOlapService(final ResultSet rs) {
         return new OlapQueryService() {
             @Override
@@ -180,11 +237,24 @@ public class RawDrillthroughResultSetCloseTest {
         final ResultSet rs;
 
         TrackingResultSet(final boolean failOnNext) {
+            this(failOnNext, false, false);
+        }
+
+        /**
+         * @param failOnNext the first {@code next()} throws, standing in for a read failure
+         * @param failOnGetStatement {@code getStatement()} throws
+         * @param failOnStatementClose the parent statement's {@code close()} throws
+         */
+        TrackingResultSet(
+                final boolean failOnNext, final boolean failOnGetStatement, final boolean failOnStatementClose) {
             final ClassLoader cl = RawDrillthroughResultSetCloseTest.class.getClassLoader();
             final Statement stmt =
                     (Statement) Proxy.newProxyInstance(cl, new Class<?>[] {Statement.class}, (p, m, a) -> {
                         if ("close".equals(m.getName())) {
                             stmtClosed.set(true);
+                            if (failOnStatementClose) {
+                                throw new SQLException("statement close failed");
+                            }
                             return null;
                         }
                         return defaultValue(m.getReturnType());
@@ -207,6 +277,14 @@ public class RawDrillthroughResultSetCloseTest {
                     });
             final int[] cursor = {0};
             this.rs = (ResultSet) Proxy.newProxyInstance(cl, new Class<?>[] {ResultSet.class}, (p, m, a) -> {
+                // A closed result set refuses reads, as a real one does, so a path that closes
+                // before it has copied the rows out produces no row and fails the test.
+                boolean read = "next".equals(m.getName())
+                        || "getMetaData".equals(m.getName())
+                        || m.getName().startsWith("get") && !"getStatement".equals(m.getName());
+                if (read && rsClosed.get()) {
+                    throw new SQLException("ResultSet already closed");
+                }
                 switch (m.getName()) {
                     case "next":
                         if (failOnNext) {
@@ -216,6 +294,9 @@ public class RawDrillthroughResultSetCloseTest {
                     case "getMetaData":
                         return md;
                     case "getStatement":
+                        if (failOnGetStatement) {
+                            throw new SQLException("getStatement failed");
+                        }
                         return stmt;
                     case "getString":
                     case "getObject":
