@@ -62,11 +62,25 @@ public class SearchValuesBindTest {
         assertEquals(4, search(null).size());
     }
 
+    @Test
+    public void rowPredicateScopesTheBoundSearch() throws Exception {
+        // saiku#2324 + saiku#2319: the role's row predicate stays ANDed in when a term is bound.
+        String scope = "NAME <> 'Acme'";
+        assertEquals(List.of(), search("acm", scope));
+        assertEquals(List.of("O'Neil"), search("o'ne", scope));
+        assertEquals(3, search(null, scope).size());
+        assertTrue(search("\\' OR 1=1 --", scope).isEmpty());
+    }
+
     private List<String> search(String q) throws Exception {
+        return search(q, null);
+    }
+
+    private List<String> search(String q, String rowPredicate) throws Exception {
         OssieModelDto.Dataset ds = new OssieModelDto.Dataset();
         ds.setName("payer");
         OssieModelDto.Field field = new OssieModelDto.Field();
         field.setName("NAME");
-        return AiOssieResource.runValuesSearch(calcite, ds, field, q, 50, null);
+        return AiOssieResource.runValuesSearch(calcite, ds, field, q, 50, rowPredicate);
     }
 }
