@@ -96,11 +96,15 @@ public class SearchValuesSqlFuzzTest {
     }
 
     @Test
-    public void singleQuoteInQIsProperlyEscaped() {
-        String sql = AiOssieResource.buildValuesSearchSql("region", "\"customers\"", "O'Neil", 20);
-        // Escaped to O''NEIL (uppercased + doubled quote), inside %..% wrapper.
-        assertTrue("expected escaped quote: " + sql, sql.contains("'%O''NEIL%'"));
-        assertQuotesBalanced(sql, -1, "O'Neil");
+    public void searchTermIsABindParameterNeverPartOfTheSql() {
+        for (String q : HOSTILE_Q) {
+            if (q.isBlank()) continue;
+            String sql = AiOssieResource.buildValuesSearchSql("region", "\"customers\"", q, 20);
+            assertEquals(
+                    "SELECT DISTINCT region FROM \"customers\" WHERE UPPER(CAST(region AS VARCHAR)) LIKE ? LIMIT 20",
+                    sql);
+            assertEquals("%" + q.toUpperCase(java.util.Locale.ROOT) + "%", AiOssieResource.likePattern(q));
+        }
     }
 
     // ------------------------------------------------------------
@@ -178,8 +182,10 @@ public class SearchValuesSqlFuzzTest {
         assertEquals("SELECT DISTINCT country FROM \"geography\" WHERE (REGION = 'APAC') LIMIT 20", scoped);
 
         String searched = AiOssieResource.buildValuesSearchSql("country", "\"geography\"", "au", 20, "REGION = 'APAC'");
-        assertTrue(
-                searched, searched.contains("WHERE (REGION = 'APAC') AND UPPER(CAST(country AS VARCHAR)) LIKE '%AU%'"));
+        assertEquals(
+                "SELECT DISTINCT country FROM \"geography\" WHERE (REGION = 'APAC') AND UPPER(CAST(country AS VARCHAR))"
+                        + " LIKE ? LIMIT 20",
+                searched);
     }
 
     @Test

@@ -65,6 +65,44 @@ can read it.
 
 ---
 
+## File-engine confinement (`saiku.jdbc.fileEngineConfinement`)
+
+DuckDB and H2 are on the JDBC scheme allow-list, and both reach the host: DuckDB
+through `read_text` / `read_csv` / `read_parquet` and, with `httpfs`, over HTTP
+(SSRF to cloud metadata and internal services); H2 through a `file:` database
+anywhere on disk. Datasource creation is admin-only, but the SQL workbench
+reaches the same primitives as a non-admin, so
+[#2320](https://github.com/spiculedata/saiku/issues/2320) confines them where
+every connection path shares it: `JdbcUrlPolicy`. **On by default.**
+
+- **DuckDB** (`jdbc:duckdb:`, also inside a `jdbc:mondrian:Jdbc=` wrapper and the
+  Ossie warehouse URL) opens with `enable_external_access=false`,
+  `allowed_directories=[<allowed roots>]` and `lock_configuration=true`. Local
+  files under the allowed roots stay readable; other paths and all network access
+  are refused, and `SET enable_external_access=true` fails because the
+  configuration is locked.
+- **H2** file databases (`jdbc:h2:<path>`, `file:`, `nio:`, `split:`, `zip:`) must
+  live under an allowed root, or the URL is rejected. `mem:`, `tcp:` and `ssl:`
+  URLs are not file URLs and are unaffected.
+- **Allowed roots** are `${saiku.home}` plus `saiku.jdbc.allowedFileRoots`. The
+  launcher always sets `saiku.home`. If neither is set, confinement **fails
+  closed**: H2 file URLs are rejected with an error naming `saiku.home`, and
+  DuckDB still gets `enable_external_access=false` and `lock_configuration=true`
+  with no allowed directories, so it cannot read local files at all. Set
+  `saiku.home` (or `saiku.jdbc.allowedFileRoots`), or opt out below.
+
+| Property | Default | Meaning |
+|---|---|---|
+| `saiku.jdbc.fileEngineConfinement` | `true` | `false` opts out of all of the above. Use only if you must read DuckDB files over HTTP or keep H2 files outside the allowed roots and cannot list them. |
+| `saiku.jdbc.allowedFileRoots` | *(empty)* | Extra directories (platform path separator) DuckDB may read and H2 may keep databases in, e.g. `/mnt/warehouse:/srv/data`. |
+| `saiku.jdbc.duckdb.allowR2Uploads` | `false` | `true` leaves `jdbc:duckdb:r2://` upload URLs (saiku-cloud) unconfined, because they need `httpfs`. |
+
+Not covered here: `http(s):` Mondrian catalogs (`SaikuVirtualFileHandler`),
+SQLite / Derby / HSQLDB file paths, and `jdbc:quack:` (a remote DuckDB client).
+See the follow-up on #2320.
+
+---
+
 ## AI ask cost budget (`saiku.ai.budget.*`)
 
 The AI ask endpoints used to be capped by call frequency only: 30 requests per
@@ -137,6 +175,8 @@ useful information, and "try later" is the only actionable answer either way.
 No refusal carries a token count, so the API can't be used to read the ceiling
 back out.
 
+---
+
 ## Pass-through datasource credentials (`saiku.passthrough.retainCredential`)
 
 Datasources with `security.type=passthrough` connect to the warehouse as the signed-in user, so Saiku keeps that
@@ -150,3 +190,36 @@ If you use no pass-through datasources, stop retaining the password altogether:
 ```bash
 JAVA_OPTS="-Dsaiku.passthrough.retainCredential=false"
 ```
+
+---
+
+## Login lockout and running behind a reverse proxy (`saiku.auth.trustedProxyHops`)
+
+Failed logins (form login, HTTP Basic, XMLA and the demo email gate share one limiter) are counted in three
+independent budgets inside a 15-minute window, and any one of them blocks further attempts with `429`:
+
+| Budget | Limit | Purpose |
+|---|---|---|
+| (client IP, username) | 5 | one user's typos do not lock out colleagues behind the same NAT or proxy |
+| username, from any IP | 20 | still stops a distributed guessing attack on one account |
+| client IP, any username | 50 | still stops one source enumerating many usernames |
+
+A successful login clears the (IP, username) and username counters.
+
+By default the client IP is the TCP peer and `X-Forwarded-For` is ignored, which is right when Saiku is exposed
+directly. Behind a reverse proxy every user then shares the proxy's address, so the per-IP budgets are shared as
+well. Tell Saiku how many trusted proxies are in front of it:
+
+```bash
+JAVA_OPTS="-Dsaiku.auth.trustedProxyHops=1"
+```
+
+`trustedProxyHops=n` means the last `n` hops are proxies you control, counting the immediate TCP peer. The client
+is the `n`-th entry from the **right** of `X-Forwarded-For`; entries to its left are supplied by the caller and are
+never used. If the header has fewer than `n` entries the peer address is used. Examples:
+
+- one proxy that appends the client address (nginx `proxy_add_x_forwarded_for`, most ingresses): `1`
+- a CDN in front of a load balancer in front of Saiku, each appending: `2`
+
+`saiku.auth.trustForwardedFor=true` is a deprecated alias for `saiku.auth.trustedProxyHops=1`. Never set either
+when clients can reach Saiku without going through the proxy.

@@ -1258,7 +1258,7 @@ public class AiOssieResource {
         }
     }
 
-    private List<String> runValuesSearch(
+    static List<String> runValuesSearch(
             Connection jdbc,
             OssieModelDto.Dataset ds,
             OssieModelDto.Field field,
@@ -1274,11 +1274,16 @@ public class AiOssieResource {
         String col = field.getName();
         String sql = buildValuesSearchSql(col, src, q, cap, rowPredicate);
         List<String> out = new ArrayList<>();
-        try (java.sql.Statement st = jdbc.createStatement();
-                java.sql.ResultSet rs = st.executeQuery(sql)) {
-            while (rs.next()) {
-                Object v = rs.getObject(1);
-                out.add(v == null ? null : String.valueOf(v));
+        // saiku#2319 — the search term is a bind parameter, never part of the SQL text.
+        try (java.sql.PreparedStatement ps = jdbc.prepareStatement(sql)) {
+            if (q != null && !q.isBlank()) {
+                ps.setString(1, likePattern(q));
+            }
+            try (java.sql.ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    Object v = rs.getObject(1);
+                    out.add(v == null ? null : String.valueOf(v));
+                }
             }
         }
         return out;
@@ -1286,14 +1291,14 @@ public class AiOssieResource {
 
     /**
      * Build the DISTINCT-value SELECT emitted by {@code /ai/ossie/values/search}. Package-private
-     * so the SQL construction is fuzz-testable in isolation from the JDBC path.
+     * so the SQL construction is testable in isolation from the JDBC path.
      *
-     * <p>Inlined literal — Calcite's parameter binding on the JDBC adapter drops the binding at
-     * plan time for {@code LIKE} with {@code UPPER}/{@code CAST} wrapping, so we hand-escape the
-     * filter value here. Safety: {@code q} is user-supplied but we single-quote-escape per SQL
-     * standard; {@code col} and {@code src} are validated against the model before we get here.
-     * The invariant that the emitted string always leaves the state machine OUTSIDE any quoted
-     * region is asserted by {@code SearchValuesSqlFuzzTest}.
+     * <p>saiku#2319 — the search term is NOT part of the returned SQL: it is a {@code ?} bind
+     * parameter (see {@link #likePattern}). It used to be hand-escaped by quote-doubling, which
+     * is not enough on MySQL/MariaDB: Calcite pushes the filter down to the warehouse and
+     * re-emits the literal through the warehouse dialect, which does not escape backslashes, so
+     * {@code \'} broke out of the literal. {@code col} and {@code src} are validated against
+     * the model before we get here.
      */
     static String buildValuesSearchSql(String col, String src, String q, int cap) {
         return buildValuesSearchSql(col, src, q, cap, null);
@@ -1310,9 +1315,13 @@ public class AiOssieResource {
             return "SELECT DISTINCT " + col + " FROM " + src + (scope == null ? "" : " WHERE " + scope) + " LIMIT "
                     + cap;
         }
-        String escaped = q.toUpperCase(java.util.Locale.ROOT).replace("'", "''");
         return "SELECT DISTINCT " + col + " FROM " + src + " WHERE " + (scope == null ? "" : scope + " AND ")
-                + "UPPER(CAST(" + col + " AS VARCHAR)) LIKE '%" + escaped + "%' LIMIT " + cap;
+                + "UPPER(CAST(" + col + " AS VARCHAR)) LIKE ? LIMIT " + cap;
+    }
+
+    /** The bound {@code LIKE} pattern for a search term: case-folded, substring match. */
+    static String likePattern(String q) {
+        return "%" + q.toUpperCase(java.util.Locale.ROOT) + "%";
     }
 
     // -------------------------------------------------------------------

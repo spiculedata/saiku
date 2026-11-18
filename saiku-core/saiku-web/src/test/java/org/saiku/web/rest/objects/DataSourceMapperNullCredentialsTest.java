@@ -28,7 +28,8 @@ public class DataSourceMapperNullCredentialsTest {
         DataSourceMapper m = new DataSourceMapper();
         m.setConnectionname("scratch");
         m.setConnectiontype("MONDRIAN");
-        m.setJdbcurl("jdbc:h2:/data/foodmart");
+        // In-memory: a file URL would hit file-engine confinement, which needs saiku.home (saiku#2320).
+        m.setJdbcurl("jdbc:h2:mem:foodmart");
         m.setDriver("org.h2.Driver");
         m.setSchema("file:/data/FoodMart4.xml");
         m.setUsername(username);
