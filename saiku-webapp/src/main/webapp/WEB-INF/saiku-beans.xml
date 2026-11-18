@@ -64,12 +64,24 @@
 
     <bean id="authorisationPredicate" class="org.saiku.service.util.security.authorisation.MustBeAuthenticatedAuthorisation"/>
 
+    <!-- saiku#2345: the managed user store (admin console / SCIM) can disable an account or remove its admin role;
+         the authenticator (users.properties) knows nothing of that. The policy authorises form login and the
+         filter applies it to every authenticated request (main chain and /xmla/**). Accounts with no row in the
+         managed store are left to the authenticator. -->
+    <bean id="accountStatusPolicy" class="org.saiku.web.security.account.AccountStatusPolicy">
+        <property name="userService" ref="userServiceBean"/>
+    </bean>
+    <bean id="accountStatusFilter" class="org.saiku.web.security.account.AccountStatusFilter">
+        <constructor-arg ref="accountStatusPolicy"/>
+        <constructor-arg ref="sessionService"/>
+    </bean>
+
     <bean id="sessionRepo" class="org.saiku.repository.ScopedRepo"/>
 
     <bean id="sessionService" class="org.saiku.web.service.SessionService">
         <property name="sessionRepo" ref="sessionRepo"/>
         <property name="authenticationManager" ref="authenticationManager"/>
-        <property name="authorisationPredicate" ref="authorisationPredicate"/>
+        <property name="authorisationPredicate" ref="accountStatusPolicy"/>
         <property name="orbisAuthEnabled" value="${orbis.auth.enabled}"/>
     </bean>
 

@@ -1,0 +1,24 @@
+{
+  "issue": 2335,
+  "title": "design-system.yml builds in an unprivileged job (no id-token, no npm token, scripts off) and publishes a tarball from a separate job with --ignore-scripts",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "the job that runs npm ci or npm run",
+      "then": "it holds no id-token: write, no NODE_AUTH_TOKEN and no registry-url, and npm ci runs with --ignore-scripts"
+    },
+    {
+      "id": "C2",
+      "given": "the job with id-token: write",
+      "then": "it does not check out the repository or run npm ci / npm run, and its npm publish passes --ignore-scripts and --provenance for a tarball path"
+    },
+    {
+      "id": "C3",
+      "given": "the publish job",
+      "then": "it runs in the npm-publish environment and only when the build is not a dry run"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}
