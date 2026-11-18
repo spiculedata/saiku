@@ -21,6 +21,7 @@ import org.saiku.web.embed.EmbedToken;
 import org.saiku.web.embed.EmbedTokenStore;
 import org.saiku.web.schedule.OwnerIdentity;
 import org.saiku.web.schedule.OwnerIdentityResolver;
+import org.saiku.web.security.RequestPaths;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -148,8 +149,8 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest req, HttpServletResponse resp, FilterChain chain)
             throws ServletException, IOException {
 
-        String path = pathWithinApp(req);
-        if (!path.startsWith(EMBED_PREFIX)) {
+        String path = RequestPaths.pathWithinApplication(req);
+        if (path == null || !path.startsWith(EMBED_PREFIX)) {
             chain.doFilter(req, resp);
             return;
         }
@@ -585,17 +586,6 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
     private static String extractToken(HttpServletRequest req) {
         String h = req.getHeader(TOKEN_HEADER);
         return (h == null || h.isBlank()) ? null : h.trim();
-    }
-
-    /** Request URI minus the context path — independent of deployment context
-     *  (the launcher serves at root, a WAR install may not). */
-    private static String pathWithinApp(HttpServletRequest req) {
-        String uri = req.getRequestURI();
-        String ctx = req.getContextPath();
-        if (ctx != null && !ctx.isEmpty() && uri.startsWith(ctx)) {
-            return uri.substring(ctx.length());
-        }
-        return uri;
     }
 
     /** Resource the URL targets — what the filter pins on the

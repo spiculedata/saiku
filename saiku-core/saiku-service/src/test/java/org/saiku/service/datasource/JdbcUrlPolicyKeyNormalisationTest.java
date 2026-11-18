@@ -9,6 +9,8 @@ import static org.junit.Assert.fail;
 
 import java.sql.Connection;
 import java.util.Properties;
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 
 /**
@@ -23,6 +25,20 @@ public class JdbcUrlPolicyKeyNormalisationTest {
     private static final String CLOSED_PG = "jdbc:postgresql://127.0.0.1:1/db";
 
     private static final String ALIAS = "CREATE/**/ALIAS P_A FOR 'java.lang.Integer.bitCount'";
+
+    /**
+     * These cases are about property names, not where an H2 file lives, and they use paths from
+     * several hosts; file-engine path confinement (saiku#2320) is covered by FileEngineConfinementTest.
+     */
+    @Before
+    public void disablePathConfinement() {
+        System.setProperty("saiku.jdbc.fileEngineConfinement", "false");
+    }
+
+    @After
+    public void restorePathConfinement() {
+        System.clearProperty("saiku.jdbc.fileEngineConfinement");
+    }
 
     /* ------------------------------------------------------------------ accepts */
 
