@@ -63,7 +63,7 @@
 		"fast-check": "^4.10.2",
 		"globals": "^17.14.0",
 		"happy-dom": "^21.0.4",
-		"jsdom": "^30.1.2",
+		"jsdom": "^31.0.1",
 		"prettier": "^3.10.1",
 		"prettier-plugin-svelte": "^4.1.1",
 		"prettier-plugin-tailwindcss": "^0.8.1",
