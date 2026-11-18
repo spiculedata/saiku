@@ -945,6 +945,9 @@ public class ThinQueryService implements Serializable {
             final OlapConnection con = olapDiscoverService.getNativeConnection(cube.getConnection());
             stmt = con.createStatement();
             QueryGuardrails.applyQueryTimeout(stmt);
+            // saiku#2327: no stmt.setMaxRows here. Mondrian's olap4j statement throws
+            // UnsupportedOperationException from setMaxRows, so the MDX MAXROWS cap below is the
+            // bound; RestUtil.convert(ResultSet) caps the materialised rows as well.
             // saiku#1914: the caller supplied raw DRILLTHROUGH MDX with no server cap.
             // Inject/clamp a MAXROWS bound so the fact-table scan is bounded regardless
             // of what the request body asked for.
