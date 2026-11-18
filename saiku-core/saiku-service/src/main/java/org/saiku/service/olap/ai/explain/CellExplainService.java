@@ -272,6 +272,15 @@ public class CellExplainService {
         if (askService == null || !askService.isConfigured() || cube == null) {
             return;
         }
+        // The question and facts carry the cell value and member captions, so the egress policy
+        // that withholds cell data from the ask path must withhold them here too: keep the
+        // deterministic narrative and do not call the vendor at all (saiku#2329).
+        if (!askService.permitsCellDataEgress()) {
+            result.getNotes()
+                    .add("LLM narrative skipped: the LLM egress policy does not allow cell data to leave"
+                            + " this server, so the computed narrative is shown");
+            return;
+        }
         try {
             AiAskService.AskOutcome outcome = askService.ask(
                     new AiCubeRef(cube.getConnection(), cube.getCatalog(), cube.getSchema(), cube.getName()),

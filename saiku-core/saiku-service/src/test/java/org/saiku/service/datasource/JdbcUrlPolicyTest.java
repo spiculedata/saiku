@@ -4,6 +4,7 @@
  */
 package org.saiku.service.datasource;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -276,17 +277,78 @@ public class JdbcUrlPolicyTest {
         java.util.Properties benign = new java.util.Properties();
         benign.setProperty("user", "sa");
         benign.setProperty("password", "");
-        JdbcUrlPolicy.rejectDeniedInfoProperties(benign); // no throw
+        JdbcUrlPolicy.rejectDeniedInfoProperties("jdbc:postgresql://h/db", benign); // no throw
 
         java.util.Properties gadget = new java.util.Properties();
         gadget.setProperty("socketFactory", "com.evil.Factory");
         try {
-            JdbcUrlPolicy.rejectDeniedInfoProperties(gadget);
+            JdbcUrlPolicy.rejectDeniedInfoProperties("jdbc:postgresql://h/db", gadget);
             fail("a denied key smuggled through the info map must be rejected");
         } catch (IllegalArgumentException expected) {
             assertTrue(
                     expected.getMessage(), expected.getMessage().toLowerCase().contains("socketfactory"));
         }
+    }
+
+    @Test
+    public void rejectDeniedInfoProperties_rejectsH2RunscriptValue() {
+        java.util.Properties p = new java.util.Properties();
+        p.setProperty("init", "RUNSCRIPT FROM 'http://x'");
+        try {
+            JdbcUrlPolicy.rejectDeniedInfoProperties("jdbc:h2:mem:x", p);
+            fail("an H2 executable token in an info value must be rejected");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage(), expected.getMessage().contains("H2"));
+        }
+    }
+
+    @Test
+    public void rejectDeniedInfoProperties_rejectsEncodedH2TokenValue() {
+        java.util.Properties p = new java.util.Properties();
+        p.setProperty("x", "%52UNSCRIPT FROM 'http://x'");
+        try {
+            JdbcUrlPolicy.rejectDeniedInfoProperties("jdbc:h2:mem:x", p);
+            fail("a percent-encoded H2 token in an info value must be rejected");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage(), expected.getMessage().contains("H2"));
+        }
+    }
+
+    @Test
+    public void rejectDeniedInfoProperties_allowsH2LookalikeValueOnOtherBackend() {
+        java.util.Properties p = new java.util.Properties();
+        p.setProperty("password", "init=1");
+        JdbcUrlPolicy.rejectDeniedInfoProperties("jdbc:postgresql://h/db", p); // no throw
+    }
+
+    @Test
+    public void quoteMondrianValue_leavesPlainValuesAlone() {
+        assertEquals("secret", JdbcUrlPolicy.quoteMondrianValue("secret"));
+    }
+
+    @Test
+    public void quoteMondrianValue_quotesSemicolonsAndDoublesQuotes() {
+        assertEquals("'a;Catalog=http://evil/x'", JdbcUrlPolicy.quoteMondrianValue("a;Catalog=http://evil/x"));
+        assertEquals("'it''s;ok'", JdbcUrlPolicy.quoteMondrianValue("it's;ok"));
+    }
+
+    @Test
+    public void quotedCredentialDoesNotInjectKeyAfterValidation() {
+        String url = "jdbc:mondrian:Jdbc=jdbc:h2:mem:x;Catalog=file:/x.xml;JdbcPassword="
+                + JdbcUrlPolicy.quoteMondrianValue("p;Provider=mondrian;DynamicSchemaProcessor=com.evil.X")
+                + ";";
+        // Quoted, the credential is one value. The validator reads the string with Mondrian's own
+        // parser, so it accepts it only if Mondrian sees no injected DynamicSchemaProcessor key.
+        try {
+            JdbcUrlPolicy.validate(url);
+        } catch (IllegalArgumentException refused) {
+            assertTrue(refused.getMessage(), refused.getMessage().contains("DynamicSchemaProcessor"));
+            return;
+        }
+        mondrian.olap.Util.PropertyList parsed =
+                mondrian.olap.Util.parseConnectString(url.substring("jdbc:mondrian:".length()));
+        assertEquals(null, parsed.get("DynamicSchemaProcessor"));
+        assertEquals("p;Provider=mondrian;DynamicSchemaProcessor=com.evil.X", parsed.get("JdbcPassword"));
     }
 
     @Test
