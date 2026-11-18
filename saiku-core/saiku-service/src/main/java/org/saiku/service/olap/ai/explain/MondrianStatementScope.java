@@ -15,13 +15,19 @@ import org.olap4j.OlapStatement;
  * <p>Mondrian runs the query on its shepherd pool and loads segments on a second pool, so the SQL
  * for the explained cell is logged on threads this class cannot name in advance. What those
  * threads do share is the {@link Locus} Mondrian pushes while it works for an execution, and the
- * execution knows the statement it belongs to. An event is therefore claimed only when the Locus
- * active on the logging thread belongs to {@code statement}; another user's query carries a
+ * execution knows the statement it belongs to. An event on any other thread is therefore claimed
+ * only when the Locus active on it belongs to {@code statement}; another user's query carries a
  * different statement, and is dropped.
  *
- * <p>With no Locus on the logging thread, only the opening thread is claimed. When the statement
- * is not a Mondrian one (no id to compare), the scope degrades to the opening thread alone, which
- * may miss the SQL but never shows a stranger's.
+ * <p>The opening thread is always claimed, with or without a Locus: while the probe is open it
+ * runs nothing but this request. That matters because Mondrian parses and validates the cell
+ * query on the caller's thread under the connection's internal statement ({@code parseQuery} uses
+ * {@code Locus.execute(RolapConnection, ...)}), so when the cell's segment is already cached the
+ * only SQL in the window carries that internal statement's id, not {@code statement}'s. The
+ * internal statement is shared by everyone on the connection, so it is never matched by id; it is
+ * claimed only through the opening thread. When the statement is not a Mondrian one (no id to
+ * compare), the scope degrades to the opening thread alone, which may miss the SQL but never shows
+ * a stranger's.
  */
 final class MondrianStatementScope {
 
@@ -38,9 +44,12 @@ final class MondrianStatementScope {
             return sameThread;
         }
         return () -> {
+            if (sameThread.owns()) {
+                return true;
+            }
             Locus locus = Locus.peekOrNull();
             if (locus == null) {
-                return sameThread.owns();
+                return false;
             }
             Execution execution = locus.execution;
             return execution != null
