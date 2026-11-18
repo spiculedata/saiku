@@ -1,0 +1,19 @@
+{
+  "issue": 2321,
+  "title": "JdbcUrlPolicy hardening gaps: Properties deny-list skips H2 token check; JdbcUser/JdbcPassword appended unescaped into Mondrian connect string",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "an H2 datasource URL and an info Properties map carrying an H2 executable token (INIT=/RUNSCRIPT/CREATE ALIAS/SHUTDOWN)",
+      "then": "the info-properties check runs the same H2 executable-token scan as the URL check"
+    },
+    {
+      "id": "C2",
+      "given": "a Mondrian datasource or cube-designer preview whose JdbcUser/JdbcPassword contains ';Key='",
+      "then": "both connect-string builders quote the credential through one shared helper instead of concatenating it raw"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 30
+}
