@@ -106,7 +106,10 @@ jobs:
         # Scripts off: the artefact is exactly the verified dist/, so the privileged
         # job never needs to run prepare/prepack.
         working-directory: saiku-ui/design-system
-        run: npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP/pack"
+        # npm pack does not create --pack-destination; without it the step exits ENOENT.
+        run: |
+          mkdir -p "$RUNNER_TEMP/pack"
+          npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP/pack"
 
       - name: Upload tarball
         if: steps.registry.outputs.exists == 'false' && !inputs.dry_run
@@ -161,9 +164,12 @@ jobs:
         # (granted on this job) and attaches a signed SLSA statement. The
         # tarball path plus --ignore-scripts means no lifecycle script can run
         # with the token in the environment.
+        # The version comes from the unprivileged build job, so it reaches this
+        # script through env, never through expression interpolation into the script text.
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
           set -euo pipefail
           npm publish pkg/*.tgz --access public --provenance --ignore-scripts
-          echo "Published @concepttocloud/saiku-design-system@${{ needs.build.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Published @concepttocloud/saiku-design-system@$VERSION" >> "$GITHUB_STEP_SUMMARY"
