@@ -248,6 +248,16 @@ public final class JdbcUrlPolicy {
     /** The prefix Mondrian strips before forwarding a connect-string property to the driver. */
     private static final String MONDRIAN_DRIVER_PREFIX = "jdbc.";
 
+    /**
+     * Keys of Mondrian's connect-string grammar ({@code RolapConnectionProperties} plus Saiku's own
+     * {@code Mondrian=4} marker). Used by {@link FileEngineConfinement} to find where a wrapper's
+     * {@code Jdbc=} value ends (saiku#2320).
+     */
+    static final Pattern MONDRIAN_KEY = Pattern.compile("(?i)(?:^|;)\\s*(Provider|Jdbc|JdbcDrivers|JdbcUser|"
+            + "JdbcPassword|Catalog|CatalogContent|CatalogName|DataSource|PoolNeeded|Role|UseContentChecksum|"
+            + "DynamicSchemaProcessor|Locale|DataSourceChangeListener|Ignore|Instance|JdbcConnectionUuid|"
+            + "PinSchemaTimeout|AggregateScanSchema|AggregateScanCatalog|UseSchemaPool|Mondrian)\\s*=");
+
     /** Legacy Saiku 3 form: {@code Mondrian=4; jdbc:mondrian:...}. Stripped before validation. */
     private static final Pattern LEGACY_MONDRIAN4_PREFIX = Pattern.compile("(?i)^\\s*Mondrian\\s*=\\s*4\\s*;\\s*");
 
@@ -299,10 +309,20 @@ public final class JdbcUrlPolicy {
         checkUrl(url, 0);
     }
 
+    /**
+     * Lock down the file/lakehouse engine in {@code url} (DuckDB external access and
+     * configuration; see {@link FileEngineConfinement}). Applied by {@link #openConnection}; call
+     * it on a URL that is handed to a driver some other way (Calcite model operands). Returns
+     * {@code url} unchanged for other engines or when the operator opted out.
+     */
+    public static String confineFileEngines(String url) {
+        return FileEngineConfinement.confine(url);
+    }
+
     /** Validate, then {@link DriverManager#getConnection(String, String, String)}. */
     public static Connection openConnection(String url, String user, String password) throws SQLException {
         validate(url);
-        return DriverManager.getConnection(url, user, password);
+        return DriverManager.getConnection(confineFileEngines(url), user, password);
     }
 
     /**
@@ -462,6 +482,9 @@ public final class JdbcUrlPolicy {
 
         if ("h2".equals(scheme)) {
             checkH2Settings(url);
+            // saiku#2320: an H2 file database must live under saiku.home (or an operator root).
+            FileEngineConfinement.rejectH2PathOutsideRoots(url);
+            FileEngineConfinement.rejectH2PathOutsideRoots(decoded);
         }
         if (wrapper) {
             checkMondrianWrapper(url, depth);

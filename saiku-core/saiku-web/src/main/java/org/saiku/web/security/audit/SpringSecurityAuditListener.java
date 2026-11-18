@@ -47,7 +47,7 @@ public class SpringSecurityAuditListener implements ApplicationListener<org.spri
             if ("anonymousUser".equals(principal)) return;
             HttpServletRequest req = currentRequest(auth);
             AuditLogger.loginSuccess(req, principal);
-            if (rateLimiter != null && req != null) rateLimiter.recordSuccess(req);
+            if (rateLimiter != null && req != null) rateLimiter.recordSuccess(req, principal);
         } else if (event instanceof AbstractAuthenticationFailureEvent failure) {
             Authentication auth = failure.getAuthentication();
             String principal = auth != null ? auth.getName() : null;
@@ -56,7 +56,7 @@ public class SpringSecurityAuditListener implements ApplicationListener<org.spri
                     : "unknown";
             HttpServletRequest req = currentRequest(auth);
             AuditLogger.loginFailure(req, principal, reason);
-            if (rateLimiter != null && req != null) rateLimiter.recordFailure(req);
+            if (rateLimiter != null && req != null) rateLimiter.recordFailure(req, principal);
         }
     }
 

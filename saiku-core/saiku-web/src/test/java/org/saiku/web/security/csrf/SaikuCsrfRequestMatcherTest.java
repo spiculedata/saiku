@@ -154,4 +154,39 @@ public class SaikuCsrfRequestMatcherTest {
         r.addHeader(SHARE_HEADER, "shr-abc");
         assertTrue(matcher.matches(r));
     }
+
+    /* ------------------- normalised path (#2342) ------------------- */
+
+    @Test
+    public void percentEncodedRestPrefix_stillRequiresCsrf() {
+        assertTrue(matcher.matches(req("POST", "/%72est/saiku/foo")));
+    }
+
+    @Test
+    public void percentEncodedLoginPath_matchesCanonicalExemption() {
+        // The decoded form IS the login path the container routes to, so it gets the same treatment.
+        assertFalse(matcher.matches(req("POST", "/rest/saiku/%73ession")));
+    }
+
+    @Test
+    public void dotSegmentAndPathParameterVariants_stillRequireCsrf() {
+        assertTrue(matcher.matches(req("POST", "/rest/./saiku/api/repository/resource")));
+        assertTrue(matcher.matches(req("POST", "/rest/saiku/api/repository/resource;jsessionid=abc")));
+        assertTrue(matcher.matches(req("POST", "//rest/saiku/api/repository/resource")));
+    }
+
+    @Test
+    public void percentEncodedEmbedReadPrefix_keepsTokenExemption() {
+        MockHttpServletRequest r = req("POST", "/%72est/saiku/api/embed/query/x");
+        r.addHeader(EMBED_HEADER, "tok");
+        assertFalse(matcher.matches(r));
+    }
+
+    @Test
+    public void nonNormalisablePath_failsClosedAndRequiresCsrf() {
+        assertTrue(matcher.matches(req("POST", "/rest/saiku/../saiku/session")));
+        MockHttpServletRequest r = req("POST", "/rest/saiku/api/embed/query/%2e%2e/tokens");
+        r.addHeader(EMBED_HEADER, "tok");
+        assertTrue(matcher.matches(r));
+    }
 }

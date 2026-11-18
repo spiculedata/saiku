@@ -59,6 +59,25 @@ public final class OssieShelfSqlTranslator {
      * </ol>
      */
     public String translate(OssieQueryModel model, OssieModelDto semantic, Set<String> callerRoles) {
+        return translate(model, semantic, callerRoles, true);
+    }
+
+    /**
+     * As {@link #translate(OssieQueryModel, OssieModelDto, Set)}, but aware of the warehouse
+     * dialect (saiku#2319). Calcite pushes filters down and re-emits string literals through the
+     * warehouse dialect, which only doubles single quotes; on a backslash-escaping engine (MySQL,
+     * MariaDB, ...) a filter value containing a backslash could therefore break out of its
+     * literal. Such values are refused with {@link IllegalArgumentException} unless
+     * {@code warehouseJdbcUrl} names an engine known to treat the backslash literally (see {@link
+     * WarehouseSqlDialect}). A null/unknown URL fails closed.
+     */
+    public String translate(
+            OssieQueryModel model, OssieModelDto semantic, Set<String> callerRoles, String warehouseJdbcUrl) {
+        return translate(model, semantic, callerRoles, WarehouseSqlDialect.backslashIsLiteralData(warehouseJdbcUrl));
+    }
+
+    private String translate(
+            OssieQueryModel model, OssieModelDto semantic, Set<String> callerRoles, boolean backslashIsData) {
         if (semantic == null) throw new IllegalStateException("Ossie semantic model is required");
         if (model.getFactDataset() == null || model.getFactDataset().isBlank()) {
             throw new IllegalArgumentException("OssieQueryModel.factDataset is required");
@@ -123,7 +142,7 @@ public final class OssieShelfSqlTranslator {
         // --- WHERE ---
         List<String> whereClauses = new ArrayList<>();
         for (OssieQueryModel.FilterExpr f : model.getFilters()) {
-            whereClauses.add(filterToSql(f, semantic));
+            whereClauses.add(filterToSql(f, semantic, backslashIsData));
         }
         // saiku#1393 — row-level security: every referenced dataset's role-matched predicates,
         // ORed together per dataset (each role the caller holds opens its own access window),
@@ -264,7 +283,7 @@ public final class OssieShelfSqlTranslator {
                 "Ossie metric '" + metricName + "' not found in semantic model '" + semantic.getName() + "'");
     }
 
-    private String filterToSql(OssieQueryModel.FilterExpr f, OssieModelDto semantic) {
+    private String filterToSql(OssieQueryModel.FilterExpr f, OssieModelDto semantic, boolean backslashIsData) {
         String col;
         if (f.getDataset() != null && !f.getDataset().isBlank()) {
             String colExpr = lookupFieldExpression(semantic, f.getDataset(), f.getField());
@@ -276,17 +295,17 @@ public final class OssieShelfSqlTranslator {
         String op = f.getOp() == null ? "EQ" : f.getOp().toUpperCase();
         switch (op) {
             case "EQ":
-                return col + " = " + literal(f.getValue());
+                return col + " = " + literal(f.getValue(), backslashIsData);
             case "NEQ":
-                return col + " <> " + literal(f.getValue());
+                return col + " <> " + literal(f.getValue(), backslashIsData);
             case "LT":
-                return col + " < " + literal(f.getValue());
+                return col + " < " + literal(f.getValue(), backslashIsData);
             case "LTE":
-                return col + " <= " + literal(f.getValue());
+                return col + " <= " + literal(f.getValue(), backslashIsData);
             case "GT":
-                return col + " > " + literal(f.getValue());
+                return col + " > " + literal(f.getValue(), backslashIsData);
             case "GTE":
-                return col + " >= " + literal(f.getValue());
+                return col + " >= " + literal(f.getValue(), backslashIsData);
             case "IN": {
                 if (f.getValues().isEmpty()) {
                     // Empty IN would break the SQL parser — synthesize the trivially-false predicate
@@ -294,15 +313,15 @@ public final class OssieShelfSqlTranslator {
                     return "1 = 0";
                 }
                 List<String> lits = new ArrayList<>();
-                for (String v : f.getValues()) lits.add(literal(v));
+                for (String v : f.getValues()) lits.add(literal(v, backslashIsData));
                 return col + " IN (" + String.join(", ", lits) + ")";
             }
             case "BETWEEN": {
                 if (f.getValues().size() < 2) {
                     throw new IllegalArgumentException("BETWEEN filter requires two values");
                 }
-                return col + " BETWEEN " + literal(f.getValues().get(0)) + " AND "
-                        + literal(f.getValues().get(1));
+                return col + " BETWEEN " + literal(f.getValues().get(0), backslashIsData) + " AND "
+                        + literal(f.getValues().get(1), backslashIsData);
             }
             case "IS_NULL":
                 return col + " IS NULL";
@@ -320,9 +339,14 @@ public final class OssieShelfSqlTranslator {
      * literal, which is deliberately incorrect (SQL requires {@code IS NULL}); operators that
      * genuinely mean "check for null" should use {@code IS_NULL}/{@code IS_NOT_NULL} ops.
      */
-    private String literal(String v) {
+    private String literal(String v, boolean backslashIsData) {
         if (v == null) return "NULL";
         if (v.matches("-?\\d+(\\.\\d+)?")) return v;
+        if (!backslashIsData && v.indexOf('\\') >= 0) {
+            throw new IllegalArgumentException(
+                    "Filter values containing a backslash are not supported on this warehouse"
+                            + " (its SQL dialect treats backslash as an escape character; saiku#2319)");
+        }
         return "'" + v.replace("'", "''") + "'";
     }
 
