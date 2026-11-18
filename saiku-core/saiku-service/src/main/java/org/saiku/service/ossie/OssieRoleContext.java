@@ -69,6 +69,19 @@ public final class OssieRoleContext {
     }
 
     /**
+     * The caller's row predicates for {@code datasetName} folded into one SQL boolean expression:
+     * a single predicate as-is, several ORed inside parentheses (each role opens its own access
+     * window, same as the translator). {@code null} when nothing restricts the caller. Used by the
+     * value-enumeration surfaces (values-search, schema samples) that issue their own SQL
+     * (saiku#2324).
+     */
+    public String combinedRowPredicateFor(String datasetName) {
+        List<String> predicates = rowPredicatesFor(datasetName);
+        if (predicates.isEmpty()) return null;
+        return predicates.size() == 1 ? predicates.get(0) : "(" + String.join(" OR ", predicates) + ")";
+    }
+
+    /**
      * Throws {@link SaikuAccessDeniedException} if the shelf state references a field or metric
      * that exists in the semantic model and denies the caller. Entries that don't resolve to a
      * known field/metric are left alone — that's the translator's own not-found handling to do.

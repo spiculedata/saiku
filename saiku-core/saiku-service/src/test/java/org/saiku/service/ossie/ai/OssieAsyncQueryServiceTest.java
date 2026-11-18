@@ -193,6 +193,30 @@ public class OssieAsyncQueryServiceTest {
         }
     }
 
+    // ---- saiku#1920: a generic execution failure must not store the exception text (Avatica
+    // embeds the SQL incl. the RLS predicate); the status/result endpoints re-serve this field. ----
+
+    @Test
+    public void failedHandleCarriesRefNotExceptionText() throws Exception {
+        OssieAsyncQueryService service = new OssieAsyncQueryService(new OssieQueryService() {
+            @Override
+            public CellDataSet execute(ThinQuery tq) throws Exception {
+                throw new java.sql.SQLException(
+                        "Error while executing SQL \"SELECT 1 WHERE REGION IN ('APAC')\": boom");
+            }
+        });
+        try {
+            OssieAsyncQueryService.Handle h = service.submit(newQuery(), "alice");
+            awaitTerminal(h);
+            assertEquals(OssieAsyncQueryService.Status.FAILED, h.getStatus());
+            String msg = String.valueOf(h.getErrorMessage());
+            assertTrue("must not echo the SQL, got: " + msg, !msg.contains("REGION IN") && !msg.contains("boom"));
+            assertTrue("must carry a ref, got: " + msg, msg.contains("ref="));
+        } finally {
+            service.shutdown();
+        }
+    }
+
     private static ThinQuery newQuery() {
         ThinQuery tq = new ThinQuery();
         tq.setName("stub-" + System.nanoTime());

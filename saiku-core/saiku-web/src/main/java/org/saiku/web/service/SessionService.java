@@ -19,11 +19,13 @@ package org.saiku.web.service;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BooleanSupplier;
 import org.apache.commons.lang3.StringUtils;
 import org.saiku.repository.ScopedRepo;
 import org.saiku.service.ISessionService;
@@ -56,6 +58,26 @@ public class SessionService implements ISessionService {
     private final SecurityContextRepository securityContextRepository = new HttpSessionSecurityContextRepository();
 
     private final Map<Object, Map<String, Object>> sessionHolder = new ConcurrentHashMap<>();
+
+    /**
+     * saiku#2341: the login password, kept ONLY for datasources with {@code security.type=passthrough}
+     * (which forward the user's own credentials to the warehouse). It lives outside {@link #sessionHolder}
+     * so {@link #getAllSessionObjects()} (read by ~20 callers that only need username/roles) can never
+     * hand it out, as {@code char[]} so it can be zeroed, and is wiped on logout, re-login, and when the
+     * HTTP session ends ({@link #httpSessionDestroyed(String)}).
+     */
+    private final Map<Object, char[]> passthroughSecrets = new ConcurrentHashMap<>();
+
+    /** Operator switch: {@code -Dsaiku.passthrough.retainCredential=false} never keeps the password (no pass-through datasources). */
+    static final String RETAIN_CREDENTIAL_PROPERTY = "saiku.passthrough.retainCredential";
+
+    /**
+     * Whether to keep the credential for pass-through. Defaults to keeping it: the datasource list is
+     * workspace- and role-scoped, so it cannot be consulted reliably at login, and guessing wrong would
+     * silently break pass-through connections.
+     */
+    private volatile BooleanSupplier passthroughRequired =
+            () -> !"false".equalsIgnoreCase(System.getProperty(RETAIN_CREDENTIAL_PROPERTY));
 
     /**
      * saiku#1859 — {@link HttpSession} attribute holding the Saiku session map (username,
@@ -125,7 +147,8 @@ public class SessionService implements ISessionService {
                     log.debug("Session id rotation skipped: no active session", noSession);
                 }
                 createSession(auth, username, password);
-                return sessionHolder.get(p);
+                Map<String, Object> created = sessionHolder.get(p);
+                return created == null ? null : withoutSecrets(created);
             } else {
                 log.info(username + " failed authorisation. Rejecting login");
                 throw new RuntimeException("Authorisation failed for: " + username);
@@ -146,6 +169,9 @@ public class SessionService implements ISessionService {
         boolean isAnonymous = (isAnonymousUser || StringUtils.equals("anonymousUser", authUser));
         boolean isAnonOk = (!isAnonymous || (isAnonymous && anonymous));
 
+        if (isAnonOk && auth.isAuthenticated() && p != null) {
+            rememberPassthroughSecret(p, isAnonymous ? null : password);
+        }
         if (isAnonOk && auth.isAuthenticated() && p != null && !sessionHolder.containsKey(p)) {
             Map<String, Object> session = new HashMap<>();
 
@@ -175,9 +201,6 @@ public class SessionService implements ISessionService {
             session.put("username", canonicalUser);
             if (principalSpelling != null) {
                 session.put("principal", principalSpelling);
-            }
-            if (StringUtils.isNotBlank(password)) {
-                session.put("password", password);
             }
             session.put("sessionid", UUID.randomUUID().toString());
             session.put(
@@ -211,7 +234,7 @@ public class SessionService implements ISessionService {
         }
         try {
             Map<String, Object> persistable = new HashMap<>(session);
-            persistable.remove("password");
+            persistable.remove("password"); // belt and braces: no code puts one here any more (saiku#2341)
             httpSession.setAttribute(SESSION_MAP_ATTRIBUTE, persistable);
         } catch (RuntimeException e) {
             // A container that refuses the attribute (e.g. a non-serializable value under a
@@ -308,9 +331,7 @@ public class SessionService implements ISessionService {
         if (SecurityContextHolder.getContext() != null
                 && SecurityContextHolder.getContext().getAuthentication() != null) {
             Object p = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-            if (sessionHolder.containsKey(p)) {
-                sessionHolder.remove(p);
-            }
+            forgetPrincipal(p);
         }
 
         SecurityContextHolder.getContext().setAuthentication(null);
@@ -356,9 +377,7 @@ public class SessionService implements ISessionService {
             // JSESSIONID logged in instead of bouncing the user to the login screen.
             Map<String, Object> current = resolveSessionMap(auth);
             if (current != null) {
-                Map<String, Object> r = new HashMap<>();
-                r.putAll(current);
-                r.remove("password");
+                Map<String, Object> r = withoutSecrets(current);
 
                 if (!r.containsKey("sessionid")) {
                     r.put("sessionid", UUID.randomUUID().toString());
@@ -381,12 +400,87 @@ public class SessionService implements ISessionService {
             // signed-in user resolved to no user at all.
             Map<String, Object> current = resolveSessionMap(auth);
             if (current != null) {
-                Map<String, Object> r = new HashMap<>();
-                r.putAll(current);
-                return r;
+                return withoutSecrets(current);
             }
         }
         return new HashMap<>();
+    }
+
+    /** A copy of the session map that can never carry a credential, whatever put it there. */
+    private static Map<String, Object> withoutSecrets(Map<String, Object> session) {
+        Map<String, Object> copy = new HashMap<>(session);
+        copy.remove("password");
+        return copy;
+    }
+
+    /**
+     * The current user's login password for a pass-through datasource, or {@code null} when none is held.
+     * The ONLY way to read it (saiku#2341). The returned array is the live, wipeable copy: callers must
+     * not retain or modify it.
+     */
+    @Override
+    public char[] passthroughCredential() {
+        if (SecurityContextHolder.getContext() == null) return null;
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || auth instanceof AnonymousAuthenticationToken || auth.getPrincipal() == null) {
+            return null;
+        }
+        return passthroughSecrets.get(auth.getPrincipal());
+    }
+
+    void setPassthroughRequired(BooleanSupplier passthroughRequired) {
+        if (passthroughRequired != null) {
+            this.passthroughRequired = passthroughRequired;
+        }
+    }
+
+    /** Replace (never keep) the cached credential for this principal, when a pass-through datasource needs it. */
+    private void rememberPassthroughSecret(Object principal, String password) {
+        char[] replacement = null;
+        if (StringUtils.isNotBlank(password) && isPassthroughRequired()) {
+            replacement = password.toCharArray();
+        }
+        char[] previous = replacement == null
+                ? passthroughSecrets.remove(principal)
+                : passthroughSecrets.put(principal, replacement);
+        wipe(previous);
+        Map<String, Object> existing = sessionHolder.get(principal);
+        if (existing != null) {
+            // the entry now belongs to this login's HTTP session, so ending it ends the credential
+            existing.put(
+                    "authid", RequestContextHolder.currentRequestAttributes().getSessionId());
+        }
+    }
+
+    private boolean isPassthroughRequired() {
+        try {
+            return passthroughRequired.getAsBoolean();
+        } catch (RuntimeException e) {
+            log.debug("Could not tell whether a pass-through datasource exists; keeping the credential", e);
+            return true;
+        }
+    }
+
+    private void forgetPrincipal(Object principal) {
+        sessionHolder.remove(principal);
+        wipe(passthroughSecrets.remove(principal));
+    }
+
+    private static void wipe(char[] secret) {
+        if (secret != null) Arrays.fill(secret, '\0');
+    }
+
+    /**
+     * An HTTP session ended (logout elsewhere, idle timeout, container shutdown): drop the Saiku session
+     * entry that belongs to it and zero its pass-through credential, so nothing outlives the login (saiku#2341).
+     */
+    public void httpSessionDestroyed(String httpSessionId) {
+        if (httpSessionId == null) return;
+        for (Map.Entry<Object, Map<String, Object>> e : sessionHolder.entrySet()) {
+            if (httpSessionId.equals(e.getValue().get("authid"))) {
+                forgetPrincipal(e.getKey());
+            }
+        }
     }
 
     /**
@@ -445,9 +539,7 @@ public class SessionService implements ISessionService {
                 && SecurityContextHolder.getContext().getAuthentication() != null) {
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             Object p = auth.getPrincipal();
-            if (sessionHolder.containsKey(p)) {
-                sessionHolder.remove(p);
-            }
+            forgetPrincipal(p);
             // saiku#1859: drop the mirrored copy too, so a cleared session can't be rehydrated
             // back out of the container session by resolveSessionMap().
             HttpSession httpSession = currentHttpSession();
