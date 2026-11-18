@@ -112,7 +112,7 @@
             <dependency>
                 <groupId>com.gizmodata</groupId>
                 <artifactId>quack-jdbc</artifactId>
-                <version>0.2.0-alpha.6</version>
+                <version>1.0.1</version>
             </dependency>
             <!-- saiku#1916: hive-jdbc / hadoop-common / hive-cli are no longer
                  managed here — Hive support is an opt-in plugins/ drop-in, and
