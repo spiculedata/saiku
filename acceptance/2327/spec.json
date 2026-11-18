@@ -1,6 +1,6 @@
 {
   "issue": 2327,
-  "title": "A raw DRILLTHROUGH preceded by an MDX comment is row-capped like any other: capRawDrillthrough skips comments, the ResultSet conversion is bounded, and the statement carries setMaxRows",
+  "title": "A raw DRILLTHROUGH preceded by an MDX comment is row-capped like any other: capRawDrillthrough skips comments, and the ResultSet conversion is bounded",
   "kind": "ui",
   "criteria": [
     {
@@ -16,7 +16,7 @@
     {
       "id": "C3",
       "given": "the raw drillthrough execution path in ThinQueryService",
-      "then": "the JDBC statement is bounded with setMaxRows(QueryGuardrails.maxRows()) as well as the MDX MAXROWS"
+      "then": "the MDX MAXROWS cap bounds the query, and the statement does not call setMaxRows (Mondrian's olap4j statement throws UnsupportedOperationException from it)"
     },
     {
       "id": "C4",

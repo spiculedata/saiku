@@ -37,7 +37,11 @@ const convertResultSet = restUtil.slice(
 claim('C2', 'convert(ResultSet) still passes no row limit', /QueryGuardrails\.maxRows\(\)/.test(convertResultSet));
 
 const drillthrough = service.slice(service.indexOf('public ResultSet drillthrough(ThinQuery query)'));
-claim('C3', 'the raw drillthrough statement is not bounded with setMaxRows', /setMaxRows\(\s*QueryGuardrails\.maxRows\(\)\s*\)/.test(drillthrough.slice(0, 1200)));
+const rawPath = drillthrough.slice(0, 1200);
+claim('C3', 'the raw drillthrough path does not apply the MDX MAXROWS cap', /DrillthroughMdxBuilder\.capRawDrillthrough\(/.test(rawPath));
+// Mondrian's olap4j statement throws UnsupportedOperationException from setMaxRows, which
+// turned every raw DRILLTHROUGH into a 500; the MDX cap is the bound on this path.
+claim('C3', 'the raw drillthrough statement calls setMaxRows, which Mondrian rejects', !/\.setMaxRows\(/.test(rawPath));
 
 claim('C4', 'the commented-drillthrough unit test does not ship', capTest.includes('leadingBlockComment'));
 claim('C4', 'the RestUtil default-limit unit test does not ship', convertTest.includes('capsRowsAtGuardrail'));
@@ -47,4 +51,4 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-process.stdout.write('commented raw DRILLTHROUGH is capped, ResultSet conversion is bounded, statement carries setMaxRows\n');
+process.stdout.write('commented raw DRILLTHROUGH is capped, ResultSet conversion is bounded, the MDX MAXROWS cap bounds the raw path\n');
