@@ -6,6 +6,7 @@ package org.saiku.service.ossie;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -143,5 +144,35 @@ public class OssieRoleContextTest {
 
         OssieModelDto filtered = OssieRoleContext.filterHidden(semantic, null);
         assertFalse(filtered.getMetrics().isEmpty());
+    }
+
+    @Test
+    public void combinedRowPredicateForOrsMatchingRolesAndWrapsThem() {
+        OssieModelDto semantic = new OssieModelDto();
+        OssieModelDto.Dataset ds = new OssieModelDto.Dataset();
+        ds.setName("geography");
+        ds.getRowPredicates().add(new OssieModelDto.RowPredicate("ROLE_APAC", "REGION = 'APAC'"));
+        ds.getRowPredicates().add(new OssieModelDto.RowPredicate("ROLE_EMEA", "REGION = 'EMEA'"));
+        semantic.getDatasets().add(ds);
+
+        assertEquals(
+                "REGION = 'APAC'",
+                OssieRoleContext.resolve(Set.of("ROLE_APAC"), semantic).combinedRowPredicateFor("geography"));
+        assertEquals(
+                "(REGION = 'APAC' OR REGION = 'EMEA')",
+                OssieRoleContext.resolve(Set.of("ROLE_APAC", "ROLE_EMEA"), semantic)
+                        .combinedRowPredicateFor("geography"));
+    }
+
+    @Test
+    public void combinedRowPredicateForIsNullWhenNothingApplies() {
+        OssieModelDto semantic = new OssieModelDto();
+        OssieModelDto.Dataset ds = new OssieModelDto.Dataset();
+        ds.setName("geography");
+        ds.getRowPredicates().add(new OssieModelDto.RowPredicate("ROLE_APAC", "REGION = 'APAC'"));
+        semantic.getDatasets().add(ds);
+
+        assertNull(OssieRoleContext.resolve(Set.of("ROLE_OTHER"), semantic).combinedRowPredicateFor("geography"));
+        assertNull(OssieRoleContext.resolve(Set.of("ROLE_APAC"), semantic).combinedRowPredicateFor("nope"));
     }
 }

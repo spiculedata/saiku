@@ -86,7 +86,10 @@ RUN set -eux; \
 #   -XX:+ExitOnOutOfMemoryError  fail fast on OOM so the orchestrator restarts
 #                                a clean JVM instead of limping on a corrupt heap
 #   -XX:MaxRAMPercentage=75      size the heap from the container memory limit
-ENV JAVA_TOOL_OPTIONS="-XX:+ExitOnOutOfMemoryError -XX:MaxRAMPercentage=75"
+#   -XX:-UseBASE64Intrinsics     interim mitigation for CVE-2026-114938 (HotSpot
+#                                x86-64 Base64 decode intrinsic). Remove once the
+#                                base image carries Temurin 21.0.13.1 or later.
+ENV JAVA_TOOL_OPTIONS="-XX:+ExitOnOutOfMemoryError -XX:MaxRAMPercentage=75 -XX:-UseBASE64Intrinsics"
 
 # Ownership, scoped tightly (#1989 S1 review). ONLY /app/saiku-home (the write
 # path — data, repository, sessions, logs, plugins, and conf/secret.key) is

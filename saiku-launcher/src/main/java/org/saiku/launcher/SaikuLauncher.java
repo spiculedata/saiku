@@ -256,6 +256,7 @@ public class SaikuLauncher implements Callable<Integer> {
             HttpConfiguration httpConfig = new HttpConfiguration();
             ForwardedRequestCustomizer forwarded = new ForwardedRequestCustomizer();
             forwarded.setForwardedForHeader(null); // do not let X-Forwarded-For override getRemoteAddr()
+            forwarded.setForwardedHeader(null); // nor the RFC 7239 Forwarded header
             httpConfig.addCustomizer(forwarded);
             httpConfig.setSendServerVersion(false);
             httpConfig.setSendXPoweredBy(false);

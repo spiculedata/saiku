@@ -106,9 +106,13 @@ public class OssieAsyncQueryService {
                     h.status = Status.CANCELLED;
                     h.errorMessage = "interrupted";
                 } catch (Exception e) {
-                    log.warn("Ossie async execution failed for {}: {}", id, e.getMessage());
+                    // saiku#1920: Avatica/JDBC messages embed the executed SQL (including the
+                    // caller's row-predicate) and connection URLs, and status/result re-serve this
+                    // field for RESULT_TTL. Keep the detail in the log, hand the caller a ref.
+                    String ref = UUID.randomUUID().toString().substring(0, 8);
+                    log.warn("Ossie async execution failed for {} [ref={}]", id, ref, e);
                     h.status = Status.FAILED;
-                    h.errorMessage = e.getMessage();
+                    h.errorMessage = "query execution failed (ref=" + ref + ")";
                 }
             } finally {
                 SecurityContextHolder.clearContext();
