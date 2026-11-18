@@ -1,7 +1,7 @@
 {
   "issue": 2344,
   "title": "ScopedRepo no longer falls back to another user's HttpSession: with no request-bound session it returns null (fail closed) and SessionService stops publishing the last form-login's session",
-  "kind": "command",
+  "kind": "ui",
   "criteria": [
     {
       "id": "C1",
