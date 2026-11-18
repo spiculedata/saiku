@@ -997,9 +997,9 @@
     </bean>
 
     <!-- Tier-1 auth hardening: shared login rate-limiter.
-         5 failures per 15 minutes per client IP. Default: do NOT trust
-         X-Forwarded-For (set saiku.auth.trustForwardedFor=true only when
-         fronted by a proxy you control). -->
+         5 failures per 15 minutes per (client IP, username), 20 per username, 50 per IP. Default: do NOT trust
+         X-Forwarded-For (set saiku.auth.trustedProxyHops=<n> only when fronted by
+         n proxies you control; see docs/operator-hardening.md). -->
     <bean id="loginRateLimiter" class="org.saiku.web.security.ratelimit.LoginRateLimiter"/>
 
     <!-- saiku#1913: per-endpoint AI/mail rate limiters as SINGLETON beans.
