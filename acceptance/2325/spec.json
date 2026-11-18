@@ -21,7 +21,7 @@
       "criterion": "C1",
       "request": {
         "method": "GET",
-        "path": "/ai/members/search?cubeId=unknown_foodmart/FoodMart/FoodMart/Sales&dimension=Customers&level=Name&limit=2000000000"
+        "path": "/ai/members/search?cubeId=unknown_foodmart/FoodMart/FoodMart/Sales&dimension=Customers&hierarchy=Customers&level=Name&limit=2000000000"
       },
       "expect": {
         "status": 200,
@@ -37,7 +37,7 @@
       "criterion": "C2",
       "request": {
         "method": "GET",
-        "path": "/ai/members/search?cubeId=unknown_foodmart/FoodMart/FoodMart/Sales&dimension=Customers&level=Name&limit=5"
+        "path": "/ai/members/search?cubeId=unknown_foodmart/FoodMart/FoodMart/Sales&dimension=Customers&hierarchy=Customers&level=Name&limit=5"
       },
       "expect": {
         "status": 200,
