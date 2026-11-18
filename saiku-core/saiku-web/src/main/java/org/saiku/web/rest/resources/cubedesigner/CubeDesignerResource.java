@@ -406,10 +406,10 @@ public class CubeDesignerResource {
             url += ";";
         }
         if (user != null && !user.isEmpty()) {
-            url += "JdbcUser=" + user + ";";
+            url += "JdbcUser=" + org.saiku.service.datasource.JdbcUrlPolicy.quoteMondrianValue(user) + ";";
         }
         if (password != null && !password.isEmpty()) {
-            url += "JdbcPassword=" + password + ";";
+            url += "JdbcPassword=" + org.saiku.service.datasource.JdbcUrlPolicy.quoteMondrianValue(password) + ";";
         }
         // saiku#1902: same policy as the SaikuOlapConnection chokepoint — validate the FINAL url
         // (credentials appended) and only initialise a real java.sql.Driver class.

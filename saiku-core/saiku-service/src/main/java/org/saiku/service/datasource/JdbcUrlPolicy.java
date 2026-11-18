@@ -282,22 +282,53 @@ public final class JdbcUrlPolicy {
      */
     public static Connection openConnection(String url, Properties info) throws SQLException {
         validate(url);
-        rejectDeniedInfoProperties(info);
+        rejectDeniedInfoProperties(url, info);
         return DriverManager.getConnection(url, info);
     }
 
     /** Apply the connection-property deny-list to the keys of a {@link Properties} map. */
     static void rejectDeniedInfoProperties(Properties info) {
+        rejectDeniedInfoProperties(null, info);
+    }
+
+    /**
+     * Apply the connection-property deny-list to the keys of {@code info}, and, when {@code url}
+     * is an H2 URL, the H2 executable-token scan to each {@code key=value} pair (raw and
+     * percent-decoded), so the map is held to the same standard as the URL (saiku#2321).
+     */
+    static void rejectDeniedInfoProperties(String url, Properties info) {
         if (info == null) {
             return;
         }
+        boolean h2 = url != null && percentDecode(url).toLowerCase(Locale.ROOT).contains("jdbc:h2:");
         for (String name : info.stringPropertyNames()) {
             String key = normaliseKey(name);
             if (!key.isEmpty()) {
                 // false: the calcite model/schemaFactory operands are URL-only, never info keys.
                 rejectIfDeniedKey(key, false);
             }
+            if (h2) {
+                String pair = name + "=" + info.getProperty(name, "");
+                rejectH2Executable(pair);
+                rejectH2Executable(percentDecode(pair));
+            }
         }
+    }
+
+    /**
+     * Quote a value for a Mondrian connect string ({@code Key=Value;...}). Values containing
+     * {@code ;}, quotes or edge whitespace are single-quoted with embedded quotes doubled, so a
+     * credential such as {@code p;Catalog=http://evil/x} stays one value (saiku#2321).
+     */
+    public static String quoteMondrianValue(String value) {
+        if (value == null || value.isEmpty()) {
+            return value;
+        }
+        boolean needsQuoting = value.indexOf(';') >= 0
+                || value.indexOf('\'') >= 0
+                || value.indexOf('"') >= 0
+                || !value.equals(value.trim());
+        return needsQuoting ? "'" + value.replace("'", "''") + "'" : value;
     }
 
     /**
@@ -440,6 +471,10 @@ public final class JdbcUrlPolicy {
         if (!url.toLowerCase(Locale.ROOT).contains("jdbc:h2:")) {
             return;
         }
+        rejectH2Executable(url);
+    }
+
+    private static void rejectH2Executable(String url) {
         if (H2_INIT.matcher(url).find()) {
             throw reject("H2 INIT= run-on-connect is not permitted");
         }
