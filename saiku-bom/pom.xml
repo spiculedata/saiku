@@ -112,7 +112,7 @@
             <dependency>
                 <groupId>com.gizmodata</groupId>
                 <artifactId>quack-jdbc</artifactId>
-                <version>0.2.0-alpha.6</version>
+                <version>1.0.1</version>
             </dependency>
             <!-- saiku#1916: hive-jdbc / hadoop-common / hive-cli are no longer
                  managed here — Hive support is an opt-in plugins/ drop-in, and
@@ -217,12 +217,12 @@
             <dependency>
                 <groupId>org.apache.poi</groupId>
                 <artifactId>poi</artifactId>
-                <version>5.4.0</version>
+                <version>6.0.0</version>
             </dependency>
             <dependency>
                 <groupId>org.apache.poi</groupId>
                 <artifactId>poi-ooxml</artifactId>
-                <version>5.4.0</version>
+                <version>6.0.0</version>
             </dependency>
             <!--
                 POI 5.4.0 compiles against commons-compress 1.27.1 which
@@ -830,9 +830,9 @@
             <dependency>
                 <groupId>org.eclipse.angus</groupId>
                 <artifactId>angus-mail</artifactId>
-                <!-- 2.0.4 fixes CVE-2025-7962 (SMTP CR/LF injection in the
+                <!-- 2.0.5 fixes CVE-2025-7962 (SMTP CR/LF injection in the
                      transport, GHSA-9342-92gg-6v29). Keep >= 2.0.4. -->
-                <version>2.0.4</version>
+                <version>2.0.5</version>
             </dependency>
             <!-- GreenMail 2.x: in-process SMTP server for SmtpMailSenderTest.
                  2.x supports the Jakarta namespace (1.x is javax) — required

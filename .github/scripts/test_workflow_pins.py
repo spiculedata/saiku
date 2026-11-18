@@ -64,6 +64,30 @@ class WorkflowPinsTest(unittest.TestCase):
         self.assertEqual(clashes, [])
 
 
+class StrictPinsTest(unittest.TestCase):
+    """saiku#2336: refs that are not hex (`@v4`, `@main`) are mutable, so reject them too."""
+
+    def test_every_remote_uses_is_a_full_sha(self):
+        loose = re.compile(r"^\s*(?:-\s*)?uses:\s*(?P<ref>[^\s#]+)")
+        bad = []
+        for path in yaml_files():
+            for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+                match = loose.match(line)
+                if not match or match["ref"].startswith(("./", "docker://")):
+                    continue
+                ref = match["ref"].partition("@")[2]
+                if not FULL_SHA_RE.match(ref):
+                    bad.append(f"{path.relative_to(GITHUB_DIR)}:{number} {match['ref']}")
+        self.assertEqual(bad, [])
+
+    def test_tailscale_client_is_pinned_by_version_and_checksum(self):
+        text = (GITHUB_DIR / "actions" / "preview-host-access" / "action.yml").read_text(encoding="utf-8")
+        version = re.search(r"^\s+version:\s*(\S+)", text, re.M)
+        digest = re.search(r"^\s+sha256sum:\s*(\S+)", text, re.M)
+        self.assertRegex(version.group(1) if version else "", r"^\d+\.\d+\.\d+$")
+        self.assertRegex(digest.group(1) if digest else "", r"^[0-9a-f]{64}$")
+
+
 class GuardSelfTest(unittest.TestCase):
     def test_detects_truncated_sha(self):
         pins = list(hex_pins("      - uses: actions/checkout@3d3c42e5aac5 # v7"))
