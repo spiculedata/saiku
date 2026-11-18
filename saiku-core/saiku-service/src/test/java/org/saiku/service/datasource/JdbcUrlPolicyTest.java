@@ -277,12 +277,12 @@ public class JdbcUrlPolicyTest {
         java.util.Properties benign = new java.util.Properties();
         benign.setProperty("user", "sa");
         benign.setProperty("password", "");
-        JdbcUrlPolicy.rejectDeniedInfoProperties(benign); // no throw
+        JdbcUrlPolicy.rejectDeniedInfoProperties("jdbc:postgresql://h/db", benign); // no throw
 
         java.util.Properties gadget = new java.util.Properties();
         gadget.setProperty("socketFactory", "com.evil.Factory");
         try {
-            JdbcUrlPolicy.rejectDeniedInfoProperties(gadget);
+            JdbcUrlPolicy.rejectDeniedInfoProperties("jdbc:postgresql://h/db", gadget);
             fail("a denied key smuggled through the info map must be rejected");
         } catch (IllegalArgumentException expected) {
             assertTrue(
@@ -337,14 +337,18 @@ public class JdbcUrlPolicyTest {
         String url = "jdbc:mondrian:Jdbc=jdbc:h2:mem:x;Catalog=file:/x.xml;JdbcPassword="
                 + JdbcUrlPolicy.quoteMondrianValue("p;Provider=mondrian;DynamicSchemaProcessor=com.evil.X")
                 + ";";
-        // Quoted, the credential is one value; the validator is conservative and may still refuse
-        // it, but it must never let an injected DynamicSchemaProcessor key through unnoticed.
+        // Quoted, the credential is one value. The validator reads the string with Mondrian's own
+        // parser, so it accepts it only if Mondrian sees no injected DynamicSchemaProcessor key.
         try {
             JdbcUrlPolicy.validate(url);
-            fail("expected rejection of the embedded DynamicSchemaProcessor key");
-        } catch (IllegalArgumentException expected) {
-            assertTrue(expected.getMessage(), expected.getMessage().contains("DynamicSchemaProcessor"));
+        } catch (IllegalArgumentException refused) {
+            assertTrue(refused.getMessage(), refused.getMessage().contains("DynamicSchemaProcessor"));
+            return;
         }
+        mondrian.olap.Util.PropertyList parsed =
+                mondrian.olap.Util.parseConnectString(url.substring("jdbc:mondrian:".length()));
+        assertEquals(null, parsed.get("DynamicSchemaProcessor"));
+        assertEquals("p;Provider=mondrian;DynamicSchemaProcessor=com.evil.X", parsed.get("JdbcPassword"));
     }
 
     @Test
