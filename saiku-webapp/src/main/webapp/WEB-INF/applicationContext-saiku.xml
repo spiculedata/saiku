@@ -78,7 +78,7 @@
     <security:http pattern="/xmla/**" request-matcher="ant" use-expressions="true"
                    create-session="stateless" entry-point-ref="xmlaBasicAuthChallenge">
       <security:csrf disabled="true"/>
-      <security:intercept-url pattern="/**" access="isFullyAuthenticated()" />
+      <security:intercept-url pattern="/**" access="isFullyAuthenticated() and !hasRole('TOKEN_PRINCIPAL')" />
       <security:http-basic entry-point-ref="xmlaBasicAuthChallenge"/>
       <security:custom-filter ref="loginRateLimitFilter" before="BASIC_AUTH_FILTER"/>
       <security:anonymous/>
@@ -297,27 +297,33 @@
 	    <!-- saiku#941 shareable read-only links. The guest VIEW surface admits
 	         ROLE_SHARE_GUEST (established by shareTokenAuthFilter on a valid
 	         token) OR a logged-in user previewing the link. That role unlocks
-	         ONLY this prefix — every other path stays isFullyAuthenticated()
-	         below, so a guest can never reach /ai/query, drillthrough, other
-	         dashboards, the repository, or the mint endpoints. The owner-only
+	         ONLY this prefix — every other rule below reads
+	         "isFullyAuthenticated() and !hasRole('TOKEN_PRINCIPAL')": the guest
+	         tokens (embed / share / SCIM) carry the ROLE_TOKEN_PRINCIPAL marker
+	         (saiku#2343), so they fail those rules at the URL layer and can never
+	         reach /ai/query, drillthrough, other dashboards, the repository, or
+	         the mint endpoints, even if a filter's URI-prefix check slipped. The owner-only
 	         mint/list/revoke surface (/share/**, not /share/view/**) requires
 	         full auth. Order matters: more specific patterns precede /rest/**. -->
-	    <security:intercept-url pattern="/rest/saiku/share/view/**" access="hasRole('SHARE_GUEST') or isFullyAuthenticated()" />
-	    <security:intercept-url pattern="/rest/saiku/share/**" access="isFullyAuthenticated()" />
+	    <security:intercept-url pattern="/rest/saiku/share/view/**" access="hasRole('SHARE_GUEST') or (isFullyAuthenticated() and !hasRole('TOKEN_PRINCIPAL'))" />
+	    <security:intercept-url pattern="/rest/saiku/share/**" access="isFullyAuthenticated() and !hasRole('TOKEN_PRINCIPAL')" />
 	    <!-- <saiku-embed/> Web Component surface. The READ prefixes (query +
 	         dashboard) admit ROLE_EMBED_GUEST (established by embedAuthFilter on
 	         a valid token OR a matching public-grant) OR a logged-in user
 	         previewing the embed. That role unlocks ONLY these prefixes —
-	         everything else stays isFullyAuthenticated() below, so an embed
-	         guest can never reach /ai/query directly, drillthrough, other
-	         resources, the repository, or the mint endpoints.
+	         everything else requires a real user ("isFullyAuthenticated() and
+	         !hasRole('TOKEN_PRINCIPAL')", saiku#2343), so an embed guest can never
+	         reach /ai/query directly, drillthrough, other resources, the
+	         repository, or the mint endpoints. An embed token of kind "ai" has no
+	         rule of its own and is therefore denied at /embed/ai/** by the
+	         /embed/** fallback; add an explicit rule if a resource is ever mounted.
 	         The mint + public-grant surfaces (/embed/tokens, /embed/public)
 	         stay full-auth — only logged-in users with GRANT on the resource
 	         may mint or make public. Order matters: read prefixes BEFORE
 	         /embed/** so the more specific rule wins. -->
-	    <security:intercept-url pattern="/rest/saiku/api/embed/query/**" access="hasRole('EMBED_GUEST') or isFullyAuthenticated()" />
-	    <security:intercept-url pattern="/rest/saiku/api/embed/dashboard/**" access="hasRole('EMBED_GUEST') or isFullyAuthenticated()" />
-	    <security:intercept-url pattern="/rest/saiku/api/embed/app/**" access="hasRole('EMBED_GUEST') or isFullyAuthenticated()" />
+	    <security:intercept-url pattern="/rest/saiku/api/embed/query/**" access="hasRole('EMBED_GUEST') or (isFullyAuthenticated() and !hasRole('TOKEN_PRINCIPAL'))" />
+	    <security:intercept-url pattern="/rest/saiku/api/embed/dashboard/**" access="hasRole('EMBED_GUEST') or (isFullyAuthenticated() and !hasRole('TOKEN_PRINCIPAL'))" />
+	    <security:intercept-url pattern="/rest/saiku/api/embed/app/**" access="hasRole('EMBED_GUEST') or (isFullyAuthenticated() and !hasRole('TOKEN_PRINCIPAL'))" />
 	    <!-- saiku#1435 Creator Mode. The ONLY writing surface an embed identity
 	         can reach, and it demands the second role (ROLE_EMBED_AUTHOR) that
 	         embedAuthFilter grants ONLY for a valid resourceKind=authoring token
@@ -326,8 +332,8 @@
 	         URL prefix, not a verb on someone else's endpoint. The public-grant
 	         path is refused by the filter for this prefix, so an anonymous
 	         visitor never gets a write scope. Order matters: before /embed/**. -->
-	    <security:intercept-url pattern="/rest/saiku/api/embed/authoring/**" access="hasRole('EMBED_AUTHOR') or isFullyAuthenticated()" />
-	    <security:intercept-url pattern="/rest/saiku/api/embed/**" access="isFullyAuthenticated()" />
+	    <security:intercept-url pattern="/rest/saiku/api/embed/authoring/**" access="hasRole('EMBED_AUTHOR') or (isFullyAuthenticated() and !hasRole('TOKEN_PRINCIPAL'))" />
+	    <security:intercept-url pattern="/rest/saiku/api/embed/**" access="isFullyAuthenticated() and !hasRole('TOKEN_PRINCIPAL')" />
       <!-- saiku#1165 audit-3: route-level admin gate (defense in depth). The
            admin resources already carry @RolesAllowed("ROLE_ADMIN"), but this
            ensures a future un-annotated /admin resource can't be reached by a
@@ -363,8 +369,8 @@
            request-matcher="ant" (match the absolute path), so the ONLY request that can
            reach Jersey is one whose ABSOLUTE path is /rest/…, which lands here and is
            gated by the rules below. -->
-      <security:intercept-url pattern="/rest/**" access="isFullyAuthenticated()" />
-      <security:intercept-url pattern="/json/**" access="isFullyAuthenticated()" />
+      <security:intercept-url pattern="/rest/**" access="isFullyAuthenticated() and !hasRole('TOKEN_PRINCIPAL')" />
+      <security:intercept-url pattern="/json/**" access="isFullyAuthenticated() and !hasRole('TOKEN_PRINCIPAL')" />
       <security:intercept-url pattern="/WEB-INF/classes/legacy-schema" access="isAnonymous()" />
       <!-- saiku#1949: favicon probes. A browser on the root landing page (/, which index.jsp
            meta-refreshes to /ui/) requests /favicon.ico at the site root. There is no such file
@@ -391,12 +397,13 @@
            (/embed-demo**, /aqvira-demo**), /repository and /images, /index.jsp, /style.css and the
            dedicated /xmla/** chain are all unaffected.
 
-           isFullyAuthenticated() (not hasRole('ADMIN')) — this is a plain "you must be logged
-           in" gate, matching the /rest/** rule; authorization beyond that stays with each
+           isFullyAuthenticated() and !hasRole('TOKEN_PRINCIPAL') (not hasRole('ADMIN')) — this
+           is a plain "you must be a logged-in USER" gate, matching the /rest/** rule; the
+           marker excludes the embed / share / SCIM token guests (saiku#2343); authorization beyond that stays with each
            resource's own annotations. 401 (anonymous) / 403 (authenticated but unprivileged)
            is the fail-closed answer for anything not deliberately opened above. Terminal
            catch-all regression guard: saiku-launcher .../it/TerminalCatchAllIT. -->
-      <security:intercept-url pattern="/**" access="isFullyAuthenticated()" />
+      <security:intercept-url pattern="/**" access="isFullyAuthenticated() and !hasRole('TOKEN_PRINCIPAL')" />
       <security:logout logout-url="/logout"/>
       <!-- HTTP Basic re-enabled (saiku#878) so the native MCP endpoint
            and any other stateless agent / DXT-shim client can authenticate

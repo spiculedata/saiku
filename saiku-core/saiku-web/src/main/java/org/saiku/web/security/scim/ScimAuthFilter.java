@@ -17,6 +17,7 @@ import org.saiku.web.scim.ScimRateLimiter;
 import org.saiku.web.scim.ScimToken;
 import org.saiku.web.scim.ScimTokenStore;
 import org.saiku.web.security.RequestPaths;
+import org.saiku.web.security.TokenPrincipals;
 import org.saiku.web.security.audit.AuditLogger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -91,7 +92,12 @@ public class ScimAuthFilter extends OncePerRequestFilter {
         }
 
         PreAuthenticatedAuthenticationToken auth = new PreAuthenticatedAuthenticationToken(
-                "scim:" + token.id, null, List.of(new SimpleGrantedAuthority(SCIM_ROLE)));
+                "scim:" + token.id,
+                null,
+                List.of(
+                        new SimpleGrantedAuthority(SCIM_ROLE),
+                        // saiku#2343: marker so the main chain's real-user rules reject this principal.
+                        new SimpleGrantedAuthority(TokenPrincipals.TOKEN_PRINCIPAL_ROLE)));
         auth.setDetails(new ScimPrincipal(token));
         try {
             SecurityContextHolder.getContext().setAuthentication(auth);

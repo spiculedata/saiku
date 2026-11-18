@@ -13,6 +13,7 @@ import java.util.List;
 import org.saiku.web.schedule.OwnerIdentity;
 import org.saiku.web.schedule.OwnerIdentityResolver;
 import org.saiku.web.security.RequestPaths;
+import org.saiku.web.security.TokenPrincipals;
 import org.saiku.web.share.ShareToken;
 import org.saiku.web.share.ShareTokenStore;
 import org.slf4j.Logger;
@@ -108,7 +109,12 @@ public class ShareTokenAuthFilter extends OncePerRequestFilter {
         }
 
         PreAuthenticatedAuthenticationToken auth = new PreAuthenticatedAuthenticationToken(
-                "share-guest", token.token, List.of(new SimpleGrantedAuthority(GUEST_ROLE)));
+                "share-guest",
+                token.token,
+                List.of(
+                        new SimpleGrantedAuthority(GUEST_ROLE),
+                        // saiku#2343: marker so the fallback URL rules (real users only) reject this guest.
+                        new SimpleGrantedAuthority(TokenPrincipals.TOKEN_PRINCIPAL_ROLE)));
         // Pin the authorised dashboard to the principal — ShareViewResource
         // reads it from here, never from client input.
         auth.setDetails(new ShareGuestDetails(token.token, token.dashboardPath, token.createdBy, owner.currentRoles()));

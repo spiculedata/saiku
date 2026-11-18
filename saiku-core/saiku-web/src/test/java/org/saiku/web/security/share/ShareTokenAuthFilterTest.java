@@ -84,6 +84,12 @@ public class ShareTokenAuthFilterTest {
         assertEquals("/homes/admin/exec.saikudash", d.dashboardPath);
         assertEquals("admin", d.ownerUser);
         assertEquals(List.of("ROLE_ADMIN"), d.ownerRoles);
+        assertEquals(
+                java.util.Set.of(
+                        ShareTokenAuthFilter.GUEST_ROLE, org.saiku.web.security.TokenPrincipals.TOKEN_PRINCIPAL_ROLE),
+                chain.capturedAuth.getAuthorities().stream()
+                        .map(a -> a.getAuthority())
+                        .collect(java.util.stream.Collectors.toSet()));
         assertNull(SecurityContextHolder.getContext().getAuthentication());
     }
 
