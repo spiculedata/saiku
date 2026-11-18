@@ -1,7 +1,7 @@
 {
   "issue": 2343,
   "title": "Guest (embed/share/SCIM) tokens carry a distinct ROLE_TOKEN_PRINCIPAL authority and every isFullyAuthenticated() fallback rule requires a real user, so a guest is confined by the URL rules even if a filter's URI-prefix check slips",
-  "kind": "command",
+  "kind": "ui",
   "criteria": [
     {
       "id": "C1",
