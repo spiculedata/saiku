@@ -1,0 +1,14 @@
+{
+  "issue": 2340,
+  "title": "DataSourceMapper never serialises the password= line of the advanced/csv blobs in admin API responses",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "an advanced or csv datasource whose properties carry a password",
+      "then": "the advanced and csv JSON fields returned by the admin datasource endpoints (including the PUT/POST echo) contain no password= line"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}

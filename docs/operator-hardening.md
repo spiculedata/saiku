@@ -136,3 +136,17 @@ does **not** — telling one tenant that other tenants are spending is nobody's
 useful information, and "try later" is the only actionable answer either way.
 No refusal carries a token count, so the API can't be used to read the ceiling
 back out.
+
+## Pass-through datasource credentials (`saiku.passthrough.retainCredential`)
+
+Datasources with `security.type=passthrough` connect to the warehouse as the signed-in user, so Saiku keeps that
+user's login password in memory for the life of their HTTP session. It is held as a `char[]` outside the shared
+session map (it is never returned by `GET /rest/saiku/session`, never written to the on-disk session store), is
+replaced on re-login, and is zeroed on logout and when the HTTP session expires. A heap dump of a running
+instance can still contain the passwords of currently signed-in users, so treat dumps as sensitive.
+
+If you use no pass-through datasources, stop retaining the password altogether:
+
+```bash
+JAVA_OPTS="-Dsaiku.passthrough.retainCredential=false"
+```

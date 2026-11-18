@@ -229,7 +229,8 @@ public class AiOssieResource {
                     summary.put("metricCount", model.getMetrics().size());
                 } catch (Exception e) {
                     log.warn("listing Ossie model failed for connection '{}': {}", c.getName(), e.getMessage());
-                    summary.put("error", e.getMessage());
+                    // saiku#1920: detail stays in the log above; the caller sees only that it failed.
+                    summary.put("error", "model unavailable");
                 }
                 out.add(summary);
             }
@@ -273,7 +274,7 @@ public class AiOssieResource {
             return badRequest("root", e.getMessage(), List.of());
         } catch (Exception e) {
             log.warn("Ossie graph traversal failed (connection='{}', root='{}')", connectionName, root, e);
-            return error("graph traversal failed: " + e.getMessage());
+            return serverError("graph traversal", e);
         }
     }
 
@@ -301,7 +302,7 @@ public class AiOssieResource {
                     .build();
         } catch (Exception e) {
             log.warn("Ossie entity search failed (connection='{}', q='{}')", connectionName, q, e);
-            return error("search failed: " + e.getMessage());
+            return serverError("search", e);
         }
     }
 
@@ -336,7 +337,7 @@ public class AiOssieResource {
             return badRequest("id", e.getMessage(), List.of());
         } catch (Exception e) {
             log.warn("Ossie entity profile failed (connection='{}', id='{}')", connectionName, id, e);
-            return error("entity profile failed: " + e.getMessage());
+            return serverError("entity profile", e);
         }
     }
 
@@ -366,7 +367,7 @@ public class AiOssieResource {
             return badRequest("model", e.getMessage(), List.of());
         } catch (Exception e) {
             log.warn("Ossie signals failed (connection='{}')", connectionName, e);
-            return error("signals failed: " + e.getMessage());
+            return serverError("signals", e);
         }
     }
 
@@ -399,14 +400,15 @@ public class AiOssieResource {
             }
             // saiku#1393 — strip fields/metrics the caller's roles deny before the agent-facing
             // schema is built, same as the workbench discover endpoint.
-            semantic = OssieRoleContext.filterHidden(semantic, Set.copyOf(SessionRoles.currentRoles()));
+            Set<String> callerRoles = Set.copyOf(SessionRoles.currentRoles());
+            semantic = OssieRoleContext.filterHidden(semantic, callerRoles);
             // #1404 — ?refresh=true drops the projector's cached samples for this model so the
             // next fetch re-runs the SELECT DISTINCTs against the warehouse.
             if (Boolean.TRUE.equals(refresh)) {
                 projector.invalidateSampleCache(connectionName, semantic.getName());
             }
             Connection jdbc = openWarehouseConnection(connectionName);
-            OssieAiSchema schema = projector.project(connectionName, semantic, jdbc);
+            OssieAiSchema schema = projector.project(connectionName, semantic, jdbc, callerRoles);
             return Response.ok(schema).type(MediaType.APPLICATION_JSON).build();
         } catch (IllegalArgumentException e) {
             return badRequest("connection", e.getMessage(), List.of());
@@ -496,7 +498,7 @@ public class AiOssieResource {
             return badRequest("connection", e.getMessage(), List.of());
         } catch (Exception e) {
             log.error("Ossie semantic export failed for connection='{}' tool='{}'", connectionName, tool, e);
-            return error("semantic export failed: " + e.getMessage());
+            return serverError("semantic export", e);
         }
     }
 
@@ -564,7 +566,7 @@ public class AiOssieResource {
             return badRequest("body", e.getMessage(), List.of());
         } catch (Exception e) {
             log.error("Ossie AI query failed", e);
-            return error("query failed: " + e.getMessage());
+            return serverError("query", e);
         }
     }
 
@@ -671,7 +673,12 @@ public class AiOssieResource {
         try {
             OssieModelDto semantic = ossieDiscoverService.getModel(connection);
             if (modelName == null || modelName.isBlank()) modelName = semantic.getName();
-            OssieAiSchema schema = projector.project(connection, semantic, openWarehouseConnection(connection));
+            // saiku#2324 — same role scoping as GET /schema: denied fields (and their sample
+            // values) must not reach the LLM prompt, and samples honour the row predicates.
+            Set<String> callerRoles = Set.copyOf(SessionRoles.currentRoles());
+            semantic = OssieRoleContext.filterHidden(semantic, callerRoles);
+            OssieAiSchema schema =
+                    projector.project(connection, semantic, openWarehouseConnection(connection), callerRoles);
 
             org.saiku.service.ossie.ai.OssieAiAskService.AskResult ar =
                     askService.ask(question, schema, connection, modelName, history);
@@ -778,7 +785,7 @@ public class AiOssieResource {
             return badRequest(e.getField(), e.getMessage(), e.getAvailable());
         } catch (Exception e) {
             log.error("Ossie AI anomaly failed", e);
-            return error("anomaly detection failed: " + e.getMessage());
+            return serverError("anomaly detection", e);
         }
     }
 
@@ -829,7 +836,7 @@ public class AiOssieResource {
             return badRequest(e.getField(), e.getMessage(), e.getAvailable());
         } catch (Exception e) {
             log.error("Ossie AI forecast failed", e);
-            return error("forecast failed: " + e.getMessage());
+            return serverError("forecast", e);
         }
     }
 
@@ -875,7 +882,7 @@ public class AiOssieResource {
             return badRequest(e.getField(), e.getMessage(), e.getAvailable());
         } catch (Exception e) {
             log.error("Ossie AI row-detail failed", e);
-            return error("row-detail failed: " + e.getMessage());
+            return serverError("row-detail", e);
         }
     }
 
@@ -951,7 +958,7 @@ public class AiOssieResource {
             return badRequest(e.getField(), e.getMessage(), e.getAvailable());
         } catch (Exception e) {
             log.error("Ossie AI async submit failed", e);
-            return error("submit failed: " + e.getMessage());
+            return serverError("submit", e);
         }
     }
 
@@ -1139,7 +1146,7 @@ public class AiOssieResource {
             return badRequest("body", e.getMessage(), List.of());
         } catch (Exception e) {
             log.error("Ossie AI query preview failed", e);
-            return error("preview failed: " + e.getMessage());
+            return serverError("preview", e);
         }
     }
 
@@ -1189,6 +1196,11 @@ public class AiOssieResource {
             if (modelName != null && !modelName.isBlank() && !modelName.equalsIgnoreCase(semantic.getName())) {
                 return badRequest("model", "unknown model '" + modelName + "'", List.of(semantic.getName()));
             }
+            // saiku#2324 — resolve the field from the caller's role-filtered view (a denied field
+            // is "unknown", same as in GET /schema) and scope the query to their row predicates.
+            Set<String> callerRoles = Set.copyOf(SessionRoles.currentRoles());
+            OssieRoleContext roleContext = OssieRoleContext.resolve(callerRoles, semantic);
+            semantic = OssieRoleContext.filterHidden(semantic, callerRoles);
             OssieModelDto.Dataset ds = null;
             for (OssieModelDto.Dataset d : semantic.getDatasets()) {
                 if (d.getName().equalsIgnoreCase(datasetName)) {
@@ -1221,7 +1233,8 @@ public class AiOssieResource {
                 return error("could not open warehouse connection for '" + connectionName + "'");
             }
             try {
-                List<String> matches = runValuesSearch(jdbc, ds, field, q, cap);
+                List<String> matches =
+                        runValuesSearch(jdbc, ds, field, q, cap, roleContext.combinedRowPredicateFor(ds.getName()));
                 Map<String, Object> body = new LinkedHashMap<>();
                 body.put("connection", connectionName);
                 body.put("model", semantic.getName());
@@ -1241,19 +1254,25 @@ public class AiOssieResource {
             return badRequest("body", e.getMessage(), List.of());
         } catch (Exception e) {
             log.error("Ossie AI values-search failed", e);
-            return error("values-search failed: " + e.getMessage());
+            return serverError("values-search", e);
         }
     }
 
     private List<String> runValuesSearch(
-            Connection jdbc, OssieModelDto.Dataset ds, OssieModelDto.Field field, String q, int cap) throws Exception {
+            Connection jdbc,
+            OssieModelDto.Dataset ds,
+            OssieModelDto.Field field,
+            String q,
+            int cap,
+            String rowPredicate)
+            throws Exception {
         // Ossie's Calcite schema exposes tables under their DATASET name (e.g. "payer"), not
         // their raw source name (e.g. "DIM_PAYER"). Quote it so caseSensitive=false doesn't
         // matter; column stays unquoted so we get the same case-insensitive resolution the
         // projector's sample-value query relies on.
         String src = "\"" + ds.getName() + "\"";
         String col = field.getName();
-        String sql = buildValuesSearchSql(col, src, q, cap);
+        String sql = buildValuesSearchSql(col, src, q, cap, rowPredicate);
         List<String> out = new ArrayList<>();
         try (java.sql.Statement st = jdbc.createStatement();
                 java.sql.ResultSet rs = st.executeQuery(sql)) {
@@ -1277,12 +1296,23 @@ public class AiOssieResource {
      * region is asserted by {@code SearchValuesSqlFuzzTest}.
      */
     static String buildValuesSearchSql(String col, String src, String q, int cap) {
+        return buildValuesSearchSql(col, src, q, cap, null);
+    }
+
+    /**
+     * As above, ANDed with the caller's combined {@code saiku.roles} row predicate (saiku#2324)
+     * when one applies. The predicate is operator-authored model YAML, not caller input, and is
+     * parenthesised so an OR inside it cannot widen the {@code LIKE} filter.
+     */
+    static String buildValuesSearchSql(String col, String src, String q, int cap, String rowPredicate) {
+        String scope = rowPredicate == null ? null : "(" + rowPredicate + ")";
         if (q == null || q.isBlank()) {
-            return "SELECT DISTINCT " + col + " FROM " + src + " LIMIT " + cap;
+            return "SELECT DISTINCT " + col + " FROM " + src + (scope == null ? "" : " WHERE " + scope) + " LIMIT "
+                    + cap;
         }
         String escaped = q.toUpperCase(java.util.Locale.ROOT).replace("'", "''");
-        return "SELECT DISTINCT " + col + " FROM " + src + " WHERE UPPER(CAST(" + col + " AS VARCHAR)) LIKE '%"
-                + escaped + "%' LIMIT " + cap;
+        return "SELECT DISTINCT " + col + " FROM " + src + " WHERE " + (scope == null ? "" : scope + " AND ")
+                + "UPPER(CAST(" + col + " AS VARCHAR)) LIKE '%" + escaped + "%' LIMIT " + cap;
     }
 
     // -------------------------------------------------------------------
@@ -1657,6 +1687,26 @@ public class AiOssieResource {
         body.put("message", message);
         body.put("available", available == null ? List.of() : available);
         return Response.status(Response.Status.BAD_REQUEST)
+                .entity(body)
+                .type(MediaType.APPLICATION_JSON)
+                .build();
+    }
+
+    /**
+     * 500 envelope for the catch-all branches (saiku#1920). The exception text can carry the full
+     * SQL (including the caller's row-level-security predicate), JDBC URLs and vendor details, so
+     * it goes to the server log only; the caller gets a stable code and a {@code ref} that appears
+     * in the same log line.
+     */
+    private Response serverError(String op, Exception e) {
+        String ref = UUID.randomUUID().toString().substring(0, 8);
+        log.error("Ossie AI {} failed [ref={}]", op, ref, e);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("error", "SERVER_ERROR");
+        body.put("op", op);
+        body.put("ref", ref);
+        body.put("message", op + " failed; see server log for ref " + ref);
+        return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
                 .entity(body)
                 .type(MediaType.APPLICATION_JSON)
                 .build();
