@@ -75,6 +75,11 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-11-19 — fix/2421-design-system-publish-hardening — repaired PR #2447 acceptance check
+**Was doing:** updated acceptance/2335 to recognize the verified tarball output used by the publish job; local acceptance, script tests, and design-system build/check pass.
+**Now:** check PR #2447 CI after the push; maintainers still need to review the workflow and protect npm-publish with an environment secret.
+**Refs:** #2421, #2335, PR #2447
+
 ## 2026-11-10 — feature/1393-role-security-verification — fuzz + E2E coverage for #1393
 **Was doing:** shipped the two remaining acceptance-criteria tests for the Ossie role security (row-predicate fuzz cases in OssieFuzzIT with a two-role restricted pass + hand-computed window totals, and a mocked-backend Playwright spec `ossie-role-visibility.spec.ts` with per-caller fixture overrides).
 **Now:** watch PR CI — the Java side could not compile locally: the hive token has no `read:packages` scope (GitHub Packages returns bare 401 for `bi.saiku.ossie:ossie-sql:0.1.0` and `avatica-server:1.28.0.jar`), so CI is the first compile pass. Prettier + `tsc --strict` on the e2e files pass locally; Chromium cannot launch here (missing libglib-2.0.so.0).
