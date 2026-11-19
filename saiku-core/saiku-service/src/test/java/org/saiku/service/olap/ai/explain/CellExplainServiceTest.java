@@ -12,11 +12,17 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.lang.reflect.Proxy;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.Test;
 import org.olap4j.CellSet;
+import org.olap4j.OlapConnection;
+import org.olap4j.OlapException;
+import org.olap4j.OlapStatement;
 import org.saiku.olap.dto.SaikuCube;
 import org.saiku.olap.query2.ThinQuery;
+import org.saiku.service.olap.OlapDiscoverService;
 import org.saiku.service.olap.ThinQueryService;
 import org.saiku.service.olap.ai.AiCubeMetadataService;
 import org.saiku.service.olap.ai.AiPolicy;
@@ -150,6 +156,41 @@ public class CellExplainServiceTest {
 
         assertNull(result.getSql());
         assertTrue(result.getNotes().isEmpty());
+    }
+
+    /* ---- saiku#2443: the borrowed connection is not explain's to close ---- */
+
+    /**
+     * The SQL capture borrows the connection manager's cached connection, which every other query
+     * on the datasource shares. It must close the statement and cellset it created and leave the
+     * connection open, or other users' running queries fail with "Connection is closed".
+     */
+    @Test
+    public void sqlCaptureClosesItsStatementAndCellsetButNotTheBorrowedConnection() {
+        List<String> closed = new ArrayList<>();
+        CellExplainService service = service(context(stubCellSet()));
+        service.setOlapDiscoverService(discoverServiceLending(borrowedConnection(closed, false)));
+
+        service.explain(request("q1", 0, 0));
+
+        assertTrue("the statement explain created must be closed: " + closed, closed.contains("statement"));
+        assertTrue("the cellset explain created must be closed: " + closed, closed.contains("cellset"));
+        assertFalse("the borrowed, shared connection must stay open: " + closed, closed.contains("connection"));
+    }
+
+    /** Same contract when the cell query fails: the failure path must not close the connection either. */
+    @Test
+    public void aFailedSqlCaptureStillLeavesTheBorrowedConnectionOpen() {
+        List<String> closed = new ArrayList<>();
+        CellExplainService service = service(context(stubCellSet()));
+        service.setOlapDiscoverService(discoverServiceLending(borrowedConnection(closed, true)));
+
+        CellExplainResult result = service.explain(request("q1", 0, 0));
+
+        assertNull(result.getSql());
+        assertTrue(result.getNotes().toString(), result.getNotes().toString().contains("could not be re-run"));
+        assertTrue("the statement explain created must be closed: " + closed, closed.contains("statement"));
+        assertFalse("the borrowed, shared connection must stay open: " + closed, closed.contains("connection"));
     }
 
     /* ---- saiku#2192: the explained cell names its own measure ---- */
@@ -348,6 +389,70 @@ public class CellExplainServiceTest {
             context.store(QueryContext.ObjectKey.RESULT, result);
         }
         return context;
+    }
+
+    /** A discover service that hands out {@code connection}, as the connection manager's cache would. */
+    private static OlapDiscoverService discoverServiceLending(OlapConnection connection) {
+        return new OlapDiscoverService() {
+            @Override
+            public OlapConnection getNativeConnection(String name) {
+                return connection;
+            }
+        };
+    }
+
+    /**
+     * A connection whose statements run (or, with {@code failExecute}, fail) the cell query, and
+     * which records into {@code closed} each of connection, statement and cellset that is closed.
+     */
+    private static OlapConnection borrowedConnection(List<String> closed, boolean failExecute) {
+        CellSet cellSet = (CellSet) Proxy.newProxyInstance(
+                CellSet.class.getClassLoader(), new Class<?>[] {CellSet.class}, (proxy, method, args) -> {
+                    if ("close".equals(method.getName())) {
+                        closed.add("cellset");
+                    }
+                    return defaultValue(method.getReturnType());
+                });
+        OlapStatement statement = (OlapStatement) Proxy.newProxyInstance(
+                OlapStatement.class.getClassLoader(), new Class<?>[] {OlapStatement.class}, (proxy, method, args) -> {
+                    switch (method.getName()) {
+                        case "close":
+                            closed.add("statement");
+                            return null;
+                        case "executeOlapQuery":
+                            if (failExecute) {
+                                throw new OlapException("cell query failed");
+                            }
+                            return cellSet;
+                        default:
+                            return defaultValue(method.getReturnType());
+                    }
+                });
+        return (OlapConnection) Proxy.newProxyInstance(
+                OlapConnection.class.getClassLoader(), new Class<?>[] {OlapConnection.class}, (proxy, method, args) -> {
+                    switch (method.getName()) {
+                        case "close":
+                            closed.add("connection");
+                            return null;
+                        case "createStatement":
+                            return statement;
+                        default:
+                            return defaultValue(method.getReturnType());
+                    }
+                });
+    }
+
+    private static Object defaultValue(Class<?> type) {
+        if (type == boolean.class) {
+            return false;
+        }
+        if (type == int.class) {
+            return 0;
+        }
+        if (type == long.class) {
+            return 0L;
+        }
+        return null;
     }
 
     /** A CellSet stand-in: the service only hands it to the (overridden) view factory. */
