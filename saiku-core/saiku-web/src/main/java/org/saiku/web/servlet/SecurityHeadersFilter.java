@@ -14,6 +14,7 @@ import jakarta.servlet.ServletResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import org.saiku.web.security.RequestPaths;
 
 /**
  * Stamps browser-facing security response headers on every response (saiku#1165
@@ -81,7 +82,7 @@ public class SecurityHeadersFilter implements Filter {
             // plugin), so this response is what sandboxes the plugin: no operator shell
             // CSP and no report-only shell policy, just PLUGIN_FRAME_CSP + frame-ancestors.
             if (isPluginFrame(request)) {
-                String frameAncestors = frameAncestors();
+                String frameAncestors = pluginFrameAncestors(frameAncestors());
                 resp.setHeader("Content-Security-Policy", pluginFrameCsp(frameAncestors));
                 if (frameAncestors != null) {
                     String xfo = xFrameOptionsFor(frameAncestors);
@@ -155,11 +156,13 @@ public class SecurityHeadersFilter implements Filter {
      * <p>The frame runs admin-installed plugin code, which is inline script by design
      * ({@code docs/APP-BUILDER-PLUGINS.md}), so {@code script-src 'unsafe-inline'} is the point.
      * {@code sandbox allow-scripts} (no {@code allow-same-origin}) gives the document an opaque
-     * origin even when the URL is opened outside the tile's sandboxed iframe, so it can never act
-     * as the Saiku origin. Everything else is denied: no remote scripts, styles, fonts, frames or
-     * workers, no fetch/XHR/WebSocket ({@code connect-src 'none'}; the data arrives over
-     * postMessage), no {@code <base>}, no form posts. The file itself is static and never
-     * reflects request input: the host posts the plugin document into it.
+     * origin even when it is loaded without the tile's sandboxed iframe (opened top-level, or
+     * framed without a {@code sandbox} attribute). That holds for every spelling of the path the
+     * container resolves to this file, because {@link #isPluginFrame} decides on the decoded path.
+     * Everything else is denied: no remote scripts, styles, fonts, frames or workers, no
+     * fetch/XHR/WebSocket ({@code connect-src 'none'}; the data arrives over postMessage), no
+     * {@code <base>}, no form posts. The file itself is static and never reflects request input:
+     * the host posts the plugin document into it.
      */
     static final String PLUGIN_FRAME_CSP = "sandbox allow-scripts; "
             + "default-src 'none'; "
@@ -170,28 +173,58 @@ public class SecurityHeadersFilter implements Filter {
             + "base-uri 'none'; "
             + "form-action 'none'";
 
-    /**
-     * The plugin frame policy with {@code frame-ancestors}: the same value as the rest of the UI
-     * ({@code 'self'} by default), so the frame can be embedded wherever the SPA itself can,
-     * and nowhere else. Omitted when the operator turned framing protection {@code off}.
-     */
+    /** The plugin frame policy, with {@code frame-ancestors} when one applies. */
     static String pluginFrameCsp(String frameAncestors) {
         return frameAncestors == null ? PLUGIN_FRAME_CSP : PLUGIN_FRAME_CSP + "; frame-ancestors " + frameAncestors;
     }
 
-    /** True for a request of exactly {@link #PLUGIN_FRAME_PATH} under the webapp context. */
+    /**
+     * The {@code frame-ancestors} for the plugin frame, derived from the UI's value
+     * ({@link #frameAncestors()}). The frame's parent is always the Saiku SPA, so {@code 'self'}
+     * is always admitted: {@code 'none'} becomes {@code 'self'} and an allow-list without it gets
+     * it prepended. Otherwise the tile would be refused inside Saiku's own pages. This does not
+     * make the SPA more frameable: the SPA keeps its own value, and {@code frame-ancestors}
+     * checks every ancestor, so a page the SPA may not be framed by still cannot reach the
+     * plugin frame through it. {@code null} (framing protection {@code off}) stays {@code null}.
+     */
+    static String pluginFrameAncestors(String frameAncestors) {
+        if (frameAncestors == null) {
+            return null;
+        }
+        String value = frameAncestors.trim();
+        if (value.isEmpty() || "'none'".equalsIgnoreCase(value)) {
+            return DEFAULT_FRAME_ANCESTORS;
+        }
+        for (String source : value.split("\\s+")) {
+            if ("'self'".equalsIgnoreCase(source)) {
+                return value;
+            }
+        }
+        return DEFAULT_FRAME_ANCESTORS + " " + value;
+    }
+
+    /**
+     * True for a request of {@link #PLUGIN_FRAME_PATH} under the webapp context, on the decoded
+     * path the container serves the file from ({@link RequestPaths#pathWithinApplication}, #2342),
+     * so percent-encoded spellings ({@code /ui/%70lugin-frame.html}) get the frame policy too.
+     * {@link RequestPaths} leaves a percent-encoded context path in place
+     * ({@code /%73aiku/ui/plugin-frame.html}), so the context path is also stripped from the
+     * decoded form. Over-matching is harmless here: this policy is stricter than the shell's.
+     */
     static boolean isPluginFrame(ServletRequest request) {
         if (!(request instanceof HttpServletRequest)) {
             return false;
         }
         HttpServletRequest req = (HttpServletRequest) request;
-        String uri = req.getRequestURI();
-        String context = req.getContextPath();
-        if (uri == null) {
+        String path = RequestPaths.pathWithinApplication(req);
+        if (path == null) {
             return false;
         }
-        String path = context != null && uri.startsWith(context) ? uri.substring(context.length()) : uri;
-        return PLUGIN_FRAME_PATH.equals(path);
+        if (PLUGIN_FRAME_PATH.equals(path)) {
+            return true;
+        }
+        String context = req.getContextPath();
+        return context != null && !context.isEmpty() && path.equals(context + PLUGIN_FRAME_PATH);
     }
 
     /**

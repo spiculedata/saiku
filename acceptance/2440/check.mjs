@@ -76,12 +76,26 @@ if (base) {
     checkPolicy('live header', res.headers.get('content-security-policy') ?? '');
     claim('C3', 'live: no report-only shell policy on the frame', !res.headers.get('content-security-policy-report-only'));
   }
+  // The container decodes the path before it picks the file, so every spelling that serves the
+  // bootstrap must carry the frame policy too.
+  for (const spelling of ['/ui/%70lugin-frame.html', '/ui/plugin%2Dframe.html', '/%75i/plugin-frame.html']) {
+    let r = null;
+    try {
+      r = await fetch(`${base}${spelling}`, { redirect: 'manual' });
+    } catch (e) {
+      failures.push(`C3: GET ${spelling} failed: ${e.message}`);
+    }
+    if (r && r.status === 200 && /saiku-plugin-load/.test(await r.text())) {
+      checkPolicy(`live header for ${spelling}`, r.headers.get('content-security-policy') ?? '');
+    }
+  }
 } else {
   const filter = read('saiku-core/saiku-web/src/main/java/org/saiku/web/servlet/SecurityHeadersFilter.java');
   const constant = filter.match(/PLUGIN_FRAME_CSP\s*=\s*((?:"[^"]*"\s*\+?\s*)+);/)?.[1] ?? '';
   const csp = [...constant.matchAll(/"([^"]*)"/g)].map((m) => m[1]).join('') + '; frame-ancestors ' + "'self'";
   claim('C3', 'SecurityHeadersFilter declares PLUGIN_FRAME_CSP', constant !== '');
   claim('C3', 'SecurityHeadersFilter serves it for /ui/plugin-frame.html', /\/ui\/plugin-frame\.html/.test(filter));
+  claim('C3', 'SecurityHeadersFilter matches the decoded path (RequestPaths.pathWithinApplication)', /isPluginFrame[\s\S]*?RequestPaths\.pathWithinApplication/.test(filter));
   if (constant) checkPolicy('SecurityHeadersFilter.PLUGIN_FRAME_CSP', csp);
 }
 

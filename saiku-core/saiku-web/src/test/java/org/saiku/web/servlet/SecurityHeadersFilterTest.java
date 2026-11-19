@@ -243,10 +243,82 @@ public class SecurityHeadersFilterTest {
     }
 
     @Test
+    public void pluginFrameAlwaysAdmitsSelfButTheShellKeepsTheOperatorValue() throws Exception {
+        // The frame's parent is always the SPA, so 'none' or an allow-list without 'self' would
+        // leave every plugin tile empty. The shell itself keeps exactly the configured value.
+        String prev = System.getProperty(PROP);
+        try {
+            System.setProperty(PROP, "'none'");
+            MockHttpServletResponse frame = serve("", "/ui/plugin-frame.html");
+            assertEquals(
+                    "'self'",
+                    directives(frame.getHeader("Content-Security-Policy")).get("frame-ancestors"));
+            assertEquals("SAMEORIGIN", frame.getHeader("X-Frame-Options"));
+            MockHttpServletResponse shell = serve("", "/ui/");
+            assertEquals("frame-ancestors 'none'", shell.getHeader("Content-Security-Policy"));
+            assertEquals("DENY", shell.getHeader("X-Frame-Options"));
+
+            System.setProperty(PROP, "https://wiki.example.com");
+            frame = serve("", "/ui/plugin-frame.html");
+            assertEquals(
+                    "'self' https://wiki.example.com",
+                    directives(frame.getHeader("Content-Security-Policy")).get("frame-ancestors"));
+            assertNull("an allow-list has no X-Frame-Options form", frame.getHeader("X-Frame-Options"));
+            shell = serve("", "/ui/");
+            assertEquals("frame-ancestors https://wiki.example.com", shell.getHeader("Content-Security-Policy"));
+        } finally {
+            restore(PROP, prev);
+        }
+    }
+
+    @Test
+    public void pluginFrameAncestorsDerivation() {
+        assertEquals("'self'", SecurityHeadersFilter.pluginFrameAncestors("'self'"));
+        assertEquals("'self'", SecurityHeadersFilter.pluginFrameAncestors("'none'"));
+        assertEquals("'self'", SecurityHeadersFilter.pluginFrameAncestors("'NONE'"));
+        assertEquals("'self' https://a.example", SecurityHeadersFilter.pluginFrameAncestors("https://a.example"));
+        assertEquals(
+                "https://a.example 'self'", SecurityHeadersFilter.pluginFrameAncestors("https://a.example 'self'"));
+        assertNull(SecurityHeadersFilter.pluginFrameAncestors(null));
+    }
+
+    @Test
+    public void pluginFramePolicyAppliesToEveryEncodedSpellingOfThePath() throws Exception {
+        // The container decodes before it picks the file (#2342), so these all serve the
+        // bootstrap. Each must carry the sandboxed frame policy, not the shell's.
+        String[][] cases = {
+            {"", "/ui/%70lugin-frame.html"},
+            {"", "/ui/plugin%2Dframe.html"},
+            {"", "/%75i/plugin-frame.html"},
+            {"", "/ui/plugin-frame.html;jsessionid=x"},
+            {"", "/ui/./plugin-frame.html"},
+            {"", "//ui//plugin-frame.html"},
+            {"/saiku", "/saiku/ui/%70lugin-frame.html"},
+            {"/saiku", "/%73aiku/ui/plugin-frame.html"}
+        };
+        for (String[] c : cases) {
+            MockHttpServletResponse resp = serve(c[0], c[1]);
+            Map<String, String> d = directives(resp.getHeader("Content-Security-Policy"));
+            assertEquals(c[1] + " must be sandboxed", "allow-scripts", d.get("sandbox"));
+            assertEquals(c[1], "'none'", d.get("default-src"));
+            assertNull(c[1], resp.getHeader("Content-Security-Policy-Report-Only"));
+        }
+    }
+
+    @Test
     public void pluginFramePathIsMatchedExactlyUnderTheContextPath() throws Exception {
         assertTrue(directives(serve("/saiku", "/saiku/ui/plugin-frame.html").getHeader("Content-Security-Policy"))
                 .containsKey("sandbox"));
-        for (String uri : new String[] {"/ui/", "/ui/index.html", "/ui/plugin-frame.html.js", "/plugin-frame.html"}) {
+        for (String uri : new String[] {
+            "/ui/",
+            "/ui/index.html",
+            "/ui/plugin-frame.html.js",
+            "/plugin-frame.html",
+            "/ui/x/plugin-frame.html",
+            "/ui/plugin-frame.htm",
+            "/ui/../ui/plugin-frame.html",
+            "/ui/plugin-frame.html/"
+        }) {
             MockHttpServletResponse resp = serve("", uri);
             String csp = resp.getHeader("Content-Security-Policy");
             assertFalse(uri + " must keep the shell policy", csp != null && csp.contains("sandbox"));
