@@ -17,6 +17,7 @@ import java.util.Map;
 import java.util.UUID;
 import org.saiku.service.olap.ai.AiValidationException;
 import org.saiku.service.util.exception.SaikuAccessDeniedException;
+import org.saiku.service.util.exception.SaikuQueryRejectedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -145,7 +146,21 @@ public class GenericExceptionMapper implements ExceptionMapper<Throwable> {
                     .build();
         }
 
-        // 6) Everything else: log the full stack server-side keyed by a
+        // 6) saiku#2420 — a guardrail rejection (the raw DRILLTHROUGH cap could not prove its
+        //    bound) is a client error about the submitted statement, not a server fault: 400
+        //    with a fixed, information-free body. Found through the cause chain because a
+        //    resource or service wrapper may rewrap it — by TYPE, never by message text.
+        if (findQueryRejected(t) != null) {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("status", "REJECTED");
+            body.put("error", "Query refused: the server could not enforce its row cap on this statement");
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .type(MediaType.APPLICATION_JSON)
+                    .entity(body)
+                    .build();
+        }
+
+        // 7) Everything else: log the full stack server-side keyed by a
         //    correlation id and return an information-free 500. The body
         //    carries no message, class name, cause chain, or stack.
         String ref = UUID.randomUUID().toString();
@@ -173,6 +188,20 @@ public class GenericExceptionMapper implements ExceptionMapper<Throwable> {
         for (Throwable c = t; c != null; c = c.getCause() == c ? null : c.getCause()) {
             if (c instanceof SaikuAccessDeniedException denied) {
                 return denied;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Walk the cause chain for a {@link SaikuQueryRejectedException} (saiku#2420), same walk
+     * discipline as {@link #findAccessDenied}: by type, wrapping-safe, self-referencing chains
+     * terminate the loop.
+     */
+    static SaikuQueryRejectedException findQueryRejected(Throwable t) {
+        for (Throwable c = t; c != null; c = c.getCause() == c ? null : c.getCause()) {
+            if (c instanceof SaikuQueryRejectedException rejected) {
+                return rejected;
             }
         }
         return null;

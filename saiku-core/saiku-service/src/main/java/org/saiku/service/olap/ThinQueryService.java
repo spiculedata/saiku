@@ -951,7 +951,11 @@ public class ThinQueryService implements Serializable {
             // saiku#1914: the caller supplied raw DRILLTHROUGH MDX with no server cap.
             // Inject/clamp a MAXROWS bound so the fact-table scan is bounded regardless
             // of what the request body asked for.
-            return stmt.executeQuery(DrillthroughMdxBuilder.capRawDrillthrough(query.getMdx(), 0));
+            // saiku#2420: fail closed — when the clamp cannot prove a 1..ceiling bound
+            // (unterminated comment, garbage/zero bound, lexer disagreement), the statement is
+            // refused with a typed rejection instead of executing unbounded, and the capped
+            // statement is re-verified by Mondrian's own parser before execution.
+            return stmt.executeQuery(DrillthroughMdxBuilder.capRawDrillthrough(con, query.getMdx(), 0));
         } catch (SQLException e) {
             throw new SaikuServiceException(
                     "Error DRILLTHROUGH: " + query.getMdx() + " DRILLTHROUGH MDX:" + query.getMdx(), e);

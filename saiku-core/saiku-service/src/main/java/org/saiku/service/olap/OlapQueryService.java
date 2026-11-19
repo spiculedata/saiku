@@ -562,7 +562,10 @@ public class OlapQueryService implements Serializable {
             stmt = con.createStatement();
             QueryGuardrails.applyQueryTimeout(stmt);
             // saiku#1914: raw client MDX — inject/clamp a server-side row cap.
-            return stmt.executeQuery(DrillthroughMdxBuilder.capRawDrillthrough(drillthroughMdx, 0));
+            // saiku#2420: fail closed — see ThinQueryService.drillthrough(ThinQuery); the
+            // capped statement is refused via a typed rejection when no verifiable 1..ceiling
+            // bound can be produced, and re-verified by Mondrian's parser before execution.
+            return stmt.executeQuery(DrillthroughMdxBuilder.capRawDrillthrough(con, drillthroughMdx, 0));
         } catch (SQLException e) {
             throw new SaikuServiceException(
                     "Error DRILLTHROUGH: " + queryName + " DRILLTHROUGH MDX:" + drillthroughMdx, e);
