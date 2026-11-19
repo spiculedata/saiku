@@ -56,7 +56,12 @@ public class SaikuCsrfRequestMatcherTest {
     @Test
     public void loginEndpointIsExempt() {
         assertFalse(matcher.matches(req("POST", "/rest/saiku/session")));
-        assertFalse(matcher.matches(req("POST", "/rest/saiku/session/clear")));
+    }
+
+    @Test
+    public void sessionSubPathsAreNotCsrfExempt() {
+        assertTrue(matcher.matches(req("POST", "/rest/saiku/session/clear")));
+        assertTrue(matcher.matches(req("POST", "/rest/saiku/session/anything")));
     }
 
     @Test
