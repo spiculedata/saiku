@@ -209,13 +209,16 @@ public class CellExplainService {
         }
         OlapConnection connection = null;
         OlapStatement statement = null;
-        SqlCaptureProbe probe = SqlCaptureProbe.open();
+        SqlCaptureProbe probe = null;
         try {
             connection = olapDiscoverService.getNativeConnection(cube.getConnection());
             if (StringUtils.isNotBlank(cube.getCatalog())) {
                 connection.setCatalog(cube.getCatalog());
             }
             statement = connection.createStatement();
+            // Scoped to this statement's Mondrian execution: the loggers are process-global, so
+            // another user's concurrent SQL must not be mistaken for this cell's (saiku#2328).
+            probe = SqlCaptureProbe.open(MondrianStatementScope.forStatement(statement));
             statement.executeOlapQuery(cellMdx);
             String captured = probe.representativeStatement();
             if (captured == null) {
@@ -236,7 +239,9 @@ public class CellExplainService {
         } finally {
             closeQuietly(statement);
             closeQuietly(connection);
-            probe.close();
+            if (probe != null) {
+                probe.close();
+            }
         }
     }
 

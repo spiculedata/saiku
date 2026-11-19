@@ -53,9 +53,16 @@ import org.apache.logging.log4j.core.config.LoggerConfig;
  * cannot keep the loggers at {@code DEBUG} for the life of the JVM. Opening fails closed: if it
  * throws, nothing it raised stays raised unless another open probe holds it.
  *
- * <p>Threading: Mondrian may log from its own worker threads (segment loading), so the capture is
- * not filtered by thread. The list is synchronized — a probe that silently lost statements would
- * produce a panel that quietly lies, which is worse than the cost.
+ * <p><b>Whose statements (saiku#2328).</b> The loggers are process-global, so while a probe is
+ * open every concurrent user's SQL reaches its appender. The appender therefore accepts an event
+ * only when the probe's {@link Scope} claims it. A scope is evaluated on the LOGGING thread, so it
+ * can recognise Mondrian worker threads (shepherd, segment loading) that are running the explained
+ * execution; the default scope claims only the thread that opened the probe. A statement that is
+ * not provably this execution's is dropped: a panel that misses a line is acceptable, one that
+ * shows another user's SQL (filter literals, role predicates) is not.
+ *
+ * <p>The list is synchronized — a probe that silently lost its own statements would produce a
+ * panel that quietly lies, which is worse than the cost.
  */
 public final class SqlCaptureProbe {
 
@@ -98,15 +105,32 @@ public final class SqlCaptureProbe {
     private final Cleaner.Cleanable release;
 
     /**
+     * Decides, on the thread that is logging, whether the event being delivered belongs to the
+     * execution this probe was opened for.
+     */
+    @FunctionalInterface
+    public interface Scope {
+        boolean owns();
+
+        /** Claims only events logged by {@code thread} (the default for a probe). */
+        static Scope thread(Thread thread) {
+            return () -> Thread.currentThread() == thread;
+        }
+    }
+
+    /**
      * Static so that the appender, which the logger configuration holds, does not keep the probe
      * reachable; otherwise a probe that was never closed could never be released by the cleaner.
      */
     private static final class CaptureAppender extends AbstractAppender {
         private final List<String> statements;
         private final int maxStatements;
+        /** Never refers to the probe (saiku#2328 scopes capture only a thread or a statement id). */
+        private final Scope scope;
+
         private volatile boolean open = true;
 
-        CaptureAppender(List<String> statements, int maxStatements) {
+        CaptureAppender(List<String> statements, int maxStatements, Scope scope) {
             super(
                     "saiku-sql-capture-" + SEQUENCE.incrementAndGet(),
                     null,
@@ -115,11 +139,12 @@ public final class SqlCaptureProbe {
                     org.apache.logging.log4j.core.config.Property.EMPTY_ARRAY);
             this.statements = statements;
             this.maxStatements = Math.max(1, maxStatements);
+            this.scope = scope;
         }
 
         @Override
         public void append(LogEvent event) {
-            if (!open || event == null || event.getMessage() == null) {
+            if (!open || event == null || event.getMessage() == null || !ownsCurrentEvent()) {
                 return;
             }
             String sql = extractSql(event.getMessage().getFormattedMessage());
@@ -130,6 +155,15 @@ public final class SqlCaptureProbe {
                 if (statements.size() < maxStatements && !statements.contains(sql)) {
                     statements.add(sql);
                 }
+            }
+        }
+
+        private boolean ownsCurrentEvent() {
+            try {
+                return scope.owns();
+            } catch (RuntimeException e) {
+                // Fail closed: when ownership cannot be established the statement is not shown.
+                return false;
             }
         }
     }
@@ -169,9 +203,9 @@ public final class SqlCaptureProbe {
         }
     }
 
-    private SqlCaptureProbe(int maxStatements, BiFunction<Object, Runnable, Cleaner.Cleanable> registrar) {
+    private SqlCaptureProbe(int maxStatements, Scope scope, BiFunction<Object, Runnable, Cleaner.Cleanable> registrar) {
         this.context = (LoggerContext) LogManager.getContext(SqlCaptureProbe.class.getClassLoader(), false);
-        this.appender = new CaptureAppender(statements, maxStatements);
+        this.appender = new CaptureAppender(statements, maxStatements, scope);
         Release attached = attach(context, appender);
         try {
             this.release = registrar.apply(this, attached);
@@ -193,13 +227,25 @@ public final class SqlCaptureProbe {
         return open(DEFAULT_MAX_STATEMENTS);
     }
 
+    /** Open a probe that captures only the events logged by the calling thread. */
     public static SqlCaptureProbe open(int maxStatements) {
-        return new SqlCaptureProbe(maxStatements, CLEANER::register);
+        return open(maxStatements, Scope.thread(Thread.currentThread()));
     }
 
-    /** Test seam: open with a substitute for {@link Cleaner#register}. */
+    /** Open a probe that captures only the events {@code scope} claims. */
+    public static SqlCaptureProbe open(Scope scope) {
+        return open(DEFAULT_MAX_STATEMENTS, scope);
+    }
+
+    public static SqlCaptureProbe open(int maxStatements, Scope scope) {
+        return new SqlCaptureProbe(maxStatements, scope, CLEANER::register);
+    }
+
+    /**
+     * Test seam: open with a substitute for {@link Cleaner#register}, scoped to the calling thread.
+     */
     static SqlCaptureProbe open(int maxStatements, BiFunction<Object, Runnable, Cleaner.Cleanable> registrar) {
-        return new SqlCaptureProbe(maxStatements, registrar);
+        return new SqlCaptureProbe(maxStatements, Scope.thread(Thread.currentThread()), registrar);
     }
 
     /** Number of probes currently holding the raised levels. For tests. */
