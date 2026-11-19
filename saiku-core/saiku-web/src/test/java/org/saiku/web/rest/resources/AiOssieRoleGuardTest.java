@@ -32,6 +32,10 @@ public class AiOssieRoleGuardTest {
     @Before
     public void setUp() {
         resource = new AiOssieResource();
+        // saiku#2322: the pre-wiring guard default is now the fail-closed schema-only; these
+        // tests exercise the history-role shape guards, so hand the resource an explicit
+        // permissive guard to keep the policy gate out of the way.
+        resource.setAiPolicyGuard(new org.saiku.service.olap.ai.AiPolicyGuard(org.saiku.service.olap.ai.AiPolicy.FULL));
         resource.setAskService(new OssieAiAskService() {
             @Override
             public boolean isConfigured() {

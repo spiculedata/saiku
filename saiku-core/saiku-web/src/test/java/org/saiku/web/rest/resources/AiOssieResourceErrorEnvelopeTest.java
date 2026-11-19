@@ -38,6 +38,10 @@ public class AiOssieResourceErrorEnvelopeTest {
     public void setUp() {
         resource = new AiOssieResource();
         resource.setOssieDiscoverService(new AiOssieResourceAsyncRoleTest.StubDiscover());
+        // This class exercises the error-envelope sanitisation (saiku#1920), not the AI policy.
+        // Wire an explicit FULL guard — otherwise the schema-only policy gate on executeAi/rowDetail
+        // (saiku#2322) rejects the request with AiPolicyViolation before the envelope is built.
+        resource.setAiPolicyGuard(new org.saiku.service.olap.ai.AiPolicyGuard(org.saiku.service.olap.ai.AiPolicy.FULL));
         resource.setOssieQueryService(new OssieQueryService() {
             @Override
             public CellDataSet execute(ThinQuery tq) throws Exception {
