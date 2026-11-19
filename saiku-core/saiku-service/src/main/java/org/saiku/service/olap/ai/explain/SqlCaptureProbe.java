@@ -127,6 +127,7 @@ public final class SqlCaptureProbe {
         private final int maxStatements;
         /** Never refers to the probe (saiku#2328 scopes capture only a thread or a statement id). */
         private final Scope scope;
+
         private volatile boolean open = true;
 
         CaptureAppender(List<String> statements, int maxStatements, Scope scope) {
@@ -202,8 +203,7 @@ public final class SqlCaptureProbe {
         }
     }
 
-    private SqlCaptureProbe(
-            int maxStatements, Scope scope, BiFunction<Object, Runnable, Cleaner.Cleanable> registrar) {
+    private SqlCaptureProbe(int maxStatements, Scope scope, BiFunction<Object, Runnable, Cleaner.Cleanable> registrar) {
         this.context = (LoggerContext) LogManager.getContext(SqlCaptureProbe.class.getClassLoader(), false);
         this.appender = new CaptureAppender(statements, maxStatements, scope);
         Release attached = attach(context, appender);
