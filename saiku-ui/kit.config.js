@@ -36,6 +36,11 @@ export default {
 	csp: {
 		mode: 'hash',
 		directives: {
+			// saiku#2440: default-src 'self' is also the frame-src fallback, and it is what keeps a
+			// foreign document out of a plugin tile's frame (an ancestor navigating that frame to
+			// another origin, data: or blob: is refused). The tile's boot handshake is unauthenticated
+			// by design (pluginBridge.routeFrameMessage), so widening frame-src beyond 'self' must
+			// revisit it; e2e/plugin-tile-csp.spec.ts fails if this stops holding.
 			'default-src': ['self'],
 			'script-src': ['self'],
 			'style-src': ['self', 'unsafe-inline'],

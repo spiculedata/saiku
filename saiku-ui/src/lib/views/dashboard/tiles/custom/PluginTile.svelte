@@ -16,18 +16,24 @@
 	 *      downloads/pointer-lock. The frame runs at the opaque "null" origin, so
 	 *      it cannot read the parent DOM, cookies, localStorage, or the session
 	 *      token.
-	 *   2. A strict CSP (see pluginBridge.PLUGIN_CSP) injected as the first <head>
-	 *      element: default-src 'none' + connect-src 'none' blocks BACKGROUND
+	 *   2. A strict CSP. The frame loads the bootstrap at the same-origin URL
+	 *      pluginBridge.PLUGIN_FRAME_PATH, served with its own enforced policy
+	 *      (PLUGIN_FRAME_CSP: sandbox allow-scripts, default-src 'none', …), and the
+	 *      plugin document posted into it carries PLUGIN_CSP as its first <head>
+	 *      element (saiku#2440: an srcdoc frame inherited the shell's script-src and
+	 *      could not run the plugin). default-src 'none' + connect-src 'none' blocks BACKGROUND
 	 *      subresource egress (fetch/XHR/WebSocket/EventSource/sendBeacon, remote
 	 *      scripts/styles/fonts/frames/workers; only inline script/style + data:
-	 *      images). It does NOT stop a frame navigating ITSELF, and no CSP fetch
-	 *      directive governs navigation — so the plugin can still exfiltrate the
-	 *      data shown in ITS OWN tile. That is why plugin code is admin-installed
-	 *      and trusted (like a server plugin JAR). See docs/APP-BUILDER-PLUGINS.md.
+	 *      images). The frame's own navigations are checked against the shell's
+	 *      default-src 'self' (cross-origin targets refused), but channels no CSP
+	 *      governs remain (WebRTC), so the plugin can still exfiltrate the data
+	 *      shown in ITS OWN tile. That is why plugin code is admin-installed and
+	 *      trusted (like a server plugin JAR). See docs/APP-BUILDER-PLUGINS.md.
 	 *   3. A per-mount cryptographic nonce authenticates every plugin→host
 	 *      message (the frame's origin is "null", so event.origin is worthless).
 	 *   4. event.source === iframe.contentWindow gates the listener so one tile's
-	 *      host never processes another frame's messages.
+	 *      host never processes another frame's messages, and the boot handshake is
+	 *      answered only for an opaque origin (pluginBridge.routeFrameMessage).
 	 *
 	 * The host reads ONLY the typed, validated message kinds from
 	 * handlePluginMessage — the raw plugin payload NEVER touches the host DOM and
@@ -51,11 +57,12 @@
 	import { fetchTilePluginHtml } from '$lib/api/tilePlugins';
 	import { pickMemberUniqueName } from '$lib/dashboard/clickFilterMember';
 	import {
-		buildSrcdoc,
-		handlePluginMessage,
+		PLUGIN_FRAME_PATH,
+		routeFrameMessage,
 		PLUGIN_MIN_H,
 		type FilterSel
 	} from '$lib/dashboard/custom/pluginBridge';
+	import { basePath } from '$lib/paths';
 	import { theme } from '$lib/stores/theme.svelte';
 	import { dashboardStore } from '$lib/stores/dashboard.svelte';
 	import TileLoading from '../TileLoading.svelte';
@@ -71,7 +78,7 @@
 
 	// The tile references an admin-installed plugin by its slug id ONLY. Non-string
 	// / absent → no plugin configured. The HTML is fetched from the admin registry
-	// (never tile config), so raw author markup can never reach a srcdoc.
+	// (never tile config), so raw author markup can never reach the plugin frame.
 	let pluginId = $derived(
 		typeof tile.custom?.options?.pluginId === 'string'
 			? (tile.custom.options.pluginId as string).trim()
@@ -91,8 +98,8 @@
 	const nonce = crypto.randomUUID();
 
 	// The registry HTML, fetched by id. null until loaded; "" when the plugin
-	// isn't installed (→ inline placeholder, NO iframe). We ONLY ever build a
-	// srcdoc from this fetched, admin-installed markup.
+	// isn't installed (→ inline placeholder, NO iframe). We ONLY ever post a plugin
+	// document built from this fetched, admin-installed markup into the frame.
 	let registryHtml = $state<string | null>(null);
 	let notInstalled = $state(false);
 
@@ -119,10 +126,12 @@
 		};
 	});
 
-	// Recompute the srcdoc only when the fetched registry html or nonce changes. A
-	// new srcdoc reloads the frame (and re-fires its `ready`). NEVER built from
-	// anything but the registry html.
-	let srcdoc = $derived(registryHtml ? buildSrcdoc(registryHtml, nonce) : '');
+	// The frame is the static same-origin bootstrap (saiku#2440), never an srcdoc:
+	// an about:srcdoc document inherits the shell's enforced script-src and the
+	// plugin could not run. The bootstrap is served with its own sandboxed policy and
+	// asks for the plugin document on boot (see onMessage). The iframe is re-keyed on
+	// the registry html, so a different plugin gets a fresh frame (and a new `ready`).
+	let frameSrc = $derived(registryHtml ? `${basePath()}/${PLUGIN_FRAME_PATH}` : '');
 
 	let iframe = $state<HTMLIFrameElement | null>(null);
 	let frameReady = $state(false);
@@ -211,13 +220,25 @@
 
 	// ── plugin → host: the single message listener ───────────────────────────
 	function onMessage(event: MessageEvent): void {
-		// GUARD 1: only messages from THIS tile's frame. Ignore every other frame
-		// (other plugin tiles, the top window, injected frames). Do NOT trust
-		// event.origin — a sandboxed frame's origin is the string "null".
-		if (!iframe || event.source !== iframe.contentWindow) return;
-		// GUARD 2 (in the bridge): nonce authentication + shape validation.
-		const msg = handlePluginMessage(event.data, nonce);
-		if (!msg) return;
+		// GUARD 1 (in the bridge): only messages whose event.source is THIS tile's frame.
+		// Every other frame (other plugin tiles, the top window, injected frames) is
+		// ignored. Do NOT trust event.origin — a sandboxed frame's origin is "null".
+		// GUARD 2 (in the bridge): the bootstrap's boot message is answered only for an
+		// opaque ("null") origin with this tile's registry html; everything else needs
+		// the nonce + a valid shape. See routeFrameMessage.
+		const action = routeFrameMessage(event, {
+			window: iframe?.contentWindow ?? null,
+			nonce,
+			pluginHtml: registryHtml
+		});
+		if (!action) return;
+		if (action.kind === 'deliver') {
+			frameReady = false;
+			// "*" for the same reason as postToFrame: the frame's origin is opaque.
+			iframe?.contentWindow?.postMessage(action.message, '*');
+			return;
+		}
+		const msg = action.msg;
 		switch (msg.kind) {
 			case 'ready':
 				frameReady = true;
@@ -239,10 +260,11 @@
 		return () => window.removeEventListener('message', onMessage);
 	});
 
-	// A frame reload (new srcdoc) invalidates readiness until the new document
+	// A frame reload (new plugin html) invalidates readiness until the new document
 	// posts its own `ready`.
 	$effect(() => {
-		void srcdoc;
+		void frameSrc;
+		void registryHtml;
 		frameReady = false;
 	});
 
@@ -286,25 +308,28 @@
 	</div>
 {:else if !tile.query}
 	<div class="p-3 text-sm text-fg-muted">Tile has no query binding — open ⚙ to set one.</div>
-{:else if !srcdoc}
+{:else if !frameSrc}
 	<div class="p-3 text-sm text-fg-muted">Loading plugin…</div>
 {:else}
 	<div class="plugin-tile">
 		<!--
-      sandbox is EXACTLY "allow-scripts" — nothing else. srcdoc carries the
-      strict-CSP document from buildSrcdoc. referrerpolicy no-referrer as a
-      belt-and-braces measure (the CSP already blocks all egress).
+      sandbox is EXACTLY "allow-scripts" — nothing else (no allow-same-origin: the
+      frame runs at an opaque origin). src is the static bootstrap, served with its
+      own sandboxed CSP; the plugin document arrives over postMessage. referrerpolicy
+      no-referrer as a belt-and-braces measure (the CSP already blocks all egress).
     -->
-		<iframe
-			bind:this={iframe}
-			title={tile.title ?? 'Plugin tile'}
-			sandbox="allow-scripts"
-			referrerpolicy="no-referrer"
-			{srcdoc}
-			style={frameHeight === null
-				? 'height:100%'
-				: `height:${Math.max(PLUGIN_MIN_H, frameHeight)}px`}
-		></iframe>
+		{#key registryHtml}
+			<iframe
+				bind:this={iframe}
+				title={tile.title ?? 'Plugin tile'}
+				sandbox="allow-scripts"
+				referrerpolicy="no-referrer"
+				src={frameSrc}
+				style={frameHeight === null
+					? 'height:100%'
+					: `height:${Math.max(PLUGIN_MIN_H, frameHeight)}px`}
+			></iframe>
+		{/key}
 		{#if pluginError}
 			<div class="plugin-error" role="alert">{pluginError}</div>
 		{/if}
