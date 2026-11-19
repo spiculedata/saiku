@@ -75,10 +75,10 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
-## 2026-11-19 — fix/2421-design-system-publish-hardening — repaired PR #2447 acceptance check
-**Was doing:** updated acceptance/2335 to recognize the verified tarball output used by the publish job; local acceptance, script tests, and design-system build/check pass.
-**Now:** check PR #2447 CI after the push; maintainers still need to review the workflow and protect npm-publish with an environment secret.
-**Refs:** #2421, #2335, PR #2447
+## 2026-11-12 — fix/2322-ossie-ai-policy-gate — PR #2355 formatting rework
+**Was doing:** fixed the async role test fixture's Spotless violation; local Spotless and licence checks pass, but focused Maven tests stop during dependency resolution with GitHub Packages 401.
+**Now:** use the latest PR #2355 CI result to verify the full build and focused tests; no local edits remain after the rework push.
+**Refs:** #2322, PR #2355
 
 ## 2026-11-10 — feature/1393-role-security-verification — fuzz + E2E coverage for #1393
 **Was doing:** shipped the two remaining acceptance-criteria tests for the Ossie role security (row-predicate fuzz cases in OssieFuzzIT with a two-role restricted pass + hand-computed window totals, and a mocked-backend Playwright spec `ossie-role-visibility.spec.ts` with per-caller fixture overrides).
