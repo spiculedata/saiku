@@ -259,6 +259,12 @@
 	         auto-config, so permitAll is the robust replacement for the
 	         legacy `isAnonymous() or isFullyAuthenticated()` pattern. -->
 	    <security:intercept-url pattern="/rest/saiku/session" access="permitAll" />
+	    <!-- saiku#2439: the trailing-slash spelling is the login the public demo
+	         pages (embed-demo, aqvira-demo, both showcases) post to. Ant matching
+	         treats it as a different path, so it needs its own EXACT rule. Never
+	         widen this to /rest/saiku/session/**: nothing beneath it is anonymous
+	         (saiku#2338 removed /session/clear). -->
+	    <security:intercept-url pattern="/rest/saiku/session/" access="permitAll" />
 	    <!-- /rest/saiku/info and its public sub-paths are anonymous-accessible.
 	         The SPA's login page reads /info/capabilities pre-auth to decide
 	         whether to surface the demo-mode connection panel (saiku#871).

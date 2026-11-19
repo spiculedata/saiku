@@ -195,4 +195,16 @@ public class SpringUrlRulesGuestExclusionTest {
         assertFalse(granted(mainChain, anon, "/foo"));
         assertTrue(granted(mainChain, anon, "/rest/saiku/session"));
     }
+
+    @Test
+    public void anonymous_mayReachTheTrailingSlashLoginButNothingBeneathIt() {
+        // saiku#2439: the demo pages log in at /rest/saiku/session/ (trailing slash); saiku#2338 keeps
+        // every sub-path behind authentication.
+        Authentication anon = new AnonymousAuthenticationToken(
+                "key", "anonymousUser", AuthorityUtils.createAuthorityList("ROLE_ANONYMOUS"));
+        assertTrue(granted(mainChain, anon, "/rest/saiku/session/"));
+        assertFalse(granted(mainChain, anon, "/rest/saiku/session/clear"));
+        assertFalse(granted(mainChain, anon, "/rest/saiku/session/anything"));
+        assertFalse(granted(mainChain, anon, "/rest/saiku/session/clear/"));
+    }
 }
