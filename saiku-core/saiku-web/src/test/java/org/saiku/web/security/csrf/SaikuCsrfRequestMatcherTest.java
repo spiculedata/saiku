@@ -59,9 +59,18 @@ public class SaikuCsrfRequestMatcherTest {
     }
 
     @Test
+    public void trailingSlashLoginIsExempt() {
+        // saiku#2439: embed-demo, aqvira-demo and both showcase pages sign in at this exact URL.
+        assertFalse(matcher.matches(req("POST", "/rest/saiku/session/")));
+    }
+
+    @Test
     public void sessionSubPathsAreNotCsrfExempt() {
         assertTrue(matcher.matches(req("POST", "/rest/saiku/session/clear")));
+        assertTrue(matcher.matches(req("POST", "/rest/saiku/session/clear/")));
         assertTrue(matcher.matches(req("POST", "/rest/saiku/session/anything")));
+        assertTrue(matcher.matches(req("POST", "/rest/saiku/sessionx")));
+        assertTrue(matcher.matches(req("POST", "/rest/saiku/session/;x/clear")));
     }
 
     @Test

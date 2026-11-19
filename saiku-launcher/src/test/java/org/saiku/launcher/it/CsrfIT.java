@@ -101,6 +101,48 @@ public class CsrfIT {
     }
 
     @Test
+    public void demoPagesTrailingSlashLoginSignsIn() throws Exception {
+        // saiku#2439: embed-demo, aqvira-demo and both showcase pages sign in with exactly this
+        // request (DemoPagesHardeningTest pins the URL). The cookie it sets must authenticate later calls.
+        HttpRequest login = HttpRequest.newBuilder(URI.create(baseUrl + "/rest/saiku/session/"))
+                .timeout(Duration.ofSeconds(10))
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .POST(HttpRequest.BodyPublishers.ofString("username=admin&password=admin", StandardCharsets.UTF_8))
+                .build();
+        HttpResponse<String> resp = client.send(login, HttpResponse.BodyHandlers.ofString());
+        assertEquals("POST /rest/saiku/session/ must sign in (200) — body: " + resp.body(), 200, resp.statusCode());
+        String jsessionid = pickCookie(resp.headers().allValues("set-cookie").toArray(new String[0]), "JSESSIONID");
+        assertNotNull("trailing-slash login must set JSESSIONID", jsessionid);
+
+        HttpRequest who = HttpRequest.newBuilder(URI.create(baseUrl + "/rest/saiku/session"))
+                .timeout(Duration.ofSeconds(10))
+                .header("Cookie", jsessionid)
+                .header("Accept", "application/json")
+                .GET()
+                .build();
+        HttpResponse<String> whoResp = client.send(who, HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, whoResp.statusCode());
+        assertTrue(
+                "the login cookie must authenticate as admin — body: " + whoResp.body(),
+                whoResp.body().contains("\"username\":\"admin\""));
+    }
+
+    @Test
+    public void anonymousPostBeneathSessionIsStillRefused() throws Exception {
+        // saiku#2338 stays closed: only the exact login path (with or without the trailing slash) is open.
+        for (String path : List.of("/rest/saiku/session/clear", "/rest/saiku/session/anything")) {
+            HttpRequest req = HttpRequest.newBuilder(URI.create(baseUrl + path))
+                    .timeout(Duration.ofSeconds(10))
+                    .header("Content-Type", "application/x-www-form-urlencoded")
+                    .POST(HttpRequest.BodyPublishers.ofString(
+                            "username=admin&password=not-the-password", StandardCharsets.UTF_8))
+                    .build();
+            HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString());
+            assertEquals("anonymous POST " + path + " must be refused by CSRF", 403, resp.statusCode());
+        }
+    }
+
+    @Test
     public void formSessionPostWithoutCsrfTokenIs403() throws Exception {
         // Form-login produces a JSESSIONID + an XSRF-TOKEN cookie (eager handler).
         String[] cookies = formLogin();
