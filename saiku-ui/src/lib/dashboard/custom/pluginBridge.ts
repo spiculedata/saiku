@@ -16,7 +16,7 @@
  *   - Authentication is a per-mount cryptographic `nonce`. A sandboxed frame's
  *     origin is the string "null", so event.origin is useless as an
  *     authenticator; instead every plugin→host message MUST echo the nonce the
- *     host injected into that frame's srcdoc. Wrong/absent nonce → dropped.
+ *     host injected into that frame's document. Wrong/absent nonce → dropped.
  *   - Fail closed: any shape we don't recognise returns null (ignored).
  *
  * The component ALSO guards event.source === iframe.contentWindow before this
@@ -83,7 +83,7 @@ export function handlePluginMessage(
 	if (!raw || typeof raw !== 'object') return null;
 	const m = raw as Record<string, unknown>;
 	// Authenticate: the sandboxed frame origin is "null", so the nonce — injected
-	// per-mount into this frame's srcdoc — is the only trustworthy authenticator.
+	// per-mount into this frame's document — is the only trustworthy authenticator.
 	if (m.nonce !== expectNonce) return null;
 	switch (m.type) {
 		case 'ready':
@@ -152,6 +152,60 @@ export function handlePluginMessage(
 export const PLUGIN_CSP =
 	"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'";
 
+/**
+ * The in-app plugin frame document (saiku#2440), relative to the app's base path
+ * (`/ui/plugin-frame.html` in the launcher). It is a static bootstrap, not plugin markup.
+ *
+ * Why not `srcdoc`: an about:srcdoc document inherits its parent's CSP, and the SPA shell
+ * enforces `script-src 'self' 'sha256-…'` (saiku#1917), which blocks the plugin's inline
+ * script. A NETWORK-loaded frame does not inherit the parent's policy; it gets the one its
+ * own response carries, {@link PLUGIN_FRAME_CSP}. The bootstrap then receives the plugin
+ * document (built by {@link buildSrcdoc}) from the host over postMessage and writes it into
+ * itself, so the server never reflects caller-supplied HTML and the plugin markup still
+ * comes only from the admin registry fetch the tile already makes.
+ */
+export const PLUGIN_FRAME_PATH = 'plugin-frame.html';
+
+/**
+ * The enforced policy the plugin frame RESPONSE carries (saiku#2440). Mirrors
+ * `SecurityHeadersFilter.PLUGIN_FRAME_CSP` (the launcher) and the dev/preview header in
+ * vite.config.ts; the server appends `frame-ancestors` from its own configuration.
+ *   - sandbox allow-scripts → even if the URL is opened top-level, the document runs at an
+ *                             opaque origin with no forms/popups/top-navigation; the iframe's
+ *                             own sandbox="allow-scripts" says the same
+ *   - the rest is {@link PLUGIN_CSP} plus base-uri / form-action 'none'.
+ */
+export const PLUGIN_FRAME_CSP =
+	"sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; " +
+	"style-src 'unsafe-inline'; img-src data:; connect-src 'none'; base-uri 'none'; " +
+	"form-action 'none'";
+
+/** Bootstrap → host: "I am loaded, send me the plugin document". Carries nothing else. */
+export const FRAME_BOOT_TYPE = 'saiku-plugin-frame-boot';
+/** Host → bootstrap: the plugin document to write into the frame. */
+export const FRAME_LOAD_TYPE = 'saiku-plugin-load';
+
+/**
+ * True when `raw` is the bootstrap's boot message AND it came from an opaque origin.
+ *
+ * The component has already checked `event.source === iframe.contentWindow`. Requiring
+ * `event.origin === "null"` on top means the host only ever hands plugin code to a frame
+ * that really is sandboxed: if the sandbox were somehow missing (a same-origin frame would
+ * report the Saiku origin), the plugin is never delivered. Pure, never throws.
+ */
+export function isFrameBootMessage(raw: unknown, origin: string): boolean {
+	if (origin !== 'null' || !raw || typeof raw !== 'object') return false;
+	return (raw as Record<string, unknown>).type === FRAME_BOOT_TYPE;
+}
+
+/** The host → bootstrap message carrying the full plugin document for this mount. */
+export function buildFrameLoadMessage(
+	pluginHtml: string,
+	nonce: string
+): { type: typeof FRAME_LOAD_TYPE; html: string } {
+	return { type: FRAME_LOAD_TYPE, html: buildSrcdoc(pluginHtml, nonce) };
+}
+
 /** The slug rule a plugin id must satisfy — MUST mirror the backend's
  *  {@code TilePluginParser.SAFE_ID} ([a-z0-9] start, then [a-z0-9-], 1–64 chars).
  *  A tile only ever references a plugin by this id; it never carries markup. */
@@ -166,7 +220,7 @@ export const PLUGIN_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
  * admin registry (`/rest/saiku/api/tile-plugins/{id}/html` in-app, or the
  * token-scoped `/embed/app/{path}/plugin/{id}/html` on the embed surface). A
  * legacy `html` field is rejected so no arbitrary author markup can ride tile
- * config into a srcdoc.
+ * config into a plugin frame.
  */
 export function validatePluginOptions(
 	options: unknown
@@ -206,14 +260,15 @@ function safeNonce(nonce: string): string {
 }
 
 /**
- * Wrap the author's self-contained plugin HTML into a full document for the
- * iframe `srcdoc`, with the strict CSP meta as the FIRST element in <head> and
- * the nonce exposed as a JS const the plugin reads to stamp its messages.
+ * Wrap the author's self-contained plugin HTML into a full document, with the
+ * strict CSP meta as the FIRST element in <head> and the nonce exposed as a JS
+ * const the plugin reads to stamp its messages. In-app it is posted into the
+ * {@link PLUGIN_FRAME_PATH} bootstrap (saiku#2440); the embed bundle still uses
+ * it as an iframe `srcdoc` (there the host page, not Saiku, owns the CSP).
  *
  * PURE / string-only — no DOM. The author HTML is embedded verbatim in <body>;
  * containment is the sandbox attribute + the CSP above, NOT any sanitising of
- * the author code (arbitrary JS is the feature). The returned string is placed
- * into an HTML-attribute-escaped `srcdoc` by the component.
+ * the author code (arbitrary JS is the feature).
  */
 export function buildSrcdoc(pluginHtml: string, nonce: string): string {
 	const n = safeNonce(nonce);

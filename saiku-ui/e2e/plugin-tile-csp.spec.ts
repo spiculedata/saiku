@@ -161,6 +161,20 @@ test.describe('plugin tile under the enforced CSP (mocked backend)', () => {
 		await expect(frame.locator('.row .label')).toHaveText(['Alpha', 'Bravo', 'Charlie']);
 		await expect(frame.getByText('Waiting for data…')).toHaveCount(0);
 
+		// The plugin runs at an opaque origin and cannot reach into the shell.
+		const pluginFrame = page.frames().find((f) => f.url().endsWith('/plugin-frame.html'));
+		expect(pluginFrame, 'the tile loads the same-origin bootstrap, not an srcdoc').toBeTruthy();
+		const isolation = await pluginFrame!.evaluate(() => {
+			let parentDom = 'readable';
+			try {
+				void window.parent.document.title;
+			} catch {
+				parentDom = 'blocked';
+			}
+			return { origin: window.origin, parentDom };
+		});
+		expect(isolation).toEqual({ origin: 'null', parentDom: 'blocked' });
+
 		const violations = await page.evaluate(() => (window as unknown as { __csp: string[] }).__csp);
 		expect(violations, 'no enforced CSP violation in the shell').toEqual([]);
 		expect(cspMessages, 'no enforced CSP violation in any frame').toEqual([]);
@@ -182,5 +196,19 @@ test.describe('plugin tile under the enforced CSP (mocked backend)', () => {
 		expect(csp).toContain("script-src 'unsafe-inline'");
 		expect(csp).toContain("connect-src 'none'");
 		expect(csp).toContain("frame-ancestors 'self'");
+	});
+
+	test('the bootstrap ignores a plugin document when it is not framed by the Saiku page (saiku#2440)', async ({
+		page
+	}) => {
+		const res = await page.goto('/plugin-frame.html');
+		expect(res?.headers()['content-security-policy'] ?? '').toContain('sandbox allow-scripts');
+		// Top-level: no parent to accept a document from, so a load message (here from itself)
+		// is ignored and the page stays empty.
+		await page.evaluate(() => {
+			window.postMessage({ type: 'saiku-plugin-load', html: '<p id="injected">x</p>' }, '*');
+		});
+		await page.waitForTimeout(200);
+		await expect(page.locator('#injected')).toHaveCount(0);
 	});
 });

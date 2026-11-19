@@ -75,6 +75,23 @@ public class SecurityHeadersFilter implements Filter {
             if (isSecure(request)) {
                 setIfAbsent(resp, "Strict-Transport-Security", "max-age=31536000; includeSubDomains");
             }
+            // saiku#2440: the dashboard plugin frame bootstrap carries its OWN policy
+            // instead of the shell's. A network-loaded frame does not inherit its
+            // parent's CSP (an srcdoc frame does, and the shell's script-src blocks the
+            // plugin), so this response is what sandboxes the plugin: no operator shell
+            // CSP and no report-only shell policy, just PLUGIN_FRAME_CSP + frame-ancestors.
+            if (isPluginFrame(request)) {
+                String frameAncestors = frameAncestors();
+                resp.setHeader("Content-Security-Policy", pluginFrameCsp(frameAncestors));
+                if (frameAncestors != null) {
+                    String xfo = xFrameOptionsFor(frameAncestors);
+                    if (xfo != null) {
+                        setIfAbsent(resp, "X-Frame-Options", xfo);
+                    }
+                }
+                chain.doFilter(request, response);
+                return;
+            }
             // Content-Security-Policy.
             //  * An ENFORCED CSP is still opt-in via saiku.security.csp — a strict
             //    script-src on the SvelteKit + monaco (blob: workers) + ECharts SPA
@@ -127,6 +144,55 @@ public class SecurityHeadersFilter implements Filter {
             + "object-src 'none'; "
             + "base-uri 'self'; "
             + "frame-ancestors 'self'";
+
+    /** Path of the static plugin frame bootstrap ({@code saiku-ui/static/plugin-frame.html}). */
+    static final String PLUGIN_FRAME_PATH = "/ui/plugin-frame.html";
+
+    /**
+     * The enforced policy of the dashboard plugin frame bootstrap (saiku#2440); mirrors
+     * {@code PLUGIN_FRAME_CSP} in {@code saiku-ui/src/lib/dashboard/custom/pluginBridge.ts}.
+     *
+     * <p>The frame runs admin-installed plugin code, which is inline script by design
+     * ({@code docs/APP-BUILDER-PLUGINS.md}), so {@code script-src 'unsafe-inline'} is the point.
+     * {@code sandbox allow-scripts} (no {@code allow-same-origin}) gives the document an opaque
+     * origin even when the URL is opened outside the tile's sandboxed iframe, so it can never act
+     * as the Saiku origin. Everything else is denied: no remote scripts, styles, fonts, frames or
+     * workers, no fetch/XHR/WebSocket ({@code connect-src 'none'}; the data arrives over
+     * postMessage), no {@code <base>}, no form posts. The file itself is static and never
+     * reflects request input: the host posts the plugin document into it.
+     */
+    static final String PLUGIN_FRAME_CSP = "sandbox allow-scripts; "
+            + "default-src 'none'; "
+            + "script-src 'unsafe-inline'; "
+            + "style-src 'unsafe-inline'; "
+            + "img-src data:; "
+            + "connect-src 'none'; "
+            + "base-uri 'none'; "
+            + "form-action 'none'";
+
+    /**
+     * The plugin frame policy with {@code frame-ancestors}: the same value as the rest of the UI
+     * ({@code 'self'} by default), so the frame can be embedded wherever the SPA itself can,
+     * and nowhere else. Omitted when the operator turned framing protection {@code off}.
+     */
+    static String pluginFrameCsp(String frameAncestors) {
+        return frameAncestors == null ? PLUGIN_FRAME_CSP : PLUGIN_FRAME_CSP + "; frame-ancestors " + frameAncestors;
+    }
+
+    /** True for a request of exactly {@link #PLUGIN_FRAME_PATH} under the webapp context. */
+    static boolean isPluginFrame(ServletRequest request) {
+        if (!(request instanceof HttpServletRequest)) {
+            return false;
+        }
+        HttpServletRequest req = (HttpServletRequest) request;
+        String uri = req.getRequestURI();
+        String context = req.getContextPath();
+        if (uri == null) {
+            return false;
+        }
+        String path = context != null && uri.startsWith(context) ? uri.substring(context.length()) : uri;
+        return PLUGIN_FRAME_PATH.equals(path);
+    }
 
     /**
      * The Content-Security-Policy-Report-Only value to send: the operator's

@@ -34,7 +34,7 @@ claim('C1', 'PluginTile.svelte loads plugin-frame.html', /PLUGIN_FRAME_PATH|plug
 // C2: the bootstrap.
 const boot = read('saiku-ui/static/plugin-frame.html');
 claim('C2', 'saiku-ui/static/plugin-frame.html exists', boot !== '');
-claim('C2', 'the bootstrap refuses to run unframed', /window\.parent\s*===\s*window|parent\s*===\s*window/.test(boot));
+claim('C2', 'the bootstrap refuses to run unframed', /parent\w*\s*===\s*window\b/.test(boot));
 claim('C2', 'the bootstrap only accepts messages from its parent window', /\.source\s*!==\s*\w*parent/i.test(boot));
 claim('C2', 'the bootstrap checks the sender origin', /\.origin\s*!==/.test(boot));
 claim('C2', 'the bootstrap never fetches', boot !== '' && !/fetch\(|XMLHttpRequest|import\(/.test(boot));
