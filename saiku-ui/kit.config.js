@@ -28,6 +28,25 @@ export default {
 			throw new Error(`${message} (linked from ${referrer})`);
 		}
 	},
+	// saiku#1917: the SPA shell carries SvelteKit's inline bootstrap <script>, so a header-level
+	// `script-src 'self'` would block it. Hash mode stamps the policy into index.html as a
+	// <meta http-equiv> with the bootstrap's sha256, which keeps `script-src` strict (no
+	// 'unsafe-inline') without any server-side knowledge of the hash. frame-ancestors cannot be
+	// set from <meta>; SecurityHeadersFilter sends it as a header.
+	csp: {
+		mode: 'hash',
+		directives: {
+			'default-src': ['self'],
+			'script-src': ['self'],
+			'style-src': ['self', 'unsafe-inline'],
+			'img-src': ['self', 'data:', 'blob:', 'https:'],
+			'font-src': ['self', 'data:'],
+			'worker-src': ['self', 'blob:'],
+			'connect-src': ['self'],
+			'object-src': ['none'],
+			'base-uri': ['self']
+		}
+	},
 	paths: {
 		base: basePath,
 		relative: true
