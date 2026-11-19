@@ -274,6 +274,20 @@ The response is dense — this is what makes the API self-describing:
    request named, so per-hierarchy is correct), but the top-level
    overview is what an agent inspects when constructing the query.
 
+**The schema you get is scoped to YOUR role (saiku#2326).** On a
+security-enabled datasource the structure, the hierarchies and the sample
+members are exactly what the calling user's Mondrian role (and workspace /
+datasource grant) permits — the same body a cold-cache call returns for
+that user, every time. The typed-schema cache is keyed by a visibility
+fingerprint of the caller (resolved Mondrian role set; per-principal for
+credential-passthrough datasources), so two callers with different role
+sets never share an entry, and every cache hit re-resolves the cube
+against the caller's own enumeration — a caller who holds no grant on the
+datasource gets the same 400 `Unknown cube` whether or not another user
+has already described the cube. A connection refresh (admin refresh,
+datasource save/update) invalidates the refreshed connection's entries.
+`MCP describe_cube` behaves identically.
+
 ---
 
 ## Step 3 — execute a query
@@ -1371,7 +1385,7 @@ Provider defaults: `anthropic` → `claude-sonnet-4-6`,
 provider refuses to construct otherwise so the key can't accidentally
 leak to the wrong host).
 
-`GET /saiku/info/diagnostics` (saiku#904) reports the resolved provider,
+Admin-only `GET /saiku/info/diagnostics` (saiku#904) reports the resolved provider,
 model, endpoint and a live reachability probe for both this ask layer and
 the schema-generation enrichment pipeline (`saiku.schemagen.llm.provider`,
 which accepts the same `openai`/`ollama` values) — never the API key — so
@@ -1904,8 +1918,15 @@ saying why. The panel never renders a placeholder number in their place.
 | `SHARE_OF_COLUMN` | `value`, `share` | How much of the column total this cell is. |
 | `SHARE_OF_ROW` | `value`, `share` | How much of the row total this cell is. |
 | `RANK_IN_COLUMN` | `value`, `detail` | Where it sits among the rows of its column (1 = highest). |
-| `PREVIOUS_COLUMN` | `value`, `delta`, `deltaPct` | Change against the column to its left, **only when the two are siblings** (same depth under a shared parent — two quarters of one year qualify, a year total next to a quarter does not). This is the period-over-period comparison, computed from the cellset on screen; no follow-up query. |
-| `ROW_PEAK` | `value`, `delta`, `share` | The largest cell in the same row, when it isn't this one. |
+| `PREVIOUS_COLUMN` | `value`, `delta`, `deltaPct` | Change against the column to its left, **only when the two are siblings** (same depth under a shared parent — two quarters of one year qualify, a year total next to a quarter does not) **and hold the same measure**. This is the period-over-period comparison, computed from the cellset on screen; no follow-up query. |
+| `ROW_PEAK` | `value`, `delta`, `share` | The largest cell of the same measure in the same row, when it isn't this one. |
+
+Every comparison is scoped to cells of the **clicked cell's own measure** (saiku#2192). A row
+holding Unit Sales and Store Sales cells has no row total — units and dollars do not add — so the
+row-wise drivers only count cells of the same measure, and when a direction is left with a single
+such cell the driver is omitted, like every other comparison the view can't make. `measure` (and
+the narrative's subject) is always the measure of the cell that was clicked, wherever it sits on
+the axes.
 
 ### The narrative, and its fallback
 

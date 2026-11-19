@@ -189,6 +189,16 @@ All notable changes to Saiku are documented here. This project follows
 
 ### Security
 
+- **Interim mitigation for CVE-2026-114938 (HotSpot x86-64 Base64 decode
+  intrinsic).** The Docker image (its `JAVA_TOOL_OPTIONS` and the entrypoint's
+  built-in JVM options) and the dist zip's `run.sh` / `run.bat` now pass
+  `-XX:-UseBASE64Intrinsics`, which keeps the affected intrinsic out of the
+  JVM. The bundled base image still ships Temurin 21.0.12.1; the flag can come
+  out of the image once its base carries Temurin 21.0.13.1 or later.
+  `dist/README.md` now states a security baseline alongside "Java 21 or
+  newer": HotSpot 21.0.13.1+, 25.0.5.1+ or 27.0.1.1+, with end-of-life
+  releases (22, 23, 24, 26) called out as unpatched.
+
 - **A CycloneDX SBOM now covers the npm/UI half of what we ship (saiku#2000).**
   The release SBOM added for saiku#1990 is the `cyclonedx-maven-plugin`
   aggregate — **Java/Maven only**. The SvelteKit bundle that `saiku-webapp`

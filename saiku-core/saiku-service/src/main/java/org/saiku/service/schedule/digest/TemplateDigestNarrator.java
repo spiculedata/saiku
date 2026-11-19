@@ -57,10 +57,12 @@ public final class TemplateDigestNarrator implements DigestNarrator {
         String label = d.label().isEmpty() ? "Measure" : d.label();
         return switch (d.direction()) {
             case FLAT -> label + " was unchanged at " + d.formattedCurrent() + ".";
-            case UP -> label + " rose " + d.formattedPercent() + " to " + d.formattedCurrent() + " (was "
-                    + d.formattedPrevious() + ").";
-            case DOWN -> label + " fell " + d.formattedPercent() + " to " + d.formattedCurrent() + " (was "
-                    + d.formattedPrevious() + ").";
+            case UP ->
+                label + " rose " + d.formattedPercent() + " to " + d.formattedCurrent() + " (was "
+                        + d.formattedPrevious() + ").";
+            case DOWN ->
+                label + " fell " + d.formattedPercent() + " to " + d.formattedCurrent() + " (was "
+                        + d.formattedPrevious() + ").";
         };
     }
 }

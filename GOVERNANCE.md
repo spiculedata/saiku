@@ -18,9 +18,11 @@ lands in mainline releases.
 - **Maintaining organization:** [Spicule Ltd](https://spicule.co.uk),
   incorporated in England & Wales.
 - **Primary maintainer:** Tom Barber ([tom@spicule.co.uk](mailto:tom@spicule.co.uk)).
-- **Commercial product:** [Saiku Cloud](https://cloud.saiku.bi) — the
-  same binary self-hosted operators run, plus operational plumbing.
-  Cloud revenue funds the open-source work.
+- **Commercial support:** migrations, support contracts and platform
+  work from Concept to Cloud, the trading name of Spicule Ltd
+  ([hello@saiku.bi](mailto:hello@saiku.bi)). That revenue funds the
+  open-source work. Saiku Cloud, the hosted product, was discontinued
+  in November 2026.
 
 ## Decision-making
 
@@ -90,9 +92,10 @@ Steps we're actively taking:
   interest.
 
 Enterprise buyers who need a stronger continuity guarantee can
-purchase [Saiku Cloud](https://cloud.saiku.bi) or an
-[Enterprise support contract](https://saiku.bi/#pricing), both of
-which are backed by Spicule Ltd under commercial terms.
+purchase an Enterprise support contract from Concept to Cloud
+([hello@saiku.bi](mailto:hello@saiku.bi) or
+[saiku.bi/contact](https://saiku.bi/contact/)), backed by Spicule Ltd
+under commercial terms.
 
 ## Licensing
 
@@ -104,8 +107,8 @@ copyright holder whose contributions materially remain in the
 codebase.
 
 The published pledge — the version of Saiku you self-host is the
-version Spicule runs in Cloud — is a governance commitment, not
-just marketing copy. Relicensing to a source-available or
+whole product, with nothing held back for a paid tier — is a
+governance commitment, not just marketing copy. Relicensing to a source-available or
 commercial-only licence in the future would violate that pledge and
 isn't on any roadmap.
 

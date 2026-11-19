@@ -21,6 +21,8 @@ import static org.junit.Assert.assertTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.text.DecimalFormat;
+import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -62,6 +64,8 @@ public class DashboardDigestJobHandlerTest {
     private static final String SELF = "ops-inbox@example.com";
     private static final byte[] KEY = "test-install-key-material-32bytes!".getBytes();
     private static final String BASE = "https://analytics.example.com";
+
+    private NumberFormat df = DecimalFormat.getInstance();
 
     private RecipientTrustStore trust;
     private SuppressionStore suppression;
@@ -305,7 +309,10 @@ public class DashboardDigestJobHandlerTest {
         assertEquals(1, sender.sent.size());
         String html = sender.sent.get(0).htmlBody();
         assertTrue(html.contains("What changed since the previous period"));
-        assertTrue(html.contains("Total Units rose +20.0% to 1,200 (was 1,000)."));
+
+        String expected = String.format("Total Units rose +20.0%% to %s (was %s).", df.format(1200), df.format(1000));
+        assertTrue(html.contains(expected));
+
         assertTrue(html.contains("Period over period"));
         assertTrue(html.contains("+200 (+20.0%)"));
     }
@@ -327,7 +334,7 @@ public class DashboardDigestJobHandlerTest {
         // One current-period read and one previous-period read: the headline table reuses the former
         // rather than issuing a third, unfiltered query for the same measure.
         assertEquals("exactly the two relative-period reads: " + reads, 2, reads.size());
-        assertTrue(sender.sent.get(0).htmlBody().contains("1,200"));
+        assertTrue(sender.sent.get(0).htmlBody().contains(df.format(1200)));
     }
 
     @Test

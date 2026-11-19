@@ -20,16 +20,15 @@ import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
-import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import mondrian.olap.Util;
+import mondrian.util.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -58,12 +57,20 @@ import org.slf4j.LoggerFactory;
  *   <li>a driver-independent <b>connection-property deny-list</b> for the class-loading,
  *       deserialisation, local-file and JNDI families, matched case-insensitively, after
  *       percent-decoding, with key-noise ({@code _ - . whitespace}) stripped so obfuscated
- *       spellings are caught;
+ *       spellings are caught. Property names must be ASCII: drivers fold names with Unicode-aware
+ *       case mapping, so a non-ASCII spelling could reach a driver as a denied key;
+ *   <li>H2 connection settings are checked structurally: H2 applies each one by running
+ *       {@code SET <key> <value>}, so a value is an SQL expression. Keys that run code when the
+ *       database opens ({@code INIT}, {@code DATABASE_EVENT_LISTENER}, {@code JAVA_OBJECT_SERIALIZER})
+ *       are refused whatever their value, escaped separators are refused, and every other value
+ *       must be a plain token;
  *   <li>the H2 executable tokens ({@code INIT=}, {@code RUNSCRIPT}, {@code CREATE ALIAS/TRIGGER/FORCE},
  *       {@code SHUTDOWN});
- *   <li>Mondrian wrapper rules: every nested {@code Jdbc=} sub-URL is validated recursively, and
+ *   <li>Mondrian wrapper rules, applied to the properties Mondrian's own parser reads from the
+ *       connect string: the nested {@code Jdbc=} URL is validated recursively, and
  *       {@code DataSource=} must be a plain JNDI name, never an {@code ldap:}/{@code rmi:}-style
- *       URL.
+ *       URL, and a {@code jdbc.}-prefixed key (which Mondrian forwards to the driver without the
+ *       prefix) is checked under both spellings.
  * </ul>
  *
  * <p>Rejections throw {@link IllegalArgumentException} with a short reason that never echoes the
@@ -189,8 +196,11 @@ public final class JdbcUrlPolicy {
             "allowlocalinfile",
             // arbitrary file write (pgjdbc)
             "loggerfile",
-            // H2 class hook
+            // H2 class hooks
             "javaobjectserializer",
+            "databaseeventlistener",
+            // DuckDB: reads a local file and executes it as SQL when the connection opens
+            "sessioninitsqlfile",
             // DuckDB / Quack: loading UNSIGNED native extensions, or signed ones from a
             // non-official repository. (autoload/autoinstall of the official, signed extension
             // set and extension_directory are ordinary hardening/config knobs and stay allowed —
@@ -213,12 +223,37 @@ public final class JdbcUrlPolicy {
 
     private static final Pattern H2_SHUTDOWN = Pattern.compile("(?i);\\s*SHUTDOWN\\b");
 
+    /** SQL comments, removed before the token scan so they cannot split a keyword pair. */
+    private static final Pattern SQL_COMMENT = Pattern.compile("(?s)/\\*.*?(\\*/|$)|--[^;]*");
+
+    /**
+     * H2 settings that run code when the database opens, whatever their value (normalised). Any
+     * one of them is refused outright rather than by inspecting the value.
+     */
+    static final Set<String> H2_DENIED_SETTINGS =
+            Set.of("init", "databaseeventlistener", "javaobjectserializer", "defaulttableengine");
+
+    /** H2 settings H2 consumes itself rather than by running {@code SET}; their values are not SQL. */
+    private static final Set<String> H2_CREDENTIAL_SETTINGS = Set.of("user", "password");
+
+    /** A setting name; H2 has names with an inner space, such as {@code TIME ZONE}. */
+    private static final Pattern H2_SETTING_KEY = Pattern.compile("[A-Za-z][A-Za-z0-9_.]*( [A-Za-z0-9_.]+)*");
+
+    /**
+     * A plain setting value: no parentheses, operators or escapes, so no function call. A single
+     * double-quoted identifier (for example {@code SCHEMA="PUBLIC"}) is also plain.
+     */
+    private static final Pattern H2_SETTING_VALUE = Pattern.compile("[A-Za-z0-9_.,:/+~ -]*|\"[A-Za-z0-9_.$ -]*\"");
+
+    /** The prefix Mondrian strips before forwarding a connect-string property to the driver. */
+    private static final String MONDRIAN_DRIVER_PREFIX = "jdbc.";
+
     /**
      * Keys of Mondrian's connect-string grammar ({@code RolapConnectionProperties} plus Saiku's own
-     * {@code Mondrian=4} marker). A key opens the body or follows a {@code ;}; a value runs to the
-     * next such key, which is what lets an inner {@code Jdbc=} URL carry its own {@code ;}-params.
+     * {@code Mondrian=4} marker). Used by {@link FileEngineConfinement} to find where a wrapper's
+     * {@code Jdbc=} value ends (saiku#2320).
      */
-    private static final Pattern MONDRIAN_KEY = Pattern.compile("(?i)(?:^|;)\\s*(Provider|Jdbc|JdbcDrivers|JdbcUser|"
+    static final Pattern MONDRIAN_KEY = Pattern.compile("(?i)(?:^|;)\\s*(Provider|Jdbc|JdbcDrivers|JdbcUser|"
             + "JdbcPassword|Catalog|CatalogContent|CatalogName|DataSource|PoolNeeded|Role|UseContentChecksum|"
             + "DynamicSchemaProcessor|Locale|DataSourceChangeListener|Ignore|Instance|JdbcConnectionUuid|"
             + "PinSchemaTimeout|AggregateScanSchema|AggregateScanCatalog|UseSchemaPool|Mondrian)\\s*=");
@@ -242,6 +277,13 @@ public final class JdbcUrlPolicy {
      * known-dangerous key names, so a comma or paren inside a legitimate value can't produce one.
      */
     private static final Pattern PROPERTY_KEY = Pattern.compile("([A-Za-z0-9_.\\-]+)\\s*=");
+
+    /**
+     * A property name in a plain JDBC URL: a run that follows a parameter separator and ends at
+     * {@code =}. Broader than {@link #PROPERTY_KEY} so a name containing non-ASCII characters is
+     * seen whole. A run that follows {@code =} is inside a value and is not a name.
+     */
+    private static final Pattern NAME_RUN = Pattern.compile("[;?&,(/\\s'\"]([^\\s;&?#,()/:='\"]+)\\s*=");
 
     private static final Pattern KEY_NOISE = Pattern.compile("[\\s_.\\-'\"]");
 
@@ -267,10 +309,20 @@ public final class JdbcUrlPolicy {
         checkUrl(url, 0);
     }
 
+    /**
+     * Lock down the file/lakehouse engine in {@code url} (DuckDB external access and
+     * configuration; see {@link FileEngineConfinement}). Applied by {@link #openConnection}; call
+     * it on a URL that is handed to a driver some other way (Calcite model operands). Returns
+     * {@code url} unchanged for other engines or when the operator opted out.
+     */
+    public static String confineFileEngines(String url) {
+        return FileEngineConfinement.confine(url);
+    }
+
     /** Validate, then {@link DriverManager#getConnection(String, String, String)}. */
     public static Connection openConnection(String url, String user, String password) throws SQLException {
         validate(url);
-        return DriverManager.getConnection(url, user, password);
+        return DriverManager.getConnection(confineFileEngines(url), user, password);
     }
 
     /**
@@ -282,22 +334,70 @@ public final class JdbcUrlPolicy {
      */
     public static Connection openConnection(String url, Properties info) throws SQLException {
         validate(url);
-        rejectDeniedInfoProperties(info);
+        rejectDeniedInfoProperties(url, info);
         return DriverManager.getConnection(url, info);
     }
 
-    /** Apply the connection-property deny-list to the keys of a {@link Properties} map. */
-    static void rejectDeniedInfoProperties(Properties info) {
+    /**
+     * Apply the connection-property deny-list to the keys of {@code info}. When {@code url}
+     * reaches H2, each entry also gets the executable-token scan (raw and percent-decoded) and the
+     * H2 setting rules, because H2 treats info entries exactly like URL settings (saiku#2321).
+     * When {@code url} is a Mondrian wrapper, Mondrian merges {@code info} into its own property
+     * list, so the entries are held to the wrapper rules too; only their {@code jdbc.}-prefixed
+     * entries reach the driver.
+     */
+    static void rejectDeniedInfoProperties(String url, Properties info) {
         if (info == null) {
             return;
         }
-        for (String name : info.stringPropertyNames()) {
-            String key = normaliseKey(name);
-            if (!key.isEmpty()) {
-                // false: the calcite model/schemaFactory operands are URL-only, never info keys.
-                rejectIfDeniedKey(key, false);
+        for (Map.Entry<Object, Object> e : info.entrySet()) {
+            if (!(e.getKey() instanceof String) || !(e.getValue() instanceof String)) {
+                throw reject("connection properties must be strings");
             }
         }
+        String plain =
+                url == null ? "" : LEGACY_MONDRIAN4_PREFIX.matcher(url.trim()).replaceFirst("");
+        String lower = percentDecode(plain).toLowerCase(Locale.ROOT);
+        boolean h2 = lower.contains("jdbc:h2:");
+        boolean wrapper = isMondrianWrapper(lower);
+        boolean h2Driver = false;
+        if (wrapper) {
+            h2Driver = isH2Url(parseMondrian(plain).get("Jdbc"));
+            for (String name : info.stringPropertyNames()) {
+                h2Driver |= "jdbc".equalsIgnoreCase(name.trim()) && isH2Url(info.getProperty(name));
+            }
+        }
+        for (String name : info.stringPropertyNames()) {
+            String value = info.getProperty(name, "");
+            // false: the calcite model/schemaFactory operands are URL-only, never info keys.
+            rejectIfDeniedRawKey(name, false);
+            if (h2) {
+                String pair = name + "=" + value;
+                rejectH2Executable(pair);
+                rejectH2Executable(percentDecode(pair));
+            }
+            if (wrapper) {
+                checkMondrianEntry(name, value, h2Driver, 0);
+            } else if (h2) {
+                checkH2Setting(name, value);
+            }
+        }
+    }
+
+    /**
+     * Quote a value for a Mondrian connect string ({@code Key=Value;...}). Values containing
+     * {@code ;}, quotes or edge whitespace are single-quoted with embedded quotes doubled, so a
+     * credential such as {@code p;Catalog=http://evil/x} stays one value (saiku#2321).
+     */
+    public static String quoteMondrianValue(String value) {
+        if (value == null || value.isEmpty()) {
+            return value;
+        }
+        boolean needsQuoting = value.indexOf(';') >= 0
+                || value.indexOf('\'') >= 0
+                || value.indexOf('"') >= 0
+                || !value.equals(value.trim());
+        return needsQuoting ? "'" + value.replace("'", "''") + "'" : value;
     }
 
     /**
@@ -374,7 +474,18 @@ public final class JdbcUrlPolicy {
         rejectDangerousH2Tokens(decoded);
         rejectDeniedProperties(url, scheme);
         rejectDeniedProperties(decoded, scheme);
+        if (!wrapper) {
+            // A wrapper's names come from Mondrian's own parser (checkMondrianWrapper).
+            rejectNonAsciiNames(url);
+            rejectNonAsciiNames(decoded);
+        }
 
+        if ("h2".equals(scheme)) {
+            checkH2Settings(url);
+            // saiku#2320: an H2 file database must live under saiku.home (or an operator root).
+            FileEngineConfinement.rejectH2PathOutsideRoots(url);
+            FileEngineConfinement.rejectH2PathOutsideRoots(decoded);
+        }
         if (wrapper) {
             checkMondrianWrapper(url, depth);
         }
@@ -440,6 +551,23 @@ public final class JdbcUrlPolicy {
         if (!url.toLowerCase(Locale.ROOT).contains("jdbc:h2:")) {
             return;
         }
+        rejectH2Executable(url);
+    }
+
+    /**
+     * The H2 token scan, ungated. Defence in depth only: the structural setting rules
+     * ({@link #checkH2Settings}, {@link #checkH2Setting}) are what keep SQL out of a connection.
+     * Runs on the text as given and with SQL comments removed.
+     */
+    private static void rejectH2Executable(String text) {
+        rejectH2Tokens(text);
+        String uncommented = SQL_COMMENT.matcher(text).replaceAll(" ");
+        if (!uncommented.equals(text)) {
+            rejectH2Tokens(uncommented);
+        }
+    }
+
+    private static void rejectH2Tokens(String url) {
         if (H2_INIT.matcher(url).find()) {
             throw reject("H2 INIT= run-on-connect is not permitted");
         }
@@ -454,15 +582,117 @@ public final class JdbcUrlPolicy {
         }
     }
 
+    private static void rejectNonAsciiNames(String url) {
+        Matcher m = NAME_RUN.matcher(url);
+        while (m.find()) {
+            rejectNonAsciiKey(m.group(1));
+        }
+    }
+
     private static void rejectDeniedProperties(String url, String scheme) {
         boolean calcite = "calcite".equals(scheme) || "avatica".equals(scheme);
         Matcher m = PROPERTY_KEY.matcher(url);
         while (m.find()) {
-            String key = normaliseKey(m.group(1));
-            if (key.isEmpty()) {
+            rejectIfDeniedRawKey(m.group(1), calcite);
+        }
+    }
+
+    /**
+     * The deny-list decision for a property name as written. Names must be ASCII, and a name
+     * carrying Mondrian's {@code jdbc.} forwarding prefix is also checked without it, because that
+     * is the name the driver receives.
+     */
+    private static void rejectIfDeniedRawKey(String rawKey, boolean calcite) {
+        rejectNonAsciiKey(rawKey);
+        String key = normaliseKey(rawKey);
+        if (!key.isEmpty()) {
+            rejectIfDeniedKey(key, calcite);
+        }
+        String forwarded = stripDriverPrefix(rawKey);
+        if (forwarded != null) {
+            String stripped = normaliseKey(forwarded);
+            if (!stripped.isEmpty()) {
+                rejectIfDeniedKey(stripped, calcite);
+            }
+        }
+    }
+
+    /** The name without a leading {@code jdbc.} (any case, after trimming), or {@code null}. */
+    private static String stripDriverPrefix(String rawKey) {
+        String t = rawKey.trim();
+        if (t.regionMatches(true, 0, MONDRIAN_DRIVER_PREFIX, 0, MONDRIAN_DRIVER_PREFIX.length())) {
+            return t.substring(MONDRIAN_DRIVER_PREFIX.length());
+        }
+        return null;
+    }
+
+    private static void rejectNonAsciiKey(String rawKey) {
+        if (!isAscii(rawKey)) {
+            throw reject("connection property names must be ASCII");
+        }
+    }
+
+    private static boolean isAscii(String s) {
+        for (int i = 0; i < s.length(); i++) {
+            if (s.charAt(i) > 0x7f) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Structural check of an H2 URL's settings ({@code jdbc:h2:<name>;KEY=VALUE;...}). H2 splits
+     * at the first {@code ;}; the database name before it is a path and is not inspected here.
+     */
+    private static void checkH2Settings(String h2Url) {
+        int semi = h2Url.indexOf(';');
+        if (semi < 0) {
+            return;
+        }
+        String settings = h2Url.substring(semi + 1);
+        if (!isAscii(settings)) {
+            throw reject("H2 settings must be ASCII");
+        }
+        if (settings.indexOf('\\') >= 0) {
+            throw reject("escape characters are not permitted in H2 settings");
+        }
+        for (String setting : settings.split(";")) {
+            if (setting.isEmpty()) {
                 continue;
             }
-            rejectIfDeniedKey(key, calcite);
+            int eq = setting.indexOf('=');
+            if (eq < 0) {
+                throw reject("malformed H2 setting");
+            }
+            checkH2Setting(setting.substring(0, eq), setting.substring(eq + 1));
+        }
+    }
+
+    /**
+     * One H2 setting, from the URL, the info map or a Mondrian {@code jdbc.} forward. Keys that run
+     * code are refused whatever the value; any other value must be a plain token, because H2
+     * evaluates it as an SQL expression.
+     */
+    private static void checkH2Setting(String rawKey, String value) {
+        rejectNonAsciiKey(rawKey);
+        String forwarded = stripDriverPrefix(rawKey);
+        String name = forwarded != null ? forwarded : rawKey;
+        String key = normaliseKey(name);
+        if (H2_DENIED_SETTINGS.contains(key)) {
+            throw reject(
+                    "init".equals(key)
+                            ? "H2 INIT= run-on-connect is not permitted"
+                            : "H2 setting '" + key + "' is not permitted");
+        }
+        if (!H2_SETTING_KEY.matcher(name.trim()).matches()) {
+            throw reject("malformed H2 setting");
+        }
+        if (H2_CREDENTIAL_SETTINGS.contains(key)) {
+            return;
+        }
+        if (!H2_SETTING_VALUE.matcher(value).matches()) {
+            throw reject("H2 setting values must be plain tokens");
         }
     }
 
@@ -487,13 +717,16 @@ public final class JdbcUrlPolicy {
     }
 
     /**
-     * Structural checks on a {@code jdbc:mondrian:} / {@code jdbc:mondrian4:} wrapper: every
-     * {@code Jdbc=} occurrence is validated as a JDBC URL in its own right (Mondrian's property
-     * list lets a later duplicate key win, so <em>all</em> of them are checked), every
+     * Structural checks on a {@code jdbc:mondrian:} / {@code jdbc:mondrian4:} wrapper, applied to
+     * the properties {@code Util.parseConnectString} yields, so quoting is read exactly as Mondrian
+     * reads it: the {@code Jdbc=} value is validated as a JDBC URL in its own right, every
      * {@code DataSource=} must be a plain JNDI name, and the class-instantiating hooks
      * {@code DynamicSchemaProcessor=} / {@code DataSourceChangeListener=} are refused outright —
      * Mondrian would {@code Class.forName}+instantiate whatever they name, and no legitimate Saiku
      * datasource sets them (saiku#1903, defence in depth).
+     *
+     * <p>{@code Dialect=} is refused for the same reason: Mondrian initialises the named class before
+     * checking its type, and Mondrian detects the dialect itself, so no datasource needs it.
      *
      * <p>Note: two other Mondrian keys also drive class-loading / inline content —
      * {@code JdbcDrivers=} (names the JDBC driver class, a legitimate and required part of a
@@ -504,67 +737,77 @@ public final class JdbcUrlPolicy {
      * break every real Mondrian datasource.
      */
     private static void checkMondrianWrapper(String url, int depth) {
-        String lower = url.toLowerCase(Locale.ROOT);
+        // Mondrian's own parser, so quoting and escaping are read exactly as Mondrian reads them.
+        Util.PropertyList props = parseMondrian(url);
+        boolean h2Driver = isH2Url(props.get("Jdbc"));
+        for (Pair<String, String> p : props) {
+            checkMondrianEntry(p.left, p.right == null ? "" : p.right, h2Driver, depth);
+        }
+    }
+
+    private static Util.PropertyList parseMondrian(String wrapperUrl) {
+        String lower = wrapperUrl.toLowerCase(Locale.ROOT);
         int bodyStart = lower.startsWith("jdbc:mondrian4:") ? "jdbc:mondrian4:".length() : "jdbc:mondrian:".length();
-        String body = url.substring(bodyStart);
-
-        Map<String, List<String>> props = parseMondrianBody(body);
-
-        // parseMondrianBody lower-cases its keys.
-        if (props.containsKey("dynamicschemaprocessor")) {
-            throw reject("Mondrian DynamicSchemaProcessor= (class instantiation) is not permitted in a datasource");
+        try {
+            return Util.parseConnectString(wrapperUrl.substring(bodyStart));
+        } catch (RuntimeException e) {
+            throw reject("malformed Mondrian connect string");
         }
-        if (props.containsKey("datasourcechangelistener")) {
-            throw reject("Mondrian DataSourceChangeListener= (class instantiation) is not permitted in a datasource");
-        }
+    }
 
-        for (String inner : props.getOrDefault("jdbc", List.of())) {
-            String v = unquote(inner);
-            if (!v.isEmpty()) {
-                checkUrl(v, depth + 1);
-            }
+    private static boolean isMondrianWrapper(String lowerUrl) {
+        return lowerUrl.startsWith("jdbc:mondrian:") || lowerUrl.startsWith("jdbc:mondrian4:");
+    }
+
+    private static boolean isH2Url(String url) {
+        return url != null && percentDecode(url).trim().toLowerCase(Locale.ROOT).startsWith("jdbc:h2:");
+    }
+
+    /**
+     * One Mondrian property, from the parsed connect string or from an info map Mondrian merges
+     * into it. Mondrian hands a {@code jdbc.<name>} property to the driver as {@code <name>}: the
+     * deny-list sees both spellings, and an H2 driver also gets the setting rules.
+     */
+    private static void checkMondrianEntry(String name, String value, boolean h2Driver, int depth) {
+        rejectIfDeniedRawKey(name, false);
+        checkMondrianProperty(name.trim().toLowerCase(Locale.ROOT), value, depth);
+        if (h2Driver && stripDriverPrefix(name) != null) {
+            rejectH2Executable(name + "=" + value);
+            checkH2Setting(name, value);
         }
-        for (String ds : props.getOrDefault("datasource", List.of())) {
-            String v = unquote(ds);
-            Matcher m = URL_SCHEME_PREFIX.matcher(v);
-            if (m.find()) {
-                String jndiScheme = m.group(1).toLowerCase(Locale.ROOT);
-                if (!"java".equals(jndiScheme) && !"osgi".equals(jndiScheme)) {
-                    throw reject("Mondrian DataSource= must be a plain JNDI name, not a URL");
+    }
+
+    /**
+     * The wrapper rules for one Mondrian property (lower-cased key), from the connect string or
+     * from an info map Mondrian merges into it.
+     */
+    private static void checkMondrianProperty(String key, String value, int depth) {
+        String v = value.trim();
+        switch (key) {
+            case "dynamicschemaprocessor":
+                throw reject("Mondrian DynamicSchemaProcessor= (class instantiation) is not permitted in a datasource");
+            case "datasourcechangelistener":
+                throw reject(
+                        "Mondrian DataSourceChangeListener= (class instantiation) is not permitted in a datasource");
+            case "dialect":
+                throw reject("Mondrian Dialect= (class instantiation) is not permitted in a datasource");
+            case "jdbc":
+                if (!v.isEmpty()) {
+                    checkUrl(v, depth + 1);
                 }
-            }
+                break;
+            case "datasource":
+                Matcher m = URL_SCHEME_PREFIX.matcher(v);
+                if (m.find()) {
+                    String jndiScheme = m.group(1).toLowerCase(Locale.ROOT);
+                    if (!"java".equals(jndiScheme) && !"osgi".equals(jndiScheme)) {
+                        throw reject("Mondrian DataSource= must be a plain JNDI name, not a URL");
+                    }
+                }
+                break;
+            default:
+                break;
         }
-    }
-
-    private static Map<String, List<String>> parseMondrianBody(String body) {
-        Matcher m = MONDRIAN_KEY.matcher(body);
-        List<String> keys = new ArrayList<>();
-        List<Integer> valueStarts = new ArrayList<>();
-        List<Integer> matchStarts = new ArrayList<>();
-        while (m.find()) {
-            keys.add(m.group(1).toLowerCase(Locale.ROOT));
-            valueStarts.add(m.end());
-            matchStarts.add(m.start());
-        }
-        Map<String, List<String>> out = new LinkedHashMap<>();
-        for (int i = 0; i < keys.size(); i++) {
-            int end = (i + 1 < keys.size()) ? matchStarts.get(i + 1) : body.length();
-            String value = body.substring(valueStarts.get(i), end).trim();
-            out.computeIfAbsent(keys.get(i), k -> new ArrayList<>()).add(value);
-        }
-        return out;
-    }
-
-    private static String unquote(String v) {
-        String s = v.trim();
-        if (s.length() >= 2) {
-            char first = s.charAt(0);
-            char last = s.charAt(s.length() - 1);
-            if ((first == '\'' && last == '\'') || (first == '"' && last == '"')) {
-                return s.substring(1, s.length() - 1).trim();
-            }
-        }
-        return s;
     }
 
     /**

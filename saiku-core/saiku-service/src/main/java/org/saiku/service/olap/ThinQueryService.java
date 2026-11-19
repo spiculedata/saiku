@@ -945,6 +945,9 @@ public class ThinQueryService implements Serializable {
             final OlapConnection con = olapDiscoverService.getNativeConnection(cube.getConnection());
             stmt = con.createStatement();
             QueryGuardrails.applyQueryTimeout(stmt);
+            // saiku#2327: no stmt.setMaxRows here. Mondrian's olap4j statement throws
+            // UnsupportedOperationException from setMaxRows, so the MDX MAXROWS cap below is the
+            // bound; RestUtil.convert(ResultSet) caps the materialised rows as well.
             // saiku#1914: the caller supplied raw DRILLTHROUGH MDX with no server cap.
             // Inject/clamp a MAXROWS bound so the fact-table scan is bounded regardless
             // of what the request body asked for.
@@ -967,7 +970,23 @@ public class ThinQueryService implements Serializable {
         List<SaikuMember> measures = olapDiscoverService.getMeasures(saikuCube);
         CellSet cs = queryContext.getOlapResult();
         ResultSet drillthrough = drillthrough(queryName, cellPosition, maxrows, returns);
+        try {
+            return withCaptions(drillthrough, saikuCube, measures, cs, returns);
+        } catch (RuntimeException | Error e) {
+            // The caller never receives the ResultSet on this path, so close it here.
+            if (drillthrough != null) {
+                try {
+                    drillthrough.close();
+                } catch (Exception ignore) {
+                    // best effort
+                }
+            }
+            throw e;
+        }
+    }
 
+    private DrillThroughResult withCaptions(
+            ResultSet drillthrough, SaikuCube saikuCube, List<SaikuMember> measures, CellSet cs, String returns) {
         int width;
         try {
             width = drillthrough.getMetaData().getColumnCount();
@@ -1068,30 +1087,6 @@ public class ThinQueryService implements Serializable {
             log.debug("Drill Through for query (" + queryName + ") : \r\n" + select);
             return stmt.executeQuery(select);
         } catch (Exception e) {
-            throw new SaikuServiceException("Error DRILLTHROUGH: " + queryName, e);
-        } finally {
-            try {
-                if (stmt != null) stmt.close();
-            } catch (Exception e) {
-            }
-        }
-    }
-
-    public byte[] exportDrillthroughCsv(String queryName, int maxrows) {
-        OlapStatement stmt = null;
-        try {
-            QueryContext queryContext = context.get(queryName);
-            ThinQuery query = queryContext.getOlapQuery();
-            final OlapConnection con =
-                    olapDiscoverService.getNativeConnection(query.getCube().getConnection());
-            stmt = con.createStatement();
-            QueryGuardrails.applyQueryTimeout(stmt);
-            // saiku#1914: server-clamped cap, no bare-DRILLTHROUGH escape hatch.
-            String mdx = "DRILLTHROUGH MAXROWS " + QueryGuardrails.clampMaxRows(maxrows) + " " + query.getMdx();
-
-            ResultSet rs = stmt.executeQuery(mdx);
-            return CsvExporter.exportCsv(rs);
-        } catch (SQLException e) {
             throw new SaikuServiceException("Error DRILLTHROUGH: " + queryName, e);
         } finally {
             try {

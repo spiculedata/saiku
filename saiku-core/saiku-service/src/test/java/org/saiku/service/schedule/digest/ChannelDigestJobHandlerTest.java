@@ -29,6 +29,8 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.text.DecimalFormat;
+import java.text.NumberFormat;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -58,6 +60,7 @@ public class ChannelDigestJobHandlerTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final String BASE = "https://analytics.example.com";
+    NumberFormat df = DecimalFormat.getInstance();
 
     /** A capturing HttpClient: records the request and returns a canned status. */
     private static final class StubHttpClient extends HttpClient {
@@ -261,7 +264,7 @@ public class ChannelDigestJobHandlerTest {
                 body.get("blocks").get(0).get("text").get("text").asText());
         String summary = body.get("blocks").get(1).get("text").get("text").asText();
         assertTrue(summary.contains("Total Units"));
-        assertTrue(summary.contains("1,234"));
+        assertTrue(summary.contains(df.format(1234)));
         JsonNode button = body.get("blocks").get(2).get("elements").get(0);
         assertEquals(
                 BASE + "/ui/dashboards/shared/exec.saikudash", button.get("url").asText());

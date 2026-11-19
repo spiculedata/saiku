@@ -36,8 +36,11 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.6.0</version>
+		 <!--added -Dio.netty.noUnsafe=false, when using jdk 24+ 
+                see https://github.com/apache/arrow-java/issues/728-->
+
                 <configuration>
-                    <argLine>@{argLine} -Xmx512m --add-opens=java.base/java.nio=ALL-UNNAMED</argLine>
+                    <argLine>@{argLine} -Xmx512m --add-opens=java.base/java.nio=ALL-UNNAMED -Dio.netty.noUnsafe=false</argLine>
                 </configuration>
             </plugin>
 

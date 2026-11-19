@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 import org.saiku.database.JdbcUserDAO;
 import org.saiku.database.dto.SaikuUser;
 import org.saiku.service.ISessionService;
@@ -125,6 +126,33 @@ public class UserService implements IUserManager, Serializable {
             log.warn("Could not resolve enabled-state for user '{}' — treating as disabled (fail-closed)", username);
         }
         return false;
+    }
+
+    /**
+     * saiku#2345: the managed-store view of {@code username}: whether a row exists, whether it is
+     * enabled, and its roles. The web layer uses it to refuse login and requests for an account that
+     * SCIM or the admin console deactivated, and to drop admin authority that was removed there.
+     *
+     * <p>Fail-open ({@link AccountStatus#UNMANAGED}) for an unknown/blank username or a lookup error:
+     * the authenticator has already vouched for the account and a store hiccup must not lock everyone
+     * out. (Contrast {@link #isEnabled(String)}, which gates background jobs and fails closed.)
+     */
+    public AccountStatus accountStatus(String username) {
+        if (username == null || username.isBlank()) {
+            return AccountStatus.UNMANAGED;
+        }
+        try {
+            for (SaikuUser u : getUsers()) {
+                if (u != null && Usernames.sameUser(username, u.getUsername())) {
+                    String[] roles = u.getRoles();
+                    return new AccountStatus(true, u.isEnabled(), roles == null ? Set.of() : Set.of(roles));
+                }
+            }
+        } catch (Exception e) {
+            log.warn(
+                    "Could not read the managed account status for '{}'; leaving the authenticator's answer", username);
+        }
+        return AccountStatus.UNMANAGED;
     }
 
     public String[] getRoles(SaikuUser user) {

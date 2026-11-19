@@ -1,0 +1,122 @@
+{
+  "issue": 2318,
+  "title": "The SQL workbench read-only guard rejects statements whose leading keyword is read-only but whose body writes (EXPLAIN ANALYZE, data-modifying CTEs) and backend host-file primitives (FILE_WRITE / CSVREAD)",
+  "kind": "api",
+  "auth": "session",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "a logged-in ROLE_SQL_EXEC/ROLE_ADMIN caller posting EXPLAIN ANALYZE DELETE FROM customer",
+      "then": "the workbench refuses it with 400 READ_ONLY_VIOLATION before a connection is opened"
+    },
+    {
+      "id": "C2",
+      "given": "the same caller posting a data-modifying CTE (WITH d AS (DELETE FROM customer RETURNING 1) SELECT * FROM d)",
+      "then": "the workbench refuses it with 400 READ_ONLY_VIOLATION"
+    },
+    {
+      "id": "C3",
+      "given": "the same caller posting SELECT FILE_WRITE(STRINGTOUTF8('pwned'), '/tmp/saiku-pwned')",
+      "then": "the workbench refuses it with 400 READ_ONLY_VIOLATION — no host file is written"
+    },
+    {
+      "id": "C4",
+      "given": "the same caller posting an ordinary read-only SELECT 1",
+      "then": "the workbench still answers 200 with the row — the guard did not narrow what a legitimate analyst runs"
+    }
+  ],
+  "steps": [
+    {
+      "name": "EXPLAIN ANALYZE DELETE is rejected with READ_ONLY_VIOLATION",
+      "criterion": "C1",
+      "request": {
+        "method": "POST",
+        "path": "/rest/saiku/sql-workbench/query",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "json": {
+          "datasource": "foodmart",
+          "sql": "EXPLAIN ANALYZE DELETE FROM customer"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "json": {
+          "code": {
+            "equals": "READ_ONLY_VIOLATION"
+          }
+        }
+      }
+    },
+    {
+      "name": "a data-modifying CTE is rejected with READ_ONLY_VIOLATION",
+      "criterion": "C2",
+      "request": {
+        "method": "POST",
+        "path": "/rest/saiku/sql-workbench/query",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "json": {
+          "datasource": "foodmart",
+          "sql": "WITH d AS (DELETE FROM customer RETURNING 1) SELECT * FROM d"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "json": {
+          "code": {
+            "equals": "READ_ONLY_VIOLATION"
+          }
+        }
+      }
+    },
+    {
+      "name": "an H2 host-file write hiding behind SELECT is rejected with READ_ONLY_VIOLATION",
+      "criterion": "C3",
+      "request": {
+        "method": "POST",
+        "path": "/rest/saiku/sql-workbench/query",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "json": {
+          "datasource": "foodmart",
+          "sql": "SELECT FILE_WRITE(STRINGTOUTF8('pwned'), '/tmp/saiku-pwned')"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "json": {
+          "code": {
+            "equals": "READ_ONLY_VIOLATION"
+          }
+        }
+      }
+    },
+    {
+      "name": "an ordinary SELECT still answers 200",
+      "criterion": "C4",
+      "request": {
+        "method": "POST",
+        "path": "/rest/saiku/sql-workbench/query",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "json": {
+          "datasource": "foodmart",
+          "sql": "SELECT 1"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "json": {
+          "rowCount": {
+            "equals": 1
+          }
+        }
+      }
+    }
+  ]
+}

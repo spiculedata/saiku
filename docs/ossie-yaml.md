@@ -107,10 +107,15 @@ datasets:
 | Entry point | Role check (allow/deny) | Row predicates |
 | --- | --- | --- |
 | `GET /discover/{connection}/ossie-model` | ✅ filtered | — (discover doesn't run SQL) |
-| `GET /ai/ossie/schema/{connection}/{model}` | ✅ filtered | — |
+| `GET /ai/ossie/schema/{connection}/{model}` | ✅ filtered | ✅ `sampleValues` drawn from the caller's rows only (saiku#2324) |
 | `POST /query/execute` (queryType `OSSIE`) | ✅ 403 on denied reference | ✅ injected |
 | `POST /query/preview-sql` (queryType `OSSIE`) | ✅ 403 on denied reference | ✅ injected |
-| Other `/ai/ossie/*` endpoints (anomaly, forecast, ask, values-search, …) | not yet wired | not yet wired |
+| `POST /ai/ossie/query` | ✅ 403 on denied reference | ✅ injected |
+| `POST /ai/ossie/query/preview` | ✅ 403 on denied reference | ✅ injected |
+| `POST /ai/ossie/query/execute-async` | ✅ 400 `VALIDATION_ERROR` on denied reference at submit; denied references that reach the worker anyway fail the handle with an access-denied error (saiku#2323) | ✅ injected — the caller's Spring `SecurityContext` is captured on the submitting request thread and re-established on the worker |
+| `GET /ai/ossie/values/search` (and MCP `search_field_values`) | ✅ denied field is "unknown" | ✅ injected (saiku#2324) |
+| `POST /ai/ossie/ask` | ✅ filtered, incl. sample values | ✅ sample values scoped (saiku#2324) |
+| Other `/ai/ossie/*` endpoints (anomaly, forecast, …) | not yet wired | not yet wired |
 | PG-wire (`saiku-sql serve`) | out of scope — admin surface, own auth story | out of scope |
 
 ### Scope and follow-ups
@@ -129,7 +134,24 @@ follow-up phases of saiku#1393:
   (rather than repeating role names across every field/dataset) — this
   needs a schema addition in `ossie-core` itself.
 - Wiring role enforcement through the remaining `/ai/ossie/*` endpoints
-  (anomaly, forecast, ask, values-search, execute-async) and the
+  (anomaly, forecast) and the
   PG-wire surface.
 - An intersection-mode config switch (all-roles-must-agree, instead of
   today's union-of-roles).
+
+### How it's verified
+
+- `OssieRoleSecurityIT` (saiku-sql) runs the real `OssieQueryService.execute` path
+  against a live H2 warehouse with the caller authenticated the way production does —
+  Spring authorities on the `SecurityContextHolder`.
+- `OssieFuzzIT` carries the fuzz-side half of the acceptance criteria: the Pharma
+  fixture's `geography` dataset names two predicate roles, and every fuzz case runs
+  twice — unrestricted, then as a caller holding both roles (a window that excludes
+  half the fixture). The restricted run must be a strict row subset, never show a
+  region outside the window, and leave shelves that never touch the restricted
+  dataset byte-identical; hand-computed window totals pin the injected clause to the
+  declared predicates.
+- `saiku-ui/e2e/ossie-role-visibility.spec.ts` covers the UI half of the invariant
+  with a mocked enforcing server: a restricted session renders the filtered schema
+  tree and a strict row subset in the result grid, while an unrestricted session sees
+  the full model.

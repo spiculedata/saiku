@@ -15,7 +15,7 @@
 # re-tagged or tampered upstream can't change what we build on. To roll the
 # base forward, resolve the new multi-arch index digest and update both here:
 #   docker buildx imagetools inspect eclipse-temurin:21-jre-noble
-FROM eclipse-temurin:21-jre-noble@sha256:000fd431958bc81a24abe1e8e5f0f0fd3ae365a594bd50aadb20696805f9408c
+FROM eclipse-temurin:21-jre-noble@sha256:35501d3f93173b420ac9001658eb68157e813316b865087e345c187fca422c4c
 ARG JAR_PATH=build-context/saiku.jar
 ARG OTEL_AGENT_VERSION=2.28.1
 ARG OTEL_AGENT_SHA256=faa89bdeebf9b1f52be4a4374689176717b02a59df2d8f8b6eb9aa39f9292589
@@ -86,7 +86,10 @@ RUN set -eux; \
 #   -XX:+ExitOnOutOfMemoryError  fail fast on OOM so the orchestrator restarts
 #                                a clean JVM instead of limping on a corrupt heap
 #   -XX:MaxRAMPercentage=75      size the heap from the container memory limit
-ENV JAVA_TOOL_OPTIONS="-XX:+ExitOnOutOfMemoryError -XX:MaxRAMPercentage=75"
+#   -XX:-UseBASE64Intrinsics     interim mitigation for CVE-2026-114938 (HotSpot
+#                                x86-64 Base64 decode intrinsic). Remove once the
+#                                base image carries Temurin 21.0.13.1 or later.
+ENV JAVA_TOOL_OPTIONS="-XX:+ExitOnOutOfMemoryError -XX:MaxRAMPercentage=75 -XX:-UseBASE64Intrinsics"
 
 # Ownership, scoped tightly (#1989 S1 review). ONLY /app/saiku-home (the write
 # path — data, repository, sessions, logs, plugins, and conf/secret.key) is

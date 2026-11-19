@@ -23,6 +23,7 @@ import org.junit.Test;
 import org.saiku.web.embed.EmbedPublicRegistry;
 import org.saiku.web.embed.EmbedToken;
 import org.saiku.web.embed.EmbedTokenStore;
+import org.saiku.web.security.TokenPrincipals;
 import org.saiku.web.security.embed.EmbedAuthFilter.EmbedGuestDetails;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -154,7 +155,7 @@ public class EmbedAuthFilterAuthoringTest {
 
         assertTrue(chain.called);
         assertEquals(
-                List.of(EmbedAuthFilter.GUEST_ROLE),
+                List.of(EmbedAuthFilter.GUEST_ROLE, TokenPrincipals.TOKEN_PRINCIPAL_ROLE),
                 roles(chain.capturedAuth).stream().sorted().toList());
         assertNull("a read token must carry no tenant", details(chain.capturedAuth).tenantId);
         assertFalse(details(chain.capturedAuth).isAuthoring());

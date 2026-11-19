@@ -16,6 +16,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.concurrent.atomic.AtomicReference;
+import org.eclipse.jetty.ee10.webapp.WebAppContext;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
 import org.saiku.launcher.SaikuLauncher;
@@ -188,6 +189,23 @@ public final class SaikuItHarness {
         return "homes/home-admin/" + child;
     }
 
+    /**
+     * Flush Mondrian's caches for the FoodMart connection through the admin refresh endpoint
+     * ({@code GET /rest/saiku/admin/discover/unknown_foodmart/refresh}), so a test that needs a
+     * cold cell starts cold whatever ran before it in this JVM. Failsafe runs the ITs in filesystem
+     * order, which differs between machines, so "no other IT touches this cell" cannot be relied
+     * on (saiku#2291): {@code DrillthroughIT}'s Product Family queries, for one, warm the Sales
+     * segment {@code ExplainSqlCaptureIT} explains.
+     */
+    public void flushFoodmartOlapCache() throws Exception {
+        HttpResponse<String> resp = getAuth("/rest/saiku/admin/discover/unknown_foodmart/refresh");
+        JsonNode body = resp.statusCode() == 200 ? parse(resp) : null;
+        if (body == null || !body.isArray() || body.isEmpty()) {
+            throw new IllegalStateException(
+                    "flushing the FoodMart OLAP cache failed: " + resp.statusCode() + " " + resp.body());
+        }
+    }
+
     /** Issue a GET against {@code path} with admin Basic auth. */
     public HttpResponse<String> getAuth(String path) throws Exception {
         return http.send(
@@ -296,6 +314,18 @@ public final class SaikuItHarness {
 
     public String adminBasicAuth() {
         return adminBasicAuth;
+    }
+
+    /**
+     * The class loader of the deployed Saiku webapp, for ITs that need to observe engine state
+     * that has no REST surface (for example the SQL statement pool). Classes such as Mondrian's
+     * live only in this loader, not in the test's own class path.
+     */
+    public ClassLoader webappClassLoader() {
+        for (WebAppContext ctx : server.getContainedBeans(WebAppContext.class)) {
+            return ctx.getClassLoader();
+        }
+        throw new IllegalStateException("no WebAppContext deployed");
     }
 
     private void stopQuietly() {

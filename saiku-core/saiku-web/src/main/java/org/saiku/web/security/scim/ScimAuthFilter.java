@@ -16,6 +16,8 @@ import org.saiku.web.scim.ScimError;
 import org.saiku.web.scim.ScimRateLimiter;
 import org.saiku.web.scim.ScimToken;
 import org.saiku.web.scim.ScimTokenStore;
+import org.saiku.web.security.RequestPaths;
+import org.saiku.web.security.TokenPrincipals;
 import org.saiku.web.security.audit.AuditLogger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -66,7 +68,7 @@ public class ScimAuthFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest req, HttpServletResponse resp, FilterChain chain)
             throws ServletException, IOException {
-        String path = pathWithinApp(req);
+        String path = RequestPaths.pathWithinApplication(req);
         if (!isScimPath(path)) {
             chain.doFilter(req, resp);
             return;
@@ -90,7 +92,12 @@ public class ScimAuthFilter extends OncePerRequestFilter {
         }
 
         PreAuthenticatedAuthenticationToken auth = new PreAuthenticatedAuthenticationToken(
-                "scim:" + token.id, null, List.of(new SimpleGrantedAuthority(SCIM_ROLE)));
+                "scim:" + token.id,
+                null,
+                List.of(
+                        new SimpleGrantedAuthority(SCIM_ROLE),
+                        // saiku#2343: marker so the main chain's real-user rules reject this principal.
+                        new SimpleGrantedAuthority(TokenPrincipals.TOKEN_PRINCIPAL_ROLE)));
         auth.setDetails(new ScimPrincipal(token));
         try {
             SecurityContextHolder.getContext().setAuthentication(auth);
@@ -133,15 +140,6 @@ public class ScimAuthFilter extends OncePerRequestFilter {
         }
         String secret = trimmed.substring(7).trim();
         return secret.isEmpty() ? null : secret;
-    }
-
-    private static String pathWithinApp(HttpServletRequest req) {
-        String uri = req.getRequestURI();
-        String ctx = req.getContextPath();
-        if (ctx != null && !ctx.isEmpty() && uri.startsWith(ctx)) {
-            return uri.substring(ctx.length());
-        }
-        return uri;
     }
 
     private static int responseStatus(HttpServletResponse resp) {

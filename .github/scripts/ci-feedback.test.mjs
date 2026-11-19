@@ -314,11 +314,11 @@ function fakeApi({ runs, jobsByRun = {}, artifactsByRun = {}, logs = {}, failLog
 test('collectInput: newest run per workflow, own workflow excluded by path, logs only for failing jobs', async () => {
   const api = fakeApi({
     runs: [
-      { id: 1, name: 'ci', run_number: 5, status: 'completed', conclusion: 'failure', html_url: 'https://github.com/o/r/actions/runs/1', path: '.github/workflows/ci.yml' },
-      { id: 2, name: 'ci', run_number: 6, status: 'completed', conclusion: 'success', html_url: 'https://github.com/o/r/actions/runs/2', path: '.github/workflows/ci.yml' },
-      { id: 3, name: 'ci feedback', run_number: 1, status: 'in_progress', conclusion: null, path: '.github/workflows/ci-feedback.yml' },
+      { id: 1, name: 'ci', run_number: 5, event: 'pull_request', pull_requests: [{ number: 3 }], status: 'completed', conclusion: 'failure', html_url: 'https://github.com/o/r/actions/runs/1', path: '.github/workflows/ci.yml' },
+      { id: 2, name: 'ci', run_number: 6, event: 'pull_request', pull_requests: [{ number: 3 }], status: 'completed', conclusion: 'success', html_url: 'https://github.com/o/r/actions/runs/2', path: '.github/workflows/ci.yml' },
+      { id: 3, name: 'ci feedback', run_number: 1, event: 'pull_request', pull_requests: [{ number: 3 }], status: 'in_progress', conclusion: null, path: '.github/workflows/ci-feedback.yml' },
       // A PR may rename its own workflow to "ci feedback" to hide it: only the path identifies ours.
-      { id: 4, name: 'ci feedback', run_number: 1, status: 'completed', conclusion: 'failure', html_url: 'https://github.com/o/r/actions/runs/4', path: '.github/workflows/sneaky.yml' }
+      { id: 4, name: 'ci feedback', run_number: 1, event: 'pull_request', pull_requests: [{ number: 3 }], status: 'completed', conclusion: 'failure', html_url: 'https://github.com/o/r/actions/runs/4', path: '.github/workflows/sneaky.yml' }
     ],
     jobsByRun: {
       2: [{ id: 20, name: 'ok', conclusion: 'success' }],
@@ -334,6 +334,38 @@ test('collectInput: newest run per workflow, own workflow excluded by path, logs
   const doc = buildFeedback(input);
   assert.equal(doc.status, 'failed');
   assert.match(doc.failures[0].firstError.excerpt, /nope/);
+});
+
+test('collectInput excludes other PRs and non-PR events before reading run details', async () => {
+  const runs = [
+    { id: 10, name: 'ci', run_number: 10, event: 'pull_request', pull_requests: [{ number: 42 }], path: '.github/workflows/ci.yml', status: 'completed', conclusion: 'success' },
+    { id: 11, name: 'ci', run_number: 11, event: 'pull_request', pull_requests: [{ number: 43 }], path: '.github/workflows/ci.yml', status: 'completed', conclusion: 'failure' },
+    { id: 12, name: 'design-system', run_number: 8, event: 'pull_request', pull_requests: [{ number: 43 }], path: '.github/workflows/design-system.yml', status: 'in_progress', conclusion: null },
+    { id: 13, name: 'nightly-compliance', run_number: 7, event: 'schedule', pull_requests: [{ number: 42 }], path: '.github/workflows/nightly-compliance.yml', status: 'completed', conclusion: 'failure' },
+    { id: 14, name: 'docker', run_number: 9, event: 'push', pull_requests: [{ number: 42 }], path: '.github/workflows/docker.yml', status: 'completed', conclusion: 'failure' }
+  ];
+  const api = fakeApi({
+    runs,
+    jobsByRun: { 10: [{ id: 100, name: 'build', conclusion: 'success' }] }
+  });
+  const input = await collectInput({ api, repo: 'o/r', sha: SHA, pullRequest: 42 });
+  assert.deepEqual(input.runs.map((run) => run.id), [10]);
+  assert.equal(buildFeedback(input).status, 'passed');
+  assert.deepEqual(api.calls.filter((path) => /runs\/\d+\/(jobs|artifacts)/.test(path)), [
+    '/repos/o/r/actions/runs/10/jobs?filter=latest',
+    '/repos/o/r/actions/runs/10/artifacts'
+  ]);
+
+  const unscoped = await collectInput({ api: fakeApi({ runs }), repo: 'o/r', sha: SHA });
+  assert.deepEqual(unscoped.runs.map((run) => run.id), [11, 12, 13, 14], 'no PR number retains commit-wide runs');
+});
+
+test('collectInput leaves PR identity unset when no matching run exists', async () => {
+  const api = fakeApi({ runs: [{ id: 4, name: 'ci', run_number: 1, event: 'pull_request', pull_requests: [{ number: 43 }] }] });
+  const input = await collectInput({ api, repo: 'o/r', sha: SHA, pullRequest: 42 });
+  assert.deepEqual(input.runs, []);
+  assert.equal(input.pullRequest, null);
+  assert.deepEqual(api.calls, [`/repos/o/r/actions/runs?head_sha=${SHA}`]);
 });
 
 test('collectInput: a log that cannot be fetched does not hide the failure', async () => {
@@ -359,6 +391,7 @@ test('collectInput rejects ids that could reshape an API path', async () => {
   await assert.rejects(collectInput({ api, repo: 'o/r/../x', sha: SHA }), /invalid --repo/);
   await assert.rejects(collectInput({ api, repo: 'o/r', sha: 'main' }), /invalid --sha/);
   await assert.rejects(collectInput({ api, repo: 'o/r', sha: `${SHA}?x=1` }), /invalid --sha/);
+  await assert.rejects(collectInput({ api, repo: 'o/r', sha: SHA, pullRequest: '42/../x' }), /invalid --pr/);
   assert.deepEqual(api.calls, []);
 });
 
@@ -397,13 +430,22 @@ test('acceptance 2: sticky comment is created on failure and updated on each lat
 });
 
 test('a green commit refreshes an existing comment but never creates one', async () => {
-  const green = buildFeedback({ runs: [{ id: 1, name: 'ci', status: 'completed', conclusion: 'success', jobs: [] }], generatedAt: GENERATED_AT });
+  const green = buildFeedback({ repository: 'o/r', pullRequest: 12, runs: [{ id: 1, name: 'ci', status: 'completed', conclusion: 'success', jobs: [] }], generatedAt: GENERATED_AT });
   const quiet = commentApi([]);
   assert.equal(await upsertComment({ api: quiet, repo: 'o/r', pr: 12, feedback: green }), 'skipped');
   assert.equal(quiet.sent.length, 0);
   const existing = commentApi([{ id: 9, user: bot, body: `${COMMENT_MARKER}\nfailing` }]);
   assert.equal(await upsertComment({ api: existing, repo: 'o/r', pr: 12, feedback: green }), 'updated');
   assert.match(existing.sent[0].body.body, /Nothing to fix/);
+});
+
+test('an unassociated or mismatched feedback document cannot edit a PR comment', async () => {
+  const old = [{ id: 9, user: bot, body: `${COMMENT_MARKER}\nold failure` }];
+  for (const feedback of [build({ pullRequest: null }), build({ pullRequest: 43 }), build({ repository: 'other/repo' })]) {
+    const api = commentApi(old);
+    assert.equal(await upsertComment({ api, repo: 'o/r', pr: 12, feedback }), 'skipped');
+    assert.equal(api.sent.length, 0);
+  }
 });
 
 test('a person quoting the marker is never edited', async () => {
@@ -459,7 +501,7 @@ test('parseArgs reads flags and the positional mode', () => {
 
 test('main collect writes the JSON and markdown through the injected writer', async () => {
   const api = fakeApi({
-    runs: [{ id: 4, name: 'ci', run_number: 1, status: 'completed', conclusion: 'failure', html_url: 'https://github.com/o/r/actions/runs/4' }],
+    runs: [{ id: 4, name: 'ci', run_number: 1, event: 'pull_request', pull_requests: [{ number: 12 }], status: 'completed', conclusion: 'failure', html_url: 'https://github.com/o/r/actions/runs/4' }],
     jobsByRun: { 4: [{ id: 40, name: 'ui (svelte-check + vitest + build + e2e)', conclusion: 'failure' }] },
     logs: { 40: fixture('prettier-failure.txt') }
   });

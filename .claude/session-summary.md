@@ -75,6 +75,17 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-11-19 — fix/2421-design-system-publish-hardening — repaired PR #2447 acceptance check
+**Was doing:** updated acceptance/2335 to recognize the verified tarball output used by the publish job; local acceptance, script tests, and design-system build/check pass.
+**Now:** check PR #2447 CI after the push; maintainers still need to review the workflow and protect npm-publish with an environment secret.
+**Refs:** #2421, #2335, PR #2447
+
+## 2026-11-10 — feature/1393-role-security-verification — fuzz + E2E coverage for #1393
+**Was doing:** shipped the two remaining acceptance-criteria tests for the Ossie role security (row-predicate fuzz cases in OssieFuzzIT with a two-role restricted pass + hand-computed window totals, and a mocked-backend Playwright spec `ossie-role-visibility.spec.ts` with per-caller fixture overrides).
+**Now:** watch PR CI — the Java side could not compile locally: the hive token has no `read:packages` scope (GitHub Packages returns bare 401 for `bi.saiku.ossie:ossie-sql:0.1.0` and `avatica-server:1.28.0.jar`), so CI is the first compile pass. Prettier + `tsc --strict` on the e2e files pass locally; Chromium cannot launch here (missing libglib-2.0.so.0).
+**Watch out:** a local JDK 22 + Maven 3.9.12 were installed under `/home/dev/tools/` this session — they are NOT on the default PATH; export JAVA_HOME and PATH before any mvn run.
+**Refs:** #1393, PR against development (prior enforcement: #2057)
+
 ## 2026-10-11 — UI coverage reports for #2196
 **Was doing:** added opt-in Vitest LCOV, source-map-remapped mocked-browser LCOV, provenance, and a per-line comparison command.
 **Now:** run the mocked Chromium coverage command in CI; local Chromium cannot launch because libglib-2.0.so.0 is missing.
@@ -201,3 +212,13 @@ written from the conversation rather than from `git status` / `git log`, records
 what the agent remembers doing instead of what the tree actually contains. Check
 the tree first.
 **Refs:** #2101
+
+## 2026-10-25 — info diagnostics access restriction — issue #2296
+**Was doing:** restricted `/rest/saiku/info/diagnostics` to admins in the Spring URL chain and on the Jersey method, while retaining public `/info` and `/info/capabilities`. Added launcher integration coverage and updated the AI API documentation.
+**Now:** review the security fix for #2296. XML parsing and security-rule ordering checks passed; the Java integration suite could not run locally because Java and Maven are absent.
+**Refs:** #2296
+
+## 2026-11-18 — fix/sql-capture-level-restore — SQL capture logger level lifecycle
+**Was doing:** made `SqlCaptureProbe` share one raise/restore of the planner logger levels across overlapping probes (first open records and raises, last close restores), with a cleaner releasing a probe that is never closed. Added overlap tests for both close orders and for a logger that only an ancestor configures.
+**Now:** opening fails closed on any `Throwable` (raise, attach, logger update, cleaner registration), and closing restores in a `finally`. Fault-injection tests cover each path, and reflection tests keep the appender and release action static with no path back to the probe, which the cleaner depends on. A logger whose restore fails is retried at the next cycle with its recorded level.
+**Watch out:** an open PR also edits this class's event filter; this change only touches the level lifecycle and the appender's fields.

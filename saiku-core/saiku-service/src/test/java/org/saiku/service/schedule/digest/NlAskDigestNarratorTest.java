@@ -7,6 +7,8 @@ package org.saiku.service.schedule.digest;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+import java.text.DecimalFormat;
+import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.Test;
@@ -22,6 +24,8 @@ import org.saiku.service.olap.ai.ask.NlAskResponse;
 public class NlAskDigestNarratorTest {
 
     private static final AiCubeRef CUBE = new AiCubeRef("FoodMart", "FoodMart", "FoodMart", "Sales");
+
+    private NumberFormat df = DecimalFormat.getInstance();
 
     private static MeasureDelta delta(String label, double current, double previous) {
         return new MeasureDelta(CUBE, label, current, previous);
@@ -78,8 +82,8 @@ public class NlAskDigestNarratorTest {
         NlAskRequest req = provider.requests.get(0);
         assertEquals(NlAskRequest.ForceTool.INSIGHT, req.forceTool());
         // The figures the model may talk about are the ones the server computed.
-        assertTrue(req.cellsetDigest().contains("1,200"));
-        assertTrue(req.cellsetDigest().contains("1,000"));
+        assertTrue(req.cellsetDigest().contains(df.format(1200)));
+        assertTrue(req.cellsetDigest().contains(df.format(1000)));
         assertTrue(req.question().contains("3 bullet points"));
         assertTrue(req.question().contains("Exec Overview"));
     }
@@ -102,7 +106,9 @@ public class NlAskDigestNarratorTest {
 
         // Template wording, and the provider was never called — no figure left the box.
         assertTrue(provider.requests.isEmpty());
-        assertEquals("Units rose +20.0% to 1,200 (was 1,000).", bullets.get(0));
+
+        String expected = String.format("Units rose +20.0%% to %s (was %s).", df.format(1200), df.format(1000));
+        assertEquals(expected, bullets.get(0));
     }
 
     @Test
@@ -129,7 +135,8 @@ public class NlAskDigestNarratorTest {
         provider.response = NlAskResponse.degraded("HTTP 503: upstream", "test-model");
         NlAskDigestNarrator narrator = narrator(provider, new AiPolicyGuard(AiPolicy.FULL));
         List<String> bullets = narrator.narrate(null, List.of(delta("Units", 1200d, 1000d)), 3);
-        assertEquals("Units rose +20.0% to 1,200 (was 1,000).", bullets.get(0));
+        String expected = String.format("Units rose +20.0%% to %s (was %s).", df.format(1200), df.format(1000));
+        assertEquals(expected, bullets.get(0));
     }
 
     @Test

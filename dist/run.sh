@@ -32,6 +32,10 @@ fi
 # OOM behaviour the container does.
 #   -XX:+ExitOnOutOfMemoryError  fail fast on OOM instead of limping on a corrupt heap
 #   -XX:MaxRAMPercentage=75      size the heap from the machine's RAM
-# Both are overridable by prepending your own flags to JAVA_OPTS.
-exec java -XX:+ExitOnOutOfMemoryError -XX:MaxRAMPercentage=75 "${JAVA_OPTS[@]}" \
+#   -XX:-UseBASE64Intrinsics     interim mitigation for CVE-2026-114938 (HotSpot
+#                                x86-64 Base64 decode intrinsic); not needed on a
+#                                patched JRE (see README.md)
+# These flags are fixed: JAVA_OPTS is reset above, so to change them, edit
+# this script.
+exec java -XX:+ExitOnOutOfMemoryError -XX:MaxRAMPercentage=75 -XX:-UseBASE64Intrinsics "${JAVA_OPTS[@]}" \
   -jar "$JAR" serve --home "$SCRIPT_DIR/saiku-home" "$@"

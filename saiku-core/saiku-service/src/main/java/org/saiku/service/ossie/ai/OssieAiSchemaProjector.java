@@ -15,9 +15,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import org.saiku.datasources.connection.SaikuOssieConnection;
 import org.saiku.service.ossie.OssieModelDto;
+import org.saiku.service.ossie.OssieRoleContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -91,6 +93,18 @@ public final class OssieAiSchemaProjector {
      * want to spin up a warehouse do this).
      */
     public OssieAiSchema project(String connectionName, OssieModelDto semantic, Connection jdbc) {
+        return project(connectionName, semantic, jdbc, Set.of());
+    }
+
+    /**
+     * As {@link #project(String, OssieModelDto, Connection)}, but sample-value queries are scoped
+     * to {@code callerRoles}' dataset row predicates (saiku#2324) and cached per row scope, so one
+     * caller's samples are never served to a caller with a different scope. Callers should pass a
+     * {@code semantic} already run through {@code OssieRoleContext.filterHidden} for the same roles.
+     */
+    public OssieAiSchema project(
+            String connectionName, OssieModelDto semantic, Connection jdbc, Set<String> callerRoles) {
+        OssieRoleContext roleContext = OssieRoleContext.resolve(callerRoles, semantic);
         OssieAiSchema out = new OssieAiSchema();
         out.setConnectionName(connectionName);
         out.setModelName(semantic.getName());
@@ -134,7 +148,14 @@ public final class OssieAiSchemaProjector {
                 // the schema still projects when the warehouse is offline (agent still sees
                 // field names, just without samples).
                 if (jdbc != null) {
-                    populateSamples(connectionName, semantic.getName(), ds, f, jdbc, out_field);
+                    populateSamples(
+                            connectionName,
+                            semantic.getName(),
+                            ds,
+                            f,
+                            jdbc,
+                            roleContext.combinedRowPredicateFor(ds.getName()),
+                            out_field);
                 }
                 out_ds.getFields().put(f.getName().toLowerCase(Locale.ROOT), out_field);
             }
@@ -247,8 +268,12 @@ public final class OssieAiSchemaProjector {
             OssieModelDto.Dataset ds,
             OssieModelDto.Field f,
             Connection jdbc,
+            String rowPredicate,
             OssieAiSchema.Field out_field) {
-        String cacheKey = connectionName + "|" + modelName + "|" + ds.getName() + "|" + f.getName();
+        // saiku#2324 — the row scope is part of the key: samples are drawn from the caller's
+        // visible rows only, so they may only be reused by a caller with the identical scope.
+        String cacheKey = connectionName + "|" + modelName + "|" + ds.getName() + "|" + f.getName()
+                + (rowPredicate == null ? "" : "|rp:" + rowPredicate);
         SampleEntry cached = sampleCache.get(cacheKey);
         if (cached != null && cached.freshFor(SAMPLE_TTL)) {
             out_field.setSampleValues(cached.values);
@@ -264,7 +289,8 @@ public final class OssieAiSchemaProjector {
         // DIM_PAYER) never did — silently returning empty sample lists.
         String sourceTable = "\"" + ds.getName() + "\"";
         String col = f.getName();
-        String sql = "SELECT DISTINCT " + col + " FROM " + sourceTable + " LIMIT " + (SAMPLE_LIMIT + 1);
+        String scope = rowPredicate == null ? "" : " WHERE (" + rowPredicate + ")";
+        String sql = "SELECT DISTINCT " + col + " FROM " + sourceTable + scope + " LIMIT " + (SAMPLE_LIMIT + 1);
 
         List<String> values = new ArrayList<>();
         String type = null;
@@ -287,7 +313,7 @@ public final class OssieAiSchemaProjector {
             // to COUNT DISTINCT on a 1000-row sample when the function isn't available.
             Long distinctEstimate = null;
             if ("high".equals(cardinality)) {
-                distinctEstimate = tryEstimateDistinct(jdbc, sourceTable, col);
+                distinctEstimate = tryEstimateDistinct(jdbc, sourceTable, col, scope);
                 if (distinctEstimate != null) {
                     if (distinctEstimate < 20) cardinality = "low";
                     else if (distinctEstimate < 200) cardinality = "medium";
@@ -484,10 +510,10 @@ public final class OssieAiSchemaProjector {
      * Attempt an APPROX_COUNT_DISTINCT (or COUNT(DISTINCT ...) fallback) for a field. Returns
      * null when neither works — the caller keeps the coarse bucket then.
      */
-    private Long tryEstimateDistinct(Connection jdbc, String sourceTable, String col) {
+    private Long tryEstimateDistinct(Connection jdbc, String sourceTable, String col, String scope) {
         // First try APPROX_COUNT_DISTINCT — supported by BigQuery, Snowflake, Postgres 9.5+,
         // Redshift, Databricks, Presto/Trino. Not on H2, HSQLDB, SQLite.
-        String approx = "SELECT APPROX_COUNT_DISTINCT(" + col + ") FROM " + sourceTable;
+        String approx = "SELECT APPROX_COUNT_DISTINCT(" + col + ") FROM " + sourceTable + scope;
         try (Statement st = jdbc.createStatement();
                 ResultSet rs = st.executeQuery(approx)) {
             if (rs.next()) return rs.getLong(1);
@@ -496,8 +522,8 @@ public final class OssieAiSchemaProjector {
         }
         // Fallback: COUNT DISTINCT on a 1000-row sample. Cheap on H2 (the fuzz fixture); on real
         // warehouses this is bounded, so it's safe by construction.
-        String countDistinct =
-                "SELECT COUNT(DISTINCT " + col + ") FROM (SELECT " + col + " FROM " + sourceTable + " LIMIT 1000)";
+        String countDistinct = "SELECT COUNT(DISTINCT " + col + ") FROM (SELECT " + col + " FROM " + sourceTable + scope
+                + " LIMIT 1000)";
         try (Statement st = jdbc.createStatement();
                 ResultSet rs = st.executeQuery(countDistinct)) {
             if (rs.next()) return rs.getLong(1);

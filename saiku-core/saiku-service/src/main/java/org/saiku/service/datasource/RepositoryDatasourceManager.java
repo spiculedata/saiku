@@ -39,6 +39,7 @@ import org.saiku.repository.PathNotFoundException;
 import org.saiku.repository.RepositoryException;
 import org.saiku.service.importer.JujuSource;
 import org.saiku.service.user.UserService;
+import org.saiku.service.util.security.MondrianRolePolicy;
 import org.saiku.service.util.security.authentication.PasswordProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -480,8 +481,82 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
         }
     }
 
+    /**
+     * saiku#2318 (CWE-863): {@code roles} is no longer ignored. The historical implementation
+     * returned the whole workspace map for every caller, so any role-filtered consumer — notably
+     * the SQL workbench picker — silently offered every datasource on the server, and the
+     * datasource field of a workbench query was a free choice of target.
+     *
+     * <p>The filter mirrors {@code SecurityAwareConnectionManager}'s connection-time enforcement
+     * (saiku#1968/#1972, fail-closed) so a datasource the caller would be DENIED a connection for is
+     * not even offered: a configured admin sees everything; a non-admin loses only security-enabled
+     * datasources whose {@code lookup} mapping grants them no Mondrian role, or whose
+     * {@code security.type} is unrecognised. {@code one2one} stays visible — deciding it needs the
+     * schema's role list, which only the connection path can read, and that path still denies.
+     * Security-disabled datasources (every default install) are unaffected.
+     */
+    @Override
     public Map<String, SaikuDatasource> getDatasources(String[] roles) {
-        return datasourcesForCurrentWorkspace();
+        Map<String, SaikuDatasource> all = datasourcesForCurrentWorkspace();
+        if (isAdmin(roles)) {
+            return all;
+        }
+        Map<String, SaikuDatasource> visible = new LinkedHashMap<>();
+        for (Map.Entry<String, SaikuDatasource> entry : all.entrySet()) {
+            if (isVisibleTo(roles, entry.getValue())) {
+                visible.put(entry.getKey(), entry.getValue());
+            }
+        }
+        return visible;
+    }
+
+    /** True when any of {@code roles} is a configured admin role; unavailable admin roles mean non-admin (fail closed). */
+    private boolean isAdmin(String[] roles) {
+        if (roles == null || roles.length == 0 || userService == null) {
+            return false;
+        }
+        try {
+            List<String> adminRoles = userService.getAdminRoles();
+            if (adminRoles == null || adminRoles.isEmpty()) {
+                return false;
+            }
+            for (String role : roles) {
+                if (role != null && adminRoles.contains(role)) {
+                    return true;
+                }
+            }
+        } catch (Exception e) {
+            log.debug("could not read admin roles; treating caller as non-admin", e);
+        }
+        return false;
+    }
+
+    /**
+     * Whether a non-admin caller may be OFFERED this datasource at all. Only the cases where the
+     * decision needs no schema access are decided here; {@code one2one} defers to the
+     * connection-time check, which has the schema's role list.
+     */
+    static boolean isVisibleTo(String[] roles, SaikuDatasource datasource) {
+        MondrianRolePolicy.Mode mode = MondrianRolePolicy.modeOf(datasource);
+        switch (mode) {
+            case DISABLED:
+            case PASSTHROUGH:
+            case ONE2ONE:
+                return true;
+            case UNKNOWN:
+                // saiku#1972: connection time denies a non-admin outright — don't offer it either.
+                return false;
+            case LOOKUP:
+                List<String> resolved = MondrianRolePolicy.resolveMondrianRoles(
+                        mode, roleList(roles), null, MondrianRolePolicy.mappingOf(datasource));
+                return !resolved.isEmpty();
+            default:
+                return false;
+        }
+    }
+
+    private static Collection<String> roleList(String[] roles) {
+        return roles == null ? List.of() : Arrays.asList(roles);
     }
 
     public SaikuDatasource getDatasource(String datasourceName) {

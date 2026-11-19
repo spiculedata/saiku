@@ -42,13 +42,13 @@ public final class JdbcCleanup {
         try {
             rs.close();
         } catch (Throwable t) {
-            log.debug("Failed to close drillthrough ResultSet", t);
+            log.warn("Failed to close drillthrough ResultSet", t);
         }
         if (stmt != null) {
             try {
                 stmt.close();
             } catch (Throwable t) {
-                log.debug("Failed to close drillthrough Statement", t);
+                log.warn("Failed to close drillthrough Statement", t);
             }
         }
     }

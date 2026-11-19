@@ -62,12 +62,14 @@ class SecureXmlPropertyTest {
 
         void parse(String xml) throws Exception {
             switch (this) {
-                case SAX_FACTORY -> SecureXml.secureSaxParserFactory()
-                        .newSAXParser()
-                        .getXMLReader()
-                        .parse(new InputSource(new StringReader(xml)));
-                case DOCUMENT_BUILDER -> SecureXml.secureDocumentBuilder()
-                        .parse(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+                case SAX_FACTORY ->
+                    SecureXml.secureSaxParserFactory()
+                            .newSAXParser()
+                            .getXMLReader()
+                            .parse(new InputSource(new StringReader(xml)));
+                case DOCUMENT_BUILDER ->
+                    SecureXml.secureDocumentBuilder()
+                            .parse(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
                 case JDOM_SAX_BUILDER -> SecureXml.secureSaxBuilder().build(new StringReader(xml));
             }
         }
@@ -204,12 +206,15 @@ class SecureXmlPropertyTest {
 
         String xml =
                 switch (shape) {
-                    case 0 -> "<!DOCTYPE " + root + " [<!ENTITY " + entity + " SYSTEM \"file://" + secret + "\">]><"
-                            + root + ">&" + entity + ";</" + root + ">";
-                    case 1 -> "<!DOCTYPE " + root + " [<!ENTITY % " + entity + " SYSTEM \"file://" + secret + "\"> %"
-                            + entity + ";]><" + root + "/>";
-                    default -> "<!DOCTYPE " + root + " [<!ENTITY " + entity + " SYSTEM \"file://" + secret + "\">]><"
-                            + root + " attr=\"&" + entity + ";\"/>";
+                    case 0 ->
+                        "<!DOCTYPE " + root + " [<!ENTITY " + entity + " SYSTEM \"file://" + secret + "\">]><" + root
+                                + ">&" + entity + ";</" + root + ">";
+                    case 1 ->
+                        "<!DOCTYPE " + root + " [<!ENTITY % " + entity + " SYSTEM \"file://" + secret + "\"> %" + entity
+                                + ";]><" + root + "/>";
+                    default ->
+                        "<!DOCTYPE " + root + " [<!ENTITY " + entity + " SYSTEM \"file://" + secret + "\">]><" + root
+                                + " attr=\"&" + entity + ";\"/>";
                 };
         tc.note(xml);
 
@@ -257,8 +262,8 @@ class SecureXmlPropertyTest {
 
         assertDoesNotThrow(() -> {
             switch (parser) {
-                case SAX_FACTORY -> assertNotNull(
-                        SecureXml.secureSaxParserFactory().newSAXParser());
+                case SAX_FACTORY ->
+                    assertNotNull(SecureXml.secureSaxParserFactory().newSAXParser());
                 case DOCUMENT_BUILDER -> assertNotNull(SecureXml.secureDocumentBuilder());
                 case JDOM_SAX_BUILDER -> assertNotNull(SecureXml.secureSaxBuilder());
             }

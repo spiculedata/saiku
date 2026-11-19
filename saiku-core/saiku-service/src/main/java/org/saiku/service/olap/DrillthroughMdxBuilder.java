@@ -91,19 +91,23 @@ public final class DrillthroughMdxBuilder {
      * {@code RETURN}/{@code SET}/{@code WHERE} tail can't be mangled.
      *
      * @param mdx the client's statement; if it doesn't start with {@code DRILLTHROUGH}
-     *     (case-insensitive, after trimming) it is returned unchanged — this method must not
+     *     (case-insensitive, after whitespace and MDX comments) it is returned unchanged — this method must not
      *     invent a drillthrough from something that isn't one
      */
     public static String capRawDrillthrough(String mdx, int requestedMaxRows) {
         if (mdx == null) {
             return null;
         }
-        final String trimmed = mdx.trim();
-        if (!trimmed.regionMatches(true, 0, "DRILLTHROUGH", 0, "DRILLTHROUGH".length())) {
+        // saiku#2327: Mondrian's parser skips MDX comments, so "/*x*/DRILLTHROUGH ..." is executed
+        // as a drillthrough. Skip them here too, otherwise the statement is treated as "not a
+        // drillthrough" and runs uncapped. The comments are dropped from the emitted statement.
+        final int keywordStart = skipLeadingTrivia(mdx, 0);
+        if (!mdx.regionMatches(true, keywordStart, "DRILLTHROUGH", 0, "DRILLTHROUGH".length())) {
             return mdx;
         }
         final int cap = QueryGuardrails.clampMaxRows(requestedMaxRows);
-        final String rest = trimmed.substring("DRILLTHROUGH".length()).stripLeading();
+        final int restStart = skipLeadingTrivia(mdx, keywordStart + "DRILLTHROUGH".length());
+        final String rest = mdx.substring(restStart);
 
         // DRILLTHROUGH MAXROWS 500 SELECT ...
         String[] tokens = rest.split("\\s+", 3);
@@ -129,6 +133,43 @@ public final class DrillthroughMdxBuilder {
                     cap);
         }
         return "DRILLTHROUGH MAXROWS " + cap + " " + rest;
+    }
+
+    /**
+     * Index of the first character at or after {@code from} that is neither whitespace nor part
+     * of an MDX comment (block comments, or {@code //} and {@code --} to end of line).
+     * An unterminated block comment consumes the rest of the string, matching the lexer.
+     */
+    private static int skipLeadingTrivia(String mdx, int from) {
+        int i = from;
+        final int n = mdx.length();
+        while (i < n) {
+            if (Character.isWhitespace(mdx.charAt(i))) {
+                i++;
+            } else if (mdx.startsWith("/*", i)) {
+                int end = mdx.indexOf("*/", i + 2);
+                if (end < 0) {
+                    return n;
+                }
+                i = end + 2;
+            } else if (mdx.startsWith("//", i) || mdx.startsWith("--", i)) {
+                int end = indexOfLineEnd(mdx, i + 2);
+                i = end < 0 ? n : end;
+            } else {
+                break;
+            }
+        }
+        return i;
+    }
+
+    private static int indexOfLineEnd(String s, int from) {
+        for (int i = from; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '\n' || c == '\r') {
+                return i;
+            }
+        }
+        return -1;
     }
 
     private static Integer parsePositive(String token) {

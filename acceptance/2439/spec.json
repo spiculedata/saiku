@@ -1,0 +1,19 @@
+{
+  "issue": 2439,
+  "title": "The demo pages' login, POST /rest/saiku/session/ (trailing slash), signs in again; nothing beneath /rest/saiku/session/ is reopened",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "an anonymous caller with no cookies posting the demo credentials form-encoded to /rest/saiku/session/, the exact URL embed-demo, aqvira-demo and both showcase pages use",
+      "then": "the login answers 200 and sets a session cookie, and a later call carrying only that cookie is authenticated as that user"
+    },
+    {
+      "id": "C2",
+      "given": "an anonymous caller posting credentials to a path beneath /rest/saiku/session/ (the removed /clear, or any other sub-path)",
+      "then": "the request is refused (403, 404 or 405) and never answers 200; an anonymous GET beneath it is not permitted either (401 or 403)"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}

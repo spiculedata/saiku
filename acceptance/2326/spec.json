@@ -1,0 +1,34 @@
+{
+  "issue": 2326,
+  "title": "AI cube schema cache is scoped to the caller's visibility context and re-checked on every hit",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "two callers with different effective Mondrian role sets describe the same cube",
+      "then": "OlapAiCubeMetadataService keys the schema cache by a visibility fingerprint of the caller (AiVisibilityContext) so the second caller rebuilds under their own role, while the serialised AiSchema cubeId stays role-less"
+    },
+    {
+      "id": "C2",
+      "given": "a cache hit for a cube the caller can no longer see (no datasource grant, other workspace)",
+      "then": "getSchema re-resolves the cube against the caller's role-scoped enumeration (findCube) before returning the cached entry, so an invisible cube throws AiValidationException instead of serving another caller's schema"
+    },
+    {
+      "id": "C3",
+      "given": "a connection is refreshed (admin refresh, datasource save/update)",
+      "then": "refreshConnection drops the AI schema cache entries scoped to that connection"
+    },
+    {
+      "id": "C4",
+      "given": "a caller's Spring authorities on a security-enabled datasource",
+      "then": "SecurityAwareConnectionManager exposes a stable visibilityKey: callers with the same Mondrian role fingerprint share a key, different role sets get different keys, passthrough datasources key per principal, and unresolvable or non-security datasources fail closed or collapse to the shared key respectively"
+    },
+    {
+      "id": "C5",
+      "given": "the cross-role cache behaviour",
+      "then": "regression tests ship for role-scoped rebuild, no-grant denial on a warm cache, same-role sharing and per-connection invalidation"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}

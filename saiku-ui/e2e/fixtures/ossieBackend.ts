@@ -9,8 +9,17 @@ import type { Page, Route } from '@playwright/test';
  * which captures the most recent POST body to `/query/execute` so specs can assert on the
  * shelf-state payload that reached the server.
  */
-export function registerOssieBackend(page: Page): OssieBackendHandle {
+export function registerOssieBackend(
+	page: Page,
+	options: OssieBackendOptions = {}
+): OssieBackendHandle {
 	const state: OssieBackendState = { lastExecuteBody: null, savedFiles: new Map() };
+	// saiku#1393 role-visibility spec: per-caller model and result overrides so one fixture
+	// can stand in for an enforcing server. The defaults keep every existing spec unchanged.
+	const model = options.model ?? FIXTURE_MODEL;
+	const result = options.result ?? FIXTURE_RESULT;
+	const username = options.username ?? 'admin';
+	const roles = options.roles ?? ['ROLE_ADMIN', 'ROLE_USER'];
 
 	const routes: Array<[string | RegExp, (route: Route) => Promise<void> | void]> = [
 		// Session: a signed-in admin so <Workspace> mounts.
@@ -22,11 +31,11 @@ export function registerOssieBackend(page: Page): OssieBackendHandle {
 						status: 200,
 						contentType: 'application/json',
 						body: JSON.stringify({
-							username: 'admin',
-							roles: ['ROLE_ADMIN', 'ROLE_USER'],
-							sessionid: 'e2e-session-0',
+							username,
+							roles,
+							sessionid: `e2e-session-${username}`,
 							language: 'en',
-							isadmin: true
+							isadmin: roles.includes('ROLE_ADMIN')
 						})
 					});
 				} else {
@@ -61,7 +70,7 @@ export function registerOssieBackend(page: Page): OssieBackendHandle {
 				await route.fulfill({
 					status: 200,
 					contentType: 'application/json',
-					body: JSON.stringify(FIXTURE_MODEL)
+					body: JSON.stringify(model)
 				});
 			}
 		],
@@ -79,7 +88,7 @@ export function registerOssieBackend(page: Page): OssieBackendHandle {
 				await route.fulfill({
 					status: 200,
 					contentType: 'application/json',
-					body: JSON.stringify(FIXTURE_RESULT)
+					body: JSON.stringify(result)
 				});
 			}
 		],
@@ -134,6 +143,24 @@ export interface OssieBackendHandle {
 	getLastExecuteBody: () => unknown;
 	getSavedFile: (path: string) => string | null;
 	listSavedPaths: () => string[];
+}
+
+/**
+ * Optional overrides for {@link registerOssieBackend}. Everything defaults to the
+ * admin-sees-everything canned data, so specs that don't care never pass an argument.
+ *
+ * - `username` / `roles` shape the `/rest/saiku/session` response (the workbench derives the
+ *   signed-in identity from it).
+ * - `model` replaces the discover `ossie-model` payload — pass a role-filtered model to
+ *   stand in for the server's `saiku.roles` HIDE filtering (saiku#1393).
+ * - `result` replaces the `/query/execute` envelope — pass a row-restricted result to stand
+ *   in for the server's row-predicate injection.
+ */
+export interface OssieBackendOptions {
+	username?: string;
+	roles?: string[];
+	model?: unknown;
+	result?: unknown;
 }
 
 interface OssieBackendState {

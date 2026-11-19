@@ -74,8 +74,10 @@ public class SqlWorkbenchResource {
             return badRequest("INVALID_REQUEST", "'datasource' is required");
         }
         try {
+            // saiku#2318: the datasource field is free text, so the target is re-checked against
+            // the caller's roles inside the service — never trusted from the request body.
             SqlWorkbenchService.SqlQueryResult result =
-                    service.execute(currentUsername(), req.datasource(), req.sql(), req.maxRows());
+                    service.execute(currentUsername(), currentUserRoles(), req.datasource(), req.sql(), req.maxRows());
             return Response.ok(result).build();
         } catch (SqlWorkbenchException e) {
             return badRequest(e.getCode().name(), e.getMessage());

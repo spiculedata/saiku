@@ -83,8 +83,9 @@ it was rebuilt as a modern Semantic Layer on top of:
   programmatic consumer share a zero-copy result envelope.
 - **Jetty 12 EE10 + Jersey 3.1 + Spring 6 + Spring Security 6.5** in a
   single-JAR Picocli launcher.
-- **SvelteKit 5 + Vite** for the SPA (separate repo, served from inside
-  the same JAR at `/ui/`).
+- **SvelteKit 5 + Vite** for the SPA (built independently from the
+  `saiku-ui/` directory in this repository, served from inside the same
+  JAR at `/ui/`).
 
 ## AI Query API + MCP
 
@@ -312,10 +313,10 @@ launcher serves the static `dist/` under `/ui/`.
   [open an issue](https://github.com/spiculedata/saiku/issues/new/choose).
 - **Questions, ideas, walkthroughs**:
   [GitHub Discussions](https://github.com/spiculedata/saiku/discussions).
-- **Chat**: [Saiku Cloud Slack](https://join.slack.com/t/saikucloud/shared_invite/zt-3yor7kgiv-YUPhqK0pvd4WljctIQVOTA).
+- **Chat**: [Saiku community Slack](https://join.slack.com/t/saikucloud/shared_invite/zt-3yor7kgiv-YUPhqK0pvd4WljctIQVOTA).
 - **Stack Overflow tag**:
   [`saiku`](https://stackoverflow.com/questions/tagged/saiku).
-- **Commercial support, hosted, training**: <hello@saiku.bi>.
+- **Commercial support, training**: <hello@saiku.bi>.
 
 The old `groups.google.com/a/saiku.meteorite.bi` lists and `##saiku` IRC
 channel are no longer monitored.

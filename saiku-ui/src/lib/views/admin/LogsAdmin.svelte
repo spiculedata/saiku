@@ -49,9 +49,6 @@
 		gap: var(--space-2);
 		align-items: center;
 	}
-	.controls .field__input {
-		width: 220px;
-	}
 	.log {
 		margin: 0;
 		padding: var(--space-3);

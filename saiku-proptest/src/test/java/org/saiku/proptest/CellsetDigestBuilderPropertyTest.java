@@ -200,11 +200,13 @@ class CellsetDigestBuilderPropertyTest {
         String digest =
                 switch (which) {
                     case 0 -> CellsetDigestBuilder.digest(null, 10);
-                    case 1 -> CellsetDigestBuilder.digest(
-                            dataSet(new AbstractBaseCell[0][], new AbstractBaseCell[0][]), 10);
-                        // A body whose rows are all zero-width carries no columns.
-                    default -> CellsetDigestBuilder.digest(
-                            dataSet(new AbstractBaseCell[0][], new AbstractBaseCell[][] {new AbstractBaseCell[0]}), 10);
+                    case 1 ->
+                        CellsetDigestBuilder.digest(dataSet(new AbstractBaseCell[0][], new AbstractBaseCell[0][]), 10);
+                    // A body whose rows are all zero-width carries no columns.
+                    default ->
+                        CellsetDigestBuilder.digest(
+                                dataSet(new AbstractBaseCell[0][], new AbstractBaseCell[][] {new AbstractBaseCell[0]}),
+                                10);
                 };
 
         assertEquals("", digest, "expected an empty digest");

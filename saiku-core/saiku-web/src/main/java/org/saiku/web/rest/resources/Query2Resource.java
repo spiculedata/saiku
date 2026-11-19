@@ -70,6 +70,7 @@ import org.saiku.service.util.exception.SaikuServiceException;
 import org.saiku.web.export.JSConverter;
 import org.saiku.web.export.PdfReport;
 import org.saiku.web.rest.objects.resultset.QueryResult;
+import org.saiku.web.rest.util.ContentDispositions;
 import org.saiku.web.rest.util.RestUtil;
 import org.saiku.web.util.JdbcCleanup;
 import org.slf4j.Logger;
@@ -411,11 +412,17 @@ public class Query2Resource {
             if (thinQueryService.isMdxDrillthrough(tq)) {
                 Long start = (new Date()).getTime();
                 ResultSet rs = thinQueryService.drillthrough(tq);
-                QueryResult rsc = RestUtil.convert(rs);
-                rsc.setQuery(tq);
-                Long runtime = (new Date()).getTime() - start;
-                rsc.setRuntime(runtime.intValue());
-                return Response.ok(rsc).type(MediaType.APPLICATION_JSON).build();
+                try {
+                    QueryResult rsc = RestUtil.convert(rs);
+                    rsc.setQuery(tq);
+                    Long runtime = (new Date()).getTime() - start;
+                    rsc.setRuntime(runtime.intValue());
+                    return Response.ok(rsc).type(MediaType.APPLICATION_JSON).build();
+                } finally {
+                    // The rows are copied into rsc above; closing the ResultSet releases the
+                    // engine's SQL statement, which otherwise stays open until the JVM exits.
+                    JdbcCleanup.closeQuietly(rs);
+                }
             }
 
             if (clientPrefersArrow(headers)) {
@@ -931,7 +938,7 @@ public class Query2Resource {
                 name = SaikuProperties.webExportExcelName + "." + SaikuProperties.webExportExcelFormat;
             }
             return Response.ok(doc, MediaType.APPLICATION_OCTET_STREAM)
-                    .header("content-disposition", "attachment; filename = " + name)
+                    .header("content-disposition", ContentDispositions.attachment(name))
                     .header("content-length", doc.length)
                     .build();
         } catch (Exception e) {
@@ -983,7 +990,7 @@ public class Query2Resource {
             }
 
             return Response.ok(doc, MediaType.APPLICATION_OCTET_STREAM)
-                    .header("content-disposition", "attachment; filename = " + name + ".csv")
+                    .header("content-disposition", ContentDispositions.attachment(name, "csv"))
                     .header("content-length", doc.length)
                     .build();
         } catch (Exception e) {
@@ -1400,7 +1407,7 @@ public class Query2Resource {
             byte[] doc = pdf.createPdf(queryResult, svg, name);
             return Response.ok(doc)
                     .type("application/pdf")
-                    .header("content-disposition", "attachment; filename = " + name + ".pdf")
+                    .header("content-disposition", ContentDispositions.attachment(name, "pdf"))
                     .header("content-length", doc.length)
                     .build();
         } catch (Exception e) {

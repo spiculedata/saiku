@@ -30,7 +30,6 @@ import java.io.InputStream;
 import java.io.StringReader;
 import java.sql.Connection;
 import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.*;
 import org.apache.commons.io.IOUtils;
@@ -56,6 +55,7 @@ import org.saiku.web.rest.objects.resultset.QueryResult;
 import org.saiku.web.rest.util.RestUtil;
 import org.saiku.web.rest.util.ServletUtil;
 import org.saiku.web.svg.PdfReport;
+import org.saiku.web.util.JdbcCleanup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -527,10 +527,15 @@ public class QueryResource {
             if (olapQueryService.isMdxDrillthrough(queryName, mdx)) {
                 Long start = (new Date()).getTime();
                 ResultSet rs = olapQueryService.drillthrough(queryName, mdx);
-                QueryResult rsc = RestUtil.convert(rs);
-                Long runtime = (new Date()).getTime() - start;
-                rsc.setRuntime(runtime.intValue());
-                return rsc;
+                try {
+                    QueryResult rsc = RestUtil.convert(rs);
+                    Long runtime = (new Date()).getTime() - start;
+                    rsc.setRuntime(runtime.intValue());
+                    return rsc;
+                } finally {
+                    // Release the engine's SQL statement once the rows are copied out.
+                    JdbcCleanup.closeQuietly(rs);
+                }
             }
             CellDataSet cs = olapQueryService.executeMdx(queryName, mdx, icf);
             return RestUtil.convert(cs, limit);
@@ -762,17 +767,8 @@ public class QueryResource {
             log.error("Cannot export drillthrough query (" + queryName + ")", e);
             return Response.serverError().build();
         } finally {
-            if (rs != null) {
-                try {
-                    Statement statement = rs.getStatement();
-                    statement.close();
-                    rs.close();
-                } catch (SQLException e) {
-                    throw new SaikuServiceException(e);
-                } finally {
-                    rs = null;
-                }
-            }
+            // Close the ResultSet even when closing its statement fails.
+            JdbcCleanup.closeQuietly(rs);
         }
     }
 

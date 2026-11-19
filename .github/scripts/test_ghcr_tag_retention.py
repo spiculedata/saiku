@@ -192,7 +192,10 @@ class VersionsPathTest(unittest.TestCase):
 
 
 def gh_record(vid: int, tags: list[str], age_days: float) -> dict:
-    stamp = NOW - timedelta(days=age_days)
+    # Anchor to wall-clock now, not the fixed NOW: cmd_plan compares against
+    # datetime.now(), so an age expressed off a frozen date silently grows as
+    # real time passes and "fresh" fixtures expire (the 2026-11 time bomb).
+    stamp = datetime.now(timezone.utc) - timedelta(days=age_days)
     return {"id": vid, "tags": tags, "updated_at": stamp.isoformat().replace("+00:00", "Z")}
 
 

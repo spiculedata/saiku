@@ -4,11 +4,13 @@
  */
 package org.saiku.service.olap.ai.explain;
 
+import java.lang.ref.Cleaner;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BiFunction;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.core.LogEvent;
@@ -42,9 +44,25 @@ import org.apache.logging.log4j.core.config.LoggerConfig;
  * extra records for that window. This is deliberately NOT {@link AutoCloseable}: a {@code close()}
  * inside try-with-resources would hide the fact that level restoration is a global side effect.
  *
- * <p>Threading: Mondrian may log from its own worker threads (segment loading), so the capture is
- * not filtered by thread. The list is synchronized — a probe that silently lost statements would
- * produce a panel that quietly lies, which is worse than the cost.
+ * <p><b>Overlapping probes.</b> The level is process-wide while each probe is per request, so the
+ * level change is shared: the first probe to open records each logger's level and raises it, later
+ * probes only attach their own appender, and the last probe to close puts back the level recorded
+ * by the first. Probes may open and close in any order. A level a probe set is never recorded as
+ * the one to restore, so closing always returns the loggers to the configured level. A probe that
+ * is dropped without {@link #close()} is released when it is garbage collected, so a missed close
+ * cannot keep the loggers at {@code DEBUG} for the life of the JVM. Opening fails closed: if it
+ * throws, nothing it raised stays raised unless another open probe holds it.
+ *
+ * <p><b>Whose statements (saiku#2328).</b> The loggers are process-global, so while a probe is
+ * open every concurrent user's SQL reaches its appender. The appender therefore accepts an event
+ * only when the probe's {@link Scope} claims it. A scope is evaluated on the LOGGING thread, so it
+ * can recognise Mondrian worker threads (shepherd, segment loading) that are running the explained
+ * execution; the default scope claims only the thread that opened the probe. A statement that is
+ * not provably this execution's is dropped: a panel that misses a line is acceptable, one that
+ * shows another user's SQL (filter literals, role predicates) is not.
+ *
+ * <p>The list is synchronized — a probe that silently lost its own statements would produce a
+ * panel that quietly lies, which is worse than the cost.
  */
 public final class SqlCaptureProbe {
 
@@ -58,29 +76,75 @@ public final class SqlCaptureProbe {
     private static final int MAX_CAPTURED_LENGTH = 20_000;
     private static final String EXECUTING_MARKER = "executing sql [";
     private static final AtomicLong SEQUENCE = new AtomicLong();
+    private static final Cleaner CLEANER = Cleaner.create();
+
+    /** Guards the shared level state below; every level change happens under it. */
+    private static final Object LEVELS = new Object();
+
+    /** Probes currently open (attached and not yet released). Guarded by {@link #LEVELS}. */
+    private static int activeProbes;
+
+    /** The configuration the levels were raised on. Guarded by {@link #LEVELS}. */
+    private static Configuration raisedOn;
+
+    /** What the first probe found, to be put back by the last one. Guarded by {@link #LEVELS}. */
+    private static final List<RaisedLogger> RAISED = new ArrayList<>();
+
+    /**
+     * Records whose restore failed, kept so the next restore retries them and the next raise reuses
+     * their recorded level instead of reading back the DEBUG left behind. Guarded by {@link #LEVELS}.
+     */
+    private static final List<RaisedLogger> UNRESTORED = new ArrayList<>();
+
+    /** One logger's state before the first open probe raised it. */
+    private record RaisedLogger(Configuration config, LoggerConfig target, Level previous, boolean created) {}
 
     private final LoggerContext context;
-    private final List<LoggerConfig> touched = new ArrayList<>();
-    private final List<Level> previousLevels = new ArrayList<>();
-    private final List<Boolean> created = new ArrayList<>();
     private final List<String> statements = Collections.synchronizedList(new ArrayList<>());
-    private final int maxStatements;
     private final CaptureAppender appender;
-    private volatile boolean open = true;
+    private final Cleaner.Cleanable release;
 
-    private final class CaptureAppender extends AbstractAppender {
-        CaptureAppender() {
+    /**
+     * Decides, on the thread that is logging, whether the event being delivered belongs to the
+     * execution this probe was opened for.
+     */
+    @FunctionalInterface
+    public interface Scope {
+        boolean owns();
+
+        /** Claims only events logged by {@code thread} (the default for a probe). */
+        static Scope thread(Thread thread) {
+            return () -> Thread.currentThread() == thread;
+        }
+    }
+
+    /**
+     * Static so that the appender, which the logger configuration holds, does not keep the probe
+     * reachable; otherwise a probe that was never closed could never be released by the cleaner.
+     */
+    private static final class CaptureAppender extends AbstractAppender {
+        private final List<String> statements;
+        private final int maxStatements;
+        /** Never refers to the probe (saiku#2328 scopes capture only a thread or a statement id). */
+        private final Scope scope;
+
+        private volatile boolean open = true;
+
+        CaptureAppender(List<String> statements, int maxStatements, Scope scope) {
             super(
                     "saiku-sql-capture-" + SEQUENCE.incrementAndGet(),
                     null,
                     null,
                     true,
                     org.apache.logging.log4j.core.config.Property.EMPTY_ARRAY);
+            this.statements = statements;
+            this.maxStatements = Math.max(1, maxStatements);
+            this.scope = scope;
         }
 
         @Override
         public void append(LogEvent event) {
-            if (!open || event == null || event.getMessage() == null) {
+            if (!open || event == null || event.getMessage() == null || !ownsCurrentEvent()) {
                 return;
             }
             String sql = extractSql(event.getMessage().getFormattedMessage());
@@ -93,12 +157,69 @@ public final class SqlCaptureProbe {
                 }
             }
         }
+
+        private boolean ownsCurrentEvent() {
+            try {
+                return scope.owns();
+            } catch (RuntimeException e) {
+                // Fail closed: when ownership cannot be established the statement is not shown.
+                return false;
+            }
+        }
     }
 
-    private SqlCaptureProbe(int maxStatements) {
-        this.maxStatements = Math.max(1, maxStatements);
+    /**
+     * Detaches one probe's appender and drops its hold on the raised levels. Runs at most once,
+     * from {@link #close()} or from the cleaner when a probe was never closed; it must not refer to
+     * the probe itself.
+     */
+    private static final class Release implements Runnable {
+        private final LoggerContext context;
+        private final CaptureAppender appender;
+        private final List<LoggerConfig> attachedTo;
+
+        Release(LoggerContext context, CaptureAppender appender, List<LoggerConfig> attachedTo) {
+            this.context = context;
+            this.appender = appender;
+            this.attachedTo = attachedTo;
+        }
+
+        @Override
+        public void run() {
+            synchronized (LEVELS) {
+                try {
+                    detach(appender, attachedTo);
+                } finally {
+                    activeProbes = Math.max(0, activeProbes - 1);
+                    try {
+                        if (activeProbes == 0) {
+                            restoreLevels();
+                        }
+                    } finally {
+                        context.updateLoggers();
+                    }
+                }
+            }
+        }
+    }
+
+    private SqlCaptureProbe(int maxStatements, Scope scope, BiFunction<Object, Runnable, Cleaner.Cleanable> registrar) {
         this.context = (LoggerContext) LogManager.getContext(SqlCaptureProbe.class.getClassLoader(), false);
-        this.appender = new CaptureAppender();
+        this.appender = new CaptureAppender(statements, maxStatements, scope);
+        Release attached = attach(context, appender);
+        try {
+            this.release = registrar.apply(this, attached);
+        } catch (Throwable t) {
+            // Without a registered release nothing would ever drop this probe's hold on the level.
+            try {
+                attached.run();
+            } catch (Throwable suppressed) {
+                if (suppressed != t) {
+                    t.addSuppressed(suppressed);
+                }
+            }
+            throw t;
+        }
     }
 
     /** Open a probe, lowering the planner loggers to {@code DEBUG}. Must be {@link #close()}d. */
@@ -106,32 +227,187 @@ public final class SqlCaptureProbe {
         return open(DEFAULT_MAX_STATEMENTS);
     }
 
+    /** Open a probe that captures only the events logged by the calling thread. */
     public static SqlCaptureProbe open(int maxStatements) {
-        SqlCaptureProbe probe = new SqlCaptureProbe(maxStatements);
-        probe.attach();
-        return probe;
+        return open(maxStatements, Scope.thread(Thread.currentThread()));
     }
 
-    private synchronized void attach() {
-        Configuration config = context.getConfiguration();
-        appender.start();
+    /** Open a probe that captures only the events {@code scope} claims. */
+    public static SqlCaptureProbe open(Scope scope) {
+        return open(DEFAULT_MAX_STATEMENTS, scope);
+    }
+
+    public static SqlCaptureProbe open(int maxStatements, Scope scope) {
+        return new SqlCaptureProbe(maxStatements, scope, CLEANER::register);
+    }
+
+    /**
+     * Test seam: open with a substitute for {@link Cleaner#register}, scoped to the calling thread.
+     */
+    static SqlCaptureProbe open(int maxStatements, BiFunction<Object, Runnable, Cleaner.Cleanable> registrar) {
+        return new SqlCaptureProbe(maxStatements, Scope.thread(Thread.currentThread()), registrar);
+    }
+
+    /** Number of probes currently holding the raised levels. For tests. */
+    static int activeProbeCount() {
+        synchronized (LEVELS) {
+            return activeProbes;
+        }
+    }
+
+    /**
+     * Raise the levels if no probe holds them yet, then attach this probe's appender. Fails closed:
+     * if anything here throws, the appender is detached and, unless another open probe holds them,
+     * every raised level is put back before the failure propagates.
+     */
+    private static Release attach(LoggerContext context, CaptureAppender appender) {
+        synchronized (LEVELS) {
+            List<LoggerConfig> attachedTo = new ArrayList<>();
+            try {
+                Configuration config = context.getConfiguration();
+                if (activeProbes == 0 || raisedOn != config) {
+                    // A reconfiguration while probes were open leaves the old raise on a
+                    // configuration that is no longer live; raise afresh on the live one.
+                    raiseLevels(config);
+                }
+                appender.start();
+                for (RaisedLogger raised : RAISED) {
+                    attachedTo.add(raised.target());
+                    raised.target().addAppender(appender, Level.DEBUG, null);
+                }
+                context.updateLoggers();
+                // Counted last, so a failure above never leaves a hold with no release behind it.
+                Release release = new Release(context, appender, attachedTo);
+                activeProbes++;
+                return release;
+            } catch (Throwable t) {
+                try {
+                    try {
+                        detach(appender, attachedTo);
+                    } finally {
+                        try {
+                            if (activeProbes == 0) {
+                                restoreLevels();
+                            }
+                        } finally {
+                            context.updateLoggers();
+                        }
+                    }
+                } catch (Throwable suppressed) {
+                    if (suppressed != t) {
+                        t.addSuppressed(suppressed);
+                    }
+                }
+                throw t;
+            }
+        }
+    }
+
+    /**
+     * Remove one probe's appender from every logger it was attached to. The appender is closed
+     * rather than stopped: events already dispatched to it are dropped quietly instead of making
+     * log4j report an append to a stopped appender. It holds no resources.
+     */
+    private static void detach(CaptureAppender appender, List<LoggerConfig> attachedTo) {
+        appender.open = false;
+        Throwable first = null;
+        for (LoggerConfig target : attachedTo) {
+            try {
+                target.removeAppender(appender.getName());
+            } catch (Throwable t) {
+                first = collect(first, t);
+            }
+        }
+        rethrow(first);
+    }
+
+    /** Record each logger's level and lower it to {@code DEBUG}. Caller holds {@link #LEVELS}. */
+    private static void raiseLevels(Configuration config) {
+        RAISED.clear();
+        raisedOn = config;
         for (String name : SQL_LOGGERS) {
             LoggerConfig existing = config.getLoggerConfig(name);
             boolean ownConfig = name.equals(existing.getName());
-            LoggerConfig target = existing;
-            if (!ownConfig) {
+            RaisedLogger unrestored = ownConfig ? takeUnrestored(existing) : null;
+            if (unrestored != null) {
+                // A previous restore of this logger failed: its level now is not the configured one.
+                RAISED.add(unrestored);
+                existing.setLevel(Level.DEBUG);
+            } else if (ownConfig) {
+                // Recorded before it is changed, so a failure part-way is still put back.
+                RAISED.add(new RaisedLogger(config, existing, existing.getLevel(), false));
+                existing.setLevel(Level.DEBUG);
+            } else {
                 // Only an ancestor (usually the root) configures this logger: give it a config of
                 // its own so lowering its level doesn't turn DEBUG on for the whole application.
-                target = new LoggerConfig(name, Level.DEBUG, true);
+                LoggerConfig target = new LoggerConfig(name, Level.DEBUG, true);
+                RAISED.add(new RaisedLogger(config, target, null, true));
                 config.addLogger(name, target);
             }
-            touched.add(target);
-            previousLevels.add(ownConfig ? target.getLevel() : null);
-            created.add(!ownConfig);
-            target.setLevel(Level.DEBUG);
-            target.addAppender(appender, Level.DEBUG, null);
         }
-        context.updateLoggers();
+    }
+
+    private static RaisedLogger takeUnrestored(LoggerConfig target) {
+        for (int i = 0; i < UNRESTORED.size(); i++) {
+            if (UNRESTORED.get(i).target() == target) {
+                return UNRESTORED.remove(i);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Put back what {@link #raiseLevels} recorded, plus anything an earlier restore failed to put
+     * back. Each logger is attempted on its own; one that fails is kept for the next restore, and
+     * the first failure is re-thrown with the rest suppressed. Caller holds {@link #LEVELS}.
+     */
+    private static void restoreLevels() {
+        List<RaisedLogger> todo = new ArrayList<>(UNRESTORED);
+        todo.addAll(RAISED);
+        UNRESTORED.clear();
+        RAISED.clear();
+        raisedOn = null;
+        Throwable first = null;
+        for (RaisedLogger raised : todo) {
+            try {
+                restore(raised);
+            } catch (Throwable t) {
+                UNRESTORED.add(raised);
+                first = collect(first, t);
+            }
+        }
+        rethrow(first);
+    }
+
+    private static void restore(RaisedLogger raised) {
+        LoggerConfig target = raised.target();
+        if (raised.created()) {
+            if (raised.config().getLoggers().get(target.getName()) == target) {
+                raised.config().removeLogger(target.getName());
+            }
+        } else {
+            target.setLevel(raised.previous());
+        }
+    }
+
+    /** The first failure wins; later ones ride along as suppressed. */
+    private static Throwable collect(Throwable first, Throwable next) {
+        if (first == null) {
+            return next;
+        }
+        if (next != first) {
+            first.addSuppressed(next);
+        }
+        return first;
+    }
+
+    private static void rethrow(Throwable t) {
+        if (t instanceof RuntimeException e) {
+            throw e;
+        }
+        if (t instanceof Error e) {
+            throw e;
+        }
     }
 
     /** Statements seen, in the order they were logged; empty when the backend logged nothing. */
@@ -163,24 +439,11 @@ public final class SqlCaptureProbe {
         return !statements().isEmpty();
     }
 
-    /** Detach the appender and restore every logger level. Idempotent. */
-    public synchronized void close() {
-        if (!open) {
-            return;
-        }
-        open = false;
-        Configuration config = context.getConfiguration();
-        for (int i = 0; i < touched.size(); i++) {
-            LoggerConfig target = touched.get(i);
-            target.removeAppender(appender.getName());
-            if (created.get(i)) {
-                config.removeLogger(target.getName());
-            } else {
-                target.setLevel(previousLevels.get(i));
-            }
-        }
-        appender.stop();
-        context.updateLoggers();
+    /**
+     * Detach the appender; the last open probe also restores every logger level. Idempotent.
+     */
+    public void close() {
+        release.clean();
     }
 
     /**

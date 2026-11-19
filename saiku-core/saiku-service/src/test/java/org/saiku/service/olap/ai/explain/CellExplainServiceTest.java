@@ -12,11 +12,17 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.lang.reflect.Proxy;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.Test;
 import org.olap4j.CellSet;
+import org.olap4j.OlapConnection;
+import org.olap4j.OlapException;
+import org.olap4j.OlapStatement;
 import org.saiku.olap.dto.SaikuCube;
 import org.saiku.olap.query2.ThinQuery;
+import org.saiku.service.olap.OlapDiscoverService;
 import org.saiku.service.olap.ThinQueryService;
 import org.saiku.service.olap.ai.AiCubeMetadataService;
 import org.saiku.service.olap.ai.AiPolicy;
@@ -152,6 +158,79 @@ public class CellExplainServiceTest {
         assertTrue(result.getNotes().isEmpty());
     }
 
+    /* ---- saiku#2443: the borrowed connection is not explain's to close ---- */
+
+    /**
+     * The SQL capture borrows the connection manager's cached connection, which every other query
+     * on the datasource shares. It must close the statement and cellset it created and leave the
+     * connection open, or other users' running queries fail with "Connection is closed".
+     */
+    @Test
+    public void sqlCaptureClosesItsStatementAndCellsetButNotTheBorrowedConnection() {
+        List<String> closed = new ArrayList<>();
+        CellExplainService service = service(context(stubCellSet()));
+        service.setOlapDiscoverService(discoverServiceLending(borrowedConnection(closed, false)));
+
+        service.explain(request("q1", 0, 0));
+
+        assertTrue("the statement explain created must be closed: " + closed, closed.contains("statement"));
+        assertTrue("the cellset explain created must be closed: " + closed, closed.contains("cellset"));
+        assertFalse("the borrowed, shared connection must stay open: " + closed, closed.contains("connection"));
+    }
+
+    /** Same contract when the cell query fails: the failure path must not close the connection either. */
+    @Test
+    public void aFailedSqlCaptureStillLeavesTheBorrowedConnectionOpen() {
+        List<String> closed = new ArrayList<>();
+        CellExplainService service = service(context(stubCellSet()));
+        service.setOlapDiscoverService(discoverServiceLending(borrowedConnection(closed, true)));
+
+        CellExplainResult result = service.explain(request("q1", 0, 0));
+
+        assertNull(result.getSql());
+        assertTrue(result.getNotes().toString(), result.getNotes().toString().contains("could not be re-run"));
+        assertTrue("the statement explain created must be closed: " + closed, closed.contains("statement"));
+        assertFalse("the borrowed, shared connection must stay open: " + closed, closed.contains("connection"));
+    }
+
+    /* ---- saiku#2192: the explained cell names its own measure ---- */
+
+    /**
+     * With Unit Sales and Store Sales on the columns, the Store Sales cell must be explained
+     * under Store Sales — the first column's measure is the wrong name for every other column.
+     */
+    @Test
+    public void explainsTheCellUnderTheMeasureThatWasClicked() {
+        CellsetView view = new FakeCellsetView(new double[] {24597d, 409035.59d})
+                .column(0, CellMember.measure("[Measures].[Unit Sales]", "Unit Sales"))
+                .column(1, SALES)
+                .row(0, CellMember.of("[Product].[Food]", "Food"));
+
+        CellExplainResult result = service(context(stubCellSet()), view).explain(request("q1", 0, 1));
+
+        assertEquals("Store Sales", result.getMeasure());
+        assertTrue(result.getNarrative(), result.getNarrative().startsWith("Store Sales for Food"));
+        assertFalse(result.getNarrative(), result.getNarrative().contains("Unit Sales"));
+        // a row holding cells of two measures has no row total to share and no row peak to name
+        assertTrue(result.getDrivers().stream().noneMatch(d -> d.kind() == ExplainDriver.Kind.SHARE_OF_ROW));
+        assertTrue(result.getDrivers().stream().noneMatch(d -> d.kind() == ExplainDriver.Kind.ROW_PEAK));
+    }
+
+    /** The first column of the same cellset names its own measure, Unit Sales. */
+    @Test
+    public void theFirstMeasureColumnIsNoLongerTheNameForEveryCell() {
+        CellsetView view = new FakeCellsetView(new double[] {24597d, 409035.59d})
+                .column(0, CellMember.measure("[Measures].[Unit Sales]", "Unit Sales"))
+                .column(1, SALES)
+                .row(0, CellMember.of("[Product].[Food]", "Food"));
+
+        assertEquals(
+                "Unit Sales",
+                service(context(stubCellSet()), view)
+                        .explain(request("q1", 0, 0))
+                        .getMeasure());
+    }
+
     /* ---- Phase 3: the LLM narrative and its fallback ---- */
 
     @Test
@@ -208,6 +287,47 @@ public class CellExplainServiceTest {
         assertNotNull(result.getNarrative());
     }
 
+    /** saiku#2329: the question itself carries the value and captions, so schema-only means no call. */
+    @Test
+    public void schemaOnlyEgressKeepsTheProviderUncalledAndTheComputedNarrative() {
+        AtomicReference<NlAskRequest> seen = new AtomicReference<>();
+        AiAskService ask = askService(request -> {
+            seen.set(request);
+            return NlAskResponse.okInsight("{\"markdown\":\"x\"}", "m", 3, 4);
+        });
+        ask.setEgressGuard(new AiPolicyGuard(AiPolicy.SCHEMA_ONLY));
+
+        CellExplainService service = service(context(stubCellSet()));
+        service.setAskService(ask);
+
+        CellExplainResult result = service.explain(request("q1", 0, 0));
+
+        assertNull("no request may reach the vendor: " + seen.get(), seen.get());
+        assertEquals(CellExplainResult.NarrativeSource.COMPUTED, result.getNarrativeSource());
+        assertTrue(result.getNarrative(), result.getNarrative().contains("1,234.50"));
+        assertTrue(
+                String.join(" ", result.getNotes()),
+                String.join(" ", result.getNotes()).contains("egress"));
+    }
+
+    @Test
+    public void unwiredEgressGuardFailsClosed() {
+        AtomicReference<NlAskRequest> seen = new AtomicReference<>();
+        AiAskService ask = askService(request -> {
+            seen.set(request);
+            return NlAskResponse.okInsight("{\"markdown\":\"x\"}", "m", 3, 4);
+        });
+        ask.setEgressGuard(null);
+
+        CellExplainService service = service(context(stubCellSet()));
+        service.setAskService(ask);
+
+        CellExplainResult result = service.explain(request("q1", 0, 0));
+
+        assertNull(seen.get());
+        assertEquals(CellExplainResult.NarrativeSource.COMPUTED, result.getNarrativeSource());
+    }
+
     /* ---- helpers ---- */
 
     private void expect(CellExplainRequest request, CellExplainException.Code code) {
@@ -232,12 +352,14 @@ public class CellExplainServiceTest {
 
     /** The service under test with a fake view and a thin-query stub that serves {@code context}. */
     private static CellExplainService service(QueryContext context) {
+        return service(context, defaultView());
+    }
+
+    private static CellExplainService service(QueryContext context, CellsetView view) {
         CellExplainService service = new CellExplainService() {
             @Override
             protected CellsetView viewFor(CellSet cellSet) {
-                return new FakeCellsetView(new double[] {1234.5d, 2000d})
-                        .column(0, Q1, SALES)
-                        .row(0, CellMember.of("[Customers].[USA]", "USA"));
+                return view;
             }
         };
         ThinQueryService queries = new ThinQueryService() {
@@ -248,6 +370,12 @@ public class CellExplainServiceTest {
         };
         service.setThinQueryService(queries);
         return service;
+    }
+
+    private static CellsetView defaultView() {
+        return new FakeCellsetView(new double[] {1234.5d, 2000d})
+                .column(0, Q1, SALES)
+                .row(0, CellMember.of("[Customers].[USA]", "USA"));
     }
 
     private static QueryContext context(CellSet result) {
@@ -261,6 +389,70 @@ public class CellExplainServiceTest {
             context.store(QueryContext.ObjectKey.RESULT, result);
         }
         return context;
+    }
+
+    /** A discover service that hands out {@code connection}, as the connection manager's cache would. */
+    private static OlapDiscoverService discoverServiceLending(OlapConnection connection) {
+        return new OlapDiscoverService() {
+            @Override
+            public OlapConnection getNativeConnection(String name) {
+                return connection;
+            }
+        };
+    }
+
+    /**
+     * A connection whose statements run (or, with {@code failExecute}, fail) the cell query, and
+     * which records into {@code closed} each of connection, statement and cellset that is closed.
+     */
+    private static OlapConnection borrowedConnection(List<String> closed, boolean failExecute) {
+        CellSet cellSet = (CellSet) Proxy.newProxyInstance(
+                CellSet.class.getClassLoader(), new Class<?>[] {CellSet.class}, (proxy, method, args) -> {
+                    if ("close".equals(method.getName())) {
+                        closed.add("cellset");
+                    }
+                    return defaultValue(method.getReturnType());
+                });
+        OlapStatement statement = (OlapStatement) Proxy.newProxyInstance(
+                OlapStatement.class.getClassLoader(), new Class<?>[] {OlapStatement.class}, (proxy, method, args) -> {
+                    switch (method.getName()) {
+                        case "close":
+                            closed.add("statement");
+                            return null;
+                        case "executeOlapQuery":
+                            if (failExecute) {
+                                throw new OlapException("cell query failed");
+                            }
+                            return cellSet;
+                        default:
+                            return defaultValue(method.getReturnType());
+                    }
+                });
+        return (OlapConnection) Proxy.newProxyInstance(
+                OlapConnection.class.getClassLoader(), new Class<?>[] {OlapConnection.class}, (proxy, method, args) -> {
+                    switch (method.getName()) {
+                        case "close":
+                            closed.add("connection");
+                            return null;
+                        case "createStatement":
+                            return statement;
+                        default:
+                            return defaultValue(method.getReturnType());
+                    }
+                });
+    }
+
+    private static Object defaultValue(Class<?> type) {
+        if (type == boolean.class) {
+            return false;
+        }
+        if (type == int.class) {
+            return 0;
+        }
+        if (type == long.class) {
+            return 0L;
+        }
+        return null;
     }
 
     /** A CellSet stand-in: the service only hands it to the (overridden) view factory. */

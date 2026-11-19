@@ -58,7 +58,30 @@ public class Olap4jCellsetViewTest {
                         new CellMember("[Time].[1997].[Q1]", "Q1", false, "[Time].[1997]"),
                         new CellMember("[Measures].[Store Sales]", "Store Sales", true, null)),
                 view.columnHeader(0));
-        assertEquals("Store Sales", view.measure().caption());
+        assertEquals("Store Sales", view.measure(0, 0).caption());
+    }
+
+    /** Each cell names the measure on its own column — not the first column's (saiku#2192). */
+    @Test
+    public void namesTheMeasureOfTheClickedColumn() {
+        Member units = Olap4jStubs.measureMember("[Measures].[Unit Sales]", "Unit Sales");
+        Olap4jCellsetView view = new Olap4jCellsetView(Olap4jStubs.cellSet(
+                List.of(List.of(units), List.of(SALES)), List.of(List.of(USA)), new double[][] {{24597d}, {409035.59d}
+                }));
+
+        assertEquals("Unit Sales", view.measure(0, 0).caption());
+        assertEquals("Store Sales", view.measure(0, 1).caption());
+    }
+
+    /** A measure can also sit on the row axis; the cell still names its own. */
+    @Test
+    public void namesAMeasureSittingOnTheRowAxis() {
+        Member units = Olap4jStubs.measureMember("[Measures].[Unit Sales]", "Unit Sales");
+        Olap4jCellsetView view = new Olap4jCellsetView(Olap4jStubs.cellSet(
+                List.of(List.of(Q1)), List.of(List.of(SALES), List.of(units)), new double[][] {{100d}, {24597d}}));
+
+        assertEquals("Store Sales", view.measure(0, 0).caption());
+        assertEquals("Unit Sales", view.measure(1, 0).caption());
     }
 
     /** A cellset read back after its connection closed: Mondrian's getCaption() throws an NPE. */
@@ -93,7 +116,7 @@ public class Olap4jCellsetViewTest {
         assertEquals(0, view.rowCount());
         assertEquals(42d, view.value(0, 0), 1e-9);
         assertEquals(List.of(), view.rowHeader(0));
-        assertEquals("Store Sales", view.measure().caption());
+        assertEquals("Store Sales", view.measure(0, 0).caption());
     }
 
     @Test

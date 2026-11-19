@@ -1,0 +1,24 @@
+{
+  "issue": 2347,
+  "title": "SvgSecurity rejects CSS @import \"...\" and xml-stylesheet references in exported SVG",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "an SVG whose <style> contains @import with a double- or single-quoted http(s) or file URL",
+      "then": "SvgSecurity.requireSafe throws IllegalArgumentException before Batik sees the SVG"
+    },
+    {
+      "id": "C2",
+      "given": "@import url(http://...) and <?xml-stylesheet href=\"http://...\"?>",
+      "then": "they are still rejected"
+    },
+    {
+      "id": "C3",
+      "given": "a self-contained chart SVG with no @import",
+      "then": "requireSafe still accepts it"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 120
+}

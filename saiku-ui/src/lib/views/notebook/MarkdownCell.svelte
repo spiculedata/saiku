@@ -20,6 +20,7 @@
 	let { markdown, readOnly = false, onChange }: Props = $props();
 
 	// New cells start empty — editing, not previewing, is the useful default.
+	// svelte-ignore state_referenced_locally — capturing the initial markdown/readOnly to seed the editing mode is intentional; the mode is controlled by the user after mount.
 	let editing = $state(markdown.trim() === '' && !readOnly);
 
 	const SANITISE_CONFIG = {
