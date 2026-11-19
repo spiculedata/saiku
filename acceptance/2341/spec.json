@@ -1,0 +1,24 @@
+{
+  "issue": 2341,
+  "title": "The plaintext login password is not cached in the generic session map, and is reachable only through a dedicated, wipeable pass-through accessor",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "SessionService creating a session on login",
+      "then": "the password is never put into the shared session map that getAllSessionObjects() hands to ~20 callers"
+    },
+    {
+      "id": "C2",
+      "given": "SecurityAwareConnectionManager building a pass-through connection",
+      "then": "it reads the credential from ISessionService.passthroughCredential(), not from the session map"
+    },
+    {
+      "id": "C3",
+      "given": "an HTTP session that ends (logout or container expiry)",
+      "then": "SessionService wipes the cached credential (a session listener is registered in web.xml)"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}

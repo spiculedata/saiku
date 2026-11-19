@@ -154,10 +154,10 @@ public class SaikuOlapConnection implements ISaikuConnection {
                 }
                 if (MONDRIAN_DRIVER.equals(driver)) {
                     if (username != null && username.length() > 0) {
-                        url += "JdbcUser=" + username + ";";
+                        url += "JdbcUser=" + JdbcUrlPolicy.quoteMondrianValue(username) + ";";
                     }
                     if (password != null && password.length() > 0) {
-                        url += "JdbcPassword=" + password + ";";
+                        url += "JdbcPassword=" + JdbcUrlPolicy.quoteMondrianValue(password) + ";";
                     }
                 }
 

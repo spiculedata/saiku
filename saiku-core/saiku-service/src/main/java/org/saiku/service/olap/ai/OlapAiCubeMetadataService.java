@@ -222,9 +222,20 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
      * to {@link OlapDiscoverService#getLevelMembers}. Returns up to {@code limit}
      * hits (default 20 when {@code limit <= 0}).
      */
+    /** Server-side ceiling for member search (saiku#2325); matches the MCP schema maximum. */
+    public static final int MAX_SEARCH_LIMIT = 500;
+
+    private static final int DEFAULT_SEARCH_LIMIT = 20;
+
+    /** {@code <= 0} becomes the default; anything above {@link #MAX_SEARCH_LIMIT} is truncated. */
+    public static int clampSearchLimit(int limit) {
+        if (limit <= 0) return DEFAULT_SEARCH_LIMIT;
+        return Math.min(limit, MAX_SEARCH_LIMIT);
+    }
+
     public List<SimpleCubeElement> searchMembers(
             AiCubeRef ref, String dimensionName, String hierarchyName, String levelName, String q, int limit) {
-        if (limit <= 0) limit = 20;
+        limit = clampSearchLimit(limit);
         AiSchema schema = getSchema(ref);
 
         String dimK = AiSchema.key(dimensionName);
