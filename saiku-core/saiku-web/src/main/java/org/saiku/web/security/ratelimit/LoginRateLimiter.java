@@ -6,11 +6,12 @@
  */
 package org.saiku.web.security.ratelimit;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.saiku.service.util.security.Usernames;
 import org.slf4j.Logger;
@@ -32,9 +33,12 @@ import org.slf4j.LoggerFactory;
  *       a bearer token) count only against this bucket.
  * </ul>
  *
- * <p>Storage is an in-memory {@link ConcurrentHashMap} with lazy eviction on
- * access, no background thread. Suitable for the single-node Saiku deployment;
- * a horizontally-scaled setup would need a shared store.
+ * <p>Storage is an in-memory Caffeine {@link Cache} per budget: a bucket expires one
+ * window after its <em>last</em> recorded failure whether or not the key is looked up
+ * again, and each map is capped at {@link #MAX_BUCKETS} entries (saiku#2339, bounded by
+ * saiku#2426 — keys were attacker-supplied and previously unbounded in both count and
+ * length). No background thread. Suitable for the single-node Saiku deployment; a
+ * horizontally-scaled setup would need a shared store.
  *
  * <p>Client IP resolution is conservative: {@link HttpServletRequest#getRemoteAddr()}
  * unless {@code saiku.auth.trustedProxyHops=<n>} (n greater than 0) says that the
@@ -52,6 +56,11 @@ public class LoginRateLimiter {
     static final long DEFAULT_WINDOW_MS = 15 * 60 * 1000L;
     static final int DEFAULT_MAX_USER_ATTEMPTS = 20;
     static final int DEFAULT_MAX_IP_ATTEMPTS = 50;
+    /** Upper bound on the canonicalised username used as a (partial) bucket key (saiku#2426). */
+    static final int MAX_USERNAME_LENGTH = 256;
+    /** Upper bound on the number of buckets held per map (saiku#2426). */
+    static final long MAX_BUCKETS = 10_000L;
+
     private static final String KEY_SEPARATOR = "\u0000";
 
     private final int maxAttempts;
@@ -59,9 +68,16 @@ public class LoginRateLimiter {
     private final int trustedProxyHops;
     private final int maxUserAttempts;
     private final int maxIpAttempts;
-    private final Map<String, Bucket> ipUserBuckets = new ConcurrentHashMap<>();
-    private final Map<String, Bucket> userBuckets = new ConcurrentHashMap<>();
-    private final Map<String, Bucket> ipBuckets = new ConcurrentHashMap<>();
+    private final Cache<String, Bucket> ipUserBuckets;
+    private final Cache<String, Bucket> userBuckets;
+    private final Cache<String, Bucket> ipBuckets;
+
+    private static Cache<String, Bucket> newBuckets(long windowMs) {
+        return Caffeine.newBuilder()
+                .maximumSize(MAX_BUCKETS)
+                .expireAfterWrite(windowMs, TimeUnit.MILLISECONDS)
+                .build();
+    }
 
     public LoginRateLimiter() {
         this(
@@ -84,6 +100,9 @@ public class LoginRateLimiter {
         this.trustedProxyHops = Math.max(0, trustedProxyHops);
         this.maxUserAttempts = maxUserAttempts;
         this.maxIpAttempts = maxIpAttempts;
+        this.ipUserBuckets = newBuckets(windowMs);
+        this.userBuckets = newBuckets(windowMs);
+        this.ipBuckets = newBuckets(windowMs);
     }
 
     private static int parseTrustedProxyHops() {
@@ -102,6 +121,10 @@ public class LoginRateLimiter {
     }
 
     /**
+     * Blocked requests are rejected here without recording another failure, so an
+     * already-blocked bucket is never renewed and always expires one window after the
+     * last recorded failure.
+     *
      * @return true if this client is currently locked out for this username; false if the attempt may proceed.
      */
     public boolean isBlocked(HttpServletRequest req, String username) {
@@ -119,14 +142,13 @@ public class LoginRateLimiter {
         String ip = clientIp(req);
         if (ip == null) return;
         String user = userKey(username);
-        long now = System.currentTimeMillis();
-        int ipCount = increment(ipBuckets, ip, now);
+        int ipCount = increment(ipBuckets, ip);
         if (user == null) {
             if (ipCount >= maxIpAttempts) log.warn("login rate-limit tripped ip={} attempts={}", ip, ipCount);
             return;
         }
-        int pairCount = increment(ipUserBuckets, ip + KEY_SEPARATOR + user, now);
-        int userCount = increment(userBuckets, user, now);
+        int pairCount = increment(ipUserBuckets, ip + KEY_SEPARATOR + user);
+        int userCount = increment(userBuckets, user);
         if (pairCount >= maxAttempts || userCount >= maxUserAttempts || ipCount >= maxIpAttempts) {
             log.warn(
                     "login rate-limit tripped ip={} user={} ipUserAttempts={} userAttempts={} ipAttempts={}",
@@ -143,37 +165,37 @@ public class LoginRateLimiter {
         String ip = clientIp(req);
         String user = userKey(username);
         if (ip == null || user == null) return;
-        ipUserBuckets.remove(ip + KEY_SEPARATOR + user);
-        userBuckets.remove(user);
+        ipUserBuckets.invalidate(ip + KEY_SEPARATOR + user);
+        userBuckets.invalidate(user);
     }
 
-    private boolean overBudget(Map<String, Bucket> buckets, String key, int max) {
-        Bucket b = buckets.get(key);
-        if (b == null) return false;
-        long now = System.currentTimeMillis();
-        // Lazy eviction: if the window elapsed since the first failure, wipe it.
-        if (now - b.windowStartMs > windowMs) {
-            buckets.remove(key);
-            return false;
-        }
-        return b.count.get() >= max;
+    private boolean overBudget(Cache<String, Bucket> buckets, String key, int max) {
+        // Caffeine treats an expired entry as absent, so a window elapsed since the
+        // last failure no longer blocks — even before the entry is evicted.
+        Bucket b = buckets.getIfPresent(key);
+        return b != null && b.count.get() >= max;
     }
 
-    private int increment(Map<String, Bucket> buckets, String key, long now) {
-        return buckets.compute(key, (k, existing) -> {
-                    if (existing == null || now - existing.windowStartMs > windowMs) {
-                        return new Bucket(now, new AtomicInteger(1));
-                    }
-                    existing.count.incrementAndGet();
-                    return existing;
-                })
-                .count
-                .get();
+    private int increment(Cache<String, Bucket> buckets, String key) {
+        Bucket b = buckets.asMap().compute(key, (k, existing) -> {
+            if (existing == null) {
+                return new Bucket(1);
+            }
+            existing.count.incrementAndGet();
+            return existing;
+        });
+        return b == null ? 0 : b.count.get();
     }
 
+    /**
+     * Canonicalised, length-clamped username for use as a bucket key. The clamp (saiku#2426)
+     * caps per-key memory regardless of what a caller passes in; two oversized usernames
+     * sharing a prefix share one bucket, which for a rate limiter is fail-safe.
+     */
     private static String userKey(String username) {
         if (username == null || username.isBlank()) return null;
-        return Usernames.canonicalize(username.trim());
+        String canonical = Usernames.canonicalize(username.trim());
+        return canonical.length() <= MAX_USERNAME_LENGTH ? canonical : canonical.substring(0, MAX_USERNAME_LENGTH);
     }
 
     /** Exposed for testing. */
@@ -193,6 +215,14 @@ public class LoginRateLimiter {
         return req.getRemoteAddr();
     }
 
+    /** Exposed for testing: forces pending evictions, then the approximate size of each bucket map. */
+    long[] bucketCountsForTesting() {
+        ipUserBuckets.cleanUp();
+        userBuckets.cleanUp();
+        ipBuckets.cleanUp();
+        return new long[] {ipUserBuckets.estimatedSize(), userBuckets.estimatedSize(), ipBuckets.estimatedSize()};
+    }
+
     public int getMaxAttempts() {
         return maxAttempts;
     }
@@ -201,13 +231,12 @@ public class LoginRateLimiter {
         return windowMs;
     }
 
+    /** One failure counter; expires one window after its last failure (saiku#2426). */
     private static final class Bucket {
-        final long windowStartMs;
         final AtomicInteger count;
 
-        Bucket(long windowStartMs, AtomicInteger count) {
-            this.windowStartMs = windowStartMs;
-            this.count = count;
+        Bucket(int initial) {
+            this.count = new AtomicInteger(initial);
         }
     }
 }
