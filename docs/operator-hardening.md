@@ -1,9 +1,10 @@
 # Operator hardening knobs
 
 Configuration reference for the guardrails an operator is expected to tune:
-the SMTP relay SSRF gate on the admin mail wizard, and the daily LLM cost
-budget on the AI ask surface. Both were added under
-[#1918](https://github.com/spiculedata/saiku/issues/1918).
+the SMTP relay SSRF gate on the admin mail wizard, the daily LLM cost
+budget on the AI ask surface (both added under
+[#1918](https://github.com/spiculedata/saiku/issues/1918)), and the OLAP query
+guardrails (added under [#1914](https://github.com/spiculedata/saiku/issues/1914)).
 
 For the PII annotation contract — which is schema metadata rather than
 deployment configuration — see
@@ -62,6 +63,44 @@ Client-facing refusals are a single uniform message
 resolution result or which check fired. That distinction is the oracle a scanner
 wants; the detail goes to the server log, where the operator configuring mail
 can read it.
+
+---
+
+## File-engine confinement (`saiku.jdbc.fileEngineConfinement`)
+
+DuckDB and H2 are on the JDBC scheme allow-list, and both reach the host: DuckDB
+through `read_text` / `read_csv` / `read_parquet` and, with `httpfs`, over HTTP
+(SSRF to cloud metadata and internal services); H2 through a `file:` database
+anywhere on disk. Datasource creation is admin-only, but the SQL workbench
+reaches the same primitives as a non-admin, so
+[#2320](https://github.com/spiculedata/saiku/issues/2320) confines them where
+every connection path shares it: `JdbcUrlPolicy`. **On by default.**
+
+- **DuckDB** (`jdbc:duckdb:`, also inside a `jdbc:mondrian:Jdbc=` wrapper and the
+  Ossie warehouse URL) opens with `enable_external_access=false`,
+  `allowed_directories=[<allowed roots>]` and `lock_configuration=true`. Local
+  files under the allowed roots stay readable; other paths and all network access
+  are refused, and `SET enable_external_access=true` fails because the
+  configuration is locked.
+- **H2** file databases (`jdbc:h2:<path>`, `file:`, `nio:`, `split:`, `zip:`) must
+  live under an allowed root, or the URL is rejected. `mem:`, `tcp:` and `ssl:`
+  URLs are not file URLs and are unaffected.
+- **Allowed roots** are `${saiku.home}` plus `saiku.jdbc.allowedFileRoots`. The
+  launcher always sets `saiku.home`. If neither is set, confinement **fails
+  closed**: H2 file URLs are rejected with an error naming `saiku.home`, and
+  DuckDB still gets `enable_external_access=false` and `lock_configuration=true`
+  with no allowed directories, so it cannot read local files at all. Set
+  `saiku.home` (or `saiku.jdbc.allowedFileRoots`), or opt out below.
+
+| Property | Default | Meaning |
+|---|---|---|
+| `saiku.jdbc.fileEngineConfinement` | `true` | `false` opts out of all of the above. Use only if you must read DuckDB files over HTTP or keep H2 files outside the allowed roots and cannot list them. |
+| `saiku.jdbc.allowedFileRoots` | *(empty)* | Extra directories (platform path separator) DuckDB may read and H2 may keep databases in, e.g. `/mnt/warehouse:/srv/data`. |
+| `saiku.jdbc.duckdb.allowR2Uploads` | `false` | `true` leaves `jdbc:duckdb:r2://` upload URLs (saiku-cloud) unconfined, because they need `httpfs`. |
+
+Not covered here: `http(s):` Mondrian catalogs (`SaikuVirtualFileHandler`),
+SQLite / Derby / HSQLDB file paths, and `jdbc:quack:` (a remote DuckDB client).
+See the follow-up on #2320.
 
 ---
 
@@ -136,3 +175,97 @@ does **not** — telling one tenant that other tenants are spending is nobody's
 useful information, and "try later" is the only actionable answer either way.
 No refusal carries a token count, so the API can't be used to read the ceiling
 back out.
+
+---
+
+## Pass-through datasource credentials (`saiku.passthrough.retainCredential`)
+
+Datasources with `security.type=passthrough` connect to the warehouse as the signed-in user, so Saiku keeps that
+user's login password in memory for the life of their HTTP session. It is held as a `char[]` outside the shared
+session map (it is never returned by `GET /rest/saiku/session`, never written to the on-disk session store), is
+replaced on re-login, and is zeroed on logout and when the HTTP session expires. A heap dump of a running
+instance can still contain the passwords of currently signed-in users, so treat dumps as sensitive.
+
+If you use no pass-through datasources, stop retaining the password altogether:
+
+```bash
+JAVA_OPTS="-Dsaiku.passthrough.retainCredential=false"
+```
+
+---
+
+## Login lockout and running behind a reverse proxy (`saiku.auth.trustedProxyHops`)
+
+Failed logins (form login, HTTP Basic, XMLA and the demo email gate share one limiter) are counted in three
+independent budgets inside a 15-minute window, and any one of them blocks further attempts with `429`:
+
+| Budget | Limit | Purpose |
+|---|---|---|
+| (client IP, username) | 5 | one user's typos do not lock out colleagues behind the same NAT or proxy |
+| username, from any IP | 20 | still stops a distributed guessing attack on one account |
+| client IP, any username | 50 | still stops one source enumerating many usernames |
+
+A successful login clears the (IP, username) and username counters.
+
+By default the client IP is the TCP peer and `X-Forwarded-For` is ignored, which is right when Saiku is exposed
+directly. Behind a reverse proxy every user then shares the proxy's address, so the per-IP budgets are shared as
+well. Tell Saiku how many trusted proxies are in front of it:
+
+```bash
+JAVA_OPTS="-Dsaiku.auth.trustedProxyHops=1"
+```
+
+`trustedProxyHops=n` means the last `n` hops are proxies you control, counting the immediate TCP peer. The client
+is the `n`-th entry from the **right** of `X-Forwarded-For`; entries to its left are supplied by the caller and are
+never used. If the header has fewer than `n` entries the peer address is used. Examples:
+
+- one proxy that appends the client address (nginx `proxy_add_x_forwarded_for`, most ingresses): `1`
+- a CDN in front of a load balancer in front of Saiku, each appending: `2`
+
+`saiku.auth.trustForwardedFor=true` is a deprecated alias for `saiku.auth.trustedProxyHops=1`. Never set either
+when clients can reach Saiku without going through the proxy.
+
+---
+
+## Disabling and demoting users (admin console, SCIM)
+
+Saiku has two user stores. The bundled authenticator reads `users.properties` (who can log in, with which
+password and roles); the admin console and SCIM write the H2 `USERS` / `USER_ROLES` tables. For an account
+that exists in **both**, the H2 row now wins for revocation:
+
+- `enabled = false` (SCIM `active:false` or `DELETE`, which deactivates) refuses form login and HTTP Basic
+  (`/rest/**`, `/xmla/**`) with `401`, and ends an existing session on its next request.
+- Removing `ROLE_ADMIN` from the row removes admin authority from that user's next request (the admin
+  endpoints answer `403`, `GET /rest/saiku/session` reports `isadmin:false`) without a re-login.
+- Editing a user's roles or email no longer re-enables a deactivated account.
+
+Changes are picked up within about two seconds (lookups are cached briefly).
+
+What this does **not** do: an account that has no H2 row is governed by the authenticator alone;
+**deleting** a row (`DELETE /rest/saiku/admin/users/{id}`) removes it from the managed store, so it does not
+by itself stop that user logging in. To deprovision, deactivate (SCIM) and remove the entry from
+`users.properties` (or the external directory). Passwords are still those of the authenticator.
+
+---
+
+## OLAP query guardrails (`saiku.olap.*`)
+
+Every execute path applies server-side limits so a single authenticated request
+cannot run unbounded or exhaust the heap (CWE-400 / CWE-770). They are on by
+default; set them in `saiku.properties` or with `-Dsaiku.olap.<key>=<value>`.
+
+| Property | Default | Effect |
+|---|---|---|
+| `saiku.olap.query.timeout.seconds` | `300` | JDBC statement timeout on every OLAP statement. `0` disables it. A negative or unparseable value falls back to the default. |
+| `saiku.olap.max.rows` | `100000` | Ceiling on drillthrough and export rows and on raw `DRILLTHROUGH` bodies. A client asking for more, or for "everything", gets this value. Not positive falls back to the default; hard maximum 10,000,000. |
+| `saiku.olap.arrow.max.bytes` | `268435456` (256 MiB) | Byte budget of the Arrow allocators behind the cellset and drillthrough IPC writers. |
+
+Mondrian's own deployment-wide backstops in `mondrian.properties` ship with
+non-zero values too: `mondrian.rolap.queryTimeout=300`,
+`mondrian.result.limit=1000000`, `mondrian.rolap.iterationLimit=100000000`.
+Raise them only if a legitimate report needs more, and prefer raising the
+`saiku.olap.*` ceilings above first.
+
+The Docker image and `dist/run.sh` / `dist/run.bat` start the JVM with
+`-XX:+ExitOnOutOfMemoryError -XX:MaxRAMPercentage=75`, so an out-of-memory
+condition restarts the process instead of leaving it limping.

@@ -96,11 +96,15 @@ public class SearchValuesSqlFuzzTest {
     }
 
     @Test
-    public void singleQuoteInQIsProperlyEscaped() {
-        String sql = AiOssieResource.buildValuesSearchSql("region", "\"customers\"", "O'Neil", 20);
-        // Escaped to O''NEIL (uppercased + doubled quote), inside %..% wrapper.
-        assertTrue("expected escaped quote: " + sql, sql.contains("'%O''NEIL%'"));
-        assertQuotesBalanced(sql, -1, "O'Neil");
+    public void searchTermIsABindParameterNeverPartOfTheSql() {
+        for (String q : HOSTILE_Q) {
+            if (q.isBlank()) continue;
+            String sql = AiOssieResource.buildValuesSearchSql("region", "\"customers\"", q, 20);
+            assertEquals(
+                    "SELECT DISTINCT region FROM \"customers\" WHERE UPPER(CAST(region AS VARCHAR)) LIKE ? LIMIT 20",
+                    sql);
+            assertEquals("%" + q.toUpperCase(java.util.Locale.ROOT) + "%", AiOssieResource.likePattern(q));
+        }
     }
 
     // ------------------------------------------------------------
@@ -170,6 +174,32 @@ public class SearchValuesSqlFuzzTest {
             }
         }
         return out.toString();
+    }
+
+    @Test
+    public void rowPredicateScopesTheQueryWithAndWithoutSearchTerm() {
+        String scoped = AiOssieResource.buildValuesSearchSql("country", "\"geography\"", null, 20, "REGION = 'APAC'");
+        assertEquals("SELECT DISTINCT country FROM \"geography\" WHERE (REGION = 'APAC') LIMIT 20", scoped);
+
+        String searched = AiOssieResource.buildValuesSearchSql("country", "\"geography\"", "au", 20, "REGION = 'APAC'");
+        assertEquals(
+                "SELECT DISTINCT country FROM \"geography\" WHERE (REGION = 'APAC') AND UPPER(CAST(country AS VARCHAR))"
+                        + " LIKE ? LIMIT 20",
+                searched);
+    }
+
+    @Test
+    public void rowPredicateOrIsParenthesisedSoItCannotWidenTheSearch() {
+        String sql = AiOssieResource.buildValuesSearchSql(
+                "country", "\"geography\"", "x", 5, "(REGION = 'APAC' OR REGION = 'EMEA')");
+        assertTrue(sql, sql.contains("WHERE ((REGION = 'APAC' OR REGION = 'EMEA')) AND UPPER("));
+    }
+
+    @Test
+    public void nullRowPredicateKeepsTheUnscopedShape() {
+        assertEquals(
+                AiOssieResource.buildValuesSearchSql("country", "\"geography\"", "x", 5),
+                AiOssieResource.buildValuesSearchSql("country", "\"geography\"", "x", 5, null));
     }
 
     // ------------------------------------------------------------

@@ -6,6 +6,7 @@ package org.saiku.web.rest.resources;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.security.RolesAllowed;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.DefaultValue;
@@ -2343,10 +2344,10 @@ public class AiQueryResource {
      * <p>The endpoint sits at {@code /ai/schema/{cubeId}/pii-suggestions}
      * rather than {@code /ai/schema/{cubeId}} so the suggestions never leak
      * into the agent-facing describe response — agents shouldn't see the
-     * operator's draft policy. Admin gating happens via the JAX-RS layer's
-     * usual {@code @RolesAllowed("ROLE_ADMIN")} when wired upstream; the
-     * resource itself doesn't enforce auth so unit tests can call it
-     * directly.
+     * operator's draft policy. saiku#2330: admin-only. Besides the
+     * {@code @RolesAllowed("ROLE_ADMIN")} annotation the method refuses a
+     * non-admin itself (403) before it warms the shared schema cache, so the
+     * gate holds even where the JAX-RS role filter is not applied.
      *
      * <p>The cube must have been described at least once (via
      * {@link #getSchema(String)}) for the scanner to have run; an
@@ -2354,8 +2355,15 @@ public class AiQueryResource {
      */
     @GET
     @Path("/schema/{cubeId:.+}/pii-suggestions")
+    @RolesAllowed("ROLE_ADMIN")
     @Produces(MediaType.APPLICATION_JSON)
     public Response getPiiSuggestions(@PathParam("cubeId") String cubeId) {
+        if (!currentUserIsAdmin()) {
+            return Response.status(Response.Status.FORBIDDEN)
+                    .entity(java.util.Map.of("status", "FORBIDDEN", "error", "admin role required"))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
         AiCubeRef ref = parseCubeId(cubeId);
         if (ref == null) {
             return badRequest("cubeId", "cubeId must be connection/catalog/schema/cube", null);
@@ -2806,18 +2814,22 @@ public class AiQueryResource {
         List<Map<String, AiCell>> rows = new ArrayList<>();
         List<String> columnLabels = new ArrayList<>();
         if (rs != null) {
-            java.sql.ResultSetMetaData md = rs.getMetaData();
-            int colCount = md.getColumnCount();
-            columnLabels = disambiguateColumnLabels(md);
-            while (rs.next()) {
-                Map<String, AiCell> row = new LinkedHashMap<>();
-                for (int c = 1; c <= colCount; c++) {
-                    Object v = rs.getObject(c);
-                    row.put(columnLabels.get(c - 1), toCellFromObject(v));
+            try {
+                java.sql.ResultSetMetaData md = rs.getMetaData();
+                int colCount = md.getColumnCount();
+                columnLabels = disambiguateColumnLabels(md);
+                while (rs.next()) {
+                    Map<String, AiCell> row = new LinkedHashMap<>();
+                    for (int c = 1; c <= colCount; c++) {
+                        Object v = rs.getObject(c);
+                        row.put(columnLabels.get(c - 1), toCellFromObject(v));
+                    }
+                    rows.add(row);
                 }
-                rows.add(row);
+            } finally {
+                // Close on the failure path too, so a read error does not keep the statement open.
+                JdbcCleanup.closeQuietly(rs);
             }
-            rs.close();
         }
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("queryId", queryId);

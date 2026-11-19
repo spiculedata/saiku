@@ -217,3 +217,8 @@ the tree first.
 **Was doing:** restricted `/rest/saiku/info/diagnostics` to admins in the Spring URL chain and on the Jersey method, while retaining public `/info` and `/info/capabilities`. Added launcher integration coverage and updated the AI API documentation.
 **Now:** review the security fix for #2296. XML parsing and security-rule ordering checks passed; the Java integration suite could not run locally because Java and Maven are absent.
 **Refs:** #2296
+
+## 2026-11-18 — fix/sql-capture-level-restore — SQL capture logger level lifecycle
+**Was doing:** made `SqlCaptureProbe` share one raise/restore of the planner logger levels across overlapping probes (first open records and raises, last close restores), with a cleaner releasing a probe that is never closed. Added overlap tests for both close orders and for a logger that only an ancestor configures.
+**Now:** opening fails closed on any `Throwable` (raise, attach, logger update, cleaner registration), and closing restores in a `finally`. Fault-injection tests cover each path, and reflection tests keep the appender and release action static with no path back to the probe, which the cleaner depends on. A logger whose restore fails is retried at the next cycle with its recorded level.
+**Watch out:** an open PR also edits this class's event filter; this change only touches the level lifecycle and the appender's fields.

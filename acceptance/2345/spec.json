@@ -1,0 +1,24 @@
+{
+  "issue": 2345,
+  "title": "A user disabled or demoted in the admin UI / SCIM is refused at login and on every request, and an admin role edit no longer re-enables them",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "an account whose USERS.ENABLED flag is off (SCIM deactivate)",
+      "then": "form login, HTTP Basic and an existing session are all refused: the web layer consults the account status"
+    },
+    {
+      "id": "C2",
+      "given": "an account whose USER_ROLES no longer include an admin role",
+      "then": "the request is served without that admin authority"
+    },
+    {
+      "id": "C3",
+      "given": "an admin edits a deactivated user's roles or email",
+      "then": "the account stays disabled (the update statement no longer hard-codes enabled = TRUE)"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}

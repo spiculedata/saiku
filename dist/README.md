@@ -1,6 +1,14 @@
 # Saiku — runnable distribution
 
-Self-contained Saiku build. Java 21+ is the only prerequisite.
+Self-contained Saiku build. Java 21 or newer is the only prerequisite.
+
+**Security baseline:** for HotSpot-based Java (for example Temurin, Oracle,
+Corretto or Zulu), use 21.0.13.1 or later, 25.0.5.1 or later, or 27.0.1.1 or
+later (CVE-2026-114938). End-of-life feature releases (22, 23, 24, 26) are
+newer than 21 but are not patched, so don't use them. Until a fixed JRE is
+installed, `run.sh` / `run.bat` pass `-XX:-UseBASE64Intrinsics` as an interim
+mitigation; if you start the JAR yourself, run
+`java -XX:-UseBASE64Intrinsics -jar saiku-<version>.jar serve`.
 
 ## What's in the zip
 

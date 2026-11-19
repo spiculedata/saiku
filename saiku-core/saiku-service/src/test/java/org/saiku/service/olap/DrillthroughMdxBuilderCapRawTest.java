@@ -114,4 +114,48 @@ public class DrillthroughMdxBuilderCapRawTest {
             assertTrue(in + " → " + out + " bound " + bound, bound >= 1 && bound <= CEILING);
         }
     }
+
+    // saiku#2327: Mondrian's parser skips comments, so a commented DRILLTHROUGH is detected as one.
+    // The cap must skip them too, or the statement runs uncapped.
+
+    @Test
+    public void capRaw_leadingBlockComment_stillCapsMaxRows() {
+        String mdx = DrillthroughMdxBuilder.capRawDrillthrough("/*a*/DRILLTHROUGH " + SELECT, 0);
+        assertEquals("DRILLTHROUGH MAXROWS " + CEILING + " " + SELECT, mdx);
+    }
+
+    @Test
+    public void capRaw_leadingLineComment_dashDash_and_slashSlash_stillCap() {
+        assertEquals(
+                "DRILLTHROUGH MAXROWS " + CEILING + " " + SELECT,
+                DrillthroughMdxBuilder.capRawDrillthrough("--x\nDRILLTHROUGH " + SELECT, 0));
+        assertEquals(
+                "DRILLTHROUGH MAXROWS " + CEILING + " " + SELECT,
+                DrillthroughMdxBuilder.capRawDrillthrough("//x\r\n  DRILLTHROUGH " + SELECT, 0));
+    }
+
+    @Test
+    public void capRaw_manyCommentsAndWhitespace_stillCap() {
+        String mdx = DrillthroughMdxBuilder.capRawDrillthrough(
+                " /* a */ -- b\n // c\n /* d\n e */ DRILLTHROUGH MAXROWS 999999999 " + SELECT, 0);
+        assertEquals("DRILLTHROUGH MAXROWS " + CEILING + " " + SELECT, mdx);
+    }
+
+    @Test
+    public void capRaw_commentBetweenKeywordAndMaxrows_isClamped() {
+        String mdx = DrillthroughMdxBuilder.capRawDrillthrough("DRILLTHROUGH /*x*/ MAXROWS 999999999 " + SELECT, 0);
+        assertEquals("DRILLTHROUGH MAXROWS " + CEILING + " " + SELECT, mdx);
+    }
+
+    @Test
+    public void capRaw_unterminatedBlockComment_isNotMistakenForDrillthrough() {
+        String raw = "/* never closed DRILLTHROUGH " + SELECT;
+        assertEquals(raw, DrillthroughMdxBuilder.capRawDrillthrough(raw, 0));
+    }
+
+    @Test
+    public void capRaw_plainSelect_isUnchanged() {
+        assertEquals(SELECT, DrillthroughMdxBuilder.capRawDrillthrough(SELECT, 0));
+        assertEquals("/*c*/ " + SELECT, DrillthroughMdxBuilder.capRawDrillthrough("/*c*/ " + SELECT, 0));
+    }
 }
