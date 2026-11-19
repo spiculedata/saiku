@@ -147,7 +147,7 @@ jobs:
       id-token: write # OIDC token for npm provenance; only this job can mint one
     steps:
       - name: Set up Node 24
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
@@ -158,18 +158,58 @@ jobs:
           name: design-system-tgz
           path: pkg
 
+      - name: Verify the tarball is the design-system package
+        # saiku#2421: the tarball was produced by the unprivileged build job, so
+        # assume nothing about it. npm would publish whatever pkg/*.tgz holds and
+        # NPM_TOKEN covers the whole @concepttocloud scope, so gate before the
+        # token step: exactly one tarball, its own package.json naming
+        # @concepttocloud/saiku-design-system at a strict-semver version equal to
+        # the version the build job reported. Runs without any registry
+        # credential, so a refusal here never exposes the token.
+        id: tarball
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          tarballs=(pkg/*.tgz)
+          if [ "${#tarballs[@]}" -ne 1 ]; then
+            echo "::error::expected exactly one tarball in pkg/, found ${#tarballs[@]}"
+            exit 1
+          fi
+          tgz="${tarballs[0]}"
+          meta=$(tar -xOf "$tgz" package/package.json)
+          name=$(printf '%s' "$meta" | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).name")
+          version=$(printf '%s' "$meta" | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version")
+          if [ "$name" != "@concepttocloud/saiku-design-system" ]; then
+            echo "::error::tarball $tgz contains package '$name', expected @concepttocloud/saiku-design-system"
+            exit 1
+          fi
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'; then
+            echo "::error::tarball version '$version' is not a strict semver version"
+            exit 1
+          fi
+          if [ "$version" != "$VERSION" ]; then
+            echo "::error::tarball version $version does not match the build's reported version $VERSION"
+            exit 1
+          fi
+          echo "path=$tgz" >> "$GITHUB_OUTPUT"
+          echo "verified @concepttocloud/saiku-design-system@$version ($(basename "$tgz"))"
+
       - name: Publish
         # NPM_TOKEN is an Automation token on the npm org, already used by the
         # embed packages in release.yml. `--provenance` needs `id-token: write`
         # (granted on this job) and attaches a signed SLSA statement. The
-        # tarball path plus --ignore-scripts means no lifecycle script can run
-        # with the token in the environment.
+        # verified tarball path plus --ignore-scripts means no lifecycle script
+        # can run with the token in the environment, and only the one tarball
+        # the gate above confirmed ever reaches the registry.
         # The version comes from the unprivileged build job, so it reaches this
         # script through env, never through expression interpolation into the script text.
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           VERSION: ${{ needs.build.outputs.version }}
+          TARBALL: ${{ steps.tarball.outputs.path }}
         run: |
           set -euo pipefail
-          npm publish pkg/*.tgz --access public --provenance --ignore-scripts
+          npm publish "$TARBALL" --access public --provenance --ignore-scripts
           echo "Published @concepttocloud/saiku-design-system@$VERSION" >> "$GITHUB_STEP_SUMMARY"
