@@ -55,10 +55,11 @@ public class ExplainSqlCaptureIT {
      * Why Unit Sales and not the Store Sales every other FoodMart IT runs: a warm Mondrian
      * segment cache answers the explain probe's cell query without emitting any SQL, which is
      * legitimate product behavior but fails this test's nonblank-SQL assertion (saiku#2291).
-     * Segments are keyed per measure, so a measure no other IT exercises keeps the cell's
-     * segment cold regardless of what the shared harness ran earlier — deterministic either
-     * way, still failing if the capture probe cannot observe an emitted statement. If another
-     * IT starts using Unit Sales, pick a different unused measure here.
+     * A measure no other IT names was not enough on its own: failsafe runs the ITs in filesystem
+     * order, and with DrillthroughIT (Store Sales by Product Family) ahead of this one the cell
+     * still came back from cache. The test therefore flushes Mondrian's cache before it executes,
+     * so the cell is cold whatever ran earlier, and still fails if the capture probe cannot
+     * observe an emitted statement.
      */
 
     /**
@@ -78,6 +79,8 @@ public class ExplainSqlCaptureIT {
 
     @Test
     public void explainReturnsTheGeneratedSqlForACell() throws Exception {
+        // The cell must be cold for Mondrian to emit SQL: flush rather than rely on which ITs ran first.
+        harness.flushFoodmartOlapCache();
         HttpClient session =
                 HttpClient.newBuilder().cookieHandler(new CookieManager()).build();
         HttpResponse<String> executed = post(session, "/rest/saiku/api/query/execute", EXECUTE);

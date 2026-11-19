@@ -207,11 +207,16 @@ public class CellExplainService {
             notes.add("cell has no connection, so the generated SQL was not captured");
             return new Sql(null, notes);
         }
-        OlapConnection connection = null;
+        // saiku#2443: the connection is BORROWED from the connection manager's cache, which shares
+        // it with every other query on this datasource (for a datasource without per-user
+        // security the cache key is the datasource name, so that is every user). Close only what
+        // this method creates — the statement and its cellset — and never the connection: closing
+        // it failed every query other users had running on it with "Connection is closed".
         OlapStatement statement = null;
+        CellSet cellSet = null;
         SqlCaptureProbe probe = null;
         try {
-            connection = olapDiscoverService.getNativeConnection(cube.getConnection());
+            OlapConnection connection = olapDiscoverService.getNativeConnection(cube.getConnection());
             if (StringUtils.isNotBlank(cube.getCatalog())) {
                 connection.setCatalog(cube.getCatalog());
             }
@@ -219,7 +224,7 @@ public class CellExplainService {
             // Scoped to this statement's Mondrian execution: the loggers are process-global, so
             // another user's concurrent SQL must not be mistaken for this cell's (saiku#2328).
             probe = SqlCaptureProbe.open(MondrianStatementScope.forStatement(statement));
-            statement.executeOlapQuery(cellMdx);
+            cellSet = statement.executeOlapQuery(cellMdx);
             String captured = probe.representativeStatement();
             if (captured == null) {
                 // Never a silently absent field: the panel would otherwise look as if SQL were
@@ -237,8 +242,8 @@ public class CellExplainService {
                     + e.getClass().getSimpleName() + ")");
             return new Sql(null, notes);
         } finally {
+            closeQuietly(cellSet);
             closeQuietly(statement);
-            closeQuietly(connection);
             if (probe != null) {
                 probe.close();
             }
