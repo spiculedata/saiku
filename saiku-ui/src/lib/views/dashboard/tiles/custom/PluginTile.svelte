@@ -16,7 +16,7 @@
 	 *      downloads/pointer-lock. The frame runs at the opaque "null" origin, so
 	 *      it cannot read the parent DOM, cookies, localStorage, or the session
 	 *      token.
-	 *   2. A strict CSP. The frame is the same-origin bootstrap
+	 *   2. A strict CSP. The frame loads the bootstrap at the same-origin URL
 	 *      pluginBridge.PLUGIN_FRAME_PATH, served with its own enforced policy
 	 *      (PLUGIN_FRAME_CSP: sandbox allow-scripts, default-src 'none', …), and the
 	 *      plugin document posted into it carries PLUGIN_CSP as its first <head>
@@ -24,14 +24,16 @@
 	 *      could not run the plugin). default-src 'none' + connect-src 'none' blocks BACKGROUND
 	 *      subresource egress (fetch/XHR/WebSocket/EventSource/sendBeacon, remote
 	 *      scripts/styles/fonts/frames/workers; only inline script/style + data:
-	 *      images). It does NOT stop a frame navigating ITSELF, and no CSP fetch
-	 *      directive governs navigation — so the plugin can still exfiltrate the
-	 *      data shown in ITS OWN tile. That is why plugin code is admin-installed
-	 *      and trusted (like a server plugin JAR). See docs/APP-BUILDER-PLUGINS.md.
+	 *      images). The frame's own navigations are checked against the shell's
+	 *      default-src 'self' (cross-origin targets refused), but channels no CSP
+	 *      governs remain (WebRTC), so the plugin can still exfiltrate the data
+	 *      shown in ITS OWN tile. That is why plugin code is admin-installed and
+	 *      trusted (like a server plugin JAR). See docs/APP-BUILDER-PLUGINS.md.
 	 *   3. A per-mount cryptographic nonce authenticates every plugin→host
 	 *      message (the frame's origin is "null", so event.origin is worthless).
 	 *   4. event.source === iframe.contentWindow gates the listener so one tile's
-	 *      host never processes another frame's messages.
+	 *      host never processes another frame's messages, and the boot handshake is
+	 *      answered only for an opaque origin (pluginBridge.routeFrameMessage).
 	 *
 	 * The host reads ONLY the typed, validated message kinds from
 	 * handlePluginMessage — the raw plugin payload NEVER touches the host DOM and
@@ -55,10 +57,8 @@
 	import { fetchTilePluginHtml } from '$lib/api/tilePlugins';
 	import { pickMemberUniqueName } from '$lib/dashboard/clickFilterMember';
 	import {
-		buildFrameLoadMessage,
-		handlePluginMessage,
-		isFrameBootMessage,
 		PLUGIN_FRAME_PATH,
+		routeFrameMessage,
 		PLUGIN_MIN_H,
 		type FilterSel
 	} from '$lib/dashboard/custom/pluginBridge';
@@ -220,24 +220,25 @@
 
 	// ── plugin → host: the single message listener ───────────────────────────
 	function onMessage(event: MessageEvent): void {
-		// GUARD 1: only messages from THIS tile's frame. Ignore every other frame
-		// (other plugin tiles, the top window, injected frames). Do NOT trust
-		// event.origin — a sandboxed frame's origin is the string "null".
-		if (!iframe || event.source !== iframe.contentWindow) return;
-		// The bootstrap asks for its plugin document. Only answered for an opaque
-		// ("null") origin, i.e. a frame that really is sandboxed, and only with the
-		// admin-registry html this tile fetched.
-		if (isFrameBootMessage(event.data, event.origin)) {
-			const html = registryHtml;
-			if (!html) return;
+		// GUARD 1 (in the bridge): only messages whose event.source is THIS tile's frame.
+		// Every other frame (other plugin tiles, the top window, injected frames) is
+		// ignored. Do NOT trust event.origin — a sandboxed frame's origin is "null".
+		// GUARD 2 (in the bridge): the bootstrap's boot message is answered only for an
+		// opaque ("null") origin with this tile's registry html; everything else needs
+		// the nonce + a valid shape. See routeFrameMessage.
+		const action = routeFrameMessage(event, {
+			window: iframe?.contentWindow ?? null,
+			nonce,
+			pluginHtml: registryHtml
+		});
+		if (!action) return;
+		if (action.kind === 'deliver') {
 			frameReady = false;
 			// "*" for the same reason as postToFrame: the frame's origin is opaque.
-			iframe.contentWindow?.postMessage(buildFrameLoadMessage(html, nonce), '*');
+			iframe?.contentWindow?.postMessage(action.message, '*');
 			return;
 		}
-		// GUARD 2 (in the bridge): nonce authentication + shape validation.
-		const msg = handlePluginMessage(event.data, nonce);
-		if (!msg) return;
+		const msg = action.msg;
 		switch (msg.kind) {
 			case 'ready':
 				frameReady = true;

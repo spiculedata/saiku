@@ -12,7 +12,8 @@ import {
 	FRAME_BOOT_TYPE,
 	FRAME_LOAD_TYPE,
 	isFrameBootMessage,
-	buildFrameLoadMessage
+	buildFrameLoadMessage,
+	routeFrameMessage
 } from './pluginBridge';
 
 const NONCE = 'test-nonce-abc123';
@@ -302,6 +303,65 @@ describe('plugin frame bootstrap — saiku#2440', () => {
 				expect(typeof isFrameBootMessage(raw, origin)).toBe('boolean');
 			})
 		);
+	});
+});
+
+describe('routeFrameMessage — the host guards (saiku#2440)', () => {
+	const tileWindow = { name: 'this tile' };
+	const otherWindow = { name: 'another frame' };
+	const frame = { window: tileWindow, nonce: NONCE, pluginHtml: '<p>plugin</p>' };
+	const boot = { type: FRAME_BOOT_TYPE };
+
+	it('answers its own sandboxed frame boot with the plugin document', () => {
+		expect(routeFrameMessage({ source: tileWindow, origin: 'null', data: boot }, frame)).toEqual({
+			kind: 'deliver',
+			message: buildFrameLoadMessage('<p>plugin</p>', NONCE)
+		});
+	});
+
+	it('ignores a boot from any other window, even an opaque one', () => {
+		expect(
+			routeFrameMessage({ source: otherWindow, origin: 'null', data: boot }, frame)
+		).toBeNull();
+		expect(routeFrameMessage({ source: null, origin: 'null', data: boot }, frame)).toBeNull();
+	});
+
+	it('never delivers to its own frame when that frame is not at an opaque origin', () => {
+		for (const origin of ['http://127.0.0.1:8080', 'https://saiku.example', '']) {
+			expect(routeFrameMessage({ source: tileWindow, origin, data: boot }, frame)).toBeNull();
+		}
+	});
+
+	it('delivers nothing before the registry html is loaded, or without a frame', () => {
+		expect(
+			routeFrameMessage(
+				{ source: tileWindow, origin: 'null', data: boot },
+				{ ...frame, pluginHtml: null }
+			)
+		).toBeNull();
+		expect(
+			routeFrameMessage(
+				{ source: undefined, origin: 'null', data: boot },
+				{ ...frame, window: null }
+			)
+		).toBeNull();
+	});
+
+	it('passes a nonce-authenticated plugin message from its own frame only', () => {
+		const ready = { type: 'ready', nonce: NONCE };
+		expect(routeFrameMessage({ source: tileWindow, origin: 'null', data: ready }, frame)).toEqual({
+			kind: 'plugin',
+			msg: { kind: 'ready' }
+		});
+		expect(
+			routeFrameMessage({ source: otherWindow, origin: 'null', data: ready }, frame)
+		).toBeNull();
+		expect(
+			routeFrameMessage(
+				{ source: tileWindow, origin: 'null', data: { type: 'ready', nonce: 'x' } },
+				frame
+			)
+		).toBeNull();
 	});
 });
 
