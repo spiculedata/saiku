@@ -8,6 +8,7 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import org.saiku.database.JdbcUserDAO;
@@ -133,26 +134,66 @@ public class UserService implements IUserManager, Serializable {
      * enabled, and its roles. The web layer uses it to refuse login and requests for an account that
      * SCIM or the admin console deactivated, and to drop admin authority that was removed there.
      *
-     * <p>Fail-open ({@link AccountStatus#UNMANAGED}) for an unknown/blank username or a lookup error:
-     * the authenticator has already vouched for the account and a store hiccup must not lock everyone
-     * out. (Contrast {@link #isEnabled(String)}, which gates background jobs and fails closed.)
+     * <p>saiku#2431: a row the store <b>found</b> is always reported as managed, whatever its role
+     * column contains. The role set is parsed tolerantly (duplicates de-duplicated, null/blank
+     * entries skipped) because {@code ROLE_USER,ROLE_USER} is the <i>normal</i> shape of a
+     * console/SCIM-created row — {@link JdbcUserDAO#insert} always prepends {@code ROLE_USER} and
+     * both creation surfaces send it too. A strict parse threw on exactly that row and the catch
+     * turned a found-but-unparseable account into {@link AccountStatus#UNMANAGED}, i.e. its
+     * {@code enabled} flag was silently discarded.
+     *
+     * <p>Fail-open ({@link AccountStatus#UNMANAGED}) for an unknown/blank username — the
+     * authenticator has already vouched for the account — and, deliberately, when the store itself
+     * cannot be read: failing closed would turn a store outage into a login outage for every
+     * account, including those the authenticator alone would serve. The failure is logged at ERROR
+     * with the exception (it used to be dropped, so the outage looked like "user not managed") and
+     * is cache-visible for the usual ~2s lookup window; monitor {@code org.saiku.service.user} for
+     * it. (Contrast {@link #isEnabled(String)}, which gates background jobs and fails closed.)
      */
     public AccountStatus accountStatus(String username) {
         if (username == null || username.isBlank()) {
             return AccountStatus.UNMANAGED;
         }
+        List<SaikuUser> users;
         try {
-            for (SaikuUser u : getUsers()) {
-                if (u != null && Usernames.sameUser(username, u.getUsername())) {
-                    String[] roles = u.getRoles();
-                    return new AccountStatus(true, u.isEnabled(), roles == null ? Set.of() : Set.of(roles));
-                }
-            }
+            users = getUsers();
         } catch (Exception e) {
-            log.warn(
-                    "Could not read the managed account status for '{}'; leaving the authenticator's answer", username);
+            // saiku#2431: a store read failure is an operational event, not a quiet "no row".
+            // Fail open per the documented trade-off above, but say so loudly.
+            log.error(
+                    "Could not read the managed account store — leaving the authenticator's answer for '{}' "
+                            + "(fail-open, saiku#2431)",
+                    username,
+                    e);
+            return AccountStatus.UNMANAGED;
+        }
+        for (SaikuUser u : users) {
+            if (u != null && Usernames.sameUser(username, u.getUsername())) {
+                // The row was found: its enabled flag must never be discarded because the role
+                // column is odd (saiku#2431).
+                return new AccountStatus(true, u.isEnabled(), tolerantRoles(u.getRoles()));
+            }
         }
         return AccountStatus.UNMANAGED;
+    }
+
+    /**
+     * saiku#2431 — a role set that never throws: duplicates de-duplicated, null/blank entries
+     * dropped, values trimmed. The legacy {@code Set.of(...)} threw {@code IllegalArgumentException}
+     * on a duplicate and NPE on a null — discarding the {@code enabled} flag of a row the store
+     * had found.
+     */
+    private static Set<String> tolerantRoles(String[] roles) {
+        if (roles == null || roles.length == 0) {
+            return Set.of();
+        }
+        Set<String> out = new LinkedHashSet<>(roles.length);
+        for (String role : roles) {
+            if (role != null && !role.isBlank()) {
+                out.add(role.trim());
+            }
+        }
+        return out;
     }
 
     public String[] getRoles(SaikuUser user) {

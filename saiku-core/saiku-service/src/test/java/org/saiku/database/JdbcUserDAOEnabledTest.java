@@ -4,6 +4,7 @@
  */
 package org.saiku.database;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assume.assumeTrue;
@@ -17,10 +18,13 @@ import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.Statement;
 import java.util.Properties;
+import java.util.Set;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.saiku.database.dto.SaikuUser;
+import org.saiku.service.user.AccountStatus;
+import org.saiku.service.user.UserService;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 /**
@@ -77,6 +81,88 @@ public class JdbcUserDAOEnabledTest {
         assertFalse(
                 "a role/email edit must not reactivate a deactivated account",
                 reload(created).isEnabled());
+    }
+
+    /**
+     * saiku#2431: the exact repro from the issue. {@code JdbcUserDAO.insert} prepends
+     * {@code ROLE_USER}, and both the admin console's new-user form and SCIM create send it too,
+     * so the stored row reads {@code ROLE_USER,ROLE_USER}. That row must still be read as found
+     * and managed — with its {@code enabled} flag intact — so the web layer's policy denies a
+     * deactivated account instead of silently allowing it.
+     */
+    @Test
+    public void disabledDuplicateRoleRow_isManagedAndDisabled_saiku2431() {
+        SaikuUser u = new SaikuUser();
+        u.setUsername("leaver2431");
+        u.setPassword("pw");
+        u.setEmail("leaver@example.com");
+        u.setRoles(new String[] {"ROLE_USER"});
+        SaikuUser created = dao.insert(u);
+        dao.updateUserEnabled(created.getId(), false);
+
+        // sanity: the stored row really is the duplicate shape the issue describes
+        SaikuUser stored = reload(created);
+        assertEquals(
+                "insert must produce the duplicate ROLE_USER shape",
+                new java.util.LinkedHashSet<>(java.util.Arrays.asList(stored.getRoles())),
+                new java.util.LinkedHashSet<>(java.util.Arrays.asList("ROLE_USER")));
+        assertEquals(2, stored.getRoles().length);
+
+        UserService us = new UserService();
+        us.setJdbcUserDAO(dao);
+        AccountStatus status = us.accountStatus("leaver2431");
+
+        assertTrue("a found row must be managed, whatever its roles contain", status.managed());
+        assertFalse("the deactivated row must read as disabled, not unmanaged", status.enabled());
+        assertEquals(Set.of("ROLE_USER"), status.roles());
+    }
+
+    /** Same repro for a console-created admin ({@code ROLE_ADMIN} later removed, row deactivated). */
+    @Test
+    public void disabledDuplicateRoleAdminRow_isManagedAndDisabled_saiku2431() {
+        SaikuUser u = new SaikuUser();
+        u.setUsername("admin2431");
+        u.setPassword("pw");
+        u.setEmail("admin@example.com");
+        u.setRoles(new String[] {"ROLE_USER", "ROLE_ADMIN"});
+        SaikuUser created = dao.insert(u);
+        dao.updateUserEnabled(created.getId(), false);
+
+        UserService us = new UserService();
+        us.setJdbcUserDAO(dao);
+        AccountStatus status = us.accountStatus("admin2431");
+
+        assertTrue(status.managed());
+        assertFalse(status.enabled());
+        assertEquals(Set.of("ROLE_USER", "ROLE_ADMIN"), status.roles());
+    }
+
+    /**
+     * The row the demotion writes back (SCIM {@code revokeRole} / the console's role edit) replaces
+     * {@code USER_ROLES} wholesale, so a demoted console-created admin is left with a clean
+     * {@code ROLE_USER} row — which must read as managed, enabled, and admin-free, so the policy
+     * strips the authority the authenticator still vouches for.
+     */
+    @Test
+    public void demotedAdminRow_reportsRemainingRoles() {
+        SaikuUser u = new SaikuUser();
+        u.setUsername("boss2431");
+        u.setPassword("pw");
+        u.setEmail("boss@example.com");
+        u.setRoles(new String[] {"ROLE_USER", "ROLE_ADMIN"});
+        SaikuUser created = dao.insert(u);
+
+        SaikuUser demoted = dao.findByUserId(created.getId());
+        demoted.setRoles(new String[] {"ROLE_USER"});
+        dao.updateRoles(demoted);
+
+        UserService us = new UserService();
+        us.setJdbcUserDAO(dao);
+        AccountStatus status = us.accountStatus("boss2431");
+
+        assertTrue(status.managed());
+        assertTrue(status.enabled());
+        assertEquals(Set.of("ROLE_USER"), status.roles());
     }
 
     @Test

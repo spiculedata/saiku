@@ -10,11 +10,14 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import org.junit.Test;
+import org.saiku.database.dto.SaikuUser;
 import org.saiku.service.user.AccountStatus;
+import org.saiku.service.user.UserService;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -107,5 +110,54 @@ public class AccountStatusPolicyTest {
         Thread.sleep(60L);
         p.evaluate(login("a", "ROLE_USER"));
         assertEquals(2, calls[0]);
+    }
+
+    /**
+     * saiku#2431, through the real pipeline: a row whose role array contains a duplicate (the shape
+     * every console/SCIM create produces via {@code JdbcUserDAO.insert}'s prepend) is read by
+     * {@link UserService#accountStatus} as found and managed, so the policy denies the disabled
+     * account instead of falling back to the authenticator's answer.
+     */
+    @Test
+    public void disabledDuplicateRoleRow_isDeniedThroughTheRealPipeline() {
+        UserService us = usersOf(user("bob", false, "ROLE_USER", "ROLE_USER"));
+        AccountStatusPolicy p = new AccountStatusPolicy(us::accountStatus, ADMIN_ROLES, 0L);
+
+        assertNull(p.evaluate(login("bob", "ROLE_USER", "ROLE_ADMIN")));
+        assertFalse(p.isAuthorised(login("bob", "ROLE_USER", "ROLE_ADMIN")));
+    }
+
+    /** Same pipeline, demotion: a duplicate-role row without an admin role still strips the authority. */
+    @Test
+    public void demotedDuplicateRoleRow_losesTheAdminAuthority() {
+        UserService us = usersOf(user("boss", true, "ROLE_USER", "ROLE_USER"));
+        AccountStatusPolicy p = new AccountStatusPolicy(us::accountStatus, ADMIN_ROLES, 0L);
+        Authentication auth = login("boss", "ROLE_USER", "ROLE_ADMIN");
+
+        Authentication result = p.evaluate(auth);
+
+        assertEquals(
+                Set.of("ROLE_USER"),
+                Set.copyOf(result.getAuthorities().stream()
+                        .map(GrantedAuthority::getAuthority)
+                        .toList()));
+    }
+
+    private static SaikuUser user(String name, boolean enabled, String... roles) {
+        SaikuUser u = new SaikuUser();
+        u.setUsername(name);
+        u.setEnabled(enabled);
+        u.setRoles(roles.length == 0 ? null : roles);
+        return u;
+    }
+
+    private static UserService usersOf(SaikuUser... users) {
+        final List<SaikuUser> list = new ArrayList<>(Arrays.asList(users));
+        return new UserService() {
+            @Override
+            public List<SaikuUser> getUsers() {
+                return list;
+            }
+        };
     }
 }
