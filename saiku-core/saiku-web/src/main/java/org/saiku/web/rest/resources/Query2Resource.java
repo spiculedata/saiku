@@ -412,11 +412,17 @@ public class Query2Resource {
             if (thinQueryService.isMdxDrillthrough(tq)) {
                 Long start = (new Date()).getTime();
                 ResultSet rs = thinQueryService.drillthrough(tq);
-                QueryResult rsc = RestUtil.convert(rs);
-                rsc.setQuery(tq);
-                Long runtime = (new Date()).getTime() - start;
-                rsc.setRuntime(runtime.intValue());
-                return Response.ok(rsc).type(MediaType.APPLICATION_JSON).build();
+                try {
+                    QueryResult rsc = RestUtil.convert(rs);
+                    rsc.setQuery(tq);
+                    Long runtime = (new Date()).getTime() - start;
+                    rsc.setRuntime(runtime.intValue());
+                    return Response.ok(rsc).type(MediaType.APPLICATION_JSON).build();
+                } finally {
+                    // The rows are copied into rsc above; closing the ResultSet releases the
+                    // engine's SQL statement, which otherwise stays open until the JVM exits.
+                    JdbcCleanup.closeQuietly(rs);
+                }
             }
 
             if (clientPrefersArrow(headers)) {

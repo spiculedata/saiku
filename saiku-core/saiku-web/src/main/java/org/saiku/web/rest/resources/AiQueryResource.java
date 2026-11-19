@@ -2814,18 +2814,22 @@ public class AiQueryResource {
         List<Map<String, AiCell>> rows = new ArrayList<>();
         List<String> columnLabels = new ArrayList<>();
         if (rs != null) {
-            java.sql.ResultSetMetaData md = rs.getMetaData();
-            int colCount = md.getColumnCount();
-            columnLabels = disambiguateColumnLabels(md);
-            while (rs.next()) {
-                Map<String, AiCell> row = new LinkedHashMap<>();
-                for (int c = 1; c <= colCount; c++) {
-                    Object v = rs.getObject(c);
-                    row.put(columnLabels.get(c - 1), toCellFromObject(v));
+            try {
+                java.sql.ResultSetMetaData md = rs.getMetaData();
+                int colCount = md.getColumnCount();
+                columnLabels = disambiguateColumnLabels(md);
+                while (rs.next()) {
+                    Map<String, AiCell> row = new LinkedHashMap<>();
+                    for (int c = 1; c <= colCount; c++) {
+                        Object v = rs.getObject(c);
+                        row.put(columnLabels.get(c - 1), toCellFromObject(v));
+                    }
+                    rows.add(row);
                 }
-                rows.add(row);
+            } finally {
+                // Close on the failure path too, so a read error does not keep the statement open.
+                JdbcCleanup.closeQuietly(rs);
             }
-            rs.close();
         }
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("queryId", queryId);

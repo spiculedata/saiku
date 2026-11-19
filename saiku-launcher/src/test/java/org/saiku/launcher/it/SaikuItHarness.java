@@ -16,6 +16,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.concurrent.atomic.AtomicReference;
+import org.eclipse.jetty.ee10.webapp.WebAppContext;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
 import org.saiku.launcher.SaikuLauncher;
@@ -296,6 +297,18 @@ public final class SaikuItHarness {
 
     public String adminBasicAuth() {
         return adminBasicAuth;
+    }
+
+    /**
+     * The class loader of the deployed Saiku webapp, for ITs that need to observe engine state
+     * that has no REST surface (for example the SQL statement pool). Classes such as Mondrian's
+     * live only in this loader, not in the test's own class path.
+     */
+    public ClassLoader webappClassLoader() {
+        for (WebAppContext ctx : server.getContainedBeans(WebAppContext.class)) {
+            return ctx.getClassLoader();
+        }
+        throw new IllegalStateException("no WebAppContext deployed");
     }
 
     private void stopQuietly() {
