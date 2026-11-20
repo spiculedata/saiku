@@ -241,6 +241,19 @@ that exists in **both**, the H2 row now wins for revocation:
 
 Changes are picked up within about two seconds (lookups are cached briefly).
 
+The check reads the row, not just its presence, and a row the store **found** is always enforced —
+whatever its role column contains. Duplicate entries are tolerated (and are the normal shape: every
+console- or SCIM-created row stores `ROLE_USER` twice, because `JdbcUserDAO.insert` prepends the role
+the caller already sent), so a deactivated leaver is refused even then. Before saiku#2431 a
+duplicate made the row read as unparseable, the check fell back to the authenticator, and the
+deactivation was silently ignored.
+
+If the user store itself cannot be read (database down, query error), the check **fails open**: the
+account is left to the authenticator rather than every login being refused by a store outage. The
+failure is logged at **ERROR** on `org.saiku.service.user.UserService` with the exception, and the
+last answer stays cached for the usual ~2s window. Watch for that line — repeated ERRORs mean
+revocation is not being enforced and the store needs attention.
+
 What this does **not** do: an account that has no H2 row is governed by the authenticator alone;
 **deleting** a row (`DELETE /rest/saiku/admin/users/{id}`) removes it from the managed store, so it does not
 by itself stop that user logging in. To deprovision, deactivate (SCIM) and remove the entry from
