@@ -1,0 +1,39 @@
+{
+  "issue": 2420,
+  "title": "The raw DRILLTHROUGH row cap fails closed: statements the clamp cannot prove bounded are refused with a typed 4xx, and the emitted cap is verified by Mondrian's real parser",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "a raw DRILLTHROUGH statement the cap cannot turn into a provably bounded statement (unterminated leading comment, comments with no locatable keyword, a MAXROWS/FIRST_ROWSET clause with a missing, non-positive or unparseable bound)",
+      "then": "capRawDrillthrough refuses it with SaikuQueryRejectedException — it is never returned uncapped and never papered over with a second MAXROWS (which was a guaranteed parse error)"
+    },
+    {
+      "id": "C2",
+      "given": "the two raw drillthrough call sites (ThinQueryService and OlapQueryService) that execute client-assembled DRILLTHROUGH MDX",
+      "then": "the capped statement is re-parsed with Mondrian's REAL parser (RolapConnection.parseStatement) before execution and must yield a DrillThrough whose MAXROWS bound sits in [1, QueryGuardrails.maxRows()]; anything else is a typed rejection"
+    },
+    {
+      "id": "C3",
+      "given": "a server booted with saiku.olap.max.rows=5",
+      "then": "plain, /*a*/-, --x\\n- and //x\\n-prefixed raw DRILLTHROUGH bodies return at most 5 rows on POST /api/query/execute and POST /api/notebooks/run (the behavioural IT, DrillthroughRowCapIT, ships with the fix)"
+    },
+    {
+      "id": "C4",
+      "given": "DrillthroughMdxBuilderCapRawTest's unterminated-comment case",
+      "then": "it asserts the fail-closed result (a typed rejection), not the fail-open pass-through"
+    },
+    {
+      "id": "C5",
+      "given": "a raw DRILLTHROUGH whose MAXROWS clause Mondrian would read as absent or non-positive — MAXROWS 0 (UNLIMITED to Mondrian), or a clause with no readable bound",
+      "then": "the request never 500s on a double-MAXROWS parse error and never executes unbounded: a bound Mondrian accepts but the cap cannot prove is refused with the typed 4xx (fixed, information-free message), and a terminated comment inside the clause carrying a valid bound is simply capped"
+    },
+    {
+      "id": "C6",
+      "given": "the regression and property tests for C1, C2 and C3",
+      "then": "they ship with the fix"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}

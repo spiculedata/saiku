@@ -36,8 +36,14 @@ const convertResultSet = restUtil.slice(
 );
 claim('C2', 'convert(ResultSet) still passes no row limit', /QueryGuardrails\.maxRows\(\)/.test(convertResultSet));
 
-const drillthrough = service.slice(service.indexOf('public ResultSet drillthrough(ThinQuery query)'));
-const rawPath = drillthrough.slice(0, 1200);
+const drillthroughStart = service.indexOf('public ResultSet drillthrough(ThinQuery query)');
+const drillthroughEnd = service.indexOf('public DrillThroughResult drillthroughWithCaptions(', drillthroughStart);
+// Keep the assertion scoped to this method without tying it to comment length. The
+// fail-closed guard added for #2420 pushed the cap call past the old 1200-character
+// window even though the raw path remained bounded.
+const rawPath = drillthroughStart >= 0 && drillthroughEnd > drillthroughStart
+  ? service.slice(drillthroughStart, drillthroughEnd)
+  : '';
 claim('C3', 'the raw drillthrough path does not apply the MDX MAXROWS cap', /DrillthroughMdxBuilder\.capRawDrillthrough\(/.test(rawPath));
 // Mondrian's olap4j statement throws UnsupportedOperationException from setMaxRows, which
 // turned every raw DRILLTHROUGH into a 500; the MDX cap is the bound on this path.

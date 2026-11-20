@@ -66,6 +66,7 @@ import org.saiku.service.olap.ai.AiSchema;
 import org.saiku.service.olap.ai.AiValidationException;
 import org.saiku.service.olap.drillthrough.DrillThroughResult;
 import org.saiku.service.util.exception.SaikuAccessDeniedException;
+import org.saiku.service.util.exception.SaikuQueryRejectedException;
 import org.saiku.service.util.exception.SaikuServiceException;
 import org.saiku.web.export.JSConverter;
 import org.saiku.web.export.PdfReport;
@@ -470,6 +471,16 @@ public class Query2Resource {
         if (isAccessDenied(e)) {
             return accessDenied();
         }
+        // saiku#2420: a guardrail rejection is a typed client error about the submitted
+        // statement, not a server fault — 400 with a fixed message (never the statement, which
+        // stays in the server log).
+        if (findQueryRejected(e)) {
+            return Response.status(Status.BAD_REQUEST)
+                    .entity(new QueryResult(
+                            "Query refused: the server could not enforce its row cap on this statement"))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
         String error = ExceptionUtils.getRootCauseMessage(e);
         Status status = isClientError(e) ? Status.BAD_REQUEST : Status.INTERNAL_SERVER_ERROR;
         return Response.status(status)
@@ -560,6 +571,17 @@ public class Query2Resource {
     private static boolean isAccessDenied(Throwable t) {
         for (Throwable c = t; c != null; c = c.getCause() == c ? null : c.getCause()) {
             if (c instanceof SaikuAccessDeniedException) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** saiku#2420 — same cause-chain walk as {@link #isAccessDenied}, for the typed
+     *  guardrail rejection (raw DRILLTHROUGH whose cap could not be proven). */
+    private static boolean findQueryRejected(Throwable t) {
+        for (Throwable c = t; c != null; c = c.getCause() == c ? null : c.getCause()) {
+            if (c instanceof SaikuQueryRejectedException) {
                 return true;
             }
         }

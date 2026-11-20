@@ -945,13 +945,15 @@ public class ThinQueryService implements Serializable {
             final OlapConnection con = olapDiscoverService.getNativeConnection(cube.getConnection());
             stmt = con.createStatement();
             QueryGuardrails.applyQueryTimeout(stmt);
-            // saiku#2327: no stmt.setMaxRows here. Mondrian's olap4j statement throws
-            // UnsupportedOperationException from setMaxRows, so the MDX MAXROWS cap below is the
-            // bound; RestUtil.convert(ResultSet) caps the materialised rows as well.
-            // saiku#1914: the caller supplied raw DRILLTHROUGH MDX with no server cap.
-            // Inject/clamp a MAXROWS bound so the fact-table scan is bounded regardless
-            // of what the request body asked for.
-            return stmt.executeQuery(DrillthroughMdxBuilder.capRawDrillthrough(query.getMdx(), 0));
+            // saiku#2327: no stmt.setMaxRows — Mondrian's olap4j statement throws
+            // UnsupportedOperationException from it, so the MDX MAXROWS cap below is the
+            // bound (RestUtil.convert(ResultSet) caps the materialised rows too).
+            // saiku#1914/#2420: the caller supplied raw DRILLTHROUGH with no server cap.
+            // capRawDrillthrough clamps a MAXROWS bound into it and fails closed — a typed
+            // rejection, not an unbounded execution — whenever the clamp cannot prove a
+            // 1..ceiling bound (unterminated comment, garbage/zero bound, lexer
+            // disagreement), and the capped statement is re-verified by Mondrian's parser.
+            return stmt.executeQuery(DrillthroughMdxBuilder.capRawDrillthrough(con, query.getMdx(), 0));
         } catch (SQLException e) {
             throw new SaikuServiceException(
                     "Error DRILLTHROUGH: " + query.getMdx() + " DRILLTHROUGH MDX:" + query.getMdx(), e);
