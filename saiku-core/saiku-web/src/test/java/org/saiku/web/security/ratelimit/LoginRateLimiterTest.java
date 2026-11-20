@@ -92,6 +92,50 @@ public class LoginRateLimiterTest {
         assertFalse(l.isBlocked(from("1.1.1.1"), "alice"));
     }
 
+    // --- saiku#2426: buckets are bounded in key length, count, and lifetime
+
+    @Test
+    public void oversizedUsernames_shareOneClampedBucket() {
+        LoginRateLimiter l = new LoginRateLimiter(1, WINDOW_MS, 0, 20, 50);
+        String huge1 = "x".repeat(300) + "-a";
+        String huge2 = "x".repeat(300) + "-b";
+        l.recordFailure(from("1.1.1.1"), huge1);
+
+        // both clamp to the same 256-char key, so the second is already blocked
+        assertTrue(l.isBlocked(from("1.1.1.1"), huge2));
+        assertFalse(l.isBlocked(from("1.1.1.1"), "alice"));
+    }
+
+    @Test
+    public void manyDistinctUsernames_doNotGrowTheMapsPastTheBound() {
+        // high IP ceiling so the per-IP warn log does not fire on every iteration
+        LoginRateLimiter l = new LoginRateLimiter(5, WINDOW_MS, 0, 20, Integer.MAX_VALUE);
+        for (int i = 0; i < LoginRateLimiter.MAX_BUCKETS + 2_000; i++) {
+            l.recordFailure(from("3.3.3.3"), "user-" + i);
+        }
+
+        long[] counts = l.bucketCountsForTesting();
+        assertTrue(counts[0] <= LoginRateLimiter.MAX_BUCKETS);
+        assertTrue(counts[1] <= LoginRateLimiter.MAX_BUCKETS);
+        assertEquals(1, counts[2]);
+    }
+
+    @Test
+    public void expiredBuckets_leaveTheMapWithoutBeingLookedUpAgain() throws Exception {
+        LoginRateLimiter l = new LoginRateLimiter(1, 20L, 0, 20, 50);
+        l.recordFailure(from("1.1.1.1"), "alice");
+
+        Thread.sleep(60L);
+
+        // unrelated activity triggers eviction of alice's never-re-looked-up bucket
+        l.recordFailure(from("2.2.2.2"), "bob");
+        long[] counts = l.bucketCountsForTesting();
+        assertEquals(1, counts[0]);
+        assertEquals(1, counts[1]);
+        assertEquals(1, counts[2]);
+        assertFalse(l.isBlocked(from("1.1.1.1"), "alice"));
+    }
+
     // --- client IP resolution
 
     @Test
