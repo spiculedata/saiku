@@ -161,8 +161,11 @@ public final class SqlCaptureProbe {
         private boolean ownsCurrentEvent() {
             try {
                 return scope.owns();
-            } catch (RuntimeException e) {
+            } catch (Throwable t) {
                 // Fail closed: when ownership cannot be established the statement is not shown.
+                // An Error from a scope must also be swallowed here — the probe rides the logging
+                // pipeline, and a throw per event would flood the log with stack traces for the
+                // whole window the probe is open.
                 return false;
             }
         }

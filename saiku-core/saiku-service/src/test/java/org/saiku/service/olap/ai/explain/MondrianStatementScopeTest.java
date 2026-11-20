@@ -4,18 +4,25 @@
  */
 package org.saiku.service.olap.ai.explain;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import mondrian.rolap.RolapConnection;
 import mondrian.server.Execution;
 import mondrian.server.Locus;
 import mondrian.server.StatementImpl;
 import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** saiku#2328: which logging threads a cell explain may claim as its own. */
 public class MondrianStatementScopeTest {
+
+    /** The logger the planner's SQL arrives on, obtained the way Mondrian obtains it. */
+    private static final Logger MONDRIAN_SQL = LoggerFactory.getLogger("mondrian.sql");
 
     private static boolean ownsOn(SqlCaptureProbe.Scope scope, Runnable setup) throws Exception {
         AtomicBoolean result = new AtomicBoolean();
@@ -94,5 +101,44 @@ public class MondrianStatementScopeTest {
         SqlCaptureProbe.Scope scope = MondrianStatementScope.forStatementId(7L, Thread.currentThread());
         assertTrue(scope.owns());
         assertFalse(ownsOn(scope, () -> {}));
+    }
+
+    /** Logs through Mondrian's logger on a worker thread holding {@code statement}'s Locus. */
+    private static void logUnderLocusOf(StatementImpl statement, String message) throws Exception {
+        Thread worker = new Thread(() -> {
+            Locus locus = new Locus(new Execution(statement, 0), "test", "explain");
+            Locus.push(locus);
+            try {
+                MONDRIAN_SQL.debug(message);
+            } finally {
+                Locus.pop(locus);
+            }
+        });
+        worker.start();
+        worker.join();
+    }
+
+    /**
+     * saiku#2442: two overlapping probes opened with {@link MondrianStatementScope} for different
+     * statements must each keep only their own statement's SQL — a worker thread's log line under
+     * one statement's Locus is claimed by that statement's probe and dropped by the other's.
+     */
+    @Test
+    public void overlappingProbesEachKeepOnlyTheirOwnStatementsSql() throws Exception {
+        TestStatement a = new TestStatement();
+        TestStatement b = new TestStatement();
+        SqlCaptureProbe probeA =
+                SqlCaptureProbe.open(MondrianStatementScope.forStatementId(a.getId(), Thread.currentThread()));
+        SqlCaptureProbe probeB =
+                SqlCaptureProbe.open(MondrianStatementScope.forStatementId(b.getId(), Thread.currentThread()));
+        try {
+            logUnderLocusOf(a, "1: executing sql [select 'from_statement_a' from TABLE_A]");
+            logUnderLocusOf(b, "2: executing sql [select 'from_statement_b' from TABLE_B]");
+            assertEquals(List.of("select 'from_statement_a' from TABLE_A"), probeA.statements());
+            assertEquals(List.of("select 'from_statement_b' from TABLE_B"), probeB.statements());
+        } finally {
+            probeB.close();
+            probeA.close();
+        }
     }
 }
