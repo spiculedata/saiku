@@ -245,6 +245,113 @@ public class SqlWorkbenchServiceTest {
     }
 
     /**
+     * saiku#2394 — the collision bypass. A caller may SEE {@code sales_payroll} but is denied
+     * {@code payroll}. The old check tolerated any single {@code <segment>_} prefix, so the
+     * visible {@code sales_payroll} authorised a request for the distinct restricted
+     * {@code payroll}, and the connection provider opened it with its stored credentials. The
+     * resolved datasource record must itself be in the caller's role-filtered map; the query is
+     * rejected before a JDBC connection is opened.
+     */
+    @Test
+    public void execute_rejectsRestrictedSuffixWhenAPrefixedNameIsVisible() {
+        List<String> openedFor = new ArrayList<>();
+        SqlWorkbenchService colliding = new SqlWorkbenchService(
+                id -> {
+                    openedFor.add(id);
+                    return DriverManager.getConnection(JDBC_URL, "sa", "");
+                },
+                new StubDatasourceService(DATA_SOURCE_ID) {
+                    @Override
+                    public SaikuDatasource getDatasource(String datasourceName) {
+                        // The restricted 'payroll' resolves by name — exactly what the connection
+                        // provider would open.
+                        return "payroll".equals(datasourceName)
+                                ? new SaikuDatasource("payroll", SaikuDatasource.Type.OLAP, null)
+                                : super.getDatasource(datasourceName);
+                    }
+
+                    @Override
+                    public Map<String, SaikuDatasource> getDatasources(String[] roles) {
+                        // The role filter only shows the unrelated prefixed datasource.
+                        return Map.of(
+                                "sales_payroll", new SaikuDatasource("sales_payroll", SaikuDatasource.Type.OLAP, null));
+                    }
+                },
+                auditLog);
+
+        SqlWorkbenchException ex = assertThrows(
+                SqlWorkbenchException.class,
+                () -> colliding.execute("alice", sqlExecRoles, "payroll", "SELECT 1", null));
+        assertEquals(SqlWorkbenchException.Code.UNKNOWN_DATASOURCE, ex.getCode());
+        // The restricted datasource was never opened.
+        assertTrue(openedFor.isEmpty());
+        assertEquals(
+                SqlWorkbenchAuditEntry.OUTCOME_ERROR,
+                auditLog.recent(1, 0, null).get(0).outcome);
+    }
+
+    /**
+     * saiku#2394 — no over-correction: requesting an authorized datasource by its UUID (a legacy
+     * alias the lookup has always supported) still executes, because authorisation compares the
+     * RESOLVED record's immutable id against the role-filtered map.
+     */
+    @Test
+    public void execute_acceptsDatasourceResolvedByUuidWhenVisible() {
+        java.util.Properties props = new java.util.Properties();
+        props.setProperty("id", "ds-uuid-1");
+        SaikuDatasource visible = new SaikuDatasource("visible-ds", SaikuDatasource.Type.OLAP, props);
+        DatasourceService byId = new StubDatasourceService(DATA_SOURCE_ID) {
+            @Override
+            public SaikuDatasource getDatasource(String datasourceName) {
+                return null; // the UUID never matches the connection name
+            }
+
+            @Override
+            public Map<String, SaikuDatasource> getDatasources(String[] roles) {
+                return Map.of("visible-ds", visible);
+            }
+        };
+        SqlWorkbenchService service2 =
+                new SqlWorkbenchService(id -> DriverManager.getConnection(JDBC_URL, "sa", ""), byId, auditLog);
+
+        SqlWorkbenchService.SqlQueryResult result =
+                service2.execute("alice", sqlExecRoles, "ds-uuid-1", "SELECT 1", null);
+        assertEquals(1, result.rowCount());
+    }
+
+    /**
+     * saiku#2394 — exact and decorated-name requests for an authorized datasource still work: the
+     * workspace-decoration alias is applied at RESOLUTION, not at authorisation.
+     */
+    @Test
+    public void execute_acceptsDecoratedNameAliasForAuthorizedDatasource() {
+        SaikuDatasource decorated = new SaikuDatasource("unknown_test-ds", SaikuDatasource.Type.OLAP, null);
+        DatasourceService aliasing = new StubDatasourceService(DATA_SOURCE_ID) {
+            @Override
+            public SaikuDatasource getDatasource(String datasourceName) {
+                // Mirror the saiku#1869 lookup alias: either spelling resolves to the one record.
+                return datasourceName.equals("test-ds") || datasourceName.equals("unknown_test-ds") ? decorated : null;
+            }
+
+            @Override
+            public Map<String, SaikuDatasource> getDatasources(String[] roles) {
+                return Map.of("unknown_test-ds", decorated);
+            }
+        };
+        SqlWorkbenchService service2 =
+                new SqlWorkbenchService(id -> DriverManager.getConnection(JDBC_URL, "sa", ""), aliasing, auditLog);
+
+        assertEquals(
+                1,
+                service2.execute("alice", sqlExecRoles, "unknown_test-ds", "SELECT 1", null)
+                        .rowCount());
+        assertEquals(
+                1,
+                service2.execute("alice", sqlExecRoles, "test-ds", "SELECT 1", null)
+                        .rowCount());
+    }
+
+    /**
      * saiku#2318 — on a backend with a session-level read-only switch, the service runs that
      * statement on the workbench connection BEFORE the caller's statement.
      */
