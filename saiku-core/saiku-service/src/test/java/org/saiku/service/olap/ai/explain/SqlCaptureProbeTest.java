@@ -19,6 +19,7 @@ import java.util.Deque;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
@@ -724,6 +725,84 @@ public class SqlCaptureProbeTest {
         try {
             MONDRIAN_SQL.debug("7: executing sql [select 1 from SOMEBODY_ELSE]");
             assertFalse(probe.captured());
+        } finally {
+            probe.close();
+        }
+    }
+
+    /** saiku#2442: an Error from a scope is also dropped, not fatal to the logging pipeline. */
+    @Test
+    public void aScopeThatThrowsAnErrorIsTreatedAsNotMine() {
+        SqlCaptureProbe probe = SqlCaptureProbe.open(() -> {
+            throw new InjectedError();
+        });
+        try {
+            MONDRIAN_SQL.debug("8: executing sql [select 1 from ERROR_SCOPE]");
+            assertFalse(probe.captured());
+        } finally {
+            probe.close();
+        }
+    }
+
+    // ---------------------------------------------------------------- a probe dropped without close
+
+    /** Opens a probe the caller never keeps a reference to, so it can be garbage collected. */
+    private static void openAndDropProbe() {
+        SqlCaptureProbe.open();
+    }
+
+    /**
+     * saiku#2442: the field-walking tests pin that nothing reachable holds the probe, but only a
+     * real drop proves the release actually runs — a probe dropped without {@code close()} must be
+     * released when it is collected, putting the raised levels back.
+     */
+    @Test
+    public void aProbeDroppedWithoutCloseIsReleasedAndItsLevelIsRestored() throws Exception {
+        configureSqlLoggerAtWarn();
+        try {
+            int beforeProbes = SqlCaptureProbe.activeProbeCount();
+            openAndDropProbe();
+            assertEquals(beforeProbes + 1, SqlCaptureProbe.activeProbeCount());
+
+            // Wait for the cleaner: the release runs after the object becomes unreachable, so give
+            // the GC and the cleaner thread a bounded number of chances before declaring failure.
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+            while (SqlCaptureProbe.activeProbeCount() > beforeProbes && System.nanoTime() < deadline) {
+                System.gc();
+                Thread.sleep(50);
+            }
+
+            assertEquals(
+                    "a dropped probe must be released without close()",
+                    beforeProbes,
+                    SqlCaptureProbe.activeProbeCount());
+            assertEquals(Level.WARN, sqlLoggerLevel());
+            assertFalse(MONDRIAN_SQL.isDebugEnabled());
+            for (String name : SqlCaptureProbe.SQL_LOGGERS) {
+                assertTrue(configuration().getLoggerConfig(name).getAppenders().values().stream()
+                        .noneMatch(a -> a.getName().startsWith("saiku-sql-capture")));
+            }
+        } finally {
+            removeSqlLoggerConfig();
+        }
+    }
+
+    // ---------------------------------------------------------------- the registrar seam's scope
+
+    /**
+     * saiku#2442: the package-private registrar seam substitutes only the release registration —
+     * its default scope must still claim the opening thread alone, so a statement logged on
+     * another thread is not captured through it.
+     */
+    @Test
+    public void theRegistrarSeamKeepsTheDefaultThreadScope() throws Exception {
+        SqlCaptureProbe probe = SqlCaptureProbe.open(5, (owner, action) -> action::run);
+        try {
+            MONDRIAN_SQL.debug("9: executing sql [select 'seam_thread' from T]");
+            Thread stranger = new Thread(() -> MONDRIAN_SQL.debug("10: executing sql [select 'seam_stranger' from T]"));
+            stranger.start();
+            stranger.join();
+            assertEquals(List.of("select 'seam_thread' from T"), probe.statements());
         } finally {
             probe.close();
         }
