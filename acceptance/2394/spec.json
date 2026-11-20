@@ -1,0 +1,24 @@
+{
+  "issue": 2394,
+  "title": "a visible prefixed datasource cannot authorize a SQL-workbench query against a distinct, restricted suffix datasource; exact and legacy-alias requests for an authorized datasource still work",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "a caller entitled to see sales_payroll but denied payroll submits {\"datasource\":\"payroll\",\"sql\":\"SELECT ...\"}",
+      "then": "the request is rejected with UNKNOWN_DATASOURCE before a JDBC connection is opened — authorization resolves the requested id once (the same resolution the connection provider applies) and checks the RESOLVED record against the caller's role-filtered datasource map, never matching distinct datasource records through prefix tolerance (saiku#2394, CWE-863)"
+    },
+    {
+      "id": "C2",
+      "given": "an authorized datasource is requested by its UUID or by its workspace-decorated name (the legacy aliases the saiku#1869 lookup supports)",
+      "then": "the query executes: the alias is applied at RESOLUTION (getDatasourceByIdOrName), not at authorization, and the resolved record is matched by immutable id property or exact connection name"
+    },
+    {
+      "id": "C3",
+      "given": "the regression tests in SqlWorkbenchServiceTest",
+      "then": "a colliding visible name (sales_payroll visible, payroll restricted) is rejected with no connection opened, and the UUID and decorated-alias requests for an authorized datasource still execute — the collision test fails on the pre-fix implementation, which matched visible names with DatasourceNameDecoration.sameConnection"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}
