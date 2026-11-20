@@ -94,7 +94,9 @@ own coverage is worse than a short one, because a reader stops checking.
 - **Fail-closed defaults.** Non-obvious ones: the AI policy guard
   defaults to `SCHEMA_ONLY` in production so AI endpoints don't
   return aggregated data or raw rows without explicit operator
-  opt-in; the launcher refuses to serve in production while the
+  opt-in — enforced on both the MDX surface and the Ossie AI Query
+  API and its MCP tools (`/ai/ossie/*`, `run_ossie_query`, saiku#2322);
+  the launcher refuses to serve in production while the
   default admin password (`admin/admin`) is unchanged; share links and
   embed tokens re-resolve the owner's live roles on every read, so a
   disabled or demoted owner revokes guest access on the next request
