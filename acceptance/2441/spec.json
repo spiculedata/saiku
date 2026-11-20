@@ -1,0 +1,24 @@
+{
+  "issue": 2441,
+  "title": "the secret pre-commit hook rejects a credential-shaped value sharing a line with a placeholder marker, while a genuine placeholder value stays allowed",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "a synthetic GitHub-token-shaped value on a line that also carries an unrelated placeholder marker (a process.env reference, a trailing example/test comment)",
+      "then": "scripts/check-secrets.sh rejects the file: the placeholder exemption applies to the matched credential value, not to any text elsewhere on the line"
+    },
+    {
+      "id": "C2",
+      "given": "a fixture whose credential-shaped value itself is a placeholder (xxxx padding, the AWS documentation example key)",
+      "then": "scripts/check-secrets.sh accepts it — the documented placeholder allowance survives, narrowed to the value it describes"
+    },
+    {
+      "id": "C3",
+      "given": "the ci / flake-policy job runs node --test over the .github/scripts/*.test.mjs glob",
+      "then": "the regression test ships as .github/scripts/check-secrets.test.mjs, so the existing job discovers and runs it without a workflow edit"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}
