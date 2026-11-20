@@ -171,19 +171,46 @@ public final class SchemaFileAccessGuard {
     }
 
     /**
-     * Resolve to a real path for comparison. Falls back to lexical normalisation when the file does
-     * not exist — a missing file still needs a containment verdict, and {@code ../} must not slip
-     * through just because the target is absent.
+     * Resolve to a real path for comparison.
+     *
+     * <p>The file being checked usually does not exist yet — an H2 URL names its database without
+     * the {@code .mv.db} suffix, which H2 only creates when the database opens. So, the way H2
+     * itself resolves the name, the nearest <em>existing</em> ancestor is resolved with
+     * {@link Path#toRealPath} and the missing remainder is appended to it (saiku#2436: when
+     * {@code saiku.home} is reached through a symlink, a lexical fallback of the candidate never
+     * matched the home's real path and every database in the home was rejected, the seeded
+     * FoodMart included). An existing symlink anywhere in the candidate is still resolved to its
+     * target, so an escape out of a root keeps being judged on the target. When nothing below the
+     * filesystem root exists, the lexical form is kept — {@code ../} must not slip through just
+     * because the target is absent.
      */
     private static Path canonicalise(Path p) {
+        Path absolute;
         try {
-            return p.toRealPath();
-        } catch (IOException e) {
+            absolute = p.toAbsolutePath().normalize();
+        } catch (RuntimeException e) {
+            return null;
+        }
+        List<Path> missing = new ArrayList<>();
+        Path cursor = absolute;
+        Path real;
+        while (true) {
             try {
-                return p.toAbsolutePath().normalize();
-            } catch (RuntimeException e2) {
-                return null;
+                real = cursor.toRealPath();
+                break;
+            } catch (IOException e) {
+                Path parent = cursor.getParent();
+                if (parent == null) {
+                    // Not even the filesystem root resolves: keep the lexical form.
+                    return absolute;
+                }
+                missing.add(cursor.getFileName());
+                cursor = parent;
             }
         }
+        for (int i = missing.size() - 1; i >= 0; i--) {
+            real = real.resolve(missing.get(i));
+        }
+        return real;
     }
 }
