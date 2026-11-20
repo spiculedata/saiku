@@ -153,23 +153,60 @@ public class SqlWorkbenchService {
     }
 
     /**
-     * Whether {@code dataSourceId} is visible to {@code userRoles} through the role-filtered
-     * datasource map — the same ACL the picker lists. Matching tolerates the workspace decoration
-     * ({@code unknown_foodmart} vs {@code foodmart}), the same leniency the by-name lookup applies
-     * everywhere else.
+     * Whether {@code dataSourceId} names a datasource the caller's roles can see.
+     *
+     * <p>saiku#2394: the requested id is RESOLVED once — name or UUID, the same resolution the
+     * connection provider will apply — and the RESOLVED record is then checked against the
+     * role-filtered datasource map. The previous check applied
+     * {@link DatasourceNameDecoration#sameConnection} between the requested name and every visible
+     * name, which tolerates any single {@code <segment>_} prefix: a caller entitled to
+     * {@code sales_payroll} was entitled to the distinct, role-restricted {@code payroll}, and
+     * {@code connectionProvider.get} then opened that restricted datasource with its stored
+     * credentials. Distinct datasource records are therefore never matched by prefix tolerance —
+     * only by equal immutable {@code id} property (the UUID resolution) or exact connection name.
+     * Workspace-decoration aliases still work because the resolution step itself accepts both
+     * spellings (saiku#1869).
      */
     private boolean isEntitledTo(String[] userRoles, String dataSourceId) {
+        SaikuDatasource requested = datasourceService.getDatasourceByIdOrName(dataSourceId);
+        if (requested == null) {
+            return false;
+        }
         Map<String, SaikuDatasource> visible = datasourceService.getDatasources(userRoles);
         if (visible == null) {
             return false;
         }
-        for (Map.Entry<String, SaikuDatasource> entry : visible.entrySet()) {
-            if (DatasourceNameDecoration.sameConnection(entry.getKey(), dataSourceId)
-                    || DatasourceNameDecoration.sameConnection(entry.getValue().getName(), dataSourceId)) {
+        for (SaikuDatasource ds : visible.values()) {
+            if (isSameDatasource(ds, requested)) {
                 return true;
             }
         }
         return false;
+    }
+
+    /**
+     * Same datasource record, not merely a similar-looking name: equal by immutable {@code id}
+     * property when both carry one, otherwise by exact connection name. Deliberately strict —
+     * {@code payroll} and {@code sales_payroll} are different datasources even when a prefix makes
+     * one a suffix of the other.
+     */
+    private static boolean isSameDatasource(SaikuDatasource a, SaikuDatasource b) {
+        if (a == b) {
+            return true;
+        }
+        if (a == null || b == null) {
+            return false;
+        }
+        String idA = idOf(a);
+        String idB = idOf(b);
+        if (idA != null && !idA.isEmpty() && idB != null && !idB.isEmpty()) {
+            return idA.equals(idB);
+        }
+        return a.getName() != null && a.getName().equals(b.getName());
+    }
+
+    private static String idOf(SaikuDatasource ds) {
+        return ds.getProperties() == null ? null : ds.getProperties().getProperty("id");
     }
 
     /**
