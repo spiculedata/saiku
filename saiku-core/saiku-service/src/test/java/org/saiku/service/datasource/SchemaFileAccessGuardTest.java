@@ -86,6 +86,24 @@ public class SchemaFileAccessGuardTest {
     }
 
     @Test
+    public void allowsAMissingFileUnderASymlinkedRoot() throws Exception {
+        // saiku#2436: an H2 database is named without its .mv.db, so the candidate does not exist
+        // yet when it is checked. The nearest existing ancestor must be resolved to its real path
+        // and the remainder appended, or a symlinked saiku.home rejects every database inside it.
+        File home = tmp.newFolder("saiku-home");
+        Path link = tmp.getRoot().toPath().resolve("saiku-home-link");
+        try {
+            Files.createSymbolicLink(link, home.toPath());
+        } catch (UnsupportedOperationException | IOException e) {
+            return; // no symlink support (e.g. Windows without privilege) — nothing to assert
+        }
+        SchemaFileAccessGuard guard = new SchemaFileAccessGuard(List.of(home.toPath()));
+
+        assertTrue(guard.isAllowed(link.resolve("data/foodmart")));
+        assertTrue(guard.isAllowed(link.resolve("data/FoodMart4.xml")));
+    }
+
+    @Test
     public void refusesASymlinkWhoseTargetEscapesTheRoot() throws Exception {
         File home = tmp.newFolder("saiku-home");
         File elsewhere = tmp.newFolder("elsewhere");

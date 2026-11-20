@@ -20,6 +20,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Properties;
@@ -167,6 +168,27 @@ public class FileEngineConfinementTest {
         JdbcUrlPolicy.validate("jdbc:h2:file:" + home + "/data/foodmart");
         JdbcUrlPolicy.validate("jdbc:mondrian:Jdbc=jdbc:h2:" + home
                 + "/data/foodmart;MODE=MySQL;Catalog=file:/x.xml;JdbcDrivers=org.h2.Driver");
+    }
+
+    @Test
+    public void h2FileUnderSymlinkedSaikuHomeIsAccepted() throws Exception {
+        // saiku#2436: an H2 URL names its database without .mv.db, so the candidate does not exist
+        // when it is checked — containment must resolve the nearest existing ancestor to its real
+        // path and append the remainder (what H2 itself does). With saiku.home reached through a
+        // symlink, every database in the home — the seeded FoodMart included — used to be rejected.
+        Path link = home.getParent().resolve("saiku-home-symlink-" + home.getFileName());
+        try {
+            Files.createSymbolicLink(link, home);
+        } catch (UnsupportedOperationException | IOException e) {
+            return; // no symlink support (e.g. Windows without privilege) — nothing to assert
+        }
+        try {
+            System.setProperty("saiku.home", link.toString());
+            JdbcUrlPolicy.validate("jdbc:h2:" + link + "/data/foodmart;MODE=MySQL");
+            JdbcUrlPolicy.validate("jdbc:h2:file:" + link + "/data/foodmart");
+        } finally {
+            Files.deleteIfExists(link);
+        }
     }
 
     @Test
