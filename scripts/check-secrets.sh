@@ -34,9 +34,13 @@ is_exempt() {
   esac
 }
 
-# Each pattern is `extended-regexp::label`. A match on a line that is a known
-# placeholder is skipped by the allowlist below rather than by pattern surgery,
-# so the pattern stays readable and the exception stays visible.
+# Each pattern is `extended-regexp::label`. A match whose MATCHED VALUE is a
+# known placeholder is skipped by the allowlist below rather than by pattern
+# surgery, so the pattern stays readable and the exception stays visible.
+# (saiku#2441: the allowance used to read the whole line, so a marker anywhere
+# on it — `process.env.FALLBACK` in the same statement, a trailing comment —
+# exempted an unrelated credential-shaped value. The exception is now scoped
+# to the text the pattern actually matched.)
 PATTERNS=(
   'AKIA[0-9A-Z]{16}::AWS access key id'
   'gh[pousr]_[A-Za-z0-9]{36,}::GitHub token'
@@ -57,13 +61,17 @@ violations=""
 scan_line() {
   local file="$1" lineno="$2" line="$3"
   for entry in "${PATTERNS[@]}"; do
-    local re="${entry%%::*}" label="${entry##*::}"
-    if printf '%s' "$line" | grep -Eq -- "$re"; then
-      if printf '%s' "$line" | grep -Eqi -- "$PLACEHOLDER"; then
+    local re="${entry%%::*}" label="${entry##*::}" matched
+    # Judge the credential-shaped substring, not the line around it: a
+    # placeholder marker elsewhere on the line (a process.env reference, a
+    # trailing comment) says nothing about the value itself (saiku#2441).
+    while IFS= read -r matched; do
+      [ -n "$matched" ] || continue
+      if printf '%s' "$matched" | grep -Eqi -- "$PLACEHOLDER"; then
         continue
       fi
       violations+="${file}:${lineno}: possible ${label}"$'\n'
-    fi
+    done < <(printf '%s' "$line" | grep -Eo -- "$re" || true)
   done
 }
 
@@ -114,8 +122,9 @@ if [ -n "$violations" ]; then
 Commit blocked: the staged content looks like it carries a credential.
 
 $violations
-If any of these is a placeholder, make that obvious in the line itself
-(the check already skips lines marked example/test/placeholder/your-…), or
+If any of these is a placeholder, make that obvious in the value itself
+(the check skips a matched value marked example/test/placeholder/your-…
+— saiku#2441: a marker elsewhere on the line no longer exempts it), or
 move it to a *.example file. If a real credential was committed, rotate it
 first — history rewriting is not enough once it has been pushed.
 EOF
