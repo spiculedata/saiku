@@ -65,9 +65,11 @@ What can happen on the **Chainguard** side is a per-ecosystem entitlement settin
 
 As of this change the JAVA and JAVASCRIPT entitlements for `concepttocloud.com` are `CHAINGUARD`
 only (`chainctl libraries entitlements list --parent=concepttocloud.com`). Measured against that
-policy: the current Maven BOM already fails on its first lookup
-(`com.fasterxml.jackson:jackson-bom:2.22.3` is not built by Chainguard) and 261 of 560 saiku-ui
-lockfile packages are not Chainguard-built. To make releases work, switch them (changes can take
+policy on 2026-11-21: the Maven build fails on its first lookup (`com.fasterxml.jackson:jackson-bom:2.22.3`
+is not built by Chainguard); of the 2,134 Maven Central POMs in the full dependency + plugin tree
+1,381 (65%) are served and 753 (35%, mostly `org.apache.maven`, `org.codehaus.plexus`,
+`org.apache.commons`, Netty/Jackson BOMs) are not; and 261 of 560 saiku-ui lockfile packages are
+not Chainguard-built (`npm ci` 404s on the first). To make releases work, switch them (changes can take
 up to 30 minutes to apply):
 
 ```bash
@@ -122,8 +124,11 @@ the credentials, so nothing sensitive is committed.
 `.github/workflows/chainguard-coverage.yml` (Mondays 05:43 UTC, or run it by hand) resolves
 `mvn -pl '!saiku-proptest' dependency:go-offline` and `npm ci --ignore-scripts` for saiku-ui into
 empty caches, Chainguard only, and writes a job summary: counts, the artifacts Chainguard could not
-serve, and an estimated pull count (a clean run is roughly 600 Maven and up to about 1,100 npm
-requests, so under 4,000 pulls a month at weekly cadence, before releases). It follows
+serve, and an estimated pull count. Measured on 2026-11-21 a clean run fetches about 3,400 Maven files
+(POMs and JARs) and about 1,100 npm requests, so up to roughly 4,500 pulls a run and 20,000 a month
+at weekly cadence if every file counts as a pull (a release adds about the same again). That is
+the worst case against the 50,000 a month Starter allowance; if the quota gets tight, make the
+cron fortnightly. It follows
 `quality-report.yml`: gaps are reported, the run stays green. It fails only on authentication,
 entitlement or configuration errors (401/403 from `libraries.cgr.dev`, a missing secret, or a
 failure that is not a missing package).

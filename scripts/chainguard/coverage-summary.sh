@@ -59,7 +59,7 @@ maven)
   else
     emit ":white_check_mark: Every Maven Central artifact in the tree was served through Chainguard."
   fi
-  emit "" "**Estimated pull usage this run:** about ${served} requests (counting every POM/JAR/checksum-less download as one pull; a clean local repository means each artifact is fetched once). Weekly cadence = about $((served * 435 / 100)) a month against the ${monthly_quota}/month Starter allowance, before release builds."
+  emit "" "**Estimated pull usage this run:** about ${served} downloads (every POM/JAR counted as one pull, the worst case; a clean local repository fetches each file once). Weekly cadence = about $((served * 435 / 100)) a month against the ${monthly_quota}/month Starter allowance, before release builds."
   ;;
 npm)
   total=$(jq '[.packages | to_entries[] | select(.key != "" and (.value.resolved // "") != "")] | length' "$lockfile")

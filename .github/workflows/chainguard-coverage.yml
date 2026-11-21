@@ -15,7 +15,9 @@ name: chainguard-coverage
 # missing artifact from upstream is a server-side entitlement setting - docs/chainguard-libraries.md.)
 #
 # Cost: every run pulls the full tree into an empty cache, so it spends Starter-plan pulls
-# (50,000/month). The summary prints an estimate. Weekly keeps that to a few percent of the quota.
+# (50,000/month). The summary prints an estimate; measured on 2026-11-21 a run is about 3,400 Maven
+# files + about 1,100 npm requests, i.e. up to roughly 20,000 a month at weekly cadence if every file
+# counts as a pull. Drop the cron to fortnightly/monthly if the quota gets tight.
 on:
   schedule:
     # Monday 05:43 UTC; off the top of the hour, after quality-report (05:17) and security-scan (04:17).
@@ -65,7 +67,8 @@ jobs:
           set +e
           # -fae: keep going past a missing artifact so the summary lists as many as Maven can see.
           # go-offline resolves plugins AND every module's dependencies without compiling anything.
-          mvn -B -ntp -fae -Dmaven.repo.local="$LOCAL_REPO" -pl '!saiku-proptest' dependency:go-offline \
+          # No -ntp: the summary counts the "Downloaded from chainguard:" lines it would hide.
+          mvn -B -fae -Dmaven.repo.local="$LOCAL_REPO" -pl '!saiku-proptest' dependency:go-offline \
             2>&1 | tee "$RUNNER_TEMP/maven-chainguard.log"
           echo "rc=${PIPESTATUS[0]}" >>"$GITHUB_OUTPUT"
 
