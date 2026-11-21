@@ -1,0 +1,15 @@
+{
+  "issue": 2463,
+  "title": "Release builds resolve Maven and npm dependencies through Chainguard Libraries; a weekly workflow reports coverage gaps",
+  "kind": "ci",
+  "criteria": [
+    { "id": "C1", "given": "release.yml jar job", "then": "writes a settings.xml mirror with mirrorOf exactly central to https://libraries.cgr.dev/java/ using CHAINGUARD_JAVA_IDENTITY_ID/TOKEN, keeps the five GitHub Packages servers, and has no wildcard mirror" },
+    { "id": "C2", "given": "release.yml npm-embed-build job", "then": "installs via https://libraries.cgr.dev/javascript/ with a temporary .npmrc from CHAINGUARD_JS_IDENTITY_ID/TOKEN, and no committed .npmrc carries credentials" },
+    { "id": "C3", "given": "release.yml", "then": "has a workflow_dispatch skip_chainguard input (default off) that logs a warning, and neither job caches ~/.m2 or ~/.npm" },
+    { "id": "C4", "given": "chainguard-coverage.yml", "then": "runs on schedule and workflow_dispatch only, with contents: read, resolves Maven and npm ci --ignore-scripts through Chainguard, and writes a job summary" },
+    { "id": "C5", "given": "all workflows", "then": "ci.yml is untouched by Chainguard and every uses: is pinned by full SHA" },
+    { "id": "C6", "given": "docs", "then": "docs/chainguard-libraries.md exists and docs/releasing.md links to it" }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}
