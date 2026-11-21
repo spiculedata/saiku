@@ -57,6 +57,7 @@ jobs:
           GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
           CHAINGUARD_JAVA_IDENTITY_ID: ${{ secrets.CHAINGUARD_JAVA_IDENTITY_ID }}
           CHAINGUARD_JAVA_TOKEN: ${{ secrets.CHAINGUARD_JAVA_TOKEN }}
+          CHAINGUARD_ONLY: "true" # mirror central to Chainguard: NO fallback, so gaps are visible
         run: bash scripts/chainguard/write-maven-settings.sh
 
       - name: Resolve dependency + plugin tree (empty local repository)

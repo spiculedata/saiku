@@ -1,20 +1,21 @@
 #!/usr/bin/env bash
 # Write ~/.m2/settings.xml for release builds (saiku#2463): the GitHub Packages servers the
 # Spicule forks need (identical to what release.yml/ci.yml wrote before) plus, unless bypassed,
-# a Chainguard Libraries mirror for Maven Central ONLY.
+# Chainguard Libraries for Java as a repository AND pluginRepository in an always-active profile.
 #
-#   <mirrorOf>central</mirrorOf>  - deliberately not `*`: the five GitHub Packages repos, the
-#   in-tree lib/repo and the apache/atlassian repos in the root pom must keep resolving from
-#   where they are. Plugins resolve through the same mirror (Maven's `central` is both).
-#
-# There is no client-side fallback to Maven Central. Whether a missing artifact is served from
-# upstream is Chainguard's decision (entitlement policy + 7-day cooldown); if Chainguard cannot
-# serve it, Maven fails with "Could not find artifact" - loudly, never silently from Central.
+# Fallback is CLIENT-side: Chainguard is consulted FIRST and Maven Central (the super-POM `central`,
+# plus the root pom's own repos) is still reachable after it. We do this because the Starter plan
+# cannot enable Chainguard's server-side upstream policy (chainguard_and_upstream), so Chainguard
+# only serves artifacts it built itself. Anything it lacks resolves from Central as before.
+# Log lines tell the two apart: `Downloaded from chainguard-java:` vs `Downloaded from central:`.
+# Once Chainguard serves upstream, replace the profile with a `<mirrorOf>central</mirrorOf>` mirror
+# to https://libraries.cgr.dev/java/ (one-line change, see docs/chainguard-libraries.md).
 #
 # Environment:
 #   GH_PACKAGES_USER / GH_PACKAGES_TOKEN        required (read:packages PAT)
 #   CHAINGUARD_JAVA_IDENTITY_ID / _TOKEN        required unless SKIP_CHAINGUARD=true
-#   SKIP_CHAINGUARD=true                        emergency bypass: plain Maven Central, loud warning
+#   SKIP_CHAINGUARD=true                        emergency bypass: plain Maven, loud warning
+#   CHAINGUARD_ONLY=true                        coverage mode: mirror central to Chainguard, NO fallback
 #   SETTINGS_FILE                               default ~/.m2/settings.xml
 set -euo pipefail
 
@@ -24,14 +25,20 @@ SETTINGS_FILE="${SETTINGS_FILE:-$HOME/.m2/settings.xml}"
 CHAINGUARD_JAVA_URL="https://libraries.cgr.dev/java/"
 
 mirror=""
+profile=""
 chainguard_server=""
 if [ "${SKIP_CHAINGUARD:-false}" = "true" ]; then
-  echo "::warning title=Chainguard Libraries BYPASSED::Maven resolves directly from Maven Central. Dependencies are NOT Chainguard-built or malware-gated and the 7-day cooldown does NOT apply. Use only for an emergency release (docs/chainguard-libraries.md)."
+  echo "::warning title=Chainguard Libraries BYPASSED::Maven resolves directly from Maven Central. Dependencies are NOT taken from Chainguard first. Use only for an emergency release (docs/chainguard-libraries.md)."
 else
   : "${CHAINGUARD_JAVA_IDENTITY_ID:?CHAINGUARD_JAVA_IDENTITY_ID is empty - add the repo secret (see docs/chainguard-libraries.md)}"
   : "${CHAINGUARD_JAVA_TOKEN:?CHAINGUARD_JAVA_TOKEN is empty - add the repo secret (see docs/chainguard-libraries.md)}"
-  mirror="<mirrors><mirror><id>chainguard</id><name>Chainguard Libraries for Java</name><url>${CHAINGUARD_JAVA_URL}</url><mirrorOf>central</mirrorOf></mirror></mirrors>"
-  chainguard_server="<server><id>chainguard</id><username>${CHAINGUARD_JAVA_IDENTITY_ID}</username><password>${CHAINGUARD_JAVA_TOKEN}</password></server>"
+  chainguard_server="<server><id>chainguard-java</id><username>${CHAINGUARD_JAVA_IDENTITY_ID}</username><password>${CHAINGUARD_JAVA_TOKEN}</password></server>"
+  if [ "${CHAINGUARD_ONLY:-false}" = "true" ]; then
+    mirror="<mirrors><mirror><id>chainguard-java</id><name>Chainguard Libraries for Java</name><url>${CHAINGUARD_JAVA_URL}</url><mirrorOf>central</mirrorOf></mirror></mirrors>"
+  else
+    repo="<id>chainguard-java</id><url>${CHAINGUARD_JAVA_URL}</url><releases><enabled>true</enabled></releases><snapshots><enabled>false</enabled></snapshots>"
+    profile="<activeProfiles><activeProfile>chainguard</activeProfile></activeProfiles><profiles><profile><id>chainguard</id><repositories><repository>${repo}</repository></repositories><pluginRepositories><pluginRepository>${repo}</pluginRepository></pluginRepositories></profile></profiles>"
+  fi
 fi
 
 mkdir -p "$(dirname "$SETTINGS_FILE")"
@@ -47,9 +54,12 @@ cat >"$SETTINGS_FILE" <<XML
     ${chainguard_server}
   </servers>
   ${mirror}
+  ${profile}
 </settings>
 XML
 
-if [ -n "$mirror" ]; then
-  echo "Maven Central -> ${CHAINGUARD_JAVA_URL} (mirrorOf central only; GitHub Packages repos unchanged; no Central fallback)"
+if [ -n "$profile" ]; then
+  echo "Maven: Chainguard (${CHAINGUARD_JAVA_URL}) is consulted first; Maven Central and GitHub Packages remain as fallback."
+elif [ -n "$mirror" ]; then
+  echo "Maven: Central mirrored to ${CHAINGUARD_JAVA_URL} (Chainguard-only, no fallback)."
 fi

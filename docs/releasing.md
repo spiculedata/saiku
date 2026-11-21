@@ -78,16 +78,14 @@ Same rule as the embed npm split: *build untrusted, publish trusted.*
 
 ## Dependency sourcing: Chainguard Libraries (saiku#2463)
 
-The `jar` and `npm-embed-build` jobs resolve Maven Central and npmjs.org dependencies through
-[Chainguard Libraries](./chainguard-libraries.md) (Maven `mirrorOf` = `central` only; the GH
-Packages repos are untouched). There is no fallback to Central/npmjs from the build: if Chainguard
-cannot serve a dependency (for example a version inside its 7-day cooldown), the release fails
-loudly. For a genuine emergency, dispatch `release` manually with `skip_chainguard` ticked; that
-logs a warning and releases without the Chainguard guarantees. Secrets to maintain and rotate
-(30-day TTL): `CHAINGUARD_JAVA_IDENTITY_ID`, `CHAINGUARD_JAVA_TOKEN`, `CHAINGUARD_JS_IDENTITY_ID`,
-`CHAINGUARD_JS_TOKEN`. Details, the fallback policy and rotation are in
-[chainguard-libraries.md](./chainguard-libraries.md); the weekly `chainguard-coverage` workflow
-reports gaps before a release hits them.
+The `jar` job consults [Chainguard Libraries](./chainguard-libraries.md) for Maven first (a settings
+profile adds it as repository + pluginRepository) and falls back to Maven Central for what
+Chainguard has not built; the GH Packages repos are untouched and npm still uses npmjs.org. For an
+emergency, dispatch `release` manually with `skip_chainguard` ticked (logs a warning; Maven then
+uses Central only). Secrets to maintain and rotate (30-day TTL): `CHAINGUARD_JAVA_IDENTITY_ID` and
+`CHAINGUARD_JAVA_TOKEN` (release) plus `CHAINGUARD_JS_IDENTITY_ID` / `CHAINGUARD_JS_TOKEN` (weekly
+coverage only). Details, how to read a release log, and the weekly `chainguard-coverage` workflow
+are in [chainguard-libraries.md](./chainguard-libraries.md).
 
 ## SBOM generation
 

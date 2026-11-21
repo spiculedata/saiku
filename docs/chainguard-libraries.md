@@ -1,19 +1,27 @@
 # Chainguard Libraries for release builds (saiku#2463)
 
-Tagged releases resolve their **Maven Central** and **npmjs.org** dependencies through
+Tagged releases take their **Maven** dependencies from
 [Chainguard Libraries](https://www.chainguard.dev/docs/chainguard/libraries/introduction/overview/)
-(organisation `concepttocloud.com`, Starter plan). Chainguard rebuilds packages from source,
-scans upstream packages for malware, and withholds brand-new upstream versions for a fixed
-cooldown. Day-to-day CI and Dependabot are unchanged.
+first (organisation `concepttocloud.com`, Starter plan), falling back to Maven Central for anything
+Chainguard has not built. Chainguard rebuilds packages from source, so the artifacts it serves are
+source-built rather than the upstream binaries. npm in release builds is **not** routed through
+Chainguard (see below). Day-to-day CI and Dependabot are unchanged.
 
-## What changes
+## What is protected now
 
-| Build | Before | Now |
-| --- | --- | --- |
-| `release.yml` `jar` job (fat JAR, dist zip, war, UI via frontend-maven-plugin) | Maven Central + GH Packages | Maven Central **mirrored to `https://libraries.cgr.dev/java/`** (`mirrorOf` = `central` only); GH Packages repos unchanged. npm for saiku-ui through `https://libraries.cgr.dev/javascript/` |
-| `release.yml` `npm-embed-build` job | npmjs.org | `https://libraries.cgr.dev/javascript/` |
-| `chainguard-coverage.yml` (weekly + manual) | n/a | Resolves both trees through Chainguard only and writes a coverage report |
-| `ci.yml`, Dependabot, every other workflow | unchanged | unchanged |
+Only the Maven artifacts Chainguard has itself built (about 65% of the POMs in our tree, measured
+2026-11-21). The rest still come from Maven Central exactly as before. Fallback is **client-side**
+because the Starter plan cannot enable Chainguard's server-side upstream policy
+(`chainguard_and_upstream`; `chainctl libraries entitlements create` is denied), so the JAVA and
+JAVASCRIPT entitlements stay `CHAINGUARD` (Chainguard-built only). That also means no malware gate
+or cooldown applies to the fallback artifacts: they are Central artifacts.
+
+| Build | Now |
+| --- | --- |
+| `release.yml` `jar` job | Maven: Chainguard (`https://libraries.cgr.dev/java/`) added as a repository **and** pluginRepository in an always-active settings profile, so it is consulted first; Central, the GH Packages forks and the root pom's own repos stay reachable after it. npm (saiku-ui via frontend-maven-plugin): unchanged, npmjs.org |
+| `release.yml` `npm-embed-build` job | Unchanged, npmjs.org with the committed lockfile. npm has no per-package fallback: a registry that does not serve a package 404s, and 261 of 560 saiku-ui packages are not Chainguard-built |
+| `chainguard-coverage.yml` (weekly + manual) | Resolves both trees through Chainguard **only** (Maven mirror, no fallback; npm registry), so it keeps measuring real coverage |
+| `ci.yml`, Dependabot, every other workflow | Unchanged |
 
 Why release-only: the 7-day cooldown and a quota (Starter: 50,000 pulls a month) are a poor fit for
 every PR build, while what we *ship* is where provenance matters. The weekly check keeps us
@@ -49,71 +57,62 @@ a 401 in the weekly coverage run (it fails with an auth error rather than a gap 
 the early warning before a release trips on it. `chainctl auth pull-token list --repository=java`
 shows expiry.
 
-## Fallback policy: what happens when Chainguard does not have a package
+## Fallback policy and how to read a release log
 
-There is **no client-side fallback**. The Maven mirror is the only route to Central and `.npmrc`
-has the only registry; if Chainguard does not serve something, the build fails loudly
-(`Could not find artifact ... in chainguard`, npm `E404` / `403 POLICY_COOLDOWN`). It never
-quietly reads Maven Central or npmjs.org.
-
-What can happen on the **Chainguard** side is a per-ecosystem entitlement setting:
-
-| Entitlement policy | Behaviour |
-| --- | --- |
-| `CHAINGUARD_AND_UPSTREAM` (default for new entitlements) | Chainguard-built packages first; anything it has not built is fetched from Maven Central / npmjs by Chainguard, malware-scanned and held for the cooldown. **This is the setting releases need.** |
-| `CHAINGUARD` | Only Chainguard-built packages. No cooldown. Most of our tree is not built, so releases fail. |
-
-As of this change the JAVA and JAVASCRIPT entitlements for `concepttocloud.com` are `CHAINGUARD`
-only (`chainctl libraries entitlements list --parent=concepttocloud.com`). Measured against that
-policy on 2026-11-21: the Maven build fails on its first lookup (`com.fasterxml.jackson:jackson-bom:2.22.3`
-is not built by Chainguard); of the 2,134 Maven Central POMs in the full dependency + plugin tree
-1,381 (65%) are served and 753 (35%, mostly `org.apache.maven`, `org.codehaus.plexus`,
-`org.apache.commons`, Netty/Jackson BOMs) are not; and 261 of 560 saiku-ui lockfile packages are
-not Chainguard-built (`npm ci` 404s on the first). To make releases work, switch them (changes can take
-up to 30 minutes to apply):
+For Maven, a missing Chainguard artifact is not an error: Maven moves on to the next repository
+and ends at Central. The order in the log proves it. For a fresh artifact you will see
+`Downloading from chainguard-java: ...` first, then (only if that 404s) `project-lib`, `apache`,
+`atlassian`, the `github-*` repos and `central`. To see which source served what, the release `jar` job ends with a "Maven artifact sources"
+step (`scripts/chainguard/report-maven-sources.sh`). It reads the `_remote.repositories` file Maven
+writes next to each cached artifact, so it works even though the build runs with `-ntp`, and prints a
+table in the job summary: `chainguard-java` = Chainguard-built, `central` = fell back to Maven
+Central. In a non-`-ntp` run (locally, or the coverage workflow) the same is visible as
+`Downloaded from chainguard-java:` / `Downloaded from central:` lines:
 
 ```bash
-chainctl libraries entitlements create --parent=concepttocloud.com --ecosystems=JAVA,JAVASCRIPT --policy=chainguard_and_upstream
+grep -o 'Downloaded from [a-z0-9-]*:' mvn.log | sort | uniq -c
 ```
 
-The weekly `chainguard-coverage` run shows the effect: with fallback on, gaps shrink to versions
-still inside the cooldown.
+The weekly coverage run gives the authoritative list of what Chainguard does not serve.
+
+What is **not** covered: npm in release builds; the five GitHub Packages forks, the in-tree
+`lib/repo`, and the `apache`/`atlassian` repos in the root pom; the Node.js tarball downloaded by
+frontend-maven-plugin; container images (see the Dockerfile).
+
+### Switching to a Chainguard-mirrored Central (later)
+
+If Chainguard enables `chainguard_and_upstream` for the org (which also brings the 7-day cooldown
+and malware gate), change `scripts/chainguard/write-maven-settings.sh` to the mirror form, which
+is already implemented for the coverage workflow: set `CHAINGUARD_ONLY=true` in the release
+`Configure Maven settings.xml` step (a `mirrorOf` = `central` mirror, no client-side fallback). The
+same entitlement change would let npm use the registry too; the `chainguard-npm` composite action
+and the lockfile-hash step are ready for that.
 
 ## The 7-day cooldown and emergency security releases
 
-The Starter plan fixes the cooldown at 7 days, counted from the upstream publish time and
-released at the next 00:00 UTC (so 7 to 8 days), and does not allow per-package overrides.
-CVE-remediated (`-cgr.N`) versions are not available either. Consequences:
-
-* A dependency version published fewer than 7-8 days ago cannot be built into a release. The
-  build fails with a missing artifact (Maven) or `POLICY_COOLDOWN` (npm).
-* An emergency fix that needs a just-published upstream version therefore cannot ship through
-  Chainguard. Options, in order of preference: wait out the cooldown; ship the fix by pinning the
-  *previous* patched version if one is old enough; upgrade the plan for a shorter cooldown and
-  overrides; or use the bypass below.
+The cooldown only applies when server-side upstream fallback is on, which it is not today, so
+today a just-published upstream version is simply not on Chainguard and Maven takes it from
+Central. If upstream fallback is enabled later (Starter: fixed 7-day cooldown, no per-package
+overrides), a dependency version younger than 7-8 days would fail the build, and an emergency fix
+needing it would have to wait or use the bypass.
 
 ### Emergency bypass
 
 Run **release** from the Actions tab (`workflow_dispatch`), enter the tag, and tick
-**`skip_chainguard`**. A tag push can never bypass; the box exists only on a manual dispatch, so
-skipping Chainguard is always a conscious maintainer choice. With it set, Maven resolves straight
-from Central and npm from npmjs.org, and both jobs emit a prominent `::warning::` annotation:
-*the artifacts are not Chainguard-built or malware-gated for that release*. Say so in the release
-notes, and re-release through Chainguard when the cooldown has passed. The tag must still be on
-`main` (the `guard` job is unaffected).
+**`skip_chainguard`**: Maven then resolves straight from Maven Central, with a `::warning::` in the
+log. A tag push can never bypass. The tag must still be on `main` (the `guard` job is unaffected).
 
 ## Caching
 
-The release jobs deliberately do **not** use `cache: maven` / `cache: npm`. `ci.yml` fills those
-caches from Central/npmjs, and a restored cache would satisfy the build without touching
-Chainguard. The coverage workflow likewise starts from an empty local repository and npm cache.
-Releases are infrequent enough that a cold cache is fine.
+The release `jar` job deliberately does **not** use `cache: maven`. `ci.yml` fills that cache from
+Central, and a restored cache would satisfy the build without consulting Chainguard first. The
+coverage workflow starts from an empty local repository and npm cache for the same reason.
 
 ## npm lockfile hashes
 
 Chainguard rebuilds npm packages, so their tarball hashes differ from the npmjs hashes in
 `saiku-ui/package-lock.json` and plain `npm ci` fails with `EINTEGRITY`. The
-`.github/actions/chainguard-npm` composite action therefore runs
+`.github/actions/chainguard-npm` composite action (used by the **coverage workflow only**) therefore runs
 `chainctl libraries update-hashes` on the **runner's copy** of the lockfile, which *appends* the
 Chainguard hash beside the upstream one (npm accepts either). The committed lockfile is never
 changed, and a temporary `.npmrc` outside the repository (path in `NPM_CONFIG_USERCONFIG`) carries
@@ -121,7 +120,7 @@ the credentials, so nothing sensitive is committed.
 
 ## Weekly coverage check
 
-`.github/workflows/chainguard-coverage.yml` (Mondays 05:43 UTC, or run it by hand) resolves
+`.github/workflows/chainguard-coverage.yml` (Mondays 05:43 UTC, or run it by hand) resolves, Chainguard only with no fallback,
 `mvn -pl '!saiku-proptest' dependency:go-offline` and `npm ci --ignore-scripts` for saiku-ui into
 empty caches, Chainguard only, and writes a job summary: counts, the artifacts Chainguard could not
 serve, and an estimated pull count. Measured on 2026-11-21 a clean run fetches about 3,400 Maven files
@@ -136,10 +135,11 @@ failure that is not a missing package).
 ## Reproducing locally
 
 ```bash
+# add CHAINGUARD_ONLY=true to reproduce the coverage (no fallback) mode
 SETTINGS_FILE=/tmp/cg-settings.xml GH_PACKAGES_USER=<gh user> GH_PACKAGES_TOKEN=<classic PAT> \
 CHAINGUARD_JAVA_IDENTITY_ID=<id> CHAINGUARD_JAVA_TOKEN=<token> scripts/chainguard/write-maven-settings.sh
 mvn -s /tmp/cg-settings.xml -Dmaven.repo.local=/tmp/cg-m2 -pl '!saiku-proptest' dependency:go-offline
 ```
 
 Verify an artifact really came from Chainguard with
-`chainctl libraries verify <path-to-jar>`. Maven's log prefix is `Downloaded from chainguard:`.
+`chainctl libraries verify <path-to-jar>`.

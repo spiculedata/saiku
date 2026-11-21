@@ -9,10 +9,9 @@ on:
         required: true
       skip_chainguard:
         description: >-
-          EMERGENCY ONLY (saiku#2463): skip Chainguard Libraries and resolve Maven + npm straight
-          from Maven Central / npmjs.org. The artifacts are then not Chainguard-built or
-          malware-gated and the 7-day cooldown does not apply. Use when a security fix is inside
-          the cooldown window; see docs/chainguard-libraries.md.
+          EMERGENCY ONLY (saiku#2463): do not consult Chainguard Libraries first for Maven; resolve
+          straight from Maven Central. See docs/chainguard-libraries.md. (npm is not routed through
+          Chainguard in release builds.)
         type: boolean
         default: false
 
@@ -122,10 +121,10 @@ jobs:
       # `deploy-packages` job (saiku#1993), so no write-scoped credential
       # sits on disk while tests / npm lifecycle scripts execute here.
       #
-      # saiku#2463: Maven Central is ALSO mirrored (mirrorOf `central` only) to Chainguard
-      # Libraries for Java. The writer script keeps the GitHub Packages servers exactly as before
-      # and adds the mirror + its credentials. There is no client-side fallback to Central: a
-      # missing artifact fails the build with "Could not find artifact ... in chainguard".
+      # saiku#2463: Chainguard Libraries for Java is added as a repository + pluginRepository in an
+      # always-active settings profile, so it is consulted FIRST; Maven Central and the GH Packages
+      # repos remain reachable after it (client-side fallback: Starter cannot enable Chainguard's
+      # upstream policy). The log shows `Downloaded from chainguard-java:` vs `... from central:`.
       # `skip_chainguard` (workflow_dispatch only) is the deliberate, warned-about bypass.
       - name: Configure Maven settings.xml
         env:
@@ -135,16 +134,6 @@ jobs:
           CHAINGUARD_JAVA_TOKEN: ${{ secrets.CHAINGUARD_JAVA_TOKEN }}
           SKIP_CHAINGUARD: ${{ github.event.inputs.skip_chainguard == 'true' }}
         run: bash scripts/chainguard/write-maven-settings.sh
-
-      # The frontend-maven-plugin runs `npm ci` / `npm run build` for saiku-ui inside `mvn verify`
-      # and inherits NPM_CONFIG_USERCONFIG from this step, so the UI that ships in the war is also
-      # installed through Chainguard. The lockfile edit is the runner's copy only.
-      - name: Point npm at Chainguard Libraries (saiku-ui)
-        uses: ./.github/actions/chainguard-npm
-        with:
-          identity-id: ${{ secrets.CHAINGUARD_JS_IDENTITY_ID }}
-          token: ${{ secrets.CHAINGUARD_JS_TOKEN }}
-          skip: ${{ github.event.inputs.skip_chainguard == 'true' }}
 
       - name: Resolve version
         id: meta
@@ -199,6 +188,12 @@ jobs:
         # saiku-mcp stdio binary is gone — MCP hosts now hit the launcher
         # directly with per-user Basic auth.
         run: mvn -B -ntp -DskipTests -pl saiku-launcher -am package
+
+      - name: Report Maven artifact sources (Chainguard vs Central)
+        if: always()
+        # saiku#2463: `-ntp` hides "Downloaded from" lines, so read where Maven recorded each
+        # cached artifact came from. Informational only; never fails the build.
+        run: bash scripts/chainguard/report-maven-sources.sh
 
       - name: Stage release assets
         env:
@@ -592,14 +587,8 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
-          # No `cache: npm` (saiku#2463): a warm ~/.npm satisfies lockfile hashes without
-          # touching the Chainguard registry.
-      - name: Point npm at Chainguard Libraries (saiku-ui)
-        uses: ./.github/actions/chainguard-npm
-        with:
-          identity-id: ${{ secrets.CHAINGUARD_JS_IDENTITY_ID }}
-          token: ${{ secrets.CHAINGUARD_JS_TOKEN }}
-          skip: ${{ github.event.inputs.skip_chainguard == 'true' }}
+          cache: npm
+          cache-dependency-path: saiku-ui/package-lock.json
       - name: Install + build embed bundle
         working-directory: saiku-ui
         # `npm run build` orchestrates build:app + build:embed +

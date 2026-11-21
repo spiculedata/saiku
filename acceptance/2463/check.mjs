@@ -28,23 +28,24 @@ const jar = release.get('jar');
 const npm = release.get('npm-embed-build');
 assert.ok(jar && npm, 'release.yml has jar and npm-embed-build jobs');
 
-// C1
-assert.ok(/libraries\.cgr\.dev\/java\//.test(jar + read('scripts', 'chainguard', 'write-maven-settings.sh')), 'C1: java endpoint');
+// C1: Chainguard is a repository + pluginRepository consulted first (client-side fallback), not a mirror
 const script = stripComments(read('scripts', 'chainguard', 'write-maven-settings.sh'));
-assert.match(script, /<mirrorOf>central<\/mirrorOf>/, 'C1: mirrorOf is exactly central');
+assert.match(script, /libraries\.cgr\.dev\/java\//, 'C1: java endpoint');
+assert.match(script, /<pluginRepositories><pluginRepository>/, 'C1: pluginRepository entry');
+assert.match(script, /<repositories><repository>/, 'C1: repository entry');
+assert.match(script, /<activeProfile>chainguard<\/activeProfile>/, 'C1: profile is active');
 assert.ok(!/<mirrorOf>[^<]*[*!][^<]*<\/mirrorOf>/.test(script), 'C1: no wildcard mirror');
-for (const id of ['github-mondrian-saiku', 'github-olap4j', 'github-olap4j-xmlaserver', 'github-saiku-query'])
+for (const id of ['github-mondrian-saiku', 'github-olap4j', 'github-olap4j-xmlaserver', 'github-saiku-query', 'github-ossie'])
   assert.ok(script.includes(`<id>${id}</id>`), `C1: keeps ${id} server`);
 assert.match(jar, /write-maven-settings\.sh/, 'C1: jar job uses the settings writer');
-assert.match(jar, /CHAINGUARD_JAVA_IDENTITY_ID/, 'C1: java identity secret');
-assert.match(jar, /CHAINGUARD_JAVA_TOKEN/, 'C1: java token secret');
+assert.match(jar, /secrets\.CHAINGUARD_JAVA_IDENTITY_ID/, 'C1: java identity secret');
+assert.match(jar, /secrets\.CHAINGUARD_JAVA_TOKEN/, 'C1: java token secret');
+assert.ok(!/CHAINGUARD_ONLY/.test(jar), 'C1: release must keep Central fallback');
 
-// C2
-assert.match(npm, /chainguard-npm/, 'C2: npm job uses the chainguard-npm action');
+// C2: npm in release builds stays on npmjs (no per-package fallback); the composite is for the coverage job only
+assert.ok(!/chainguard-npm|CHAINGUARD_JS/.test(releaseText), 'C2: release.yml does not route npm through Chainguard');
+assert.ok(existsSync(join(root, '.github', 'actions', 'chainguard-npm', 'action.yml')), 'C2: composite action exists');
 assert.match(read('scripts', 'chainguard', 'write-npmrc.sh'), /libraries\.cgr\.dev\/javascript\//, 'C2: js endpoint');
-assert.match(npm, /secrets\.CHAINGUARD_JS_IDENTITY_ID/, 'C2: js identity secret');
-assert.match(npm, /secrets\.CHAINGUARD_JS_TOKEN/, 'C2: js token secret');
-assert.match(read('scripts', 'chainguard', 'write-npmrc.sh'), /\.npmrc/, 'C2: temporary .npmrc');
 for (const f of ['.npmrc', 'saiku-ui/.npmrc']) {
   if (existsSync(join(root, f))) assert.ok(!/_auth|_password|authToken/.test(read(f)), `C2: ${f} carries credentials`);
 }
@@ -52,10 +53,8 @@ for (const f of ['.npmrc', 'saiku-ui/.npmrc']) {
 // C3
 assert.match(releaseText, /skip_chainguard:/, 'C3: skip_chainguard input');
 assert.match(jar, /skip_chainguard/, 'C3: jar job honours the bypass');
-assert.match(npm, /skip_chainguard/, 'C3: npm job honours the bypass');
-assert.match(read('scripts', 'chainguard', 'write-maven-settings.sh') + read('.github', 'actions', 'chainguard-npm', 'action.yml'), /::warning/, 'C3: bypass logs a warning');
-assert.ok(!/cache:\s*(maven|npm)/.test(jar), 'C3: jar job must not cache ~/.m2');
-assert.ok(!/cache:\s*(maven|npm)/.test(npm), 'C3: npm job must not cache ~/.npm');
+assert.match(read('scripts', 'chainguard', 'write-maven-settings.sh'), /::warning/, 'C3: bypass logs a warning');
+assert.ok(!/cache:\s*maven/.test(jar), 'C3: jar job must not cache ~/.m2');
 
 // C4
 const covPath = join(root, '.github', 'workflows', 'chainguard-coverage.yml');
@@ -67,6 +66,8 @@ assert.ok(!/pull_request/.test(cov), 'C4: no PR trigger');
 assert.match(cov, /^permissions:\n {2}contents: read\s*$/m, 'C4: contents: read only at top level');
 assert.ok(!/(?:contents|packages|id-token|pull-requests|issues): write/.test(cov), 'C4: no write permissions');
 assert.match(cov, /npm ci[^\n]*--ignore-scripts/, 'C4: npm ci --ignore-scripts');
+assert.match(cov, /CHAINGUARD_ONLY: "true"/, 'C4: maven coverage has no fallback');
+assert.match(cov, /chainguard-npm/, 'C4: npm coverage uses the composite');
 assert.match(cov, /dependency:go-offline|dependency:resolve/, 'C4: resolves the Maven tree');
 assert.match(cov, /coverage-summary\.sh maven/, 'C4: maven summary step');
 assert.match(cov, /coverage-summary\.sh npm/, 'C4: npm summary step');
