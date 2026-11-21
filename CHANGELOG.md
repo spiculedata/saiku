@@ -21,7 +21,9 @@ All notable changes to Saiku are documented here. This project follows
   anything else). The pre-boot saiku-home checks now live in the launcher's
   `serve` command (same `FATAL:` refusal) and `HEALTHCHECK` uses a new
   `healthcheck` subcommand. uid/gid 10001, `SAIKU_HOME` and the JVM defaults
-  are unchanged. Building the image needs a Chainguard pull token
+  are unchanged. The `-XX:-UseBASE64Intrinsics` workaround for CVE-2026-114938
+  is dropped from the image because the base JDK (21.0.13.1) includes the fix
+  (the dist scripts keep it). Building the image needs a Chainguard pull token
   (`docs/docker-chainguard-evaluation.md`).
 
 ### Known issues

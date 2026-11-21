@@ -21,8 +21,8 @@ findings before (Critical 8, High 19, Medium 247, Low 34, Negligible 3), 30
 after (Critical 8, High 11, Medium 10, Low 1)**. The OS/base-package findings
 went from 287 to 5; the remainder are Java dependencies inside the Saiku jar
 itself, which the base does not affect. The base JRE is OpenJDK 21.0.13.1, which
-also carries the fix the `-XX:-UseBASE64Intrinsics` interim flag worked around
-(CVE-2026-114938).
+also carries the fix for CVE-2026-114938 (HotSpot x86-64 Base64 decode intrinsic),
+so the `-XX:-UseBASE64Intrinsics` interim flag was dropped from the image.
 
 ### What the image looks like now
 

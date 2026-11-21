@@ -1,16 +1,11 @@
 // Regression guard for the interim CVE-2026-114938 mitigation: every JVM that Saiku's own
-// launch paths start must carry -XX:-UseBASE64Intrinsics until the JRE underneath is fixed.
-// The flag lives in three places and each is a one-token edit away from silently disappearing:
-//   - Dockerfile, the image's JAVA_TOOL_OPTIONS (every JVM in the container, by default);
-//   - dist/run.sh and dist/run.bat, the dist zip's launch scripts.
-// (docker/saiku-entrypoint, which used to repeat the flag so it survived a run-time
-// JAVA_TOOL_OPTIONS, is gone with the move to the shell-less Chainguard JRE, saiku#2462; the
-// image's JAVA_TOOL_OPTIONS is the only image-side carrier now.)
+// launch paths start (the dist scripts) must carry -XX:-UseBASE64Intrinsics until the JRE underneath is fixed.
+// The flag lives in the dist zip's launch scripts, dist/run.sh and dist/run.bat, and each is a
+// one-token edit away from silently disappearing. The Docker image no longer carries it: its
+// Chainguard JRE base is OpenJDK 21.0.13.1, which includes the fix (saiku#2462).
 //
-// EXPIRY. The Chainguard JRE the image is built on is OpenJDK 21.0.13.1, which carries the fix
-// (docs/docker-chainguard-evaluation.md), so the image's flag can be removed together with the
-// Dockerfile test below. The dist script tests may stay as long as the scripts keep the flag
-// (the JRE there is the user's own).
+// EXPIRY. The dist script tests may stay as long as the scripts keep the flag (the JRE there
+// is the user's own).
 //
 // Hermetic: no network, no clock. run.sh is executed with a fake `java`
 // first on PATH that prints its arguments, so the assertions are on the argv a real start
@@ -57,17 +52,6 @@ function runWithFakeJava(script, args, bin, extraEnv) {
   assert.equal(res.status, 0, `${script} exited ${res.status}: ${res.stderr}`);
   return res.stdout.split('\n').filter((l) => l !== '');
 }
-
-test('Dockerfile: the image JAVA_TOOL_OPTIONS carries the flag', () => {
-  const code = readFileSync(join(root, 'Dockerfile'), 'utf8')
-    .split('\n')
-    .filter((l) => !/^\s*#/.test(l));
-  const env = code.filter((l) => /^\s*ENV\s+JAVA_TOOL_OPTIONS=/.test(l));
-  assert.equal(env.length, 1, `exactly one ENV JAVA_TOOL_OPTIONS line in Dockerfile, found ${env.length}`);
-  const value = /JAVA_TOOL_OPTIONS=("([^"]*)"|(\S+))/.exec(env[0]);
-  assert.ok(value, `could not parse: ${env[0]}`);
-  assertFlagBeforeJar((value[2] ?? value[3]).split(/\s+/), 'Dockerfile ENV JAVA_TOOL_OPTIONS');
-});
 
 test('dist/run.sh: the JVM gets the flag, even when the caller sets JAVA_OPTS', { skip: needsBash }, () => {
   withFakeJava((dir, bin) => {

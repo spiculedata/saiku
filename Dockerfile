@@ -104,11 +104,7 @@ ENV SAIKU_HOME=/app/saiku-home \
 #   -XX:+ExitOnOutOfMemoryError  fail fast on OOM so the orchestrator restarts
 #                                a clean JVM instead of limping on a corrupt heap
 #   -XX:MaxRAMPercentage=75      size the heap from the container memory limit
-#   -XX:-UseBASE64Intrinsics     interim mitigation for CVE-2026-114938. The base
-#                                JRE is 21.0.13.1, which carries the fix, so this
-#                                can now be dropped (kept until a maintainer
-#                                confirms, see jvm-mitigation-flags.test.mjs).
-ENV JAVA_TOOL_OPTIONS="-XX:+ExitOnOutOfMemoryError -XX:MaxRAMPercentage=75 -XX:-UseBASE64Intrinsics"
+ENV JAVA_TOOL_OPTIONS="-XX:+ExitOnOutOfMemoryError -XX:MaxRAMPercentage=75"
 
 VOLUME ["/app/saiku-home"]
 EXPOSE 8080
