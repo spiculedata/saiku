@@ -22,8 +22,11 @@ const stripComments = (s) =>
     .join('\n');
 
 const dockerfile = stripComments(read('Dockerfile'));
-const froms = [...dockerfile.matchAll(/^\s*FROM\s+(\S+)(?:\s+AS\s+(\S+))?/gim)].map((m) => m[1]);
-const finalFrom = froms[froms.length - 1] ?? '';
+const stages = [...dockerfile.matchAll(/^\s*FROM\s+(\S+)(?:\s+AS\s+(\S+))?/gim)].map((m) => ({ from: m[1], alias: m[2] }));
+const froms = stages.filter((st) => !stages.some((o) => o.alias === st.from)).map((st) => st.from); // images, not stage aliases
+// The final stage may name an earlier stage (`FROM jre`); resolve it to the image behind it.
+const lastFrom = stages[stages.length - 1]?.from ?? '';
+const finalFrom = stages.find((st) => st.alias === lastFrom)?.from ?? lastFrom;
 
 // C1
 claim('C1', 'final stage is the concepttocloud.com jre:openjdk-21', /^cgr\.dev\/concepttocloud\.com\/jre:openjdk-21@sha256:[0-9a-f]{64}$/.test(finalFrom));
@@ -31,7 +34,7 @@ claim('C1', 'every FROM is pinned by sha256 digest', froms.length > 0 && froms.e
 
 // C2
 claim('C2', 'docker/saiku-entrypoint is gone', !existsSync(join(root, 'docker', 'saiku-entrypoint')));
-const lastStage = dockerfile.slice(dockerfile.search(/^\s*FROM\s+cgr\.dev\/concepttocloud\.com\/jre/im));
+const lastStage = dockerfile.slice(dockerfile.lastIndexOf('FROM '));
 claim('C2', 'ENTRYPOINT is exec-form java ... -jar /app/saiku.jar', /^\s*ENTRYPOINT\s+\["[^"]*java"[^\]]*"-jar",\s*"\/app\/saiku\.jar"\]/m.test(lastStage));
 claim('C2', 'CMD is ["serve"]', /^\s*CMD\s+\["serve"\]/m.test(lastStage));
 claim('C2', 'final stage never uses a shell-form RUN', !/^\s*RUN\s/m.test(lastStage));

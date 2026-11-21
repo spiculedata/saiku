@@ -1,18 +1,18 @@
 // Regression guard for the interim CVE-2026-114938 mitigation: every JVM that Saiku's own
 // launch paths start must carry -XX:-UseBASE64Intrinsics until the JRE underneath is fixed.
-// The flag lives in four places and each is a one-token edit away from silently disappearing:
+// The flag lives in three places and each is a one-token edit away from silently disappearing:
 //   - Dockerfile, the image's JAVA_TOOL_OPTIONS (every JVM in the container, by default);
-//   - docker/saiku-entrypoint, the built-in JVM options on the `serve` path (so the flag
-//     survives a run-time JAVA_TOOL_OPTIONS that replaces the image's value);
 //   - dist/run.sh and dist/run.bat, the dist zip's launch scripts.
+// (docker/saiku-entrypoint, which used to repeat the flag so it survived a run-time
+// JAVA_TOOL_OPTIONS, is gone with the move to the shell-less Chainguard JRE, saiku#2462; the
+// image's JAVA_TOOL_OPTIONS is the only image-side carrier now.)
 //
-// EXPIRY. The base image is pinned by digest, so its Temurin version cannot be read offline
-// and this test does not try. When the base image moves to Temurin 21.0.13.1 or later, the
-// change that removes the flag from the Dockerfile and the entrypoint deletes those two tests
-// with it. The dist script tests may stay as long as the scripts keep the flag (the JRE there
-// is the user's own).
+// EXPIRY. The Chainguard JRE the image is built on is OpenJDK 21.0.13.1, which carries the fix
+// (docs/docker-chainguard-evaluation.md), so the image's flag can be removed together with the
+// Dockerfile test below. The dist script tests may stay as long as the scripts keep the flag
+// (the JRE there is the user's own).
 //
-// Hermetic: no network, no clock. The entrypoint and run.sh are executed with a fake `java`
+// Hermetic: no network, no clock. run.sh is executed with a fake `java`
 // first on PATH that prints its arguments, so the assertions are on the argv a real start
 // would get, not on the script text.
 import assert from 'node:assert/strict';
@@ -68,23 +68,6 @@ test('Dockerfile: the image JAVA_TOOL_OPTIONS carries the flag', () => {
   assert.ok(value, `could not parse: ${env[0]}`);
   assertFlagBeforeJar((value[2] ?? value[3]).split(/\s+/), 'Dockerfile ENV JAVA_TOOL_OPTIONS');
 });
-
-for (const [name, extraEnv] of [
-  ['defaults', {}],
-  ['a run-time JAVA_TOOL_OPTIONS that replaces the image value', { JAVA_TOOL_OPTIONS: '-Xmx512m' }],
-  ['an operator JAVA_OPTS', { JAVA_OPTS: '-Dsaiku.example=1 -Xmx1g' }],
-]) {
-  test(`docker/saiku-entrypoint serve: the JVM gets the flag (${name})`, { skip: needsBash }, () => {
-    withFakeJava((dir, bin) => {
-      const args = runWithFakeJava(join(root, 'docker', 'saiku-entrypoint'), ['serve'], bin, {
-        SAIKU_HOME: dir,
-        ...extraEnv,
-      });
-      assert.ok(args.includes('/app/saiku.jar'), `entrypoint started the launcher: [${args.join(' ')}]`);
-      assertFlagBeforeJar(args, `docker/saiku-entrypoint serve (${name})`);
-    });
-  });
-}
 
 test('dist/run.sh: the JVM gets the flag, even when the caller sets JAVA_OPTS', { skip: needsBash }, () => {
   withFakeJava((dir, bin) => {

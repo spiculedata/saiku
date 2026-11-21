@@ -1,6 +1,93 @@
-# Chainguard base image evaluation (saiku#1991)
+# Chainguard base image (saiku#1991 evaluation, adopted in saiku#2462)
 
-**Snapshot:** 2026-09-28. Evaluated against the current `Dockerfile` base,
+## Decision: adopted (2026-11)
+
+The Docker image now runs on `cgr.dev/concepttocloud.com/jre:openjdk-21`,
+digest-pinned, with build stages on the free public
+`cgr.dev/chainguard/wolfi-base`. The two conditions the September evaluation
+set are both met:
+
+1. **Cost/tier.** The Chainguard org `concepttocloud.com` is provisioned with
+   the `jre` image: LTS-pinned `openjdk-21` and `openjdk-21-dev` tags,
+   multi-arch (amd64 + arm64). No version drift, no free-tier compromise.
+2. **No shell needed.** `docker/saiku-entrypoint` is gone. Its pre-boot checks
+   and env bridging moved into the launcher (`ContainerPreflight`, called from
+   `serve`), and the `HEALTHCHECK` is a launcher subcommand
+   (`healthcheck`), so the final image has no shell, package manager or curl.
+
+Why: the base-image attack surface drops sharply. Scanning the same launcher
+jar on the old and new base with grype 0.118 (DB built 2026-11-21): **311
+findings before (Critical 8, High 19, Medium 247, Low 34, Negligible 3), 30
+after (Critical 8, High 11, Medium 10, Low 1)**. The OS/base-package findings
+went from 287 to 5; the remainder are Java dependencies inside the Saiku jar
+itself, which the base does not affect. The base JRE is OpenJDK 21.0.13.1, which
+also carries the fix the `-XX:-UseBASE64Intrinsics` interim flag worked around
+(CVE-2026-114938).
+
+### What the image looks like now
+
+| Concern | How it works |
+|---|---|
+| Runtime base | `cgr.dev/concepttocloud.com/jre:openjdk-21@sha256:...` (index digest, both arches) |
+| Build stage | `cgr.dev/chainguard/wolfi-base@sha256:...`: downloads and sha256-verifies the OTel agent, writes the passwd/group entries for uid/gid 10001, creates the writable dirs |
+| User | uid/gid `10001:10001` (unchanged), `HOME=/home/saiku`, `SAIKU_HOME=/app/saiku-home` |
+| Entrypoint | exec-form `java -jar /app/saiku.jar`, `CMD ["serve"]` |
+| Pre-boot checks | `ContainerPreflight` in the launcher: saiku-home writable (real write probe), `conf/secret.key` readable. Same fail-closed `FATAL:` refusal as before |
+| Health | `HEALTHCHECK CMD ["java", ..., "healthcheck"]` (HEAD `/rest/saiku/info`, exit 0/1) |
+| Fonts for PNG (#1810) | Already in the Chainguard JRE (fontconfig, freetype, DejaVu). Verified in the built image: AWT `SansSerif` text renders to PNG. Nothing is copied from the build stage and the `-dev` variant is not needed |
+| OTel agent | Present at `/opt/saiku/otel/opentelemetry-javaagent.jar`; attach with `JDK_JAVA_OPTIONS=-javaagent:...` (see `docs/observability.md`) |
+
+### Behaviour changes for operators
+
+- **`JAVA_OPTS`.** Without a shell nothing can expand it into the `java`
+  command line. The launcher still honours the `-Dkey=value` entries in
+  `JAVA_OPTS` (the documented use: Saiku settings), but never overrides a
+  property set another way. JVM flags in `JAVA_OPTS` (`-Xmx`, `-XX:`,
+  `-javaagent:`) are **not applied** and are reported on stderr. Pass JVM flags
+  via `JDK_JAVA_OPTIONS` (added to the image's defaults) or
+  `JAVA_TOOL_OPTIONS` (replaces them).
+- **OTel agent** is no longer attached automatically when
+  `OTEL_EXPORTER_OTLP_ENDPOINT` is set; add the `-javaagent` flag explicitly.
+  `OTEL_SERVICE_NAME` still defaults to `saiku`.
+- **`docker run <image> <command>`** no longer execs an arbitrary command: the
+  arguments go to the launcher (`serve`, `healthcheck`, `eval`, ...). To run
+  something else use `--entrypoint`. The image has no shell, so `docker exec
+  ... sh` does not work; use the `-dev` variant of the base for a debugging
+  image if you need one.
+- **Fixing volume ownership** can no longer use the image's own `chown`. Use a
+  throwaway image, e.g. `docker run --rm -v <vol>:/h --user 0
+  cgr.dev/chainguard/wolfi-base chown -R 10001:10001 /h`.
+- **Building the image needs a Chainguard pull token** (below).
+
+### Pull token for maintainers
+
+CI logs in to `cgr.dev` with the repo secrets `CHAINGUARD_IDENTITY_ID`
+(username) and `CHAINGUARD_TOKEN` (password, passed on stdin by
+`docker/login-action`) in `docker.yml` and `release.yml`. The token is a
+Chainguard **pull token that expires after 30 days**: rotate it at least every
+30 days (create a new pull token for the `concepttocloud.com` org in the
+Chainguard console or with `chainctl auth pull-token`, then update both
+secrets). An expired token fails the image build with an authentication error
+on the base-image pull, and `docker.yml` fails loudly rather than skipping when
+the secrets are missing on a run that would publish. Fork and Dependabot PRs
+do not receive the secrets: the image build is skipped for them (the job ends
+neutral) and a maintainer re-runs it from a same-repo branch. Local builds:
+`chainctl auth configure-docker` (use a throwaway `DOCKER_CONFIG` if you do not
+want it in your main one).
+
+To roll the base forward, resolve the new index digest with
+`docker buildx imagetools inspect cgr.dev/concepttocloud.com/jre:openjdk-21`
+and update the `FROM` line (same for wolfi-base).
+
+---
+
+# Original evaluation (2026-09-28, historical)
+
+Everything below is the September evaluation that preceded the decision above;
+it is kept for the reasoning. Its "not viable today" recommendation was
+superseded by the adoption.
+
+**Snapshot:** 2026-09-28. Evaluated against the then-current `Dockerfile` base,
 `eclipse-temurin:21-jre-noble@sha256:7739f0ffce786528961eea6bf46d9610ee968ac6127c9b2e93494757bdecce9f`.
 
 **Methodology:** no Docker daemon was available in the evaluation
@@ -8,30 +95,14 @@ environment, so findings below come from talking to the registries
 directly over HTTPS (anonymous token exchange, manifest/config/layer
 fetches against `cgr.dev` and `registry-1.docker.io`) rather than a local
 `docker build`/`docker run`. Every claim marked *(verified)* was checked
-this way today; everything else is sourced from Chainguard's own docs and
+this way that day; everything else is sourced from Chainguard's own docs and
 cited inline. Commands are reproducible with `curl` alone (see footnotes).
 
-## Recommendation: adopt-if-X — not viable today
+## Recommendation at the time: adopt-if-X
 
-Keep `eclipse-temurin:21-jre-noble` (already digest-pinned per #1919, already
-non-root per #1989) for now. Chainguard becomes worth a real migration once
-**both** of these are true:
-
-1. Someone with authority to spend money/create accounts decides to pay for
-   (or enroll and get entitled to) a Chainguard tier that includes an
-   LTS-pinned, digest-stable JRE 21 image — the free/anonymous tier does not
-   offer one today (see *Cost/tier* below). This is a maintainer decision,
-   not an engineering one.
-2. `docker/saiku-entrypoint` is rewritten so it doesn't need a shell — the
-   runtime image we'd actually want has none (see *Fit* below). This is real
-   engineering work, not a Dockerfile tweak.
-
-Until both land, the issue's suggested fallback — a digest-pinned
-`eclipse-temurin:21-jre-alpine` — is a smaller, lower-risk change that gets
-part of the size/CVE-surface win without a new account dependency or an
-entrypoint rewrite. It's not evaluated in depth here (out of scope for this
-ticket) but is worth a follow-up spike if the base-image CVE count is the
-main pain point driving this.
+Keep `eclipse-temurin:21-jre-noble` until both of these were true: a paid or
+enrolled Chainguard tier with an LTS-pinned JRE 21, and an entrypoint that
+does not need a shell. Both are now done (see the decision above).
 
 ## 1. Cost / tier — confirms the issue's concern, with a twist
 
