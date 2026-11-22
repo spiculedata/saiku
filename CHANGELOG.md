@@ -26,6 +26,14 @@ All notable changes to Saiku are documented here. This project follows
   (the dist scripts keep it). Building the image needs a Chainguard pull token
   (`docs/docker-chainguard-evaluation.md`).
 
+- **Upgrade note: an H2 user row now decides admin status** (saiku#2345,
+  saiku#2432). For an account that exists in both `users.properties` and the
+  admin console's H2 store, the H2 row wins: a row without `ROLE_ADMIN` means
+  no admin, even if `users.properties` grants it, and a disabled row is refused.
+  Before upgrading, check that your admins have `ROLE_ADMIN` in their H2 row;
+  the audit query and recovery SQL are in the "Upgrading" section of
+  `docs/operator-hardening.md`.
+
 ### Known issues
 
 - **MySQL / MariaDB on the Calcite SQL path** (saiku#1886, reported against
