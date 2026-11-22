@@ -32,8 +32,8 @@ assert.match(
 );
 
 // C3
-assert.match(claude, /^\s+prompt:/m, 'C3: claude.yml needs a fixed prompt');
-assert.match(claude, /UNTRUSTED/, 'C3: the prompt must mark issue/PR text as untrusted data');
+// #2418: a `prompt:` input selects automation mode; the framing is passed as --append-system-prompt.
+assert.match(claude, /--append-system-prompt\s+"[^"]*UNTRUSTED/, 'C3: the system prompt must mark issue/PR text as untrusted data');
 const args = /claude_args:[^\n]*\n?((?:\s{12,}.*\n?)*)/.exec(claude);
 assert.ok(args && /--allowed-tools/.test(args[0]), 'C3: claude_args must set --allowed-tools');
 assert.ok(!/Bash\(git push/.test(/--allowed-tools[^\n]*/.exec(args[0])[0]), 'C3: git push must not be allowed');
