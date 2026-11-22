@@ -382,6 +382,18 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
+      # saiku#2462: the runtime base image is in a private Chainguard org; log in
+      # with the pull token (repo secrets, rotation in
+      # docs/docker-chainguard-evaluation.md). Release runs are never fork PRs, so
+      # there is no skip path: a missing secret fails the release build.
+      - name: Log in to Chainguard registry
+        # docker/login-action passes the password to `docker login` on stdin.
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: cgr.dev
+          username: ${{ secrets.CHAINGUARD_IDENTITY_ID }}
+          password: ${{ secrets.CHAINGUARD_TOKEN }}
+
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:

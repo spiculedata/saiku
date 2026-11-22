@@ -36,13 +36,20 @@ runs on:
 ### Docker
 
 The published `ghcr.io/spiculedata/saiku` image bakes the agent into
-`/opt/saiku/otel/opentelemetry-javaagent.jar`. The entrypoint attaches
-it only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set:
+`/opt/saiku/otel/opentelemetry-javaagent.jar`. The image is built on a
+shell-less Chainguard JRE (saiku#2462), so nothing can decide at start-up
+whether to attach it: you attach it explicitly with `JDK_JAVA_OPTIONS`, which
+the `java` launcher reads in addition to the image's `JAVA_TOOL_OPTIONS`
+defaults (do not use `JAVA_TOOL_OPTIONS` for this, it would replace them).
+Without that flag the agent is never loaded (zero overhead), and
+`OTEL_EXPORTER_OTLP_ENDPOINT` alone does nothing. `OTEL_SERVICE_NAME` defaults
+to `saiku` in the image.
 
 ```bash
 docker run -d \
   --name saiku \
   -p 8080:8080 \
+  -e JDK_JAVA_OPTIONS=-javaagent:/opt/saiku/otel/opentelemetry-javaagent.jar \
   -e OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318 \
   -e OTEL_SERVICE_NAME=saiku-prod \
   -e OTEL_RESOURCE_ATTRIBUTES=deployment.environment=production \

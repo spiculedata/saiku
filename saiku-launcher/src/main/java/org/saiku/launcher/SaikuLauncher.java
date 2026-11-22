@@ -46,7 +46,8 @@ import picocli.CommandLine.Option;
             OssieExportCommand.class,
             SqlServeCommand.class,
             EvalCommand.class,
-            ModelCommand.class
+            ModelCommand.class,
+            HealthcheckCommand.class
         })
 public class SaikuLauncher implements Callable<Integer> {
 
@@ -91,9 +92,22 @@ public class SaikuLauncher implements Callable<Integer> {
 
         @Override
         public Integer call() throws Exception {
+            // saiku#2462: the pre-boot checks and env bridging the container entrypoint script
+            // used to do (the Chainguard JRE image has no shell). Runs before anything touches
+            // saiku-home, so a home the runtime user cannot use fails closed, loudly.
+            Path effectiveHome = ContainerPreflight.resolveHome(home, System.getenv());
+            ContainerPreflight.applyJavaOpts(System.getenv("JAVA_OPTS"), System.getProperties(), System.err);
+            ContainerPreflight.applyEnvProperties(System.getenv(), System.getProperties());
+            if (effectiveHome != null) {
+                java.util.Optional<String> refusal = ContainerPreflight.checkHome(effectiveHome.toAbsolutePath());
+                if (refusal.isPresent()) {
+                    System.err.println(refusal.get());
+                    return 1;
+                }
+            }
             Server server;
             try {
-                server = bootServer(port, host, contextPath, home);
+                server = bootServer(port, host, contextPath, effectiveHome);
             } catch (DefaultCredentialsException e) {
                 // saiku#1153: clean refusal, no stack trace — the message tells
                 // the operator exactly how to proceed. Non-zero exit so init

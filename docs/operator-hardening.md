@@ -186,7 +186,10 @@ session map (it is never returned by `GET /rest/saiku/session`, never written to
 replaced on re-login, and is zeroed on logout and when the HTTP session expires. A heap dump of a running
 instance can still contain the passwords of currently signed-in users, so treat dumps as sensitive.
 
-If you use no pass-through datasources, stop retaining the password altogether:
+If you use no pass-through datasources, stop retaining the password altogether
+(`JAVA_OPTS` below is honoured for `-D` properties by the launcher in the Docker image,
+dist scripts and plain `java -jar`; in the container it cannot carry JVM flags like `-Xmx`,
+which go in `JDK_JAVA_OPTIONS` instead):
 
 ```bash
 JAVA_OPTS="-Dsaiku.passthrough.retainCredential=false"
