@@ -45,11 +45,28 @@ public final class RequestPaths {
         if (uri == null) {
             return null;
         }
+        String full = normalise(uri);
         String ctx = req.getContextPath();
-        if (ctx != null && !ctx.isEmpty() && uri.startsWith(ctx)) {
-            uri = uri.substring(ctx.length());
+        if (full == null || ctx == null || ctx.isEmpty()) {
+            return full;
         }
-        return normalise(uri);
+        // Strip the context in decoded form: getContextPath() is the configured spelling, which
+        // need not match the request's (/%73aiku/rest/x under /saiku). A path outside the context
+        // cannot be placed, so it fails closed.
+        String contextPath = normalise(ctx);
+        if (contextPath == null) {
+            return null;
+        }
+        contextPath = contextPath.endsWith("/") && contextPath.length() > 1
+                ? contextPath.substring(0, contextPath.length() - 1)
+                : contextPath;
+        if ("/".equals(contextPath)) {
+            return full;
+        }
+        if (full.equals(contextPath)) {
+            return "/";
+        }
+        return full.startsWith(contextPath + "/") ? full.substring(contextPath.length()) : null;
     }
 
     static String normalise(String rawPath) {

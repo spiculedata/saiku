@@ -11,6 +11,10 @@ package org.saiku.web.security;
  * rules in {@code applicationContext-saiku.xml} read {@code isFullyAuthenticated() and
  * !hasRole('TOKEN_PRINCIPAL')}: only a real user satisfies them, and a guest is confined to
  * the prefixes that name its own role (#2343).
+ *
+ * <p><strong>Mandatory:</strong> every new filter that mints a token-based identity MUST add
+ * {@link #TOKEN_PRINCIPAL_ROLE}. The fallback rules are negative, so an identity without the
+ * marker is treated as a real user and passes all of them.
  */
 public final class TokenPrincipals {
 
