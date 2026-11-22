@@ -1386,9 +1386,10 @@ provider refuses to construct otherwise so the key can't accidentally
 leak to the wrong host).
 
 Admin-only `GET /saiku/info/diagnostics` (saiku#904) reports the resolved provider,
-model, endpoint and a live reachability probe for both this ask layer and
-the schema-generation enrichment pipeline (`saiku.schemagen.llm.provider`,
-which accepts the same `openai`/`ollama` values) — never the API key — so
+model, endpoint and a live reachability probe for the ask layer, the
+schema-generation enrichment pipeline (`saiku.schemagen.llm.provider`,
+which accepts the same `openai`/`ollama` values) and, since saiku#2489, the
+cube designer's DimSum agent — never the API key — so
 an operator can confirm the wiring without running a query:
 
 ```json
@@ -1397,9 +1398,38 @@ an operator can confirm the wiring without running a query:
           "endpoint": "http://localhost:11434/v1/chat/completions",
           "configured": true, "reachable": true},
   "schemaGen": {"enabled": true, "provider": "noop", "model": null,
-                "endpoint": null, "configured": false, "reachable": null}
+                "endpoint": null, "configured": false, "reachable": null},
+  "cubeDesigner": {"enabled": true, "provider": "ollama", "model": "llama3.1",
+                   "endpoint": "http://localhost:11434/v1/chat/completions",
+                   "configured": true, "reachable": true}
 }
 ```
+
+### Cube Designer agent (saiku#2489)
+
+The cube designer's DimSum agent (`POST /saiku/api/admin/cube-designer/turn`)
+picks its upstream with the **same provider setting as the ask layer** —
+`saiku.ai.ask.provider` — so one property flips every AI surface together:
+
+- `anthropic` (default) — the pre-#2489 behaviour. The agent posts Anthropic
+  Messages to `api.anthropic.com`; the key comes from `saiku.ai.ask.apiKey`
+  or `ANTHROPIC_API_KEY`.
+- `openai` / `ollama` — the agent speaks the OpenAI-compatible
+  `/v1/chat/completions` transport instead (same endpoint defaults as the
+  ask layer). The designer's tool schemas are re-shaped into OpenAI `tools`,
+  the model's `tool_calls` come back as the same `text` + `tool_use` content
+  blocks the client already renders, and each turn's `tool_result` blocks are
+  translated to OpenAI `role:"tool"` messages — so the client-side tool
+  execution and the whole multi-step design conversation work unchanged.
+- `noop` — the agent is off; the endpoint returns 503.
+
+With `provider=ollama` and no API key the designer runs entirely on the local
+model — no credentials needed (same keyless behaviour as ask). A provider set
+without its key degrades to a 503 with an "AI upstream not configured" body,
+never a stack trace. The anthropic path is byte-identical to pre-#2489
+behaviour; the only visible difference is the `cubeDesigner` section in
+`/saiku/info/diagnostics`.
+
 
 ### Bring-your-own LLM (saiku#1431)
 
