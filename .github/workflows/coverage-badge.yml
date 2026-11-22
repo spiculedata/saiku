@@ -1,0 +1,80 @@
+name: coverage badge
+
+# Publishes the headline line-coverage figure to the `badges` branch so Hive's
+# ci-maintainer card (HIVE_COVERAGE_BADGE_URL=repo://badges/coverage.json) and the
+# README can read it. Without it the card shows 0% whatever the tests cover.
+#
+# The `development` branch is protected (no direct pushes), so the badge lives on its
+# own orphan branch, which the ruleset does not cover. ci.yml builds the badge with a
+# read-only token and uploads it; this workflow, which holds the only write token,
+# publishes it.
+#
+# SECURITY. This is a `workflow_run` workflow: it runs the DEFAULT-branch copy of this
+# file with a write token. So it only acts on a successful `push` run of `ci` on
+# `development` (a fork PR whose branch is named `development` has event
+# `pull_request` and is skipped), the artifact is validated before it is published,
+# and every value from the triggering event reaches the shell through `env:`, never by
+# `${{ }}` interpolation into a script.
+
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+
+permissions:
+  actions: read    # download the coverage-badge artifact of the triggering run
+  contents: write  # push the `badges` branch
+
+concurrency:
+  group: coverage-badge
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  publish:
+    name: publish coverage badge
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'development'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      RUN_ID: ${{ github.event.workflow_run.id }}
+    steps:
+      - name: Download the badge
+        run: gh run download "$RUN_ID" --repo "$REPO" --name coverage-badge --dir badge
+
+      - name: Validate the badge
+        run: |
+          jq -e '.message | test("^[0-9]{1,3}(\\.[0-9])?%$")' badge/coverage.json >/dev/null \
+            || { echo "::error::coverage.json message is not a percentage"; exit 1; }
+          grep -q '<svg' badge/coverage.svg \
+            || { echo "::error::coverage.svg is not an SVG"; exit 1; }
+
+      - name: Publish to the badges branch
+        run: |
+          gh auth setup-git
+          url="https://github.com/${REPO}.git"
+          if git ls-remote --exit-code --heads "$url" badges >/dev/null 2>&1; then
+            git clone --quiet --depth 1 --branch badges "$url" pub
+          else
+            git init --quiet --initial-branch badges pub
+            git -C pub remote add origin "$url"
+          fi
+          cp badge/coverage.json badge/coverage.svg pub/
+          cd pub
+          git add coverage.json coverage.svg
+          if git diff --cached --quiet; then
+            echo "Coverage badge unchanged."
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit --quiet -m "chore: update coverage badge"
+          git push --quiet origin badges

@@ -230,6 +230,23 @@ jobs:
         # just wrote. Raise a floor explicitly when coverage goes up.
         run: ./scripts/check-coverage.sh
 
+      # Headline coverage figure for the Hive ci-maintainer card and the README. Built
+      # here (read-only token) and published by coverage-badge.yml, which is the only
+      # place that can write the `badges` branch. Only on a push to development: a PR
+      # run has nothing to publish.
+      - name: Build coverage badge
+        if: github.event_name == 'push' && github.ref == 'refs/heads/development'
+        run: ./scripts/coverage-badge.sh "$RUNNER_TEMP/coverage-badge"
+
+      - name: Upload coverage badge
+        if: github.event_name == 'push' && github.ref == 'refs/heads/development'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-badge
+          path: ${{ runner.temp }}/coverage-badge
+          if-no-files-found: error
+          retention-days: 7
+
   ui:
     name: ui (svelte-check + vitest + build + e2e)
     needs: changes
