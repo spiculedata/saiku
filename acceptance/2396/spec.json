@@ -1,0 +1,29 @@
+{
+  "issue": 2396,
+  "title": "TESTING.md states the current JDK 22 / Ubuntu CI baseline, points at the floor files instead of copied test counts, names all five GitHub Packages repositories and no longer claims a macOS CI lane",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "the CI section and the environment prerequisites of TESTING.md",
+      "then": "they state the JDK 22 on ubuntu-latest CI baseline and the matching local JDK 22 prerequisite"
+    },
+    {
+      "id": "C2",
+      "given": "the coverage section of TESTING.md",
+      "then": "it points readers at .github/test-floors.json (and .coverage-thresholds.json) instead of copying test-count totals, and carries none of the obsolete numbers (the 252/44 floors, the ~990 test total)"
+    },
+    {
+      "id": "C3",
+      "given": "the Maven prerequisite of TESTING.md",
+      "then": "it names all five Spicule GitHub Packages repositories, including github-ossie"
+    },
+    {
+      "id": "C4",
+      "given": "the local Windows guidance of TESTING.md",
+      "then": "it no longer claims a macOS CI lane — CI runs on Linux only"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}
