@@ -1,0 +1,24 @@
+{
+  "issue": 2423,
+  "title": "Explain SQL capture: test both Locus branches, add the concurrent IT, and stop unrelated SQL reaching the log appenders",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "a worker thread logs SQL while a Locus is pushed on it",
+      "then": "MondrianStatementScopeTest has a case where the explained statement's Locus is claimed and a separate case where a foreign statement's Locus is rejected"
+    },
+    {
+      "id": "C2",
+      "given": "foreign queries log SQL on other threads while a cell explain runs",
+      "then": "CellExplainServiceTest has explain_underConcurrentForeignQueries_returnsOnlyCallersSql, which asserts the returned sql is only the caller's"
+    },
+    {
+      "id": "C3",
+      "given": "a probe is open and an unrelated execution logs SQL at DEBUG",
+      "then": "the appenders already attached to the Mondrian loggers (file/console) do not receive it, and a test asserts that, while records at the configured level still reach them"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}
