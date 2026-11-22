@@ -54,6 +54,8 @@ public class LoginRateLimiter {
     static final long DEFAULT_WINDOW_MS = 15 * 60 * 1000L;
     static final int DEFAULT_MAX_USER_ATTEMPTS = 20;
     static final int DEFAULT_MAX_IP_ATTEMPTS = 50;
+    static final String MAX_USER_ATTEMPTS_PROPERTY = "saiku.auth.maxAttemptsPerUser";
+    static final String MAX_IP_ATTEMPTS_PROPERTY = "saiku.auth.maxAttemptsPerIp";
     /** Upper bound on the canonicalised username used as a (partial) bucket key (saiku#2426). */
     static final int MAX_USERNAME_LENGTH = 256;
     /** Upper bound on the number of buckets held per map (saiku#2426). */
@@ -83,8 +85,25 @@ public class LoginRateLimiter {
                 DEFAULT_MAX_ATTEMPTS,
                 DEFAULT_WINDOW_MS,
                 ClientIpResolver.configuredTrustedProxyHops(),
-                DEFAULT_MAX_USER_ATTEMPTS,
-                DEFAULT_MAX_IP_ATTEMPTS);
+                positiveIntProperty(MAX_USER_ATTEMPTS_PROPERTY, DEFAULT_MAX_USER_ATTEMPTS),
+                positiveIntProperty(MAX_IP_ATTEMPTS_PROPERTY, DEFAULT_MAX_IP_ATTEMPTS));
+    }
+
+    /**
+     * A positive integer system property, or {@code fallback} (with a WARN) when it is set but
+     * not a positive integer.
+     */
+    static int positiveIntProperty(String name, int fallback) {
+        String configured = System.getProperty(name);
+        if (configured == null || configured.isBlank()) return fallback;
+        try {
+            int value = Integer.parseInt(configured.trim());
+            if (value > 0) return value;
+        } catch (NumberFormatException ignored) {
+            // falls through to the warning below
+        }
+        log.warn("ignoring invalid {}='{}'; using the default {}", name, configured, fallback);
+        return fallback;
     }
 
     /** @param trustForwardedFor legacy switch: true means one trusted proxy hop. */

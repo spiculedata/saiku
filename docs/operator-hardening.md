@@ -208,6 +208,12 @@ independent budgets inside a 15-minute window, and any one of them blocks furthe
 | username, from any IP | 20 | still stops a distributed guessing attack on one account |
 | client IP, any username | 50 | still stops one source enumerating many usernames |
 
+The username and per-IP limits default to 20 and 50 and can be changed with system properties, for example
+`JAVA_OPTS="-Dsaiku.auth.maxAttemptsPerUser=30 -Dsaiku.auth.maxAttemptsPerIp=100"`. A value that is not a positive
+integer is ignored with a `WARN` and the default is used. The username budget can, by design, lock a named account
+out from every address for the window, so do not set it far below the number of attempts an attacker could make
+in 15 minutes unless you accept that.
+
 A successful login clears only the (IP, username) counter. The username budget is left to expire, so one legitimate
 login (or Basic auth on every request) cannot keep resetting it; the cost is that a named account can be locked out
 from every address for the window. Basic credentials the limiter cannot attribute to a username fall under the stricter

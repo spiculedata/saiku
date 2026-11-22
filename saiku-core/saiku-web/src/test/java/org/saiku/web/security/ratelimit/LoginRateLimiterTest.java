@@ -186,6 +186,36 @@ public class LoginRateLimiterTest {
         assertFalse(l.isBlocked(from("1.1.1.1"), "alice"));
     }
 
+    // --- configurable per-username / per-IP budgets
+
+    @org.junit.After
+    public void clearBudgetProperties() {
+        System.clearProperty(LoginRateLimiter.MAX_USER_ATTEMPTS_PROPERTY);
+        System.clearProperty(LoginRateLimiter.MAX_IP_ATTEMPTS_PROPERTY);
+    }
+
+    @Test
+    public void budgetProperties_overrideTheDefaults() {
+        System.setProperty(LoginRateLimiter.MAX_USER_ATTEMPTS_PROPERTY, "2");
+        System.setProperty(LoginRateLimiter.MAX_IP_ATTEMPTS_PROPERTY, " 3 ");
+        LoginRateLimiter l = new LoginRateLimiter();
+        for (int i = 0; i < 2; i++) l.recordFailure(from("10.0.0." + i), "alice");
+        assertTrue(l.isBlocked(from("9.9.9.9"), "alice"));
+
+        for (int i = 0; i < 3; i++) l.recordFailure(from("2.2.2.2"), "u" + i);
+        assertTrue(l.isBlocked(from("2.2.2.2"), "other"));
+    }
+
+    @Test
+    public void invalidOrNonPositiveBudgetProperties_fallBackToTheDefaults() {
+        for (String bad : new String[] {"0", "-4", "many", "", "2.5"}) {
+            System.setProperty(LoginRateLimiter.MAX_USER_ATTEMPTS_PROPERTY, bad);
+            assertEquals(20, LoginRateLimiter.positiveIntProperty(LoginRateLimiter.MAX_USER_ATTEMPTS_PROPERTY, 20));
+        }
+        System.clearProperty(LoginRateLimiter.MAX_USER_ATTEMPTS_PROPERTY);
+        assertEquals(50, LoginRateLimiter.positiveIntProperty(LoginRateLimiter.MAX_IP_ATTEMPTS_PROPERTY, 50));
+    }
+
     // --- client IP resolution
 
     @Test
