@@ -1,0 +1,44 @@
+{
+  "issue": 2489,
+  "title": "The Cube Designer agent runs on ai.provider=openai/ollama, mapped to the same text + tool_use contract",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "saiku.ai.ask.provider is openai or ollama (no API key needed for ollama)",
+      "then": "CubeDesignerAiService sends an OpenAI-compatible /v1/chat/completions request carrying the designer's tools, and maps the model's tool_calls back to the text + tool_use content blocks the client already renders (unit-tested against a scripted HttpClient)"
+    },
+    {
+      "id": "C2",
+      "given": "the next turn sends the assistant's tool_use back with its tool_result",
+      "then": "the OpenAI request translates it to a role:\"tool\" message with the same tool_call_id (unit-tested)"
+    },
+    {
+      "id": "C3",
+      "given": "saiku.ai.ask.provider is anthropic (the default)",
+      "then": "the Anthropic Messages transport is unchanged: same request builder, same x-api-key/anthropic-version headers, same verbatim content[] response, existing tests untouched"
+    },
+    {
+      "id": "C4",
+      "given": "the OpenAI-compatible upstream misbehaves (malformed tool_calls, bad arguments JSON, HTTP errors, timeouts)",
+      "then": "the turn throws a clear IOException (502) naming the problem - never a 500 stack trace - with unit tests for each case"
+    },
+    {
+      "id": "C5",
+      "given": "no usable provider is configured (noop, or a hosted provider with no key)",
+      "then": "the designer /turn endpoint returns 503 with an AI upstream not configured message"
+    },
+    {
+      "id": "C6",
+      "given": "the admin GET /saiku/info/diagnostics endpoint",
+      "then": "it reports the Cube Designer's provider and model next to the ask and schemaGen stacks (tested)"
+    },
+    {
+      "id": "C7",
+      "given": "the AI configuration docs",
+      "then": "they explain that the Cube Designer follows saiku.ai.ask.provider and how to run it against Ollama"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}
