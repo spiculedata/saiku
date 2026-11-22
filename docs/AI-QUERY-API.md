@@ -1450,6 +1450,8 @@ docker run -d --name saiku \
   ghcr.io/spiculedata/saiku:latest
 ```
 
+`JAVA_OPTS` carries `-D` properties only; JVM flags (`-Xmx...`) go in `JDK_JAVA_OPTIONS`.
+
 ### Request
 
 ```http

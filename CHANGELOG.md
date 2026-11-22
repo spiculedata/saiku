@@ -5,6 +5,27 @@ All notable changes to Saiku are documented here. This project follows
 
 ## Unreleased
 
+### Changed
+
+- **The Docker image is now built on a Chainguard JRE with no shell**
+  (saiku#2462, `cgr.dev/concepttocloud.com/jre:openjdk-21`, digest-pinned;
+  grype findings on the same jar: 311 before, 30 after). What changes for
+  operators: `docker/saiku-entrypoint` is gone, so `JAVA_OPTS` only carries
+  `-D` properties (JVM flags such as `-Xmx` are reported and ignored: use
+  `JDK_JAVA_OPTIONS`, or `JAVA_TOOL_OPTIONS` to replace the image defaults);
+  the OTel agent is attached by `JDK_JAVA_OPTIONS=-javaagent:/opt/saiku/otel/opentelemetry-javaagent.jar`
+  rather than automatically from `OTEL_EXPORTER_OTLP_ENDPOINT`; the image has no
+  shell or `chown`, so fix a root-owned volume with
+  `docker run --rm -v <vol>:/h --user 0 cgr.dev/chainguard/wolfi-base chown -R 10001:10001 /h`;
+  `docker run <image> <cmd>` passes `<cmd>` to the launcher (`--entrypoint` for
+  anything else). The pre-boot saiku-home checks now live in the launcher's
+  `serve` command (same `FATAL:` refusal) and `HEALTHCHECK` uses a new
+  `healthcheck` subcommand. uid/gid 10001, `SAIKU_HOME` and the JVM defaults
+  are unchanged. The `-XX:-UseBASE64Intrinsics` workaround for CVE-2026-114938
+  is dropped from the image because the base JDK (21.0.13.1) includes the fix
+  (the dist scripts keep it). Building the image needs a Chainguard pull token
+  (`docs/docker-chainguard-evaluation.md`).
+
 ### Known issues
 
 - **MySQL / MariaDB on the Calcite SQL path** (saiku#1886, reported against

@@ -95,7 +95,7 @@ test('buildsImage matches what the docker workflow would build, and nothing else
     'saiku-webapp/src/main/webapp/WEB-INF/x.xml',
     'lib/repo/x.jar',
     'Dockerfile',
-    'docker/saiku-entrypoint',
+    'docker/jvm.options',
     '.github/workflows/docker.yml',
   ]) assert.equal(buildsImage([yes]), true, yes);
   for (const no of [

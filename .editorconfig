@@ -26,10 +26,6 @@ indent_size = 4
 indent_style = space
 indent_size = 2
 
-[docker/saiku-entrypoint]
-indent_style = space
-indent_size = 2
-
 [saiku-ui/**.{svelte,ts,js,mjs,cjs,json,css,html}]
 indent_style = tab
 

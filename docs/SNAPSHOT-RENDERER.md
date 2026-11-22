@@ -92,8 +92,9 @@ owner-scoped values the interactive dashboard would show.
 
 A headless JRE with no fontconfig and no font files (a bare `eclipse-temurin` JRE base) throws
 `Fontconfig head is null` from inside `sun.awt` at the first `drawString()`. The **PDF path is
-unaffected** (OpenPDF carries its own metrics); the PNG path is not. The Dockerfile therefore
-installs `fontconfig` + `fonts-dejavu-core`, and `PngSnapshotRenderer` translates a fontless JVM into
+unaffected** (OpenPDF carries its own metrics); the PNG path is not. The image's Chainguard
+JRE base (saiku#2462) already ships `fontconfig`, freetype and DejaVu (the Dockerfile
+installs nothing), and `PngSnapshotRenderer` translates a fontless JVM into
 a `SnapshotRenderException` naming that fix rather than an unexplained AWT stack trace. The PNG
 assertions skip on a host with genuinely no fonts — CI's runner and the shipped image both have them.
 

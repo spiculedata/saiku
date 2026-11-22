@@ -59,8 +59,9 @@ or filters and the SPA writes MDX for you.
 > named/anonymous volume works out of the box. Any **pre-existing** `saiku-home`
 > from an older root container — bind mount or named volume — must be re-owned
 > once: `sudo chown -R 10001:10001 <host-dir>`, or for a named volume
-> `docker run --rm -v saiku-home:/app/saiku-home --user 0 --entrypoint chown
-> ghcr.io/spiculedata/saiku:latest -R 10001:10001 /app/saiku-home`. The
+> `docker run --rm -v saiku-home:/h --user 0 cgr.dev/chainguard/wolfi-base
+> chown -R 10001:10001 /h` (the Saiku image is built on a shell-less
+> Chainguard JRE and has no `chown` of its own). The
 > container fails closed with a `FATAL:` message (naming the fix) rather than
 > silently rotating its encryption key. On Kubernetes set
 > `securityContext: { runAsUser: 10001, fsGroup: 10001 }`. See the
