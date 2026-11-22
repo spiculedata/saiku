@@ -75,6 +75,49 @@ public class AccountStatusFilterTest {
     }
 
     @Test
+    public void refusalAndDemotion_areAudited_saiku2432() throws Exception {
+        java.util.List<String> lines = new java.util.ArrayList<>();
+        org.apache.logging.log4j.core.LoggerContext ctx = (org.apache.logging.log4j.core.LoggerContext)
+                org.apache.logging.log4j.LogManager.getContext(AccountStatusFilter.class.getClassLoader(), false);
+        org.apache.logging.log4j.core.appender.AbstractAppender appender =
+                new org.apache.logging.log4j.core.appender.AbstractAppender(
+                        "audit-2432", null, null, true, org.apache.logging.log4j.core.config.Property.EMPTY_ARRAY) {
+                    @Override
+                    public void append(org.apache.logging.log4j.core.LogEvent event) {
+                        lines.add(event.getMessage().getFormattedMessage());
+                    }
+                };
+        appender.start();
+        ctx.getConfiguration().addAppender(appender);
+        org.apache.logging.log4j.core.config.LoggerConfig lc = new org.apache.logging.log4j.core.config.LoggerConfig(
+                "org.saiku.audit", org.apache.logging.log4j.Level.INFO, false);
+        lc.addAppender(appender, org.apache.logging.log4j.Level.INFO, null);
+        ctx.getConfiguration().addLogger("org.saiku.audit", lc);
+        ctx.updateLoggers();
+        try {
+            signIn("bob", "ROLE_USER");
+            filter(new AccountStatus(true, false, Set.of("ROLE_USER")), new int[1])
+                    .doFilter(
+                            new MockHttpServletRequest("GET", "/x"),
+                            new MockHttpServletResponse(),
+                            new MockFilterChain());
+            signIn("boss", "ROLE_USER", "ROLE_ADMIN");
+            filter(new AccountStatus(true, true, Set.of("ROLE_USER")), new int[1])
+                    .doFilter(
+                            new MockHttpServletRequest("GET", "/x"),
+                            new MockHttpServletResponse(),
+                            new MockFilterChain());
+        } finally {
+            ctx.getConfiguration().removeLogger("org.saiku.audit");
+            ctx.updateLoggers();
+            appender.stop();
+        }
+
+        assertTrue(lines.toString(), lines.stream().anyMatch(l -> l.contains("account_refused") && l.contains("bob")));
+        assertTrue(lines.toString(), lines.stream().anyMatch(l -> l.contains("account_demoted") && l.contains("boss")));
+    }
+
+    @Test
     public void demotedAdmin_continuesWithoutAdminAuthority() throws Exception {
         signIn("boss", "ROLE_USER", "ROLE_ADMIN");
         int[] revoked = {0};

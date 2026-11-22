@@ -12,6 +12,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
+import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 import org.saiku.service.user.AccountStatus;
 import org.saiku.service.user.UserService;
@@ -43,13 +44,22 @@ import org.springframework.security.core.GrantedAuthority;
 public class AccountStatusPolicy implements AuthorisationPredicate {
 
     static final long DEFAULT_TTL_MS = 2_000L;
+    private static final long NANOS_PER_MILLI = 1_000_000L;
 
     private volatile Function<String, AccountStatus> lookup = name -> AccountStatus.UNMANAGED;
     private volatile Supplier<List<String>> adminRoles = List::of;
     private final long ttlMs;
+    private final LongSupplier nanoClock;
     private final Map<String, Cached> cache = new ConcurrentHashMap<>();
 
     public AccountStatusPolicy(Function<String, AccountStatus> lookup, List<String> adminRoles, long ttlMs) {
+        this(lookup, adminRoles, ttlMs, System::nanoTime);
+    }
+
+    /** As above with an injectable monotonic clock (nanoseconds), so tests need no real waiting. */
+    public AccountStatusPolicy(
+            Function<String, AccountStatus> lookup, List<String> adminRoles, long ttlMs, LongSupplier nanoClock) {
+        this.nanoClock = nanoClock;
         this.lookup = lookup;
         List<String> fixed = adminRoles == null ? List.of() : List.copyOf(adminRoles);
         this.adminRoles = () -> fixed;
@@ -63,6 +73,7 @@ public class AccountStatusPolicy implements AuthorisationPredicate {
      */
     public AccountStatusPolicy() {
         this.ttlMs = DEFAULT_TTL_MS;
+        this.nanoClock = System::nanoTime;
     }
 
     public void setUserService(UserService userService) {
@@ -123,15 +134,16 @@ public class AccountStatusPolicy implements AuthorisationPredicate {
             return lookup.apply(username);
         }
         String key = username.toLowerCase(Locale.ROOT);
-        long now = System.currentTimeMillis();
+        long now = nanoClock.getAsLong();
         Cached cached = cache.get(key);
-        if (cached != null && now < cached.expiresAtMs) {
+        // Subtraction, not comparison of absolute values: nanoTime may be negative and wraps.
+        if (cached != null && now - cached.expiresAtNanos < 0) {
             return cached.status;
         }
         AccountStatus fresh = lookup.apply(username);
-        cache.put(key, new Cached(fresh, now + ttlMs));
+        cache.put(key, new Cached(fresh, now + ttlMs * NANOS_PER_MILLI));
         return fresh;
     }
 
-    private record Cached(AccountStatus status, long expiresAtMs) {}
+    private record Cached(AccountStatus status, long expiresAtNanos) {}
 }

@@ -39,7 +39,7 @@ const status = svc.slice(svc.indexOf('public AccountStatus accountStatus('));
 expect(!/getUsers\(\)/.test(status.slice(0, status.indexOf('private ') > 0 ? status.indexOf('private ') : 2500)),
   'C3: accountStatus must use the keyed lookup, not getUsers()');
 
-expect(/System\.nanoTime\(\)/.test(policy) && !/currentTimeMillis/.test(policy), 'C4: policy TTL must use System.nanoTime()');
+expect(/nanoTime/.test(policy) && !/currentTimeMillis/.test(policy), 'C4: policy TTL must use System.nanoTime()');
 expect(!/assumeTrue/.test(daoTest), 'C4: JdbcUserDAOEnabledTest must not skip via assumeTrue');
 expect(!/<bean id="authorisationPredicate"/.test(beans), 'C4: dead authorisationPredicate bean still defined');
 

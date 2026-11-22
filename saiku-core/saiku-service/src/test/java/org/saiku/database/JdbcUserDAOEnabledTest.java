@@ -6,8 +6,8 @@ package org.saiku.database;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assume.assumeTrue;
 
 import jakarta.servlet.ServletContext;
 import java.lang.reflect.Field;
@@ -61,6 +61,47 @@ public class JdbcUserDAOEnabledTest {
     @After
     public void tearDown() throws Exception {
         keepAlive.close();
+    }
+
+    /** saiku#2432: a failing role insert must roll back the delete, never leave the user role-less. */
+    @Test
+    public void roleRewrite_isAtomic_aFailedInsertKeepsTheOldRoles() {
+        SaikuUser u = new SaikuUser();
+        u.setUsername("atomic2432");
+        u.setPassword("pw");
+        u.setEmail("a@example.com");
+        u.setRoles(new String[] {"ROLE_USER", "ROLE_ADMIN"});
+        SaikuUser created = dao.insert(u);
+
+        created.setRoles(new String[] {"ROLE_USER", "X".repeat(200)}); // ROLE is VARCHAR(45)
+        try {
+            dao.insertRole(created);
+            org.junit.Assert.fail("the oversized role must be rejected");
+        } catch (org.springframework.dao.DataAccessException expected) {
+            // expected
+        }
+
+        assertTrue(
+                "the admin role must survive the failed rewrite",
+                java.util.Arrays.asList(reload(created).getRoles()).contains("ROLE_ADMIN"));
+    }
+
+    /** saiku#2432: the keyed lookup matches case-insensitively and returns only that user. */
+    @Test
+    public void findByUsername_isKeyedAndCaseInsensitive() {
+        for (String name : new String[] {"Keyed2432", "other2432"}) {
+            SaikuUser u = new SaikuUser();
+            u.setUsername(name);
+            u.setPassword("pw");
+            u.setEmail(name + "@example.com");
+            u.setRoles(new String[] {"ROLE_USER"});
+            dao.insert(u);
+        }
+
+        java.util.Collection rows = dao.findByUsername("keyed2432");
+
+        assertEquals(1, rows.size());
+        assertEquals("Keyed2432", ((SaikuUser) rows.iterator().next()).getUsername());
     }
 
     @Test
@@ -210,7 +251,7 @@ public class JdbcUserDAOEnabledTest {
             }
             dir = dir.getParent();
         }
-        assumeTrue("database-queries.properties not reachable from the module", file != null);
+        assertNotNull("database-queries.properties not reachable from the module", file);
         Properties p = new Properties();
         try (var in = Files.newInputStream(file)) {
             p.load(in);

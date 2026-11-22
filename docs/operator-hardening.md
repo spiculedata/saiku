@@ -257,10 +257,42 @@ failure is logged at **ERROR** on `org.saiku.service.user.UserService` with the 
 last answer stays cached for the usual ~2s window. Watch for that line — repeated ERRORs mean
 revocation is not being enforced and the store needs attention.
 
+### Scope, re-enabling and audit
+
+- **Roles covered.** Only the *admin* role is reconciled: removing `ROLE_ADMIN` from the row strips admin
+  authority. Removing any other role (for example `ROLE_SQL_EXEC` or a data role) from the row changes
+  nothing for a user whose authenticator still grants it; revoke those in `users.properties` / the
+  directory.
+- **Authentication types covered.** Only credential logins (form login and HTTP Basic) are checked. OAuth
+  bearer tokens, SSO/pre-authenticated principals and share/embed principals are exempt and governed by
+  their own provider.
+- **Re-enabling.** The admin console has no control to re-enable a deactivated row. Re-enable through SCIM
+  (`PATCH`/`PUT` with `active:true`), or set `USERS.ENABLED` back to `TRUE` in the H2 database.
+- **Case-variant rows.** If two rows differ only by letter case, the account is denied when *any* of them is
+  disabled, and the roles of all of them count.
+- **Audit.** A refused request and a demotion each write a line to the `org.saiku.audit` logger
+  (`account_refused`, `account_demoted`, with the user and path). A deactivated user who supplies the right
+  password over Basic is still recorded as `login_success` by the authenticator, followed by `account_refused`.
+- **Role changes are atomic.** A role rewrite is one transaction, so a concurrent request never sees a user
+  momentarily without roles.
+
+### Upgrading
+
+A user who is an admin in `users.properties` but whose H2 row lacks `ROLE_ADMIN` **loses admin authority**
+once this check is active (the H2 row wins). Before upgrading, list rows with no admin role for the people
+who should be admins (`SELECT u.USERNAME FROM USERS u WHERE NOT EXISTS (SELECT 1 FROM USER_ROLES r WHERE
+r.USER_ID = u.USER_ID AND r.ROLE = 'ROLE_ADMIN')`) and add `ROLE_ADMIN` in the admin console. **Recovery** if
+you are locked out: insert the role directly, `INSERT INTO USER_ROLES(USER_ID, USERNAME, ROLE) SELECT USER_ID,
+USERNAME, 'ROLE_ADMIN' FROM USERS WHERE USERNAME = '<you>'`, or delete your row so the authenticator alone governs
+the account. The change is picked up within about two seconds.
+
 What this does **not** do: an account that has no H2 row is governed by the authenticator alone;
 **deleting** a row (`DELETE /rest/saiku/admin/users/{id}`) removes it from the managed store, so it does not
 by itself stop that user logging in. To deprovision, deactivate (SCIM) and remove the entry from
 `users.properties` (or the external directory). Passwords are still those of the authenticator.
+**Renaming** a row has the same effect as deleting it: the old name no longer matches a managed row, so a
+deactivated account that is deleted or renamed can log in again via the authenticator. Revoking login on
+deletion needs a tombstone or a single user store, which is not implemented.
 
 ---
 

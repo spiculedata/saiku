@@ -94,22 +94,25 @@ public class AccountStatusPolicyTest {
     }
 
     @Test
-    public void statusIsCachedBrieflyThenRefreshed() throws Exception {
+    public void statusIsCachedBrieflyThenRefreshed() {
         int[] calls = {0};
+        long[] nanos = {-5_000_000_000L}; // nanoTime may be negative; the TTL must still hold
         AccountStatusPolicy p = new AccountStatusPolicy(
                 name -> {
                     calls[0]++;
                     return AccountStatus.UNMANAGED;
                 },
                 ADMIN_ROLES,
-                25L);
+                25L,
+                () -> nanos[0]);
 
         p.evaluate(login("a", "ROLE_USER"));
+        nanos[0] += 24_000_000L;
         p.evaluate(login("a", "ROLE_USER"));
-        assertEquals(1, calls[0]);
-        Thread.sleep(60L);
+        assertEquals("still inside the TTL", 1, calls[0]);
+        nanos[0] += 2_000_000L;
         p.evaluate(login("a", "ROLE_USER"));
-        assertEquals(2, calls[0]);
+        assertEquals("past the TTL", 2, calls[0]);
     }
 
     /**
@@ -155,7 +158,7 @@ public class AccountStatusPolicyTest {
         final List<SaikuUser> list = new ArrayList<>(Arrays.asList(users));
         return new UserService() {
             @Override
-            public List<SaikuUser> getUsers() {
+            protected List<SaikuUser> usersNamed(String username) {
                 return list;
             }
         };

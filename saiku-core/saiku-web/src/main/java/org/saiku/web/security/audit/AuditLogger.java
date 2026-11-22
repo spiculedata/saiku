@@ -51,6 +51,16 @@ public final class AuditLogger {
         emit("access_denied", req, username, null, extra);
     }
 
+    /** saiku#2432: a request refused because the managed store disabled the account. */
+    public static void accountRefused(HttpServletRequest req, String username) {
+        emit("account_refused", req, username, "account_disabled");
+    }
+
+    /** saiku#2432: a request continued with admin authority removed because the managed store dropped the role. */
+    public static void accountDemoted(HttpServletRequest req, String username) {
+        emit("account_demoted", req, username, "admin_role_removed");
+    }
+
     public static void rateLimitTriggered(HttpServletRequest req, String username) {
         emit("rate_limit_triggered", req, username, null);
     }

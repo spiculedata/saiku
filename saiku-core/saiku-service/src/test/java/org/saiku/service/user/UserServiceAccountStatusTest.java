@@ -77,6 +77,23 @@ public class UserServiceAccountStatusTest {
     }
 
     @Test
+    public void caseVariantRows_areDeniedIfAnyIsDisabled_saiku2432() {
+        AccountStatus status = usersOf(user("Alice", true, "ROLE_USER"), user("alice", false, "ROLE_USER"))
+                .accountStatus("alice");
+
+        assertTrue(status.managed());
+        assertFalse("a disabled sibling row must deny the account", status.enabled());
+    }
+
+    @Test
+    public void caseVariantRows_unionTheirRoles_saiku2432() {
+        AccountStatus status = usersOf(user("Alice", true, "ROLE_USER"), user("alice", true, "ROLE_ADMIN"))
+                .accountStatus("ALICE");
+
+        assertEquals(Set.of("ROLE_USER", "ROLE_ADMIN"), status.roles());
+    }
+
+    @Test
     public void rolesComeFromTheUserRolesRow_andUsernameIsCaseInsensitive() {
         AccountStatus status =
                 usersOf(user("alice", true, "ROLE_USER", "ROLE_ADMIN")).accountStatus("ALICE");
@@ -96,7 +113,7 @@ public class UserServiceAccountStatusTest {
     public void lookupError_isUnmanagedNotAnException() {
         UserService us = new UserService() {
             @Override
-            public List<SaikuUser> getUsers() {
+            protected List<SaikuUser> usersNamed(String username) {
                 throw new RuntimeException("db down");
             }
         };
@@ -156,7 +173,7 @@ public class UserServiceAccountStatusTest {
         RuntimeException boom = new RuntimeException("db down");
         UserService us = new UserService() {
             @Override
-            public List<SaikuUser> getUsers() {
+            protected List<SaikuUser> usersNamed(String username) {
                 throw boom;
             }
         };
@@ -194,7 +211,7 @@ public class UserServiceAccountStatusTest {
         final List<SaikuUser> list = new ArrayList<>(Arrays.asList(users));
         return new UserService() {
             @Override
-            public List<SaikuUser> getUsers() {
+            protected List<SaikuUser> usersNamed(String username) {
                 return list;
             }
         };
