@@ -32,7 +32,9 @@ import org.springframework.web.filter.OncePerRequestFilter;
  */
 public class LoginRateLimitFilter extends OncePerRequestFilter {
 
-    private static final String BASIC_PREFIX = "Basic ";
+    private static final String BASIC_SCHEME = "Basic";
+    /** Spring's BasicAuthenticationConverter skips this many characters (scheme plus one separator). */
+    private static final int BASIC_CREDENTIALS_OFFSET = 6;
 
     private final LoginRateLimiter limiter;
 
@@ -44,7 +46,7 @@ public class LoginRateLimitFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest req, HttpServletResponse resp, FilterChain chain)
             throws ServletException, IOException {
         String auth = req.getHeader("Authorization");
-        if (auth != null && !auth.isEmpty() && limiter.isBlocked(req, basicUsername(auth))) {
+        if (auth != null && !auth.isEmpty() && isBlocked(req, auth)) {
             resp.setStatus(429);
             // Window expressed in seconds for Retry-After; conservative
             // upper bound is the full window length.
@@ -58,16 +60,32 @@ public class LoginRateLimitFilter extends OncePerRequestFilter {
         chain.doFilter(req, resp);
     }
 
-    /** The username of an HTTP Basic header, or null when it is another scheme or malformed. */
+    private boolean isBlocked(HttpServletRequest req, String authorization) {
+        String username = basicUsername(authorization);
+        if (username == null && isBasic(authorization)) return limiter.isBlockedUnattributed(req);
+        return limiter.isBlocked(req, username);
+    }
+
+    /** True when Spring's {@code BasicAuthenticationConverter} would treat the header as Basic. */
+    static boolean isBasic(String authorization) {
+        return authorization != null
+                && authorization.trim().regionMatches(true, 0, BASIC_SCHEME, 0, BASIC_SCHEME.length());
+    }
+
+    /**
+     * The username of an HTTP Basic header, parsed the way {@code BasicAuthenticationConverter}
+     * does (trim, case-insensitive {@code Basic} prefix, skip six characters), so no spelling
+     * that authenticates escapes the per-user budgets; null when it is another scheme, malformed,
+     * or has no user part.
+     */
     static String basicUsername(String authorization) {
-        if (authorization == null || authorization.length() < BASIC_PREFIX.length()) return null;
-        if (!authorization.regionMatches(true, 0, BASIC_PREFIX, 0, BASIC_PREFIX.length())) return null;
+        if (!isBasic(authorization)) return null;
+        String header = authorization.trim();
+        if (header.length() <= BASIC_SCHEME.length()) return null;
         try {
             String decoded = new String(
                     Base64.getDecoder()
-                            .decode(authorization
-                                    .substring(BASIC_PREFIX.length())
-                                    .trim()),
+                            .decode(header.substring(BASIC_CREDENTIALS_OFFSET).getBytes(StandardCharsets.UTF_8)),
                     StandardCharsets.UTF_8);
             int colon = decoded.indexOf(':');
             return colon > 0 ? decoded.substring(0, colon) : null;

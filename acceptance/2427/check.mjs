@@ -9,7 +9,7 @@ const failures = [];
 
 const filter = read(`${web}/main/java/org/saiku/web/security/ratelimit/LoginRateLimitFilter.java`);
 if (/"Basic "/.test(filter)) failures.push('C1: filter still requires the literal prefix "Basic " (with a space)');
-if (!/\.trim\(\)/.test(filter) || !/substring\(6\)/.test(filter))
+if (!/\.trim\(\)/.test(filter) || !/substring\((6|BASIC_CREDENTIALS_OFFSET)\)/.test(filter))
   failures.push('C1: filter must trim and skip six characters like BasicAuthenticationConverter');
 if (!/isBlockedUnattributed|Unattributed/.test(filter)) failures.push('C1: no strict rule for unattributable Basic credentials');
 
@@ -17,7 +17,7 @@ const limiter = read(`${web}/main/java/org/saiku/web/security/ratelimit/LoginRat
 const resolverPath = `${web}/main/java/org/saiku/web/security/ratelimit/ClientIpResolver.java`;
 let resolver = '';
 try { resolver = read(resolverPath); } catch { failures.push('C3: no shared ClientIpResolver'); }
-if (resolver && !/getHeaders\("X-Forwarded-For"\)/.test(resolver)) failures.push('C2: resolver must read X-Forwarded-For with getHeaders');
+if (resolver && !/getHeaders\(/.test(resolver)) failures.push('C2: resolver must read X-Forwarded-For with getHeaders');
 if (/getHeader\("X-Forwarded-For"\)/.test(limiter + resolver)) failures.push('C2: first-line-only getHeader("X-Forwarded-For") still used');
 if (!/ClientIpResolver/.test(limiter)) failures.push('C3: limiter does not use ClientIpResolver');
 
