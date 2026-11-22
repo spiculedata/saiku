@@ -27,7 +27,8 @@ assert.ok(validatorStep, 'C1: a step runs the validator with java -cp');
 const cpLines = validatorStep.split('\n').filter((l) => /\bCP=|-cp\b/.test(l)).join('\n');
 assert.ok(!/saiku-core\/saiku-service\/target/.test(cpLines), 'C1: classpath must not use saiku-service/target inside the checkout');
 assert.ok(!/(^|[^/\w])target\/classpath\.txt/.test(cpLines), 'C1: classpath must not read target/classpath.txt inside the checkout');
-assert.ok(/RUNNER_TEMP/.test(cpLines), 'C1: classpath must point at the tool copy under RUNNER_TEMP');
+assert.ok(/RUNNER_TEMP|\$TOOL|\$\{TOOL\}/.test(cpLines), 'C1: classpath must point at the tool copy under RUNNER_TEMP');
+assert.ok(!/TOOL=/.test(validatorStep) || /TOOL="\$RUNNER_TEMP\//.test(validatorStep), 'C1: TOOL must live under RUNNER_TEMP');
 const copyStep = body.find((b) => /RUNNER_TEMP/.test(b) && /target\/classes/.test(b) && /\bcp\b/.test(b));
 assert.ok(copyStep, 'C1: a step copies the base-built target/classes to RUNNER_TEMP');
 
