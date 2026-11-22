@@ -7,6 +7,22 @@ All notable changes to Saiku are documented here. This project follows
 
 ### Changed
 
+- **CSP follow-ups (saiku#2430, after #1917).** (1) The SPA shell's policy is
+  baked into `index.html` as a `<meta>` at build time, so `saiku.security.csp`
+  can tighten it but never relax it. Deployments that relied on `http:` image
+  tiles (`img-src` allows only `'self' data: blob: https:`) or CDN fonts / remote
+  stylesheets in `brand.css` (`font-src 'self' data:`, `style-src 'self'
+  'unsafe-inline'`) will see them blocked: serve tiles over `https:` and
+  self-host the fonts under `<saiku.home>/branding/`, or rebuild the UI with the
+  extra sources added to `csp.directives` in `saiku-ui/kit.config.js`. There is
+  no runtime switch. (2) `form-action 'self'` is added to that policy. (3) There
+  is no longer a default `Content-Security-Policy-Report-Only` header: it
+  reported the shell's inline bootstrap on every page load (it still honours
+  `saiku.security.cspReportOnly` when set). (4) Responses outside `/ui/**` and
+  the hash-pinned demo pages now carry an enforced
+  `script-src 'self'; object-src 'none'; base-uri 'self'` header by default;
+  `saiku.security.csp` overrides it. New live e2e `csp-launcher.live.spec.ts`
+  covers the launcher-served `/ui/` and a deep link.
 - **The Docker image is now built on a Chainguard JRE with no shell**
   (saiku#2462, `cgr.dev/concepttocloud.com/jre:openjdk-21`, digest-pinned;
   grype findings on the same jar: 311 before, 30 after). What changes for

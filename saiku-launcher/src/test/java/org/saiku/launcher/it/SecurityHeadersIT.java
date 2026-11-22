@@ -16,8 +16,8 @@ import org.junit.Test;
  * {@link org.saiku.web.servlet.SecurityHeadersFilter} stamps the always-on browser
  * security headers on every response (incl. the {@code /ui/**} SPA surface whose
  * Spring Security chain is {@code security="none"}), that the SPA is NOT frameable
- * by a foreign origin out of the box (clickjacking hardening), and that the
- * documented CSP ships in report-only form so it blocks nothing until validated.
+ * by a foreign origin out of the box (clickjacking hardening), and that non-SPA
+ * responses enforce script-src while the shell relies on its own meta policy (saiku#2430).
  */
 public class SecurityHeadersIT {
 
@@ -50,15 +50,22 @@ public class SecurityHeadersIT {
     }
 
     @Test
-    public void spaShipsTheCspInReportOnlyFormByDefault() throws Exception {
-        // Nothing is blocked until an operator sets -Dsaiku.security.csp, so a
-        // deployment can browser-validate the policy first.
+    public void spaShellCarriesNoHeaderScriptSrcAndNoReportOnlyPolicy() throws Exception {
+        // saiku#2430: the shell's enforced policy is its <meta> tag; a header script-src
+        // would block its inline bootstrap, and a default report-only header reported it.
         HttpResponse<String> resp = harness.getAnon("/ui/");
         String enforced = header(resp, "Content-Security-Policy");
-        assertTrue("no enforced script-src by default, got: " + enforced, !enforced.contains("script-src"));
-        String reportOnly = header(resp, "Content-Security-Policy-Report-Only");
-        assertTrue("report-only CSP shipped by default", reportOnly.contains("script-src 'self'"));
-        assertTrue(reportOnly.contains("object-src 'none'"));
+        assertTrue("no header script-src on the shell, got: " + enforced, !enforced.contains("script-src"));
+        assertEquals("", header(resp, "Content-Security-Policy-Report-Only"));
+    }
+
+    @Test
+    public void nonSpaResponsesEnforceScriptSrcByDefault() throws Exception {
+        HttpResponse<String> resp = harness.getAnon("/rest/saiku/info");
+        String enforced = header(resp, "Content-Security-Policy");
+        assertTrue(
+                "enforced script-src 'self' outside the SPA, got: " + enforced, enforced.contains("script-src 'self'"));
+        assertTrue(enforced.contains("object-src 'none'"));
     }
 
     private static String header(HttpResponse<String> resp, String name) {

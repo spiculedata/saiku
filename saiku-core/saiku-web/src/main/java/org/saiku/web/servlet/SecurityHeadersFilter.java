@@ -94,17 +94,19 @@ public class SecurityHeadersFilter implements Filter {
                 return;
             }
             // Content-Security-Policy.
-            //  * An ENFORCED CSP is still opt-in via saiku.security.csp — a strict
-            //    script-src on the SvelteKit + monaco (blob: workers) + ECharts SPA
-            //    must be browser-validated first, so enforcing it by default could
-            //    break the UI. Out of the box the documented policy ships as
-            //    Content-Security-Policy-Report-Only (saiku#1917): violations are
-            //    reported by the browser, nothing is blocked, so a deployment can
-            //    confirm a clean console before flipping saiku.security.csp on.
-            //  * Tune or silence it with saiku.security.cspReportOnly (= the
-            //    default policy, or `off` to send no report-only header at all).
+            //  * The SPA shell (/ui/**) and the hash-pinned demo pages enforce their own
+            //    script-src through a <meta> policy baked into the HTML (SvelteKit hash mode,
+            //    saiku#1917). A header policy would intersect with it and block the inline
+            //    bootstrap, so by default they get only frame-ancestors.
+            //  * Every other response gets an enforced NON_SPA_CSP by default (saiku#2430):
+            //    nothing there needs an inline script, so script-src 'self' is safe.
+            //  * saiku.security.csp, when set, is enforced on everything (tighten only for the
+            //    shell: its meta policy still applies).
             String csp = prop("saiku.security.csp");
             String frameAncestors = frameAncestors();
+            if (csp == null && !isSpaShell(request)) {
+                csp = NON_SPA_CSP;
+            }
             if (csp != null) {
                 setIfAbsent(resp, "Content-Security-Policy", withFrameAncestors(csp, frameAncestors));
             } else if (frameAncestors != null) {
@@ -126,25 +128,39 @@ public class SecurityHeadersFilter implements Filter {
     }
 
     /**
-     * The enforced CSP shipped as {@code Content-Security-Policy-Report-Only} when
-     * the operator has not supplied their own (saiku#1917).
-     *
-     * <p>Monaco needs {@code blob:} workers, ECharts renders to canvas, and SvelteKit
-     * injects style tags, hence {@code 'unsafe-inline'} for styles and {@code blob:}
-     * for workers. {@code app.html} carries no inline {@code <script>}, so
-     * {@code script-src 'self'} is the directive that actually neutralises the
-     * inline-handler payloads from the XSS findings.
+     * The policy enforced by default on responses outside the SPA shell (saiku#2430).
+     * No inline script runs on those responses (share views and the image endpoint set
+     * their own stricter policy, which wins), so {@code script-src 'self'} neutralises
+     * injected handlers without touching the SPA.
      */
-    static final String DEFAULT_CSP = "default-src 'self'; "
-            + "script-src 'self'; "
-            + "style-src 'self' 'unsafe-inline'; "
-            + "img-src 'self' data: blob: https:; "
-            + "font-src 'self' data:; "
-            + "worker-src 'self' blob:; "
-            + "connect-src 'self'; "
-            + "object-src 'none'; "
-            + "base-uri 'self'; "
-            + "frame-ancestors 'self'";
+    static final String NON_SPA_CSP = "script-src 'self'; object-src 'none'; base-uri 'self'";
+
+    /** Path prefixes whose HTML carries its own hash-pinned {@code <meta>} policy. */
+    private static final String[] META_POLICY_PREFIXES = {"/ui/", "/aqvira-demo/", "/embed-demo/"};
+
+    /**
+     * True for the SPA shell and the demo pages: HTML that pins its inline bootstrap
+     * script by hash in a {@code <meta>} policy, which a header {@code script-src}
+     * would block. Decided on the decoded path ({@link RequestPaths}, #2342).
+     */
+    static boolean isSpaShell(ServletRequest request) {
+        if (!(request instanceof HttpServletRequest)) {
+            return false;
+        }
+        String path = RequestPaths.pathWithinApplication((HttpServletRequest) request);
+        if (path == null) {
+            return false;
+        }
+        if (path.equals("/ui") || path.equals("/") || path.equals("/index.html")) {
+            return true;
+        }
+        for (String prefix : META_POLICY_PREFIXES) {
+            if (path.startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     /** Path of the static plugin frame bootstrap ({@code saiku-ui/static/plugin-frame.html}). */
     static final String PLUGIN_FRAME_PATH = "/ui/plugin-frame.html";
@@ -228,17 +244,16 @@ public class SecurityHeadersFilter implements Filter {
     }
 
     /**
-     * The Content-Security-Policy-Report-Only value to send: the operator's
-     * {@code saiku.security.cspReportOnly} when set, {@link #DEFAULT_CSP} by
-     * default (saiku#1917), or {@code null} when explicitly disabled with
-     * {@code off} / {@code none} / {@code *}.
+     * The {@code Content-Security-Policy-Report-Only} value to send: the operator's
+     * {@code saiku.security.cspReportOnly} when set, otherwise {@code null}. There is
+     * no default report-only policy since saiku#2430: the SPA enforces its own policy
+     * from a {@code <meta>} tag and a default report-only header reported the inline
+     * SvelteKit bootstrap on every page load. {@code off} / {@code none} / {@code *}
+     * also yield {@code null}.
      */
     static String cspReportOnly() {
         String v = prop("saiku.security.cspReportOnly");
-        if (v == null) {
-            return DEFAULT_CSP;
-        }
-        return isOff(v) ? null : v;
+        return (v == null || isOff(v)) ? null : v;
     }
 
     /**
