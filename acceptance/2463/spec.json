@@ -1,7 +1,7 @@
 {
   "issue": 2463,
   "title": "Release builds resolve Maven and npm dependencies through Chainguard Libraries; a weekly workflow reports coverage gaps",
-  "kind": "ci",
+  "kind": "ui",
   "criteria": [
     {
       "id": "C1",
