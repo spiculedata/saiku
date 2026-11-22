@@ -1,0 +1,120 @@
+name: chainguard-coverage
+
+# Weekly "how much of our dependency tree can Chainguard Libraries actually serve?" report
+# (saiku#2463). Release builds resolve Maven Central and npmjs.org through Chainguard
+# (release.yml); this workflow resolves the SAME trees from scratch, Chainguard-only, so a gap
+# shows up on a Monday summary instead of in the middle of a tagged release.
+#
+# A REPORT, not a gate - same posture as quality-report.yml. Coverage gaps (an artifact Chainguard
+# has not built, or one still inside the fixed 7-day cooldown) land in the job summary and the run
+# stays green. The run fails (exit 2) only for authentication / entitlement / configuration
+# errors: an expired pull token, a missing secret, a 401/403 from libraries.cgr.dev, or a failure
+# that cannot be attributed to a missing artifact. Those need a human.
+#
+# No Central or npmjs fallback anywhere in this workflow. (Whether Chainguard itself proxies a
+# missing artifact from upstream is a server-side entitlement setting - docs/chainguard-libraries.md.)
+#
+# Cost: every run pulls the full tree into an empty cache, so it spends Starter-plan pulls
+# (50,000/month). The summary prints an estimate; measured on 2026-11-21 a run is about 3,400 Maven
+# files + about 1,100 npm requests, i.e. up to roughly 20,000 a month at weekly cadence if every file
+# counts as a pull. Drop the cron to fortnightly/monthly if the quota gets tight.
+on:
+  schedule:
+    # Monday 05:43 UTC; off the top of the hour, after quality-report (05:17) and security-scan (04:17).
+    - cron: "43 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chainguard-coverage
+  cancel-in-progress: false
+
+jobs:
+  maven:
+    name: Maven tree via Chainguard
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 22
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: "22"
+          # No `cache: maven`: a restored ~/.m2 could satisfy the build from Central-sourced bytes
+          # and hide exactly the gaps this workflow exists to find.
+
+      - name: Configure Maven settings.xml (Chainguard mirror + GitHub Packages)
+        env:
+          GH_PACKAGES_USER: ${{ github.actor }}
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+          CHAINGUARD_JAVA_IDENTITY_ID: ${{ secrets.CHAINGUARD_JAVA_IDENTITY_ID }}
+          CHAINGUARD_JAVA_TOKEN: ${{ secrets.CHAINGUARD_JAVA_TOKEN }}
+          CHAINGUARD_ONLY: "true" # mirror central to Chainguard: NO fallback, so gaps are visible
+        run: bash scripts/chainguard/write-maven-settings.sh
+
+      - name: Resolve dependency + plugin tree (empty local repository)
+        id: resolve
+        env:
+          LOCAL_REPO: ${{ runner.temp }}/m2-chainguard
+        run: |
+          set +e
+          # -fae: keep going past a missing artifact so the summary lists as many as Maven can see.
+          # go-offline resolves plugins AND every module's dependencies without compiling anything.
+          # No -ntp: the summary counts the "Downloaded from chainguard:" lines it would hide.
+          mvn -B -fae -Dmaven.repo.local="$LOCAL_REPO" -pl '!saiku-proptest' dependency:go-offline \
+            2>&1 | tee "$RUNNER_TEMP/maven-chainguard.log"
+          echo "rc=${PIPESTATUS[0]}" >>"$GITHUB_OUTPUT"
+
+      - name: Coverage summary
+        if: always() && steps.resolve.outcome != 'skipped'
+        env:
+          MVN_RC: ${{ steps.resolve.outputs.rc }}
+        run: bash scripts/chainguard/coverage-summary.sh maven "$RUNNER_TEMP/maven-chainguard.log" "${MVN_RC:-1}"
+
+  npm:
+    name: saiku-ui npm tree via Chainguard
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node 24
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          # No `cache: npm`: a warm ~/.npm would satisfy the lockfile hashes without touching Chainguard.
+
+      - name: Point npm at Chainguard (temporary .npmrc + lockfile hashes)
+        uses: ./.github/actions/chainguard-npm
+        with:
+          identity-id: ${{ secrets.CHAINGUARD_JS_IDENTITY_ID }}
+          token: ${{ secrets.CHAINGUARD_JS_TOKEN }}
+
+      - name: npm ci --ignore-scripts (empty cache)
+        id: install
+        working-directory: saiku-ui
+        env:
+          NPM_CONFIG_CACHE: ${{ runner.temp }}/npm-cache-chainguard
+        run: |
+          set +e
+          # --ignore-scripts: this is a coverage probe; no dependency code runs.
+          npm ci --ignore-scripts --no-audit --no-fund 2>&1 | tee "$RUNNER_TEMP/npm-chainguard.log"
+          echo "rc=${PIPESTATUS[0]}" >>"$GITHUB_OUTPUT"
+
+      - name: Coverage summary
+        if: always() && steps.install.outcome != 'skipped'
+        env:
+          NPM_RC: ${{ steps.install.outputs.rc }}
+        run: bash scripts/chainguard/coverage-summary.sh npm "$RUNNER_TEMP/npm-chainguard.log" "${NPM_RC:-1}" saiku-ui/package-lock.json

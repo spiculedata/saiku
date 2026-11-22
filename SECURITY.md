@@ -74,6 +74,15 @@ own coverage is worse than a short one, because a reader stops checking.
   It reports the *delta* a change introduces, not the standing CVE count of the
   dependency tree.
 
+- **Release builds prefer Chainguard-built Maven dependencies.** The tagged-release
+  workflow (`release.yml`) consults Chainguard Libraries for Java first, which rebuilds packages
+  from source, and falls back to Maven Central for anything Chainguard has not built (about a third
+  of the tree today), so this is a partial control, not a guarantee. npm in release builds, day-to-day
+  CI and Dependabot still use the public registries; the five Spicule forks come from GitHub
+  Packages; a maintainer can bypass it for an emergency release via a manual dispatch input, which
+  logs a warning. A weekly `chainguard-coverage` workflow reports what Chainguard cannot serve. See
+  [docs/chainguard-libraries.md](docs/chainguard-libraries.md).
+
 - **OWASP Dependency-Check — opt-in, not automatic.** `mvn -P security verify`
   runs the OWASP `dependency-check-maven` plugin (`check` goal) against the
   authoritative NVD feed. It is **not** part of `release.yml` and does **not** run

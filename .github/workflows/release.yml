@@ -7,6 +7,13 @@ on:
       tag:
         description: "Tag/version for a manual release (e.g. v3.17.0)"
         required: true
+      skip_chainguard:
+        description: >-
+          EMERGENCY ONLY (saiku#2463): do not consult Chainguard Libraries first for Maven; resolve
+          straight from Maven Central. See docs/chainguard-libraries.md. (npm is not routed through
+          Chainguard in release builds.)
+        type: boolean
+        default: false
 
 # Least-privilege default: read-only for the whole workflow. Each job below
 # elevates ONLY the scope it needs (see per-job `permissions:` blocks), so a
@@ -98,7 +105,9 @@ jobs:
         with:
           distribution: temurin
           java-version: "22"
-          cache: maven
+          # No `cache: maven` (saiku#2463): ci.yml shares that cache key and fills it from Maven
+          # Central, so restoring it here would satisfy the build without touching Chainguard.
+          # A release is rare enough that a cold ~/.m2 is the right trade.
 
       # See ci.yml for the rationale — multi-server settings.xml so the build
       # can resolve mondrian and the spiculedata olap4j / olap4j-xmlaserver
@@ -111,22 +120,20 @@ jobs:
       # publishes THIS repo's artifacts lives only in the
       # `deploy-packages` job (saiku#1993), so no write-scoped credential
       # sits on disk while tests / npm lifecycle scripts execute here.
+      #
+      # saiku#2463: Chainguard Libraries for Java is added as a repository + pluginRepository in an
+      # always-active settings profile, so it is consulted FIRST; Maven Central and the GH Packages
+      # repos remain reachable after it (client-side fallback: Starter cannot enable Chainguard's
+      # upstream policy). The log shows `Downloaded from chainguard-java:` vs `... from central:`.
+      # `skip_chainguard` (workflow_dispatch only) is the deliberate, warned-about bypass.
       - name: Configure Maven settings.xml
         env:
           GH_PACKAGES_USER: ${{ github.actor }}
           GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
-        run: |
-          mkdir -p ~/.m2
-          cat > ~/.m2/settings.xml <<EOF
-          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
-            <servers>
-              <server><id>github-mondrian-saiku</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
-              <server><id>github-olap4j</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
-              <server><id>github-olap4j-xmlaserver</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
-              <server><id>github-saiku-query</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
-            </servers>
-          </settings>
-          EOF
+          CHAINGUARD_JAVA_IDENTITY_ID: ${{ secrets.CHAINGUARD_JAVA_IDENTITY_ID }}
+          CHAINGUARD_JAVA_TOKEN: ${{ secrets.CHAINGUARD_JAVA_TOKEN }}
+          SKIP_CHAINGUARD: ${{ github.event.inputs.skip_chainguard == 'true' }}
+        run: bash scripts/chainguard/write-maven-settings.sh
 
       - name: Resolve version
         id: meta
@@ -181,6 +188,12 @@ jobs:
         # saiku-mcp stdio binary is gone — MCP hosts now hit the launcher
         # directly with per-user Basic auth.
         run: mvn -B -ntp -DskipTests -pl saiku-launcher -am package
+
+      - name: Report Maven artifact sources (Chainguard vs Central)
+        if: always()
+        # saiku#2463: `-ntp` hides "Downloaded from" lines, so read where Maven recorded each
+        # cached artifact came from. Informational only; never fails the build.
+        run: bash scripts/chainguard/report-maven-sources.sh
 
       - name: Stage release assets
         env:
