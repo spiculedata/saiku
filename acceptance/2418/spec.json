@@ -1,0 +1,29 @@
+{
+  "issue": 2418,
+  "title": "claude.yml keeps the action in interactive (tag) mode: no prompt input, the untrusted-text framing is passed via --append-system-prompt, and the tool allow-list stays narrow",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "the agent step of claude.yml",
+      "then": "it sets no `prompt:` input (a prompt selects automation mode, where @claude cannot read or answer the triggering comment)"
+    },
+    {
+      "id": "C2",
+      "given": "claude_args of claude.yml",
+      "then": "it passes --append-system-prompt framing the issue/PR text as UNTRUSTED data, and the framing interpolates no ${{ }} expressions"
+    },
+    {
+      "id": "C3",
+      "given": "--allowed-tools and --disallowed-tools in claude_args",
+      "then": "allowed tools contain no Edit, Write, npm run check, mvn spotless:apply, git log or git diff and no git push; git push and edits under .github/ stay denied"
+    },
+    {
+      "id": "C4",
+      "given": "the fork guard and trigger restrictions from #2334",
+      "then": "the guard still runs before the agent, issues fire on opened only, and docs state the fork skip of the automated reviewer"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}
