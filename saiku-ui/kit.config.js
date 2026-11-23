@@ -49,7 +49,9 @@ export default {
 			'worker-src': ['self', 'blob:'],
 			'connect-src': ['self'],
 			'object-src': ['none'],
-			'base-uri': ['self']
+			'base-uri': ['self'],
+			// saiku#2430: form-action does not fall back to default-src.
+			'form-action': ['self']
 		}
 	},
 	paths: {
