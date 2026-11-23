@@ -694,4 +694,31 @@ public class EmbedAuthFilterTest {
             capturedAuth = SecurityContextHolder.getContext().getAuthentication();
         }
     }
+
+    @Test
+    public void nonNormalisablePath_continuesTheChainWithoutAGuest() throws Exception {
+        EmbedToken t = tokenStore.create("query", "/q.saiku", "admin", List.of(), 60_000L, null);
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/rest/saiku/api/embed/query/%00q.saiku");
+        req.addHeader(EmbedAuthFilter.TOKEN_HEADER, t.token);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        TrackingChain chain = new TrackingChain();
+
+        filter.doFilter(req, resp, chain);
+
+        assertTrue(chain.called);
+        assertNull(SecurityContextHolder.getContext().getAuthentication());
+    }
+
+    @Test
+    public void encodedEmbedPrefix_isStillRecognised() throws Exception {
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/%72est/saiku/api/embed/query/q.saiku");
+        req.addHeader(EmbedAuthFilter.TOKEN_HEADER, "not-a-token");
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        TrackingChain chain = new TrackingChain();
+
+        filter.doFilter(req, resp, chain);
+
+        assertEquals(401, resp.getStatus());
+        assertFalse(chain.called);
+    }
 }

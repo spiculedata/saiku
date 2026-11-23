@@ -7,8 +7,10 @@ package org.saiku.service.olap.ai.explain;
 import java.lang.ref.Cleaner;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiFunction;
 import org.apache.logging.log4j.Level;
@@ -40,8 +42,8 @@ import org.apache.logging.log4j.core.config.LoggerConfig;
  * <p><b>Cost and blast radius.</b> A probe only exists between {@link #open()} and {@link
  * #close()}, and closing detaches the appender, removes any logger config it created and restores
  * every level it touched. {@code DEBUG} is chatty, which is why the probe is scoped to the one cell
- * query instead of being left on; appenders already attached to those loggers will also see the
- * extra records for that window. This is deliberately NOT {@link AutoCloseable}: a {@code close()}
+ * query instead of being left on; appenders already attached to those loggers are fenced (see {@link SqlLogFence}) so they do
+ * not see the extra records for that window (saiku#2423). This is deliberately NOT {@link AutoCloseable}: a {@code close()}
  * inside try-with-resources would hide the fact that level restoration is a global side effect.
  *
  * <p><b>Overlapping probes.</b> The level is process-wide while each probe is per request, so the
@@ -69,6 +71,9 @@ public final class SqlCaptureProbe {
     /** Loggers beneath which the planner emits its SQL. */
     static final String[] SQL_LOGGERS = {"mondrian.sql", "mondrian.olap", "mondrian.jdbc"};
 
+    /** Name prefix of every probe's appender; the fence must never filter these. */
+    static final String APPENDER_PREFIX = "saiku-sql-capture-";
+
     /** A driver-level "executing SQL" line rather than a planner statement. */
     private static final int MIN_SQL_LENGTH = 16;
 
@@ -89,6 +94,9 @@ public final class SqlCaptureProbe {
 
     /** What the first probe found, to be put back by the last one. Guarded by {@link #LEVELS}. */
     private static final List<RaisedLogger> RAISED = new ArrayList<>();
+
+    /** Keeps the probe's DEBUG records out of existing appenders. Guarded by {@link #LEVELS}. */
+    private static SqlLogFence fence;
 
     /**
      * Records whose restore failed, kept so the next restore retries them and the next raise reuses
@@ -132,7 +140,7 @@ public final class SqlCaptureProbe {
 
         CaptureAppender(List<String> statements, int maxStatements, Scope scope) {
             super(
-                    "saiku-sql-capture-" + SEQUENCE.incrementAndGet(),
+                    APPENDER_PREFIX + SEQUENCE.incrementAndGet(),
                     null,
                     null,
                     true,
@@ -326,8 +334,26 @@ public final class SqlCaptureProbe {
 
     /** Record each logger's level and lower it to {@code DEBUG}. Caller holds {@link #LEVELS}. */
     private static void raiseLevels(Configuration config) {
+        removeFence();
         RAISED.clear();
         raisedOn = config;
+        // saiku#2423: the loggers are process-wide, so fence the appenders that were already there
+        // BEFORE any level changes, or another execution's first DEBUG records slip through.
+        Map<String, Level> levelsBefore = new HashMap<>();
+        List<LoggerConfig> governing = new ArrayList<>();
+        for (String name : SQL_LOGGERS) {
+            LoggerConfig existing = config.getLoggerConfig(name);
+            RaisedLogger unrestored = name.equals(existing.getName()) ? peekUnrestored(existing) : null;
+            governing.add(existing);
+            levelsBefore.put(
+                    name,
+                    unrestored == null
+                            ? existing.getLevel()
+                            : unrestored.previous() != null
+                                    ? unrestored.previous()
+                                    : config.getRootLogger().getLevel());
+        }
+        fence = SqlLogFence.install(config, levelsBefore, governing);
         for (String name : SQL_LOGGERS) {
             LoggerConfig existing = config.getLoggerConfig(name);
             boolean ownConfig = name.equals(existing.getName());
@@ -347,6 +373,23 @@ public final class SqlCaptureProbe {
                 RAISED.add(new RaisedLogger(config, target, null, true));
                 config.addLogger(name, target);
             }
+        }
+    }
+
+    private static RaisedLogger peekUnrestored(LoggerConfig target) {
+        for (RaisedLogger candidate : UNRESTORED) {
+            if (candidate.target() == target) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private static void removeFence() {
+        SqlLogFence old = fence;
+        fence = null;
+        if (old != null) {
+            old.remove();
         }
     }
 
@@ -378,6 +421,18 @@ public final class SqlCaptureProbe {
                 UNRESTORED.add(raised);
                 first = collect(first, t);
             }
+        }
+        // Last, and after the loggers have picked the levels up: until then DEBUG records are
+        // still being produced and the fence is what keeps them out of the existing appenders.
+        try {
+            ((LoggerContext) LogManager.getContext(SqlCaptureProbe.class.getClassLoader(), false)).updateLoggers();
+        } catch (Throwable t) {
+            first = collect(first, t);
+        }
+        try {
+            removeFence();
+        } catch (Throwable t) {
+            first = collect(first, t);
         }
         rethrow(first);
     }
