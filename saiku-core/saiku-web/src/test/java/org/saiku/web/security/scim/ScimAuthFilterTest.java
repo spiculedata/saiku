@@ -186,4 +186,22 @@ public class ScimAuthFilterTest {
         org.junit.Assert.assertFalse(ScimAuthFilter.isScimPath("/rest/scim/"));
         org.junit.Assert.assertFalse(ScimAuthFilter.isScimPath(null));
     }
+
+    @Test
+    public void nonNormalisablePathWithoutBearerIs401NotAPassThrough() throws Exception {
+        MockHttpServletResponse resp = response();
+        filter(100).doFilter(request("/rest/scim/v2/%00Users", null), resp, (req, res) -> {
+            throw new AssertionError("must not reach the chain");
+        });
+        assertEquals(401, resp.getStatus());
+    }
+
+    @Test
+    public void encodedScimPrefixWithoutBearerIs401() throws Exception {
+        MockHttpServletResponse resp = response();
+        filter(100).doFilter(request("/%72est/scim/v2/Users", null), resp, (req, res) -> {
+            throw new AssertionError("must not reach the chain");
+        });
+        assertEquals(401, resp.getStatus());
+    }
 }

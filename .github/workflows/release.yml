@@ -296,6 +296,9 @@ jobs:
     # never reaches the publishing step, and no release asset depends on this
     # job (the JAR/dist/SBOM ride to the GitHub release from `jar`).
     needs: [guard, jar]
+    # Maintainer approval gate (saiku#2333): the job waits for a required reviewer in the
+    # `release` environment (tag rule v*) before any credential is exposed.
+    environment: release
     permissions:
       contents: read # checkout only
       packages: write # `mvn deploy` publishes module jars to GH Packages
@@ -363,6 +366,9 @@ jobs:
     name: Build & push Docker image
     runs-on: ubuntu-latest
     needs: [guard, jar]
+    # Maintainer approval gate (saiku#2333): the job waits for a required reviewer in the
+    # `release` environment (tag rule v*) before any credential is exposed.
+    environment: release
     permissions:
       contents: read # checkout only
       packages: write # push the image AND its attestations to GHCR
@@ -401,14 +407,14 @@ jobs:
       # there is no skip path: a missing secret fails the release build.
       - name: Log in to Chainguard registry
         # docker/login-action passes the password to `docker login` on stdin.
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: cgr.dev
           username: ${{ secrets.CHAINGUARD_IDENTITY_ID }}
           password: ${{ secrets.CHAINGUARD_TOKEN }}
 
       - name: Log in to GHCR
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -465,6 +471,9 @@ jobs:
     # blocks the release announcement, exactly as it did when `mvn deploy`
     # ran inside the jar job (saiku#1993).
     needs: [jar, docker, deploy-packages]
+    # Maintainer approval gate (saiku#2333): the job waits for a required reviewer in the
+    # `release` environment (tag rule v*) before any credential is exposed.
+    environment: release
     permissions:
       contents: write # create the GitHub release + upload assets
       id-token: write # keyless Sigstore signing for JAR + dist provenance (saiku#1992)
@@ -534,7 +543,7 @@ jobs:
           cat SHA256SUMS
 
       - name: Create GitHub release
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           # Both files in a multi-line list. softprops/action-gh-release@v3
           # de-dupes by filename so we can list them explicitly.
@@ -659,6 +668,9 @@ jobs:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     needs: [npm-embed-build]
+    # Maintainer approval gate (saiku#2333): the job waits for a required reviewer in the
+    # `release` environment (tag rule v*) before any credential is exposed.
+    environment: release
     permissions:
       contents: read # publish auth is NPM_TOKEN; provenance uses the OIDC token
       id-token: write # npm --provenance mints an OIDC token for Sigstore (saiku#1992)
@@ -718,6 +730,9 @@ jobs:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     needs: [jar, release]
+    # Maintainer approval gate (saiku#2333): the job waits for a required reviewer in the
+    # `release` environment (tag rule v*) before any credential is exposed.
+    environment: release
     permissions:
       contents: read # GITHUB_TOKEN only reads this repo's release notes; the cross-repo PR uses DOCS_SITE_PAT
     steps:
