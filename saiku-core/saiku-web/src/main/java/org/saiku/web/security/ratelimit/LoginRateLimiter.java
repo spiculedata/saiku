@@ -8,9 +8,8 @@ package org.saiku.web.security.ratelimit;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import com.github.benmanes.caffeine.cache.Ticker;
 import jakarta.servlet.http.HttpServletRequest;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.saiku.service.util.security.Usernames;
@@ -40,13 +39,12 @@ import org.slf4j.LoggerFactory;
  * length). No background thread. Suitable for the single-node Saiku deployment; a
  * horizontally-scaled setup would need a shared store.
  *
- * <p>Client IP resolution is conservative: {@link HttpServletRequest#getRemoteAddr()}
- * unless {@code saiku.auth.trustedProxyHops=<n>} (n greater than 0) says that the
- * last <em>n</em> hops are trusted proxies, counting the immediate peer. With {@code n}
- * the client is the {@code n}-th entry from the right of {@code X-Forwarded-For}
- * (the entries to its left are attacker-controlled and never used). With fewer than
- * {@code n} entries the peer address is used. The legacy
- * {@code saiku.auth.trustForwardedFor=true} is an alias for {@code n=1}.
+ * <p>Client IP resolution is {@link ClientIpResolver}'s (shared with the audit log): the TCP
+ * peer unless {@code saiku.auth.trustedProxyHops=<n>} says that the last <em>n</em> hops are
+ * trusted proxies, counting the immediate peer.
+ *
+ * <p>A success clears only the (IP, username) bucket: the per-username budget is a defence
+ * against distributed guessing, so one legitimate login must not keep resetting it.
  */
 public class LoginRateLimiter {
 
@@ -56,6 +54,8 @@ public class LoginRateLimiter {
     static final long DEFAULT_WINDOW_MS = 15 * 60 * 1000L;
     static final int DEFAULT_MAX_USER_ATTEMPTS = 20;
     static final int DEFAULT_MAX_IP_ATTEMPTS = 50;
+    static final String MAX_USER_ATTEMPTS_PROPERTY = "saiku.auth.maxAttemptsPerUser";
+    static final String MAX_IP_ATTEMPTS_PROPERTY = "saiku.auth.maxAttemptsPerIp";
     /** Upper bound on the canonicalised username used as a (partial) bucket key (saiku#2426). */
     static final int MAX_USERNAME_LENGTH = 256;
     /** Upper bound on the number of buckets held per map (saiku#2426). */
@@ -72,8 +72,9 @@ public class LoginRateLimiter {
     private final Cache<String, Bucket> userBuckets;
     private final Cache<String, Bucket> ipBuckets;
 
-    private static Cache<String, Bucket> newBuckets(long windowMs) {
+    private static Cache<String, Bucket> newBuckets(long windowMs, Ticker ticker) {
         return Caffeine.newBuilder()
+                .ticker(ticker)
                 .maximumSize(MAX_BUCKETS)
                 .expireAfterWrite(windowMs, TimeUnit.MILLISECONDS)
                 .build();
@@ -83,9 +84,26 @@ public class LoginRateLimiter {
         this(
                 DEFAULT_MAX_ATTEMPTS,
                 DEFAULT_WINDOW_MS,
-                parseTrustedProxyHops(),
-                DEFAULT_MAX_USER_ATTEMPTS,
-                DEFAULT_MAX_IP_ATTEMPTS);
+                ClientIpResolver.configuredTrustedProxyHops(),
+                positiveIntProperty(MAX_USER_ATTEMPTS_PROPERTY, DEFAULT_MAX_USER_ATTEMPTS),
+                positiveIntProperty(MAX_IP_ATTEMPTS_PROPERTY, DEFAULT_MAX_IP_ATTEMPTS));
+    }
+
+    /**
+     * A positive integer system property, or {@code fallback} (with a WARN) when it is set but
+     * not a positive integer.
+     */
+    static int positiveIntProperty(String name, int fallback) {
+        String configured = System.getProperty(name);
+        if (configured == null || configured.isBlank()) return fallback;
+        try {
+            int value = Integer.parseInt(configured.trim());
+            if (value > 0) return value;
+        } catch (NumberFormatException ignored) {
+            // falls through to the warning below
+        }
+        log.warn("ignoring invalid {}='{}'; using the default {}", name, configured, fallback);
+        return fallback;
     }
 
     /** @param trustForwardedFor legacy switch: true means one trusted proxy hop. */
@@ -95,29 +113,25 @@ public class LoginRateLimiter {
 
     public LoginRateLimiter(
             int maxAttempts, long windowMs, int trustedProxyHops, int maxUserAttempts, int maxIpAttempts) {
+        this(maxAttempts, windowMs, trustedProxyHops, maxUserAttempts, maxIpAttempts, Ticker.systemTicker());
+    }
+
+    /** @param ticker the time source, injectable so tests need no sleeping */
+    LoginRateLimiter(
+            int maxAttempts,
+            long windowMs,
+            int trustedProxyHops,
+            int maxUserAttempts,
+            int maxIpAttempts,
+            Ticker ticker) {
         this.maxAttempts = maxAttempts;
         this.windowMs = windowMs;
         this.trustedProxyHops = Math.max(0, trustedProxyHops);
         this.maxUserAttempts = maxUserAttempts;
         this.maxIpAttempts = maxIpAttempts;
-        this.ipUserBuckets = newBuckets(windowMs);
-        this.userBuckets = newBuckets(windowMs);
-        this.ipBuckets = newBuckets(windowMs);
-    }
-
-    private static int parseTrustedProxyHops() {
-        String configured = System.getProperty("saiku.auth.trustedProxyHops");
-        if (configured != null && !configured.isBlank()) {
-            try {
-                return Math.max(0, Integer.parseInt(configured.trim()));
-            } catch (NumberFormatException e) {
-                log.warn(
-                        "ignoring invalid saiku.auth.trustedProxyHops='{}'; forwarded headers are not trusted",
-                        configured);
-                return 0;
-            }
-        }
-        return Boolean.parseBoolean(System.getProperty("saiku.auth.trustForwardedFor", "false")) ? 1 : 0;
+        this.ipUserBuckets = newBuckets(windowMs, ticker);
+        this.userBuckets = newBuckets(windowMs, ticker);
+        this.ipBuckets = newBuckets(windowMs, ticker);
     }
 
     /**
@@ -135,6 +149,16 @@ public class LoginRateLimiter {
         if (user == null) return false;
         return overBudget(ipUserBuckets, ip + KEY_SEPARATOR + user, maxAttempts)
                 || overBudget(userBuckets, user, maxUserAttempts);
+    }
+
+    /**
+     * Strict rule for credentials the limiter cannot attribute to a username (for example Basic
+     * credentials with no user part): the per-address budget is {@code maxAttempts}, not the
+     * high-water mark, since nothing narrower than the address identifies the caller.
+     */
+    public boolean isBlockedUnattributed(HttpServletRequest req) {
+        String ip = clientIp(req);
+        return ip != null && overBudget(ipBuckets, ip, maxAttempts);
     }
 
     /** Record a failed login from this request's client for this username. */
@@ -160,13 +184,15 @@ public class LoginRateLimiter {
         }
     }
 
-    /** Record a successful login: clears the (IP, user) and per-user counters so the user is not locked out next session. */
+    /**
+     * Record a successful login: clears the (IP, user) counter so the user is not locked out next
+     * session. The per-user budget is left to expire, or one success would keep resetting it.
+     */
     public void recordSuccess(HttpServletRequest req, String username) {
         String ip = clientIp(req);
         String user = userKey(username);
         if (ip == null || user == null) return;
         ipUserBuckets.invalidate(ip + KEY_SEPARATOR + user);
-        userBuckets.invalidate(user);
     }
 
     private boolean overBudget(Cache<String, Bucket> buckets, String key, int max) {
@@ -200,19 +226,7 @@ public class LoginRateLimiter {
 
     /** Exposed for testing. */
     String clientIp(HttpServletRequest req) {
-        if (trustedProxyHops > 0) {
-            String fwd = req.getHeader("X-Forwarded-For");
-            if (fwd != null && !fwd.isBlank()) {
-                List<String> hops = new ArrayList<>();
-                for (String part : fwd.split(",")) {
-                    if (!part.isBlank()) hops.add(part.trim());
-                }
-                if (hops.size() >= trustedProxyHops) {
-                    return hops.get(hops.size() - trustedProxyHops);
-                }
-            }
-        }
-        return req.getRemoteAddr();
+        return ClientIpResolver.resolve(req, trustedProxyHops);
     }
 
     /** Exposed for testing: forces pending evictions, then the approximate size of each bucket map. */

@@ -220,4 +220,35 @@ public class OAuthBearerAuthenticationFilterTest {
             capturedAuth = SecurityContextHolder.getContext().getAuthentication();
         }
     }
+
+    @Test
+    public void nonNormalisablePath_passesThroughWithoutAnIdentity() throws Exception {
+        MockHttpServletRequest req = new MockHttpServletRequest("POST", MCP_PATH + "/%00x");
+        req.addHeader(
+                "Authorization",
+                "Bearer "
+                        + signedToken(
+                                "alice", List.of("ROLE_USER"), Instant.now().plusSeconds(600)));
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        TrackingChain chain = new TrackingChain();
+
+        enabledFilter().doFilter(req, resp, chain);
+
+        assertTrue(chain.called);
+        assertNull(SecurityContextHolder.getContext().getAuthentication());
+    }
+
+    @Test
+    public void encodedMcpPrefix_isStillRecognised() throws Exception {
+        String encoded = "/%72est" + MCP_PATH.substring("/rest".length());
+        MockHttpServletRequest req = new MockHttpServletRequest("POST", encoded);
+        req.addHeader("Authorization", "Bearer not-a-jwt");
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        TrackingChain chain = new TrackingChain();
+
+        enabledFilter().doFilter(req, resp, chain);
+
+        assertFalse(chain.called);
+        assertEquals(401, resp.getStatus());
+    }
 }
