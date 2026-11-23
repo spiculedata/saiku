@@ -23,7 +23,7 @@
   </description>
 
   <properties>
-    <hegel.version>0.10.1</hegel.version>
+    <hegel.version>0.13.0</hegel.version>
   </properties>
 
   <dependencyManagement>
