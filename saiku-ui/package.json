@@ -80,7 +80,7 @@
 	"dependencies": {
 		"@concepttocloud/saiku-design-system": "*",
 		"@lucide/svelte": "^1.75.0",
-		"@xyflow/svelte": "^1.7.1",
+		"@xyflow/svelte": "^2.0.2",
 		"apache-arrow": "^21.2.0",
 		"bits-ui": "^2.21.0",
 		"clsx": "^2.1.1",
