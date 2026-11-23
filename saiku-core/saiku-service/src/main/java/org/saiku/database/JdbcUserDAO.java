@@ -22,8 +22,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.support.JdbcDaoSupport;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.support.TransactionTemplate;
 
 public class JdbcUserDAO extends JdbcDaoSupport implements UserDAO {
 
@@ -84,15 +86,32 @@ public class JdbcUserDAO extends JdbcDaoSupport implements UserDAO {
         String sql = prop.getProperty("insertRole");
         String removeSQL = prop.getProperty("deleteRole");
 
-        getJdbcTemplate().update(removeSQL, user.getId());
+        // saiku#2432: delete-then-insert in ONE transaction, so a concurrent account-status lookup can
+        // never read the half-written (role-less) state and cache a spurious demotion.
+        new TransactionTemplate(new DataSourceTransactionManager(getDataSource())).executeWithoutResult(tx -> {
+            getJdbcTemplate().update(removeSQL, user.getId());
 
-        if (user.getRoles() != null) {
-            for (String r : user.getRoles()) {
-                if (r != null && !r.equals("")) {
-                    getJdbcTemplate().update(sql, Integer.valueOf(user.getId()), user.getUsername(), r);
+            if (user.getRoles() != null) {
+                for (String r : user.getRoles()) {
+                    if (r != null && !r.equals("")) {
+                        getJdbcTemplate().update(sql, Integer.valueOf(user.getId()), user.getUsername(), r);
+                    }
                 }
             }
+        });
+    }
+
+    /**
+     * saiku#2432: every row whose username matches {@code username} case-insensitively, via a keyed
+     * query (the account-status check runs on every request, so it must not read every user). Falls
+     * back to scanning when the shipped query is absent from a customised queries file.
+     */
+    public Collection findByUsername(String username) {
+        String sql = prop.getProperty("getUserByUsername");
+        if (sql == null) {
+            return findAllUsers();
         }
+        return getJdbcTemplate().query(sql, new Object[] {username}, new UserMapper());
     }
 
     public void deleteUser(SaikuUser user) {

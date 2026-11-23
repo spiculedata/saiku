@@ -1,0 +1,34 @@
+{
+  "issue": 2432,
+  "title": "Account-status follow-ups: audit events, atomic role rewrite, keyed lookup, case-variant deny, stable tests, documented scope",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "the account-status filter refuses a disabled account or demotes an admin",
+      "then": "an audit event is emitted for each (account_refused, account_demoted)"
+    },
+    {
+      "id": "C2",
+      "given": "a user's roles are rewritten",
+      "then": "the delete-then-insert runs in one transaction, so a concurrent lookup never sees a half-written role set"
+    },
+    {
+      "id": "C3",
+      "given": "the status lookup runs, or two rows differ only by case",
+      "then": "a keyed query is used (not a scan of every user) and the account is denied if any case-variant row is disabled"
+    },
+    {
+      "id": "C4",
+      "given": "the policy cache TTL and its tests",
+      "then": "the TTL uses a monotonic clock that tests inject, the DAO test cannot skip via assumeTrue, and the unreferenced authorisationPredicate bean is gone"
+    },
+    {
+      "id": "C5",
+      "given": "an operator reads docs/operator-hardening.md",
+      "then": "it states the re-enable path, the roles and authentication types covered, the delete/rename caveat and the upgrade recovery step"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}
