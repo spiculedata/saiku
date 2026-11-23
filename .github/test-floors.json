@@ -1,8 +1,8 @@
 {
-  "_": "Per-module test-count floors. CI fails if any module's surefire total drops below its floor — catches accidental test deletions. Bump explicitly when adding tests. Floors set during Phase 4 / saiku#8 with totals from feat/platform-improvements.",
+  "_": "Per-module test-count floors. CI fails if any module's surefire total drops below its floor \u2014 catches accidental test deletions. Bump explicitly when adding tests. Floors set during Phase 4 / saiku#8 with totals from feat/platform-improvements. saiku#2496: web 711\u21921700 (measured 1740), launcher 32\u2192140 (measured 144).",
   "modules": {
     "saiku-core/saiku-service": 582,
-    "saiku-core/saiku-web": 711,
-    "saiku-launcher": 32
+    "saiku-core/saiku-web": 1700,
+    "saiku-launcher": 140
   }
 }
