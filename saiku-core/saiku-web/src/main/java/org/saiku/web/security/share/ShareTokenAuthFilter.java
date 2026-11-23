@@ -74,7 +74,7 @@ public class ShareTokenAuthFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest req, HttpServletResponse resp, FilterChain chain)
             throws ServletException, IOException {
         String path = RequestPaths.pathWithinApplication(req);
-        if (!path.startsWith(VIEW_PREFIX)) {
+        if (path == null || !path.startsWith(VIEW_PREFIX)) {
             chain.doFilter(req, resp);
             return;
         }

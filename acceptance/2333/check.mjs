@@ -62,4 +62,14 @@ for (const id of ['jar', 'deploy-packages', 'docker', 'npm-embed-build']) {
   assert.ok(co, `${id} has a checkout`);
   assert.match(co[1], /ref:\s*\$\{\{\s*needs\.guard\.outputs\.sha\s*\}\}/, `C3: ${id} checkout must use needs.guard.outputs.sha`);
 }
-console.log('release.yml gates every job on a main-ancestry guard');
+// C4: every job that publishes or holds a publishing credential is behind the `release` environment
+// (required reviewers); build-only jobs are not, so approval happens once the builds are ready.
+const envOf = (id) => /^ {4}environment:\s*(\S+)\s*$/m.exec(text(id))?.[1];
+for (const id of ['deploy-packages', 'docker', 'release', 'npm-embed-publish', 'docs-changelog']) {
+  assert.ok(jobs.has(id), `${id} exists`);
+  assert.equal(envOf(id), 'release', `C4: ${id} must declare environment: release`);
+}
+for (const id of ['guard', 'jar', 'npm-embed-build']) {
+  assert.equal(envOf(id), undefined, `C4: build-only job ${id} must not declare an environment`);
+}
+console.log('release.yml gates every job on a main-ancestry guard and publishing jobs on the release environment');
