@@ -13,7 +13,7 @@ body:
     attributes:
       label: Saiku version
       description: Shown under Admin → About, or in the launcher JAR name (`saiku-<version>.jar`).
-      placeholder: "4.8.0"
+      placeholder: "4.9.0"
     validations:
       required: true
   - type: dropdown
