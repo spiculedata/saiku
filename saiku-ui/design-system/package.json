@@ -52,7 +52,7 @@
 		"tailwind-variants": "^4.0.2"
 	},
 	"devDependencies": {
-		"@sveltejs/package": "^3.0.2",
+		"@sveltejs/package": "^3.0.3",
 		"@sveltejs/vite-plugin-svelte": "^7.3.1",
 		"svelte": "^5.58.0",
 		"svelte-check": "^4.7.8",
