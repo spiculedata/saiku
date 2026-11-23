@@ -83,6 +83,25 @@ public class MondrianStatementScopeTest {
     }
 
     @Test
+    public void aWorkerUnderTheExplainedStatementsLocusIsClaimed() throws Exception {
+        TestStatement explained = new TestStatement();
+        SqlCaptureProbe.Scope scope = MondrianStatementScope.forStatementId(explained.getId(), Thread.currentThread());
+        AtomicBoolean claimed = new AtomicBoolean();
+        assertFalse(ownsOn(scope, () -> claimed.set(underLocusOf(explained, scope))));
+        assertTrue(claimed.get());
+    }
+
+    @Test
+    public void aWorkerUnderAForeignStatementsLocusIsRejected() throws Exception {
+        TestStatement explained = new TestStatement();
+        TestStatement foreign = new TestStatement();
+        SqlCaptureProbe.Scope scope = MondrianStatementScope.forStatementId(explained.getId(), Thread.currentThread());
+        AtomicBoolean claimed = new AtomicBoolean(true);
+        assertFalse(ownsOn(scope, () -> claimed.set(underLocusOf(foreign, scope))));
+        assertFalse(claimed.get());
+    }
+
+    @Test
     public void withoutAStatementIdOnlyTheOpeningThreadIsClaimed() throws Exception {
         SqlCaptureProbe.Scope scope = MondrianStatementScope.forStatementId(null, Thread.currentThread());
         assertTrue(scope.owns());
