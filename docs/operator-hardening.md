@@ -208,7 +208,16 @@ independent budgets inside a 15-minute window, and any one of them blocks furthe
 | username, from any IP | 20 | still stops a distributed guessing attack on one account |
 | client IP, any username | 50 | still stops one source enumerating many usernames |
 
-A successful login clears the (IP, username) and username counters.
+The username and per-IP limits default to 20 and 50 and can be changed with system properties, for example
+`JAVA_OPTS="-Dsaiku.auth.maxAttemptsPerUser=30 -Dsaiku.auth.maxAttemptsPerIp=100"`. A value that is not a positive
+integer is ignored with a `WARN` and the default is used. The username budget can, by design, lock a named account
+out from every address for the window, so do not set it far below the number of attempts an attacker could make
+in 15 minutes unless you accept that.
+
+A successful login clears only the (IP, username) counter. The username budget is left to expire, so one legitimate
+login (or Basic auth on every request) cannot keep resetting it; the cost is that a named account can be locked out
+from every address for the window. Basic credentials the limiter cannot attribute to a username fall under the stricter
+5-per-address budget.
 
 By default the client IP is the TCP peer and `X-Forwarded-For` is ignored, which is right when Saiku is exposed
 directly. Behind a reverse proxy every user then shares the proxy's address, so the per-IP budgets are shared as
@@ -218,9 +227,12 @@ well. Tell Saiku how many trusted proxies are in front of it:
 JAVA_OPTS="-Dsaiku.auth.trustedProxyHops=1"
 ```
 
-`trustedProxyHops=n` means the last `n` hops are proxies you control, counting the immediate TCP peer. The client
-is the `n`-th entry from the **right** of `X-Forwarded-For`; entries to its left are supplied by the caller and are
-never used. If the header has fewer than `n` entries the peer address is used. Examples:
+`trustedProxyHops=n` means the last `n` hops are proxies you control, counting the immediate proxy (the TCP peer),
+so one nginx is `1`. The client is the `n`-th entry from the **right** of `X-Forwarded-For`, taken over every
+`X-Forwarded-For` header line joined in order (a proxy that adds its own line instead of appending is handled);
+entries to its left are supplied by the caller and are never used. If there are fewer than `n` entries the peer
+address is used. Setting `n` higher than the real number of proxies hands the choice of key to the caller, so set
+it to the exact number. The audit log's `ip` field uses the same resolution. Examples:
 
 - one proxy that appends the client address (nginx `proxy_add_x_forwarded_for`, most ingresses): `1`
 - a CDN in front of a load balancer in front of Saiku, each appending: `2`

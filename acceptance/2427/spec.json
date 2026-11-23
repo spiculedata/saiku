@@ -1,0 +1,15 @@
+{
+  "issue": 2427,
+  "title": "Login rate limiter: Basic header spellings, multi-line X-Forwarded-For, shared client-IP resolver for the audit log, pair-only success clearing, injected clock",
+  "kind": "ui",
+  "criteria": [
+    { "id": "C1", "given": "LoginRateLimitFilter reads an Authorization header the way Spring's BasicAuthenticationConverter does (trim, case-insensitive Basic prefix, skip six characters)", "then": "no spelling the converter accepts escapes the per-user budgets, and Basic credentials with no attributable username get the strict per-address rule" },
+    { "id": "C2", "given": "X-Forwarded-For arrives as several header lines", "then": "all lines are read with getHeaders, joined in order, and the n-th entry from the right is the client" },
+    { "id": "C3", "given": "the limiter and AuditLogger", "then": "both resolve the client address through one shared resolver that honours saiku.auth.trustedProxyHops" },
+    { "id": "C4", "given": "a successful login", "then": "only the (IP, username) bucket is cleared, never the per-username bucket" },
+    { "id": "C5", "given": "LoginRateLimiterTest", "then": "time comes from an injected ticker, not Thread.sleep" },
+    { "id": "C6", "given": "docs/operator-hardening.md", "then": "documents that trustedProxyHops counts the immediate proxy, that setting it too high hands the key to the caller, and what a success clears" }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 30
+}
