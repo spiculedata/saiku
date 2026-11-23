@@ -208,7 +208,16 @@ independent budgets inside a 15-minute window, and any one of them blocks furthe
 | username, from any IP | 20 | still stops a distributed guessing attack on one account |
 | client IP, any username | 50 | still stops one source enumerating many usernames |
 
-A successful login clears the (IP, username) and username counters.
+The username and per-IP limits default to 20 and 50 and can be changed with system properties, for example
+`JAVA_OPTS="-Dsaiku.auth.maxAttemptsPerUser=30 -Dsaiku.auth.maxAttemptsPerIp=100"`. A value that is not a positive
+integer is ignored with a `WARN` and the default is used. The username budget can, by design, lock a named account
+out from every address for the window, so do not set it far below the number of attempts an attacker could make
+in 15 minutes unless you accept that.
+
+A successful login clears only the (IP, username) counter. The username budget is left to expire, so one legitimate
+login (or Basic auth on every request) cannot keep resetting it; the cost is that a named account can be locked out
+from every address for the window. Basic credentials the limiter cannot attribute to a username fall under the stricter
+5-per-address budget.
 
 By default the client IP is the TCP peer and `X-Forwarded-For` is ignored, which is right when Saiku is exposed
 directly. Behind a reverse proxy every user then shares the proxy's address, so the per-IP budgets are shared as
@@ -218,9 +227,12 @@ well. Tell Saiku how many trusted proxies are in front of it:
 JAVA_OPTS="-Dsaiku.auth.trustedProxyHops=1"
 ```
 
-`trustedProxyHops=n` means the last `n` hops are proxies you control, counting the immediate TCP peer. The client
-is the `n`-th entry from the **right** of `X-Forwarded-For`; entries to its left are supplied by the caller and are
-never used. If the header has fewer than `n` entries the peer address is used. Examples:
+`trustedProxyHops=n` means the last `n` hops are proxies you control, counting the immediate proxy (the TCP peer),
+so one nginx is `1`. The client is the `n`-th entry from the **right** of `X-Forwarded-For`, taken over every
+`X-Forwarded-For` header line joined in order (a proxy that adds its own line instead of appending is handled);
+entries to its left are supplied by the caller and are never used. If there are fewer than `n` entries the peer
+address is used. Setting `n` higher than the real number of proxies hands the choice of key to the caller, so set
+it to the exact number. The audit log's `ip` field uses the same resolution. Examples:
 
 - one proxy that appends the client address (nginx `proxy_add_x_forwarded_for`, most ingresses): `1`
 - a CDN in front of a load balancer in front of Saiku, each appending: `2`
@@ -257,10 +269,42 @@ failure is logged at **ERROR** on `org.saiku.service.user.UserService` with the 
 last answer stays cached for the usual ~2s window. Watch for that line — repeated ERRORs mean
 revocation is not being enforced and the store needs attention.
 
+### Scope, re-enabling and audit
+
+- **Roles covered.** Only the *admin* role is reconciled: removing `ROLE_ADMIN` from the row strips admin
+  authority. Removing any other role (for example `ROLE_SQL_EXEC` or a data role) from the row changes
+  nothing for a user whose authenticator still grants it; revoke those in `users.properties` / the
+  directory.
+- **Authentication types covered.** Only credential logins (form login and HTTP Basic) are checked. OAuth
+  bearer tokens, SSO/pre-authenticated principals and share/embed principals are exempt and governed by
+  their own provider.
+- **Re-enabling.** The admin console has no control to re-enable a deactivated row. Re-enable through SCIM
+  (`PATCH`/`PUT` with `active:true`), or set `USERS.ENABLED` back to `TRUE` in the H2 database.
+- **Case-variant rows.** If two rows differ only by letter case, the account is denied when *any* of them is
+  disabled, and the roles of all of them count.
+- **Audit.** A refused request and a demotion each write a line to the `org.saiku.audit` logger
+  (`account_refused`, `account_demoted`, with the user and path). A deactivated user who supplies the right
+  password over Basic is still recorded as `login_success` by the authenticator, followed by `account_refused`.
+- **Role changes are atomic.** A role rewrite is one transaction, so a concurrent request never sees a user
+  momentarily without roles.
+
+### Upgrading
+
+A user who is an admin in `users.properties` but whose H2 row lacks `ROLE_ADMIN` **loses admin authority**
+once this check is active (the H2 row wins). Before upgrading, list rows with no admin role for the people
+who should be admins (`SELECT u.USERNAME FROM USERS u WHERE NOT EXISTS (SELECT 1 FROM USER_ROLES r WHERE
+r.USER_ID = u.USER_ID AND r.ROLE = 'ROLE_ADMIN')`) and add `ROLE_ADMIN` in the admin console. **Recovery** if
+you are locked out: insert the role directly, `INSERT INTO USER_ROLES(USER_ID, USERNAME, ROLE) SELECT USER_ID,
+USERNAME, 'ROLE_ADMIN' FROM USERS WHERE USERNAME = '<you>'`, or delete your row so the authenticator alone governs
+the account. The change is picked up within about two seconds.
+
 What this does **not** do: an account that has no H2 row is governed by the authenticator alone;
 **deleting** a row (`DELETE /rest/saiku/admin/users/{id}`) removes it from the managed store, so it does not
 by itself stop that user logging in. To deprovision, deactivate (SCIM) and remove the entry from
 `users.properties` (or the external directory). Passwords are still those of the authenticator.
+**Renaming** a row has the same effect as deleting it: the old name no longer matches a managed row, so a
+deactivated account that is deleted or renamed can log in again via the authenticator. Revoking login on
+deletion needs a tombstone or a single user store, which is not implemented.
 
 ---
 
