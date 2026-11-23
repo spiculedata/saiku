@@ -42,9 +42,8 @@ public class SecurityAwareConnectionManagerPassThroughTest {
         Map<String, Object> session = new HashMap<>();
         session.put("username", "jsmith"); // canonicalised ACL/home identity
         session.put("principal", "JSmith"); // original, case-sensitive warehouse login
-        session.put("password", "s3cret");
 
-        SaikuDatasource result = invokeHandlePassThrough(session);
+        SaikuDatasource result = invokeHandlePassThrough(session, "s3cret".toCharArray());
 
         assertEquals(
                 "pass-through must forward the typed principal spelling, not the canonical username",
@@ -59,6 +58,18 @@ public class SecurityAwareConnectionManagerPassThroughTest {
      * silently forwarding {@code null} (which would return a null datasource and break the
      * connection instead of degrading to a working — if less precise — credential).
      */
+    /** saiku#2341: a stray "password" in the generic session map is never forwarded to the warehouse. */
+    @Test
+    public void passThrough_ignores_password_in_session_map() throws Exception {
+        Map<String, Object> session = new HashMap<>();
+        session.put("username", "jsmith");
+        session.put("password", "from-the-map");
+
+        SaikuDatasource result = invokeHandlePassThrough(session);
+
+        assertNull(result.getProperties().getProperty("password"));
+    }
+
     @Test
     public void passThrough_falls_back_to_username_when_principal_absent() throws Exception {
         Map<String, Object> session = new HashMap<>();
@@ -76,8 +87,13 @@ public class SecurityAwareConnectionManagerPassThroughTest {
     }
 
     private static SaikuDatasource invokeHandlePassThrough(Map<String, Object> session) throws Exception {
+        return invokeHandlePassThrough(session, null);
+    }
+
+    private static SaikuDatasource invokeHandlePassThrough(Map<String, Object> session, char[] credential)
+            throws Exception {
         SecurityAwareConnectionManager mgr = new SecurityAwareConnectionManager();
-        mgr.setSessionService(new FakeSessionService(session));
+        mgr.setSessionService(new FakeSessionService(session, credential));
 
         SaikuDatasource datasource = new SaikuDatasource("ds", SaikuDatasource.Type.OLAP, new Properties());
 
@@ -90,8 +106,16 @@ public class SecurityAwareConnectionManagerPassThroughTest {
     private static final class FakeSessionService implements ISessionService {
         private final Map<String, Object> session;
 
-        FakeSessionService(Map<String, Object> session) {
+        private final char[] credential;
+
+        FakeSessionService(Map<String, Object> session, char[] credential) {
             this.session = session;
+            this.credential = credential;
+        }
+
+        @Override
+        public char[] passthroughCredential() {
+            return credential;
         }
 
         @Override

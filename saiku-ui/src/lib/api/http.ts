@@ -1,4 +1,4 @@
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 
 type AuthListener = (status: number, path: string) => void;
 type ResumeListener = () => void;

@@ -1,0 +1,37 @@
+# EditorConfig — https://editorconfig.org (saiku#2010)
+#
+# Editor defaults only. The enforcing formatters stay authoritative:
+#   Java      → Spotless + Palantir Java Format (`mvn spotless:apply`)
+#   saiku-ui  → Prettier + ESLint (saiku-ui/.prettierrc, saiku-ui/eslint.config.js)
+# Keep indentation here in step with those configs.
+
+root = true
+
+[*]
+charset = utf-8
+# LF everywhere: spotless:check rejects CRLF Java files, which is what bites
+# Windows checkouts with core.autocrlf=true (see CLAUDE.md).
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.java]
+indent_style = space
+indent_size = 4
+
+# XML (poms, Spring wiring, Mondrian schemas) mixes tabs and 2/4-space
+# indentation across legacy files — no indent rule, so editors don't reflow them.
+
+[*.{yml,yaml,sh}]
+indent_style = space
+indent_size = 2
+
+[saiku-ui/**.{svelte,ts,js,mjs,cjs,json,css,html}]
+indent_style = tab
+
+[*.md]
+# Two trailing spaces are a hard line break in Markdown.
+trim_trailing_whitespace = false
+
+[*.{bat,cmd}]
+end_of_line = crlf

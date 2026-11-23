@@ -33,6 +33,7 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
 
     private OlapDiscoverService discoverService;
     private final ConcurrentMap<String, AiSchema> schemaCache = new ConcurrentHashMap<>();
+
     /** saiku#902 phase 3: per-cube cache of PiiScanner findings. Populated on
      *  schema-build, returned by {@link #getPiiSuggestions}. Cleared in lock-step
      *  with {@link #schemaCache} so stale annotations don't haunt the
@@ -41,6 +42,18 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
 
     private java.util.function.Function<AiCubeRef, AiSchemaEnrichment> enrichmentProvider;
     private final AiSchemaEnricher enricher = new AiSchemaEnricher();
+
+    /** saiku#2326 (CWE-284/524/863): fingerprints what the CURRENT caller may
+     *  see, so the schema cache never serves one caller's role-scoped snapshot
+     *  to another. Implemented in the web layer by the connection manager,
+     *  which owns the Spring Security context. Null in unit tests — the cache
+     *  then falls back to the role-less base key. */
+    private AiVisibilityContext aiVisibilityContext;
+
+    /** saiku#2326: separator between the visibility fingerprint and the base
+     *  cache key. U+001F (unit separator) cannot occur in a datasource, catalog
+     *  or cube name, so the composition stays injective. */
+    private static final String VISIBILITY_SEPARATOR = "\u001F";
     /** saiku#810: when true, schema build probes each (dim, hier, level)
      *  triple with a 1-row level-members query and drops any triple that
      *  fails — catches "schema lies" cases where a hierarchy is enumerable
@@ -55,6 +68,12 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
 
     public void setDiscoverService(OlapDiscoverService s) {
         this.discoverService = s;
+    }
+
+    /** saiku#2326: install the caller-visibility fingerprint provider. Pass
+     *  {@code null} to fall back to the role-less base key (unit tests). */
+    public void setAiVisibilityContext(AiVisibilityContext v) {
+        this.aiVisibilityContext = v;
     }
 
     /**
@@ -73,6 +92,31 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
         // operator who fixes an annotation, reloads the cube, then hits the
         // suggestions endpoint sees the stale finding from before the fix.
         piiSuggestionsCache.clear();
+    }
+
+    @Override
+    public void invalidateSchemaCache(String connectionName) {
+        // saiku#2326: a refreshConnection (admin refresh, datasource save,
+        // XMLA refresh) can change what a role sees on this connection — drop
+        // only its entries so other connections' snapshots survive.
+        if (connectionName == null || connectionName.isEmpty()) {
+            invalidateCache();
+            return;
+        }
+        schemaCache.keySet().removeIf(key -> keyBelongsToConnection(key, connectionName));
+        piiSuggestionsCache.keySet().removeIf(key -> keyBelongsToConnection(key, connectionName));
+    }
+
+    /** True when a cache key ("<visibility>\u001F<conn>/<cat>/<schema>/<cube>" or the
+     *  role-less "<conn>/<cat>/<schema>/<cube>") belongs to the named connection,
+     *  tolerating the workspace decoration on either side (saiku#1871). */
+    private boolean keyBelongsToConnection(String key, String connectionName) {
+        String base = key;
+        int sep = key.indexOf(VISIBILITY_SEPARATOR);
+        if (sep >= 0) base = key.substring(sep + 1);
+        int slash = base.indexOf('/');
+        String conn = slash >= 0 ? base.substring(0, slash) : base;
+        return org.saiku.service.datasource.DatasourceNameDecoration.sameConnection(conn, connectionName);
     }
 
     /** saiku#810: enable the schema-build-time roundtrip probe that prunes
@@ -116,7 +160,17 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
         }
         String key = cacheKey(ref);
         AiSchema cached = schemaCache.get(key);
-        if (cached != null) return cached;
+        if (cached != null) {
+            // saiku#2326 (CWE-284/524/863): a cached snapshot must never be
+            // served without re-resolving the cube against the CALLER's
+            // role-scoped enumeration. findCube() walks getAllCubes() through
+            // the caller's own connection, so a caller who lost the datasource
+            // grant, sits in a workspace without the cube, or holds no Mondrian
+            // role at all (saiku#1968) gets the same AiValidationException the
+            // cold path raises — not another caller's schema.
+            findCube(ref);
+            return cached;
+        }
         AiSchema fresh = buildSchema(ref);
         if (enrichmentProvider != null) {
             try {
@@ -168,9 +222,20 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
      * to {@link OlapDiscoverService#getLevelMembers}. Returns up to {@code limit}
      * hits (default 20 when {@code limit <= 0}).
      */
+    /** Server-side ceiling for member search (saiku#2325); matches the MCP schema maximum. */
+    public static final int MAX_SEARCH_LIMIT = 500;
+
+    private static final int DEFAULT_SEARCH_LIMIT = 20;
+
+    /** {@code <= 0} becomes the default; anything above {@link #MAX_SEARCH_LIMIT} is truncated. */
+    public static int clampSearchLimit(int limit) {
+        if (limit <= 0) return DEFAULT_SEARCH_LIMIT;
+        return Math.min(limit, MAX_SEARCH_LIMIT);
+    }
+
     public List<SimpleCubeElement> searchMembers(
             AiCubeRef ref, String dimensionName, String hierarchyName, String levelName, String q, int limit) {
-        if (limit <= 0) limit = 20;
+        limit = clampSearchLimit(limit);
         AiSchema schema = getSchema(ref);
 
         String dimK = AiSchema.key(dimensionName);
@@ -213,6 +278,21 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
         if (level == null) {
             throw new AiValidationException("level", "Unknown level '" + levelName + "'", canonicalLevelNames(hier));
         }
+        // saiku#1918 (17a, CWE-359): a PII level's members are the payload the /ai/schema
+        // redaction exists to keep private — the schema view replaces sampleMembers with a
+        // single [REDACTED] sentinel for exactly this level. Without this check the same
+        // captions came straight back through GET /ai/members/search (and MCP search_members),
+        // per person, one page at a time. Refuse the lookup rather than redact the hits:
+        // a "no members" answer for a PII level would be indistinguishable from a genuinely
+        // empty dimension, and the agent would keep paging.
+        if (level.pii) {
+            throw new AiPiiException(
+                    "level",
+                    "Level '" + level.name + "' is annotated PII (saiku.semantic.pii=true); its members are not "
+                            + "searchable over the AI surface. Query an aggregate measure over the parent level "
+                            + "instead of enumerating this one.",
+                    java.util.Collections.singletonList(level.name));
+        }
 
         SaikuCube cube = findCube(ref);
         try {
@@ -228,7 +308,22 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
     /* ----------------------------- impl ------------------------------- */
 
     private String cacheKey(AiCubeRef ref) {
+        String vis = visibilityKeyFor(ref);
+        return vis == null || vis.isEmpty() ? baseCacheKey(ref) : vis + VISIBILITY_SEPARATOR + baseCacheKey(ref);
+    }
+
+    /** The role-less base key — also the serialised AiSchema cubeId, which must
+     *  never leak (or vary with) the caller's visibility fingerprint. */
+    private static String baseCacheKey(AiCubeRef ref) {
         return ref.getConnectionName() + "/" + ref.getCatalog() + "/" + ref.getSchema() + "/" + ref.getCubeName();
+    }
+
+    /** saiku#2326: the caller's visibility fingerprint, or null when no
+     *  provider is installed (the cache then behaves exactly as before this
+     *  fix — unit tests, and the unsecured path the provider collapses to
+     *  an empty key anyway). */
+    private String visibilityKeyFor(AiCubeRef ref) {
+        return aiVisibilityContext == null ? null : aiVisibilityContext.visibilityKey(ref.getConnectionName());
     }
 
     /** How many sample members to inline per level. Five is enough for an
@@ -249,7 +344,10 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
         // form, so a lowercase/mixed-case agent input doesn't produce
         // "Cannot get native cube" 500s further down the pipeline.
         AiCubeRef canonical = new AiCubeRef(cube.getConnection(), cube.getCatalog(), cube.getSchema(), cube.getName());
-        AiSchema schema = new AiSchema(cacheKey(canonical), cube.getName(), cube.getUniqueName());
+        // saiku#2326: the serialised cubeId stays role-less (the base key) —
+        // the visibility fingerprint must never leak into the agent-facing
+        // schema body. The cache map key (cacheKey()) is the scoped one.
+        AiSchema schema = new AiSchema(baseCacheKey(canonical), cube.getName(), cube.getUniqueName());
         schema.canonicalCube = canonical;
         if (cube.getCaption() != null && !cube.getCaption().equals(cube.getName())) {
             schema.description = cube.getCaption();
@@ -449,7 +547,14 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
         } catch (RuntimeException e) {
             log.debug("level annotations unreadable for {}/{}: {}", h.getName(), lvl.getName(), e.getMessage());
         }
-        populateSampleMembers(l, cube, h.getName(), lvl.getName());
+        // saiku#1918 (17a): don't even fetch sample members for a PII level. The in-memory schema
+        // used to keep them because the converter needed captions for name resolution — but the
+        // converter now refuses a PII axis outright and member search refuses the level too, so
+        // nothing legitimate reads them. Skipping the fetch keeps personal data out of the heap and
+        // saves a warehouse round-trip per PII level per schema build.
+        if (!l.pii) {
+            populateSampleMembers(l, cube, h.getName(), lvl.getName());
+        }
         return l;
     }
 

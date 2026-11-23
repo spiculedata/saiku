@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-exE4gzNLIUhLAJHj3zjhH/ocYKOKKnJE+NgJ2EV/Me8='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
   <title>Saiku — Live embed, AI API, and GraphQL showcase</title>
   <meta name="description" content="A live playground for Saiku's three developer surfaces — the &lt;saiku-embed&gt; web component, the typed AI Query REST API, and the schema-per-cube GraphQL API. Hits the FoodMart cube on demo.saiku.bi.">
   <link rel="canonical" href="https://showcase.saiku.bi/">
@@ -391,28 +392,44 @@
 
   <script>
     // ---- Shared session bootstrap ----
-    // The demo runs with admin/admin. To keep the SPA self-contained we log
-    // in on load and let subsequent fetches ride the resulting session cookie.
-    // This means every visitor to this page shares the same anonymous demo
-    // session — fine for a public showcase, not fine for a production deploy.
+    // The public demo runs with admin/admin. To keep the SPA self-contained we
+    // log in on load and let subsequent fetches ride the resulting session cookie.
+    // saiku#1908: that default-credential login fires ONLY when the server
+    // reports demo mode (GET /rest/saiku/info/capabilities → demoMode:true).
+    // On any other deployment the page never POSTs admin/admin — the fetches
+    // below ride the visitor's own session, or fail with a visible 401.
     const DEMO_ORIGIN = "";
     let sessionReady = false;
-    async function ensureSession() {
-      if (sessionReady) return;
-      try {
-        const body = new URLSearchParams();
-        body.set("username", "admin");
-        body.set("password", "admin");
-        await fetch(`${DEMO_ORIGIN}/rest/saiku/session/`, {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: body.toString(),
-        });
-        sessionReady = true;
-      } catch {
-        // Silently ignore — the AI + GraphQL fetches will surface the failure.
-      }
+    let sessionPromise = null;
+    function ensureSession() {
+      if (sessionReady) return Promise.resolve();
+      return sessionPromise || (sessionPromise = (async () => {
+        try {
+          const info = await fetch(`${DEMO_ORIGIN}/rest/saiku/info/capabilities`, {
+            credentials: "include",
+            headers: { Accept: "application/json" },
+          });
+          const caps = info.ok ? await info.json() : null;
+          if (!caps || caps.demoMode !== true) {
+            sessionReady = true;
+            return;
+          }
+          const body = new URLSearchParams();
+          body.set("username", "admin");
+          body.set("password", "admin");
+          await fetch(`${DEMO_ORIGIN}/rest/saiku/session/`, {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: body.toString(),
+          });
+          sessionReady = true;
+        } catch {
+          // Silently ignore — the AI + GraphQL fetches will surface the failure.
+        } finally {
+          sessionPromise = null;
+        }
+      })());
     }
 
     async function withCsrf(headers) {

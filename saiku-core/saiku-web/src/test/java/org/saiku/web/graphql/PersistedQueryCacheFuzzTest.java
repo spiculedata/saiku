@@ -6,6 +6,7 @@ package org.saiku.web.graphql;
 
 import static org.junit.Assert.*;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -51,8 +52,12 @@ public class PersistedQueryCacheFuzzTest {
     @Test
     public void correctHashesAlwaysRoundTripForRandomInputs() {
         Random rng = new Random(SEED + 1);
-        PersistedQueryCache cache = new PersistedQueryCache();
-        for (int i = 0; i < 5000; i++) {
+        int iterations = 5000;
+        // Capacity above the insert count: the default 1024 cap lets Caffeine's async,
+        // frequency-based eviction drop a just-written entry before the get() under load,
+        // which is eviction behaviour, not the hash round-trip this test is about.
+        PersistedQueryCache cache = new PersistedQueryCache(iterations * 2L, Duration.ZERO);
+        for (int i = 0; i < iterations; i++) {
             String query = GraphQlFuzzUtil.randomAscii(rng, 128);
             String hash = PersistedQueryCache.sha256Hex(query);
             assertTrue("cache refused a valid hash — regression!", cache.put(hash, query));

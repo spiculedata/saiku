@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.saiku.datasources.connection.ISaikuConnection;
 import org.saiku.datasources.connection.SaikuOssieConnection;
@@ -36,6 +37,7 @@ import org.saiku.service.olap.ai.KAnonymityFilter;
 import org.saiku.service.ossie.OssieDiscoverService;
 import org.saiku.service.ossie.OssieModelDto;
 import org.saiku.service.ossie.OssieQueryService;
+import org.saiku.service.ossie.OssieRoleContext;
 import org.saiku.service.ossie.ai.OssieAiQueryRequest;
 import org.saiku.service.ossie.ai.OssieAiQueryResponse;
 import org.saiku.service.ossie.ai.OssieAiSchema;
@@ -43,6 +45,7 @@ import org.saiku.service.ossie.ai.OssieAiSchemaProjector;
 import org.saiku.service.ossie.ai.OssieAiValidationException;
 import org.saiku.service.ossie.ai.OssieAiValidator;
 import org.saiku.service.ossie.ai.OssieAsyncQueryService;
+import org.saiku.web.rest.util.SessionRoles;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -91,6 +94,9 @@ public class AiOssieResource {
 
     private final OssieAiSchemaProjector projector = new OssieAiSchemaProjector();
     private final OssieAiValidator validator = new OssieAiValidator();
+    /** Semantic Layer Sync (saiku#1427) — stateless, no Spring wiring needed (like the two above). */
+    private final org.saiku.service.export.semantic.SemanticExportService semanticExportService =
+            new org.saiku.service.export.semantic.SemanticExportService();
 
     public void setOssieDiscoverService(OssieDiscoverService s) {
         this.ossieDiscoverService = s;
@@ -127,11 +133,19 @@ public class AiOssieResource {
     /**
      * saiku#1459: the same cost-DoS + policy guards the MDX ask endpoints carry. Without these the
      * Ossie {@code /ask} was a bypass surface — a client 429'd or 413'd on {@code /ai/ask} could
-     * switch to {@code /ai/ossie/ask} and reach the paid LLM provider unbounded. Defaults mirror
-     * {@link AiQueryResource} so the guard is on even before Spring wires the shared beans.
+     * switch to {@code /ai/ossie/ask} and reach the paid LLM provider unbounded. Production wires
+     * the {@code aiOssieAskRateLimiter} SINGLETON (saiku#1913); a per-request limiter would never
+     * trip.
+     *
+     * <p>saiku#2322: the pre-wiring guard default FAILS CLOSED at {@link AiPolicy#DEFAULT}
+     * (schema-only) — the previous {@code FULL} initialiser made an unwired instance a policy
+     * no-op, and every production wiring (launcher, Docker, WAR) forgot to inject the shared
+     * {@code aiPolicyGuard} bean, so {@code SAIKU_AI_POLICY} was silently ignored on this class.
+     * The {@code saiku-beans.xml} {@code aiOssieResource} definition now injects the singleton,
+     * and an unwired instance refuses aggregated data instead of serving it.
      */
     private org.saiku.service.olap.ai.AiPolicyGuard aiPolicyGuard =
-            new org.saiku.service.olap.ai.AiPolicyGuard(org.saiku.service.olap.ai.AiPolicy.FULL);
+            new org.saiku.service.olap.ai.AiPolicyGuard(org.saiku.service.olap.ai.AiPolicy.DEFAULT);
 
     private org.saiku.web.security.ratelimit.AiRateLimiter askRateLimiter =
             new org.saiku.web.security.ratelimit.AiRateLimiter();
@@ -221,7 +235,8 @@ public class AiOssieResource {
                     summary.put("metricCount", model.getMetrics().size());
                 } catch (Exception e) {
                     log.warn("listing Ossie model failed for connection '{}': {}", c.getName(), e.getMessage());
-                    summary.put("error", e.getMessage());
+                    // saiku#1920: detail stays in the log above; the caller sees only that it failed.
+                    summary.put("error", "model unavailable");
                 }
                 out.add(summary);
             }
@@ -265,7 +280,7 @@ public class AiOssieResource {
             return badRequest("root", e.getMessage(), List.of());
         } catch (Exception e) {
             log.warn("Ossie graph traversal failed (connection='{}', root='{}')", connectionName, root, e);
-            return error("graph traversal failed: " + e.getMessage());
+            return serverError("graph traversal", e);
         }
     }
 
@@ -293,7 +308,7 @@ public class AiOssieResource {
                     .build();
         } catch (Exception e) {
             log.warn("Ossie entity search failed (connection='{}', q='{}')", connectionName, q, e);
-            return error("search failed: " + e.getMessage());
+            return serverError("search", e);
         }
     }
 
@@ -328,7 +343,7 @@ public class AiOssieResource {
             return badRequest("id", e.getMessage(), List.of());
         } catch (Exception e) {
             log.warn("Ossie entity profile failed (connection='{}', id='{}')", connectionName, id, e);
-            return error("entity profile failed: " + e.getMessage());
+            return serverError("entity profile", e);
         }
     }
 
@@ -358,7 +373,7 @@ public class AiOssieResource {
             return badRequest("model", e.getMessage(), List.of());
         } catch (Exception e) {
             log.warn("Ossie signals failed (connection='{}')", connectionName, e);
-            return error("signals failed: " + e.getMessage());
+            return serverError("signals", e);
         }
     }
 
@@ -378,6 +393,9 @@ public class AiOssieResource {
             @PathParam("connection") String connectionName,
             @PathParam("model") String modelName,
             @jakarta.ws.rs.QueryParam("refresh") Boolean refresh) {
+        // saiku#2322: schema metadata is the schema-only tier — never blocks, recorded for
+        // symmetry with AiQueryResource's /ai/schema gate (AiQueryResource.java:670).
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.SCHEMA_METADATA);
         if (ossieDiscoverService == null) {
             return error("Ossie discover not wired");
         }
@@ -389,13 +407,17 @@ public class AiOssieResource {
                         "model '" + modelName + "' not found on connection '" + connectionName + "'",
                         List.of(semantic.getName()));
             }
+            // saiku#1393 — strip fields/metrics the caller's roles deny before the agent-facing
+            // schema is built, same as the workbench discover endpoint.
+            Set<String> callerRoles = Set.copyOf(SessionRoles.currentRoles());
+            semantic = OssieRoleContext.filterHidden(semantic, callerRoles);
             // #1404 — ?refresh=true drops the projector's cached samples for this model so the
             // next fetch re-runs the SELECT DISTINCTs against the warehouse.
             if (Boolean.TRUE.equals(refresh)) {
                 projector.invalidateSampleCache(connectionName, semantic.getName());
             }
             Connection jdbc = openWarehouseConnection(connectionName);
-            OssieAiSchema schema = projector.project(connectionName, semantic, jdbc);
+            OssieAiSchema schema = projector.project(connectionName, semantic, jdbc, callerRoles);
             return Response.ok(schema).type(MediaType.APPLICATION_JSON).build();
         } catch (IllegalArgumentException e) {
             return badRequest("connection", e.getMessage(), List.of());
@@ -422,6 +444,8 @@ public class AiOssieResource {
     @Path("/ontology/{connection}/{model}")
     @Produces(MediaType.APPLICATION_JSON)
     public Response getOntology(@PathParam("connection") String connectionName, @PathParam("model") String modelName) {
+        // saiku#2322: ontology is schema metadata — same symmetry gate as /schema.
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.SCHEMA_METADATA);
         if (ossieDiscoverService == null) {
             return error("Ossie discover not wired");
         }
@@ -451,6 +475,45 @@ public class AiOssieResource {
     }
 
     // -------------------------------------------------------------------
+    // GET /export/{connection}/{tool} — Semantic Layer Sync (saiku#1427)
+    // -------------------------------------------------------------------
+
+    /**
+     * Render a connection's Ossie model into a downloadable BI-tool artefact — {@code tool} is
+     * {@code tableau} (a {@code .tds} datasource file) or {@code superset} (a dataset-export
+     * {@code .zip}, the same shape {@code superset import-datasources} consumes). See
+     * {@link org.saiku.service.export.semantic.TableauTdsExporter} and
+     * {@link org.saiku.service.export.semantic.SupersetDatasetYamlExporter} for exactly what each
+     * format does and does not carry over (notably: no live warehouse credentials — the analyst
+     * completes the connection locally).
+     */
+    @GET
+    @Path("/export/{connection}/{tool}")
+    @Produces({MediaType.APPLICATION_XML, "application/zip"})
+    public Response exportSemanticModel(
+            @PathParam("connection") String connectionName, @PathParam("tool") String tool) {
+        if (ossieDiscoverService == null) {
+            return error("Ossie discover not wired");
+        }
+        try {
+            OssieModelDto semantic = ossieDiscoverService.getModel(connectionName);
+            org.saiku.service.export.semantic.SemanticExportResult result =
+                    semanticExportService.export(semantic, tool);
+            return Response.ok(result.getContent())
+                    .type(result.getContentType())
+                    .header("Content-Disposition", "attachment; filename=\"" + result.getFilename() + "\"")
+                    .build();
+        } catch (org.saiku.service.export.semantic.SemanticExportException e) {
+            return badRequest("tool", e.getMessage(), List.of("tableau", "superset"));
+        } catch (IllegalArgumentException e) {
+            return badRequest("connection", e.getMessage(), List.of());
+        } catch (Exception e) {
+            log.error("Ossie semantic export failed for connection='{}' tool='{}'", connectionName, tool, e);
+            return serverError("semantic export", e);
+        }
+    }
+
+    // -------------------------------------------------------------------
     // POST /query
     // -------------------------------------------------------------------
 
@@ -464,6 +527,9 @@ public class AiOssieResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response executeAi(OssieAiQueryRequest req, @jakarta.ws.rs.QueryParam("format") String format) {
+        // saiku#2322: aggregated result values require the aggregated tier. Before the try so
+        // AiPolicyViolation reaches AiPolicyViolationMapper (403), not the generic catch (500).
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.AGGREGATED_RESULT_VALUES);
         try {
             if (req == null) {
                 return badRequest("body", "request body required", List.of());
@@ -514,7 +580,7 @@ public class AiOssieResource {
             return badRequest("body", e.getMessage(), List.of());
         } catch (Exception e) {
             log.error("Ossie AI query failed", e);
-            return error("query failed: " + e.getMessage());
+            return serverError("query", e);
         }
     }
 
@@ -592,32 +658,53 @@ public class AiOssieResource {
                     "Too many AI ask requests — limit is " + askRateLimiter.getMaxCalls() + " per "
                             + (askRateLimiter.getWindowMs() / 1000) + "s. Please retry shortly.");
         }
+        // #1398 — optional history: [{role, content}] for multi-turn conversations.
+        // saiku#1918 (17c, CWE-74): `role` is a closed enum, not free text. It used to be forwarded
+        // to the provider verbatim, and on an OpenAI-compatible endpoint a role:"system" turn IS a
+        // system prompt — appended after this service's own guardrails, so the client got the last
+        // word on the model's instructions. Refused here, alongside the other shape guards and
+        // BEFORE any model or warehouse work, so the caller gets a real 400 listing the legal
+        // values. OssieAiAskService.ChatTurn#wireRole() is the second line of defence for every
+        // other caller.
+        List<org.saiku.service.ossie.ai.OssieAiAskService.ChatTurn> history = new ArrayList<>();
+        Object rawHistory = body.get("history");
+        if (rawHistory instanceof List<?> hlist) {
+            for (int hi = 0; hi < hlist.size(); hi++) {
+                if (hlist.get(hi) instanceof Map<?, ?> hmap) {
+                    String role = strOr(hmap.get("role"));
+                    String content = strOr(hmap.get("content"));
+                    if (role == null || content == null) continue;
+                    if (!isAllowedOssieRole(role)) {
+                        return badRequest(
+                                "history",
+                                "history[" + hi + "].role must be 'user' or 'assistant'; got '" + role + "'.",
+                                List.of("user", "assistant"));
+                    }
+                    history.add(new org.saiku.service.ossie.ai.OssieAiAskService.ChatTurn(role, content));
+                }
+            }
+        }
         try {
             OssieModelDto semantic = ossieDiscoverService.getModel(connection);
             if (modelName == null || modelName.isBlank()) modelName = semantic.getName();
-            OssieAiSchema schema = projector.project(connection, semantic, openWarehouseConnection(connection));
+            // saiku#2324 — same role scoping as GET /schema: denied fields (and their sample
+            // values) must not reach the LLM prompt, and samples honour the row predicates.
+            Set<String> callerRoles = Set.copyOf(SessionRoles.currentRoles());
+            semantic = OssieRoleContext.filterHidden(semantic, callerRoles);
+            OssieAiSchema schema =
+                    projector.project(connection, semantic, openWarehouseConnection(connection), callerRoles);
 
-            // #1398 — accept optional history: [{role, content}] for multi-turn conversations.
-            List<org.saiku.service.ossie.ai.OssieAiAskService.ChatTurn> history = new ArrayList<>();
-            Object rawHistory = body.get("history");
-            if (rawHistory instanceof List<?> hlist) {
-                for (Object h : hlist) {
-                    if (h instanceof Map<?, ?> hmap) {
-                        String role = strOr(hmap.get("role"));
-                        String content = strOr(hmap.get("content"));
-                        if (role != null && content != null) {
-                            history.add(new org.saiku.service.ossie.ai.OssieAiAskService.ChatTurn(role, content));
-                        }
-                    }
-                }
-            }
             org.saiku.service.ossie.ai.OssieAiAskService.AskResult ar =
                     askService.ask(question, schema, connection, modelName, history);
             if (ar.error() != null) {
                 Map<String, Object> err = new LinkedHashMap<>();
                 err.put("error", "ASK_FAILED");
-                err.put("message", ar.error());
-                if (ar.rawResponse() != null) err.put("rawResponse", ar.rawResponse());
+                // saiku#1920: the provider's own error text and raw completion are NOT
+                // echoed. They carry vendor request ids, quota state, masked key fragments
+                // and — for a content-policy refusal — an echo of the prompt. The detail is
+                // in the server log; the caller gets a stable, generic reason.
+                log.warn("Ossie AI ask rejected by the provider: {}", ar.error());
+                err.put("message", "the AI provider could not answer that question");
                 return Response.status(Response.Status.BAD_REQUEST)
                         .entity(err)
                         .type(MediaType.APPLICATION_JSON)
@@ -631,14 +718,19 @@ public class AiOssieResource {
             wrapped.put("connection", connection);
             wrapped.put("model", modelName);
             wrapped.put("queryUsed", req);
-            wrapped.put("rawLlmResponse", ar.rawResponse());
+            // saiku#1920: rawLlmResponse dropped — the vendor completion can echo prompt
+            // content and sample values back at the caller. The parsed request + response
+            // above are the useful, non-leaky contract.
             wrapped.put("response", resp);
             return Response.ok(wrapped).type(MediaType.APPLICATION_JSON).build();
         } catch (OssieAiValidationException e) {
             return badRequest(e.getField(), e.getMessage(), e.getAvailable());
         } catch (Exception e) {
+            // saiku#1920: JDBC/warehouse exception text names the driver, the URL, the
+            // schema and sometimes the failing SQL — none of which belongs in a client
+            // response. Log it in full, return a generic reason.
             log.error("Ossie AI ask failed", e);
-            return error("ask failed: " + e.getMessage());
+            return error("ask failed");
         }
     }
 
@@ -646,6 +738,18 @@ public class AiOssieResource {
         if (v == null) return null;
         String s = v.toString();
         return s.isBlank() ? null : s;
+    }
+
+    /**
+     * saiku#1918 (17c): the closed set of conversation roles the ask surface accepts. Case- and
+     * whitespace-insensitive so a chat UI that sends {@code "User"} still works; anything else is
+     * refused rather than coerced, so the caller learns their history shape is wrong instead of
+     * silently having one of their turns reinterpreted.
+     */
+    private static boolean isAllowedOssieRole(String role) {
+        if (role == null) return false;
+        String r = role.trim();
+        return "user".equalsIgnoreCase(r) || "assistant".equalsIgnoreCase(r);
     }
 
     // -------------------------------------------------------------------
@@ -662,6 +766,8 @@ public class AiOssieResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response detectAnomalies(org.saiku.service.ossie.ai.OssieAiAnomalyRequest body) {
+        // saiku#2322: anomaly series carry aggregated values — aggregated tier or higher.
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.AGGREGATED_RESULT_VALUES);
         long start = System.currentTimeMillis();
         try {
             if (body == null) return badRequest("body", "request body required", List.of());
@@ -695,7 +801,7 @@ public class AiOssieResource {
             return badRequest(e.getField(), e.getMessage(), e.getAvailable());
         } catch (Exception e) {
             log.error("Ossie AI anomaly failed", e);
-            return error("anomaly detection failed: " + e.getMessage());
+            return serverError("anomaly detection", e);
         }
     }
 
@@ -709,6 +815,8 @@ public class AiOssieResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response forecast(org.saiku.service.ossie.ai.OssieAiForecastRequest body) {
+        // saiku#2322: forecast series carry aggregated values — aggregated tier or higher.
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.AGGREGATED_RESULT_VALUES);
         long start = System.currentTimeMillis();
         try {
             if (body == null) return badRequest("body", "request body required", List.of());
@@ -746,7 +854,7 @@ public class AiOssieResource {
             return badRequest(e.getField(), e.getMessage(), e.getAvailable());
         } catch (Exception e) {
             log.error("Ossie AI forecast failed", e);
-            return error("forecast failed: " + e.getMessage());
+            return serverError("forecast", e);
         }
     }
 
@@ -760,6 +868,9 @@ public class AiOssieResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response rowDetail(OssieAiQueryRequest req, @jakarta.ws.rs.QueryParam("maxrows") Integer maxrows) {
+        // saiku#2322: row-detail is Ossie's drillthrough — RAW_ROW_DATA needs the full tier,
+        // exactly as MDX /ai/drillthrough does (AiQueryResource.java:2615).
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.RAW_ROW_DATA);
         try {
             if (req == null) return badRequest("body", "request body required", List.of());
             if (req.getConnection() == null) {
@@ -792,7 +903,7 @@ public class AiOssieResource {
             return badRequest(e.getField(), e.getMessage(), e.getAvailable());
         } catch (Exception e) {
             log.error("Ossie AI row-detail failed", e);
-            return error("row-detail failed: " + e.getMessage());
+            return serverError("row-detail", e);
         }
     }
 
@@ -801,6 +912,8 @@ public class AiOssieResource {
      * produces a records-format response ready for augmentation.
      */
     private OssieAiQueryResponse runInternalQuery(OssieAiQueryRequest req, long start) throws Exception {
+        // saiku#2322: belt-and-braces gate for any future caller of this shared executor.
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.AGGREGATED_RESULT_VALUES);
         if (req.getConnection() == null) {
             throw new OssieAiValidationException("query.connection", "connection is required", List.of());
         }
@@ -833,6 +946,9 @@ public class AiOssieResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response executeAsync(OssieAiQueryRequest req) {
+        // saiku#2322: async submit is the same data-return surface as the sync /query — gate it
+        // here so a policy that forbids aggregated values can't be walked around via execute-async.
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.AGGREGATED_RESULT_VALUES);
         if (asyncQueryService == null) {
             return error("async service not configured");
         }
@@ -842,6 +958,11 @@ public class AiOssieResource {
             }
             OssieModelDto semantic = ossieDiscoverService.getModel(req.getConnection());
             if (req.getModel() == null || req.getModel().isBlank()) req.setModel(semantic.getName());
+            // saiku#2323 (CWE-863) — validate against the role-filtered model, same as the AI
+            // schema endpoint, so a field/metric the caller's roles deny is rejected with the
+            // VALIDATION_ERROR envelope at submit time instead of failing (or, worse, succeeding
+            // unscoped) on the worker.
+            semantic = OssieRoleContext.filterHidden(semantic, Set.copyOf(SessionRoles.currentRoles()));
             OssieAiSchema schema = projector.project(req.getConnection(), semantic, null);
             validator.validate(req, schema);
             OssieQueryModel internal = toInternal(req, semantic);
@@ -863,7 +984,7 @@ public class AiOssieResource {
             return badRequest(e.getField(), e.getMessage(), e.getAvailable());
         } catch (Exception e) {
             log.error("Ossie AI async submit failed", e);
-            return error("submit failed: " + e.getMessage());
+            return serverError("submit", e);
         }
     }
 
@@ -886,6 +1007,10 @@ public class AiOssieResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response asyncResult(
             @PathParam("queryId") String queryId, @jakarta.ws.rs.QueryParam("format") String format) {
+        // saiku#2322: the stored result is aggregated data like any other — and gating the fetch
+        // too means a policy tightened between submit and fetch (restart with a new env) still
+        // fails closed.
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.AGGREGATED_RESULT_VALUES);
         if (asyncQueryService == null) return error("async service not configured");
         OssieAsyncQueryService.Handle h = asyncQueryService.getOwned(queryId, currentPrincipal(), currentUserIsAdmin());
         if (h == null) return Response.status(Response.Status.NOT_FOUND).build();
@@ -1023,6 +1148,9 @@ public class AiOssieResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response previewAi(OssieAiQueryRequest req) {
+        // saiku#2322: preview returns generated SQL, no data — schema-only tier, recorded for
+        // symmetry with the MDX preview gate.
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.SCHEMA_METADATA);
         try {
             if (req == null) {
                 return badRequest("body", "request body required", List.of());
@@ -1051,7 +1179,7 @@ public class AiOssieResource {
             return badRequest("body", e.getMessage(), List.of());
         } catch (Exception e) {
             log.error("Ossie AI query preview failed", e);
-            return error("preview failed: " + e.getMessage());
+            return serverError("preview", e);
         }
     }
 
@@ -1085,6 +1213,10 @@ public class AiOssieResource {
             @jakarta.ws.rs.QueryParam("field") String fieldName,
             @jakarta.ws.rs.QueryParam("q") String q,
             @jakarta.ws.rs.QueryParam("limit") Integer limit) {
+        // saiku#2322: distinct-value search is SAMPLE_MEMBERS (PII-filtered upstream by the
+        // field skip below) — allowed under schema-only, asserted so the kind is enforced and
+        // audited consistently with MDX /ai/members/search.
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.SAMPLE_MEMBERS);
         try {
             if (connectionName == null || connectionName.isBlank()) {
                 return badRequest("connection", "connection is required", List.of());
@@ -1101,6 +1233,11 @@ public class AiOssieResource {
             if (modelName != null && !modelName.isBlank() && !modelName.equalsIgnoreCase(semantic.getName())) {
                 return badRequest("model", "unknown model '" + modelName + "'", List.of(semantic.getName()));
             }
+            // saiku#2324 — resolve the field from the caller's role-filtered view (a denied field
+            // is "unknown", same as in GET /schema) and scope the query to their row predicates.
+            Set<String> callerRoles = Set.copyOf(SessionRoles.currentRoles());
+            OssieRoleContext roleContext = OssieRoleContext.resolve(callerRoles, semantic);
+            semantic = OssieRoleContext.filterHidden(semantic, callerRoles);
             OssieModelDto.Dataset ds = null;
             for (OssieModelDto.Dataset d : semantic.getDatasets()) {
                 if (d.getName().equalsIgnoreCase(datasetName)) {
@@ -1133,7 +1270,8 @@ public class AiOssieResource {
                 return error("could not open warehouse connection for '" + connectionName + "'");
             }
             try {
-                List<String> matches = runValuesSearch(jdbc, ds, field, q, cap);
+                List<String> matches =
+                        runValuesSearch(jdbc, ds, field, q, cap, roleContext.combinedRowPredicateFor(ds.getName()));
                 Map<String, Object> body = new LinkedHashMap<>();
                 body.put("connection", connectionName);
                 body.put("model", semantic.getName());
@@ -1153,25 +1291,36 @@ public class AiOssieResource {
             return badRequest("body", e.getMessage(), List.of());
         } catch (Exception e) {
             log.error("Ossie AI values-search failed", e);
-            return error("values-search failed: " + e.getMessage());
+            return serverError("values-search", e);
         }
     }
 
-    private List<String> runValuesSearch(
-            Connection jdbc, OssieModelDto.Dataset ds, OssieModelDto.Field field, String q, int cap) throws Exception {
+    static List<String> runValuesSearch(
+            Connection jdbc,
+            OssieModelDto.Dataset ds,
+            OssieModelDto.Field field,
+            String q,
+            int cap,
+            String rowPredicate)
+            throws Exception {
         // Ossie's Calcite schema exposes tables under their DATASET name (e.g. "payer"), not
         // their raw source name (e.g. "DIM_PAYER"). Quote it so caseSensitive=false doesn't
         // matter; column stays unquoted so we get the same case-insensitive resolution the
         // projector's sample-value query relies on.
         String src = "\"" + ds.getName() + "\"";
         String col = field.getName();
-        String sql = buildValuesSearchSql(col, src, q, cap);
+        String sql = buildValuesSearchSql(col, src, q, cap, rowPredicate);
         List<String> out = new ArrayList<>();
-        try (java.sql.Statement st = jdbc.createStatement();
-                java.sql.ResultSet rs = st.executeQuery(sql)) {
-            while (rs.next()) {
-                Object v = rs.getObject(1);
-                out.add(v == null ? null : String.valueOf(v));
+        // saiku#2319 — the search term is a bind parameter, never part of the SQL text.
+        try (java.sql.PreparedStatement ps = jdbc.prepareStatement(sql)) {
+            if (q != null && !q.isBlank()) {
+                ps.setString(1, likePattern(q));
+            }
+            try (java.sql.ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    Object v = rs.getObject(1);
+                    out.add(v == null ? null : String.valueOf(v));
+                }
             }
         }
         return out;
@@ -1179,22 +1328,37 @@ public class AiOssieResource {
 
     /**
      * Build the DISTINCT-value SELECT emitted by {@code /ai/ossie/values/search}. Package-private
-     * so the SQL construction is fuzz-testable in isolation from the JDBC path.
+     * so the SQL construction is testable in isolation from the JDBC path.
      *
-     * <p>Inlined literal — Calcite's parameter binding on the JDBC adapter drops the binding at
-     * plan time for {@code LIKE} with {@code UPPER}/{@code CAST} wrapping, so we hand-escape the
-     * filter value here. Safety: {@code q} is user-supplied but we single-quote-escape per SQL
-     * standard; {@code col} and {@code src} are validated against the model before we get here.
-     * The invariant that the emitted string always leaves the state machine OUTSIDE any quoted
-     * region is asserted by {@code SearchValuesSqlFuzzTest}.
+     * <p>saiku#2319 — the search term is NOT part of the returned SQL: it is a {@code ?} bind
+     * parameter (see {@link #likePattern}). It used to be hand-escaped by quote-doubling, which
+     * is not enough on MySQL/MariaDB: Calcite pushes the filter down to the warehouse and
+     * re-emits the literal through the warehouse dialect, which does not escape backslashes, so
+     * {@code \'} broke out of the literal. {@code col} and {@code src} are validated against
+     * the model before we get here.
      */
     static String buildValuesSearchSql(String col, String src, String q, int cap) {
+        return buildValuesSearchSql(col, src, q, cap, null);
+    }
+
+    /**
+     * As above, ANDed with the caller's combined {@code saiku.roles} row predicate (saiku#2324)
+     * when one applies. The predicate is operator-authored model YAML, not caller input, and is
+     * parenthesised so an OR inside it cannot widen the {@code LIKE} filter.
+     */
+    static String buildValuesSearchSql(String col, String src, String q, int cap, String rowPredicate) {
+        String scope = rowPredicate == null ? null : "(" + rowPredicate + ")";
         if (q == null || q.isBlank()) {
-            return "SELECT DISTINCT " + col + " FROM " + src + " LIMIT " + cap;
+            return "SELECT DISTINCT " + col + " FROM " + src + (scope == null ? "" : " WHERE " + scope) + " LIMIT "
+                    + cap;
         }
-        String escaped = q.toUpperCase(java.util.Locale.ROOT).replace("'", "''");
-        return "SELECT DISTINCT " + col + " FROM " + src + " WHERE UPPER(CAST(" + col + " AS VARCHAR)) LIKE '%"
-                + escaped + "%' LIMIT " + cap;
+        return "SELECT DISTINCT " + col + " FROM " + src + " WHERE " + (scope == null ? "" : scope + " AND ")
+                + "UPPER(CAST(" + col + " AS VARCHAR)) LIKE ? LIMIT " + cap;
+    }
+
+    /** The bound {@code LIKE} pattern for a search term: case-folded, substring match. */
+    static String likePattern(String q) {
+        return "%" + q.toUpperCase(java.util.Locale.ROOT) + "%";
     }
 
     // -------------------------------------------------------------------
@@ -1569,6 +1733,26 @@ public class AiOssieResource {
         body.put("message", message);
         body.put("available", available == null ? List.of() : available);
         return Response.status(Response.Status.BAD_REQUEST)
+                .entity(body)
+                .type(MediaType.APPLICATION_JSON)
+                .build();
+    }
+
+    /**
+     * 500 envelope for the catch-all branches (saiku#1920). The exception text can carry the full
+     * SQL (including the caller's row-level-security predicate), JDBC URLs and vendor details, so
+     * it goes to the server log only; the caller gets a stable code and a {@code ref} that appears
+     * in the same log line.
+     */
+    private Response serverError(String op, Exception e) {
+        String ref = UUID.randomUUID().toString().substring(0, 8);
+        log.error("Ossie AI {} failed [ref={}]", op, ref, e);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("error", "SERVER_ERROR");
+        body.put("op", op);
+        body.put("ref", ref);
+        body.put("message", op + " failed; see server log for ref " + ref);
+        return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
                 .entity(body)
                 .type(MediaType.APPLICATION_JSON)
                 .build();

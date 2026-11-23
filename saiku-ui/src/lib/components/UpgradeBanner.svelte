@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { browser } from '$app/environment';
+	import { browser } from '$app/env';
 	import { platform } from '$lib/stores/platform.svelte';
 	import { i18n } from '$lib/stores/i18n.svelte';
 	import { FeedbackBanner } from '$lib/design-system';

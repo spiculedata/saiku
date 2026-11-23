@@ -29,10 +29,11 @@
 	 * already-resolved friendly title; `toRepoRelative` is imported here to
 	 * avoid threading the helper through a prop.
 	 */
-	import { base } from '$app/paths';
+	import { basePath } from '$lib/paths';
 	import { Button } from '$lib/components/ui';
 	import { Star } from '@lucide/svelte';
 	import { toRepoRelative, displayPath } from '$lib/api/dashboards';
+	const base = basePath();
 
 	interface Props {
 		favourites: PinnedDashboard[];

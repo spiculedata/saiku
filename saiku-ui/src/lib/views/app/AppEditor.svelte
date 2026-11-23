@@ -7,19 +7,21 @@
 	 * whenever the path changes (SvelteKit reuses the route component across
 	 * navigations), then renders AppShell against appDoc.current.
 	 *
-	 * Edit vs. view: opens in edit mode (editable). A toggle in the header
-	 * controls flips to read-only "view" mode analogous to a dashboard's
-	 * presentation preview — AppShell's `editable` prop drives whether page
-	 * add / rename affordances and in-grid editing are shown.
+	 * Edit vs. view: a saved app opens in read-only "view"; a newly created one
+	 * opens in edit (appOpenMode). A toggle in the header controls flips between
+	 * them — AppShell's `editable` prop drives whether page add / rename
+	 * affordances and in-grid editing are shown.
 	 */
-	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { appDoc } from '$lib/stores/appDoc.svelte';
+	import { PAGE_PARAM } from '$lib/dashboard/urlFilterState';
 	import { Button } from '$lib/components/ui';
 	import { toasts } from '$lib/stores/toasts.svelte';
 	import { i18n } from '$lib/stores/i18n.svelte';
 	import { Save, Pencil, Eye, Palette } from '@lucide/svelte';
 	import AppShell from '$lib/views/app/AppShell.svelte';
+	import { initialAppMode, type AppMode } from '$lib/views/app/appOpenMode';
+	import { createAppLoader } from '$lib/views/app/appLoader';
 	import AppInspector, {
 		type InspectorSection
 	} from '$lib/views/app/inspector/AppInspector.svelte';
@@ -32,9 +34,10 @@
 
 	/** View mode. A saved app opens in read-only "view" (the clean published
 	 *  experience — no add-tile / filters / tile toolbars); the header's Edit
-	 *  button toggles into "edit". Authoring a brand-new app can still start in
-	 *  edit via the builder entry point. */
-	let mode = $state<'edit' | 'view'>('view');
+	 *  button toggles into "edit". A brand-new app opens in edit — the create
+	 *  flow navigates with `?edit=1` (see appOpenMode). Read once at init: the
+	 *  app's URL-state mirror rewrites the query string afterwards. */
+	let mode = $state<AppMode>(initialAppMode(page.url.searchParams));
 	let saving = $state<boolean>(false);
 
 	// Kiosk: `?chrome=none` renders the app as a pure viewer — no edit/save
@@ -48,19 +51,25 @@
 		}
 	});
 
-	onMount(() => {
-		untrack(() => void appDoc.loadApp(appPath));
+	// Load the app on mount AND whenever the path changes — one trigger, not
+	// two. This used to be an `onMount` load plus a path-watching effect, and
+	// both fired on first mount: the app was fetched twice and, worse, the second
+	// response landed AFTER the deep-link restore had already run, resetting the
+	// app to page 0 and letting the URL mirror rewrite the shared link
+	// (saiku#1766). `createAppLoader` holds the one-load-per-path rule; this
+	// effect only feeds it the current path plus the `?p=` deep link, and runs
+	// at least once — so it covers the initial load too.
+	const requestAppLoad = createAppLoader(({ path, pageId }) => {
+		void appDoc.loadApp(path, { pageId });
 	});
-
-	// Path can change without a remount — reload when it does. Guard against
-	// re-firing on the load's own store writes by only reacting to the path.
-	let lastLoaded = $state<string | null>(null);
 	$effect(() => {
 		const p = appPath;
-		if (p && p !== untrack(() => lastLoaded)) {
-			lastLoaded = p;
-			void appDoc.loadApp(p);
-		}
+		if (!p) return;
+		// `?p=` is read per load rather than latched at init: a client-side
+		// navigation to a different app brings its own page id, while a re-load
+		// re-applies whichever page the URL names right now. The store validates
+		// the id, so a stale link can't strand the app on no page.
+		requestAppLoad(p, page.url.searchParams.get(PAGE_PARAM));
 	});
 
 	async function handleSave(): Promise<void> {

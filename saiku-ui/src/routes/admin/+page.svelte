@@ -9,9 +9,11 @@
 	import EvalsAdmin from '$lib/views/admin/EvalsAdmin.svelte';
 	import AgentSpacesAdmin from '$lib/views/admin/AgentSpacesAdmin.svelte';
 	import ApiAccessAdmin from '$lib/views/admin/ApiAccessAdmin.svelte';
+	import RolesAdmin from '$lib/views/admin/RolesAdmin.svelte';
 	import LoginForm from '$lib/views/LoginForm.svelte';
 
-	type Tab = 'users' | 'datasources' | 'schemas' | 'logs' | 'stats' | 'evals' | 'spaces' | 'api';
+	type Tab =
+		'users' | 'roles' | 'datasources' | 'schemas' | 'logs' | 'stats' | 'evals' | 'spaces' | 'api';
 	let tab = $state<Tab>('users');
 </script>
 
@@ -32,6 +34,12 @@
 				role="tab"
 				class:active={tab === 'users'}
 				onclick={() => (tab = 'users')}>{i18n.t('admin.tabs.users')}</button
+			>
+			<button
+				type="button"
+				role="tab"
+				class:active={tab === 'roles'}
+				onclick={() => (tab = 'roles')}>{i18n.t('admin.tabs.roles')}</button
 			>
 			<button
 				type="button"
@@ -69,10 +77,15 @@
 			<button type="button" role="tab" class:active={tab === 'api'} onclick={() => (tab = 'api')}
 				>API access</button
 			>
+			<!-- saiku#1120: a dedicated route (/admin/lineage), not a tab component — it's a
+			     search tool, not a scoped-resource panel like the others. -->
+			<a href="/admin/lineage" role="tab">Lineage</a>
 		</div>
 		<section class="flex-1 overflow-auto p-6">
 			{#if tab === 'users'}
 				<UsersAdmin />
+			{:else if tab === 'roles'}
+				<RolesAdmin />
 			{:else if tab === 'datasources'}
 				<DatasourcesAdmin />
 			{:else if tab === 'schemas'}
@@ -105,12 +118,14 @@
 		background: hsl(var(--bg-muted));
 		border-bottom: 1px solid hsl(var(--border));
 	}
-	.admin__tabs button {
+	.admin__tabs button,
+	.admin__tabs a {
 		padding: var(--space-2) var(--space-3);
 		background: transparent;
 		border: 0;
 		color: hsl(var(--fg-muted));
 		font: inherit;
+		text-decoration: none;
 		cursor: pointer;
 		border-bottom: 2px solid transparent;
 	}

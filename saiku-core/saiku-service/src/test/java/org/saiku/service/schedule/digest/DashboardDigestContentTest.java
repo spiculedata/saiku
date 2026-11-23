@@ -79,4 +79,57 @@ public class DashboardDigestContentTest {
         assertTrue(DashboardDigestContent.subject(null).toLowerCase().contains("digest"));
         assertTrue(DashboardDigestContent.subject("  ").toLowerCase().contains("digest"));
     }
+
+    // ---- insight digests (saiku#1119) ----
+
+    @Test
+    public void insightBulletsRenderAboveTheTableAndDeltasBelowIt() {
+        String html = DashboardDigestContent.htmlBody(
+                "Executive Overview",
+                List.of(new MeasureLine("Total Units", "1,200")),
+                List.of("Total Units rose 20% to 1,200 (was 1,000)."),
+                List.of(new DashboardDigestContent.DeltaLine("Total Units", "1,200", "1,000", "+200 (+20.0%)")),
+                LINK);
+        assertTrue(html.contains("What changed since the previous period"));
+        assertTrue(html.contains("<li>Total Units rose 20% to 1,200 (was 1,000).</li>"));
+        assertTrue(html.contains("Period over period"));
+        assertTrue(html.contains("+200 (+20.0%)"));
+        assertTrue(html.indexOf("What changed") < html.indexOf("Period over period"));
+    }
+
+    @Test
+    public void modelProseIsEscapedInTheBullets() {
+        String html = DashboardDigestContent.htmlBody(
+                "Ops", List.of(new MeasureLine("Units", "1")), List.of("<script>alert(1)</script>"), List.of(), LINK);
+        assertFalse("raw script tag must not survive", html.contains("<script>alert(1)</script>"));
+        assertTrue(html.contains("&lt;script&gt;"));
+    }
+
+    @Test
+    public void deltaCellsAreEscapedToo() {
+        String html = DashboardDigestContent.htmlBody(
+                "Ops",
+                List.of(),
+                List.of("a bullet"),
+                List.of(new DashboardDigestContent.DeltaLine("<b>Units</b>", "1", "0", "+1")),
+                LINK);
+        assertFalse(html.contains("<b>Units</b>"));
+        assertTrue(html.contains("&lt;b&gt;Units&lt;/b&gt;"));
+    }
+
+    @Test
+    public void withNoBulletsTheLegacySummaryLineStands() {
+        String html = DashboardDigestContent.htmlBody(
+                "Ops", List.of(new MeasureLine("Units", "1")), List.of(), List.of(), LINK);
+        assertTrue(html.contains("Here is your scheduled summary of key measures."));
+        assertFalse(html.contains("What changed"));
+        assertFalse(html.contains("Period over period"));
+    }
+
+    @Test
+    public void theLegacyOverloadRendersExactlyThePre1119Body() {
+        String legacy = DashboardDigestContent.htmlBody("Ops", List.of(new MeasureLine("Units", "1")), LINK);
+        assertFalse(legacy.contains("What changed"));
+        assertFalse(legacy.contains("Period over period"));
+    }
 }

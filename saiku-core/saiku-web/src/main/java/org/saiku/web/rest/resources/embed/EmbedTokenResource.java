@@ -22,6 +22,7 @@ import org.saiku.repository.AclEntry;
 import org.saiku.service.datasource.DatasourceService;
 import org.saiku.service.user.UserService;
 import org.saiku.service.util.security.Usernames;
+import org.saiku.web.embed.EmbedAuthoringScope;
 import org.saiku.web.embed.EmbedPublicGrant;
 import org.saiku.web.embed.EmbedPublicRegistry;
 import org.saiku.web.embed.EmbedToken;
@@ -108,6 +109,11 @@ public class EmbedTokenResource {
         public String resourcePath;
         public Integer ttlHours;
         public String label;
+        /** saiku#1435 — required for {@code resourceKind="authoring"}: the
+         *  tenant whose folder the token's bearer may create objects in. The
+         *  scope is derived from it server-side, so a bad value fails the mint
+         *  rather than silently widening (or sharing) a write scope. */
+        public String tenantId;
     }
 
     @POST
@@ -120,6 +126,13 @@ public class EmbedTokenResource {
         }
         String kind = body.resourceKind;
         String path = body.resourcePath;
+        // saiku#1435: an authoring token without a usable tenantId has no
+        // derivable write scope, so the mint fails HERE rather than at request
+        // time — a token that cannot scope itself should never reach the store.
+        if ("authoring".equals(kind) && !EmbedAuthoringScope.isValidTenantId(body.tenantId)) {
+            return badRequest(
+                    "tenantId", "authoring tokens require a tenantId (letters, digits, '-' and '_'; max 64 chars)");
+        }
         Response kindError = validateKindAndPath(kind, path);
         if (kindError != null) return kindError;
 
@@ -128,9 +141,11 @@ public class EmbedTokenResource {
 
         // AI-kind tokens pin a cube (not a repository file), so the file-ACL grant check
         // doesn't apply. Gate on admin only for v1 — a follow-up can add cube-level ACLs.
-        if ("ai".equals(kind)) {
+        // saiku#1435: authoring tokens pin a cube too, and are the writing kind,
+        // so they stay admin-only until cube-level ACLs exist.
+        if ("ai".equals(kind) || "authoring".equals(kind)) {
             if (!isAdmin(roles)) {
-                return forbidden("AI embed tokens require admin privileges");
+                return forbidden(kind + " embed tokens require admin privileges");
             }
         } else if (!hasGrant(path, username, roles)) {
             return forbidden("You don't have permission to embed this resource");
@@ -172,7 +187,8 @@ public class EmbedTokenResource {
                         inspection.cubeIds);
             }
         }
-        EmbedToken t = tokenStore.create(kind, path, username, roles, ttlHours * 3600_000L, body.label, redaction);
+        EmbedToken t = tokenStore.create(
+                kind, path, username, roles, ttlHours * 3600_000L, body.label, redaction, body.tenantId);
         log.info(
                 "embed-token minted token=<redacted:{}> kind={} path={} by={} ttlHours={} redaction={}",
                 t.token.length(),
@@ -192,6 +208,8 @@ public class EmbedTokenResource {
                         path,
                         "redactionPolicy",
                         t.redactionPolicy.name(),
+                        "tenantId",
+                        t.tenantId == null ? "" : t.tenantId,
                         "expiresAt",
                         t.expiresAt))
                 .type(MediaType.APPLICATION_JSON)
@@ -281,6 +299,11 @@ public class EmbedTokenResource {
         }
         String kind = body.resourceKind;
         String path = body.resourcePath;
+        // saiku#1435: Creator Mode is never public. An authoring grant would hand
+        // anonymous visitors a write scope with no tenant to attribute it to.
+        if ("authoring".equals(kind)) {
+            return forbidden("Authoring embeds cannot be made public — mint a scoped token instead.");
+        }
         Response kindError = validateKindAndPath(kind, path);
         if (kindError != null) return kindError;
 
@@ -388,8 +411,12 @@ public class EmbedTokenResource {
         if (kind == null || kind.isBlank()) {
             return badRequest("resourceKind", "resourceKind required");
         }
-        if (!"query".equals(kind) && !"dashboard".equals(kind) && !"ai".equals(kind) && !"app".equals(kind)) {
-            return badRequest("resourceKind", "resourceKind must be 'query', 'dashboard', 'ai', or 'app'");
+        if (!"query".equals(kind)
+                && !"dashboard".equals(kind)
+                && !"ai".equals(kind)
+                && !"app".equals(kind)
+                && !"authoring".equals(kind)) {
+            return badRequest("resourceKind", "resourceKind must be 'query', 'dashboard', 'ai', 'app', or 'authoring'");
         }
         if (path == null || path.isBlank()) {
             return badRequest("resourcePath", "resourcePath required");
@@ -410,13 +437,14 @@ public class EmbedTokenResource {
         // For kind="ai" the resourcePath is a cube ID — connection/catalog/schema/cubeName.
         // Sanity-check the shape so the view endpoint's downstream parseCubeId can't be
         // handed something that would look like a file path (with slashes) but isn't a cube.
-        if ("ai".equals(kind)) {
+        // saiku#1435: kind="authoring" pins a cube the same way.
+        if ("ai".equals(kind) || "authoring".equals(kind)) {
             String[] parts = path.split("/");
             if (parts.length != 4 || java.util.Arrays.stream(parts).anyMatch(String::isBlank)) {
                 return badRequest("resourcePath", "ai resourcePath must be connection/catalog/schema/cubeName");
             }
             if (path.endsWith(".saiku") || path.endsWith(".saikudash")) {
-                return badRequest("resourcePath", "ai resourcePath must not carry a file extension");
+                return badRequest("resourcePath", "cube reference resourcePath must not carry a file extension");
             }
         }
         return null;

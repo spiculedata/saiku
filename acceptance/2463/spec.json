@@ -1,0 +1,42 @@
+{
+  "issue": 2463,
+  "title": "Release builds resolve Maven and npm dependencies through Chainguard Libraries; a weekly workflow reports coverage gaps",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "release.yml jar job",
+      "then": "writes a settings profile adding Chainguard (libraries.cgr.dev/java) as repository and pluginRepository, consulted first with Central still reachable (no wildcard mirror), keeps the five GitHub Packages servers"
+    },
+    {
+      "id": "C2",
+      "given": "release.yml npm jobs and the composite action",
+      "then": "release builds keep the normal npmjs registry (no per-package fallback); the chainguard-npm composite (temporary .npmrc, no committed credentials) exists for the coverage job"
+    },
+    {
+      "id": "C3",
+      "given": "release.yml",
+      "then": "has a workflow_dispatch skip_chainguard input (default off) that logs a warning, and the jar job does not cache ~/.m2"
+    },
+    {
+      "id": "C4",
+      "given": "chainguard-coverage.yml",
+      "then": "runs on schedule and workflow_dispatch only, with contents: read, resolves Maven (no fallback) and npm ci --ignore-scripts through Chainguard only, and writes a job summary"
+    },
+    {
+      "id": "C5",
+      "given": "all workflows",
+      "then": "ci.yml is untouched by Chainguard and every uses: is pinned by full SHA"
+    },
+    {
+      "id": "C6",
+      "given": "docs",
+      "then": "docs/chainguard-libraries.md exists and docs/releasing.md links to it"
+    }
+  ],
+  "command": [
+    "node",
+    "check.mjs"
+  ],
+  "timeoutSeconds": 60
+}

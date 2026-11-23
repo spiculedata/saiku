@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { browser } from '$app/environment';
+	import { browser } from '$app/env';
 	import { Button } from '$lib/components/ui';
 	import { onMount } from 'svelte';
 	import { i18n } from '$lib/stores/i18n.svelte';

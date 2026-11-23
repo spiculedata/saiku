@@ -16,6 +16,9 @@
 package org.saiku.service.schedule.digest;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.util.ArrayList;
@@ -120,5 +123,97 @@ public class DashboardDigestSpecTest {
         // No dashboard path => a link cannot be built later; the digest still summarizes measures.
         assertEquals(null, spec.getDashboardPath());
         assertEquals(2, spec.getMeasures().size());
+    }
+
+    // ---- insight digests (saiku#1119) ----
+
+    @Test
+    public void noInsightBlockMeansTheInsightFeatureIsOff() {
+        // The #943 contract: a payload written before #1119 must behave exactly as it did.
+        DashboardDigestSpec spec = DashboardDigestSpec.fromPayload(validPayload());
+        assertFalse(spec.isInsightEnabled());
+        assertNull(spec.getMeasures().get(0).getPeriod());
+    }
+
+    @Test
+    public void anEmptyInsightBlockTurnsItOnWithDefaults() {
+        Map<String, Object> p = validPayload();
+        p.put("insight", new LinkedHashMap<String, Object>());
+        DashboardDigestSpec spec = DashboardDigestSpec.fromPayload(p);
+        assertTrue(spec.isInsightEnabled());
+        assertTrue(spec.isInsightNarrate());
+        assertEquals(3, spec.getInsightMaxBullets());
+    }
+
+    @Test
+    public void narrateCanBeTurnedOff() {
+        Map<String, Object> p = validPayload();
+        Map<String, Object> insight = new LinkedHashMap<>();
+        insight.put("narrate", Boolean.FALSE);
+        p.put("insight", insight);
+        DashboardDigestSpec spec = DashboardDigestSpec.fromPayload(p);
+        assertTrue(spec.isInsightEnabled());
+        assertFalse(spec.isInsightNarrate());
+    }
+
+    @Test
+    public void narrateAcceptsAStringBooleanBecauseJsonParsersDisagree() {
+        Map<String, Object> p = validPayload();
+        Map<String, Object> insight = new LinkedHashMap<>();
+        insight.put("narrate", "false");
+        p.put("insight", insight);
+        assertFalse(DashboardDigestSpec.fromPayload(p).isInsightNarrate());
+    }
+
+    @Test
+    public void maxBulletsIsBounded() {
+        Map<String, Object> p = validPayload();
+        Map<String, Object> insight = new LinkedHashMap<>();
+        insight.put("maxBullets", 5);
+        p.put("insight", insight);
+        assertEquals(5, DashboardDigestSpec.fromPayload(p).getInsightMaxBullets());
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void anAbsurdBulletCountIsRejected() {
+        Map<String, Object> p = validPayload();
+        Map<String, Object> insight = new LinkedHashMap<>();
+        insight.put("maxBullets", 500);
+        p.put("insight", insight);
+        DashboardDigestSpec.fromPayload(p);
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void aNonBooleanNarrateFlagIsRejected() {
+        Map<String, Object> p = validPayload();
+        Map<String, Object> insight = new LinkedHashMap<>();
+        insight.put("narrate", "maybe");
+        p.put("insight", insight);
+        DashboardDigestSpec.fromPayload(p);
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void aNonObjectInsightBlockIsRejected() {
+        Map<String, Object> p = validPayload();
+        p.put("insight", "yes please");
+        DashboardDigestSpec.fromPayload(p);
+    }
+
+    @Test
+    public void aMeasureMayDeclareItsPeriod() {
+        Map<String, Object> p = validPayload();
+        Map<String, Object> period = new LinkedHashMap<>();
+        period.put("dimension", "Time");
+        period.put("hierarchy", "Time");
+        period.put("level", "Quarter");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> measures = (List<Map<String, Object>>) p.get("measures");
+        measures.get(0).put("period", period);
+        DashboardDigestSpec spec = DashboardDigestSpec.fromPayload(p);
+        PeriodSpec got = spec.getMeasures().get(0).getPeriod();
+        assertNotNull(got);
+        assertEquals("Quarter", got.getLevel());
+        // The measure that declares no period still contributes a current value only.
+        assertNull(spec.getMeasures().get(1).getPeriod());
     }
 }

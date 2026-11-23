@@ -88,6 +88,7 @@
 	"modal.open.empty": "Aucune requête enregistrée.",
 	"modal.open.loading": "Chargement du référentiel…",
 	"admin.tabs.users": "Utilisateurs",
+	"admin.tabs.roles": "Rôles",
 	"admin.tabs.datasources": "Sources de données",
 	"admin.tabs.schemas": "Schémas",
 	"admin.tabs.logs": "Journaux",

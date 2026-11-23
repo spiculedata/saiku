@@ -1,0 +1,7 @@
+# Everything not needed at runtime by the Apps Script project itself.
+# `clasp push` reads this from the project root.
+**/../test/**
+**/../README.md
+**/../.claspignore
+**/../.clasp.json
+**/../.clasp.json.example

@@ -5,6 +5,7 @@
 package org.saiku.service.olap.ai.ask;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import java.time.Duration;
@@ -205,6 +206,89 @@ public class NlAskProviderFactoryTest {
                         env(Map.of()))
                 .build();
         assertTrue(p instanceof AzureOpenAiNlAskProvider);
+    }
+
+    /* ---- saiku#904 ollama alias ---- */
+
+    @Test
+    public void ollamaWithNoKeyStillBuildsOpenAiCompatProvider() {
+        // Ollama never checks a key — this must NOT fall back to Noop like openai/anthropic do.
+        NlAskProvider p = new NlAskProviderFactory("ollama", null, null, null, env(Map.of())).build();
+        assertTrue(p instanceof OpenAINlAskProvider);
+    }
+
+    @Test
+    public void ollamaUsesEnvKeyWhenProvided() {
+        NlAskProvider p = new NlAskProviderFactory(
+                        "ollama", null, null, null, env(Map.of("OLLAMA_API_KEY", "proxy-key")))
+                .build();
+        assertTrue(p instanceof OpenAINlAskProvider);
+    }
+
+    @Test
+    public void ollamaHonoursExplicitModelAndEndpoint() {
+        String model = "llama3.1:8b-instruct-q4_K_M";
+        String endpoint = "http://gpu-box:11434/v1/chat/completions";
+        NlAskProvider p = new NlAskProviderFactory("ollama", null, model, endpoint, env(Map.of())).build();
+        assertTrue(p instanceof OpenAINlAskProvider);
+    }
+
+    @Test
+    public void ollamaCaseInsensitive() {
+        NlAskProvider p = new NlAskProviderFactory("OLLAMA", null, null, null, env(Map.of())).build();
+        assertTrue(p instanceof OpenAINlAskProvider);
+    }
+
+    /* ---- saiku#904 describe() — diagnostics summary, no provider construction ---- */
+
+    @Test
+    public void describeNoopWhenUnconfigured() {
+        NlAskProviderFactory.Descriptor d = new NlAskProviderFactory(null, null, null, null, env(Map.of())).describe();
+        assertEquals("noop", d.provider());
+        assertFalse(d.configured());
+    }
+
+    @Test
+    public void describeAnthropicUnconfiguredWithoutKey() {
+        NlAskProviderFactory.Descriptor d =
+                new NlAskProviderFactory("anthropic", null, null, null, env(Map.of())).describe();
+        assertEquals("anthropic", d.provider());
+        assertFalse(d.configured());
+    }
+
+    @Test
+    public void describeAnthropicConfiguredWithKey() {
+        NlAskProviderFactory.Descriptor d =
+                new NlAskProviderFactory("anthropic", "sk-x", null, null, env(Map.of())).describe();
+        assertEquals("anthropic", d.provider());
+        assertTrue(d.configured());
+        assertEquals(AnthropicNlAskProvider.DEFAULT_MODEL, d.model());
+    }
+
+    @Test
+    public void describeOllamaAlwaysConfiguredWithDefaults() {
+        NlAskProviderFactory.Descriptor d =
+                new NlAskProviderFactory("ollama", null, null, null, env(Map.of())).describe();
+        assertEquals("ollama", d.provider());
+        assertTrue(d.configured());
+        assertEquals(NlAskProviderFactory.DEFAULT_OLLAMA_MODEL, d.model());
+        assertEquals(NlAskProviderFactory.DEFAULT_OLLAMA_ENDPOINT, d.endpoint());
+    }
+
+    @Test
+    public void describeOllamaHonoursOverrides() {
+        String endpoint = "http://gpu-box:11434/v1/chat/completions";
+        NlAskProviderFactory.Descriptor d =
+                new NlAskProviderFactory("ollama", null, "custom-model", endpoint, env(Map.of())).describe();
+        assertEquals("custom-model", d.model());
+        assertEquals(endpoint, d.endpoint());
+    }
+
+    @Test
+    public void describeUnknownProviderIsNotConfigured() {
+        NlAskProviderFactory.Descriptor d =
+                new NlAskProviderFactory("badger", null, null, null, env(Map.of())).describe();
+        assertFalse(d.configured());
     }
 
     private static java.util.function.Function<String, String> env(Map<String, String> map) {

@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Smoke-test Spring config mirroring the saiku#1913 rate-limiter wiring from
+  saiku-webapp/WEB-INF/saiku-beans.xml: the singleton AiRateLimiter beans
+  (AiRateLimiter.shared / sharedFromProperty) plus the request-scoped resources
+  that consume them. Keep these bean definitions in lockstep with saiku-beans.xml.
+  The resources are declared WITHOUT scope here (no request context in a unit
+  test) — what is under test is which limiter instance each resource receives.
+-->
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+       http://www.springframework.org/schema/beans/spring-beans.xsd">
+
+    <!-- Resolve the ${...:default} budgets just as the production context does. -->
+    <bean class="org.springframework.context.support.PropertySourcesPlaceholderConfigurer"/>
+
+    <!-- ==== shared limiter singletons (mirror of saiku-beans.xml) ==== -->
+
+    <bean id="aiQueryAskRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="ai.query.ask"/>
+    </bean>
+    <bean id="aiOssieAskRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="ai.ossie.ask"/>
+    </bean>
+    <bean id="mailUnsubscribeRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="mail.unsubscribe"/>
+        <constructor-arg value="${saiku.mail.unsubscribe.ratelimit.maxPerMinute:20}"/>
+        <constructor-arg value="60000"/>
+    </bean>
+    <bean id="mailConsentRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="mail.consent"/>
+        <constructor-arg value="${saiku.mail.consent.ratelimit.maxPerMinute:20}"/>
+        <constructor-arg value="60000"/>
+    </bean>
+    <bean id="mailConsentAddressRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="mail.consent.address"/>
+        <constructor-arg value="${saiku.mail.consent.address.ratelimit.maxPerMinute:10}"/>
+        <constructor-arg value="60000"/>
+    </bean>
+    <bean id="mailTestSendRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="mail.test"/>
+        <constructor-arg value="${saiku.mail.test.ratelimit.maxPerMinute:5}"/>
+        <constructor-arg value="60000"/>
+    </bean>
+    <bean id="mailInviteRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="mail.invite"/>
+        <constructor-arg value="${saiku.mail.invite.ratelimit.maxPerMinute:5}"/>
+        <constructor-arg value="60000"/>
+    </bean>
+    <bean id="mailSendRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="mail.send"/>
+        <constructor-arg value="${saiku.mail.send.ratelimit.maxPerMinute:3}"/>
+        <constructor-arg value="60000"/>
+    </bean>
+    <bean id="mailEmailRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="mail.email"/>
+        <constructor-arg value="${saiku.email.ratelimit.maxPerMinute:10}"/>
+        <constructor-arg value="60000"/>
+    </bean>
+    <bean id="jobRunNowRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
+          factory-method="shared">
+        <constructor-arg value="jobs.runNow"/>
+        <constructor-arg value="${saiku.jobs.run.ratelimit.maxPerMinute:10}"/>
+        <constructor-arg value="60000"/>
+    </bean>
+
+    <!-- ==== consuming resources: limiter properties only ==== -->
+
+    <bean id="unsubscribeResource" class="org.saiku.web.email.UnsubscribeResource">
+        <property name="rateLimiter" ref="mailUnsubscribeRateLimiter"/>
+    </bean>
+    <!-- A second instance of the SAME resource: two "requests" in production. -->
+    <bean id="unsubscribeResource2" class="org.saiku.web.email.UnsubscribeResource">
+        <property name="rateLimiter" ref="mailUnsubscribeRateLimiter"/>
+    </bean>
+    <bean id="consentConfirmResource" class="org.saiku.web.email.ConsentConfirmResource">
+        <property name="rateLimiter" ref="mailConsentRateLimiter"/>
+        <property name="addressRateLimiter" ref="mailConsentAddressRateLimiter"/>
+    </bean>
+    <bean id="mailConfigResource" class="org.saiku.web.email.MailConfigResource">
+        <property name="testSendRateLimiter" ref="mailTestSendRateLimiter"/>
+    </bean>
+    <bean id="mailSendResource" class="org.saiku.web.email.MailSendResource">
+        <property name="inviteRateLimiter" ref="mailInviteRateLimiter"/>
+        <property name="sendRateLimiter" ref="mailSendRateLimiter"/>
+    </bean>
+    <bean id="emailResource" class="org.saiku.web.email.EmailResource">
+        <property name="emailRateLimiter" ref="mailEmailRateLimiter"/>
+    </bean>
+    <bean id="schedulerResource" class="org.saiku.web.rest.resources.SchedulerResource">
+        <property name="runNowRateLimiter" ref="jobRunNowRateLimiter"/>
+    </bean>
+    <bean id="aiQueryResource" class="org.saiku.web.rest.resources.AiQueryResource">
+        <property name="askRateLimiter" ref="aiQueryAskRateLimiter"/>
+    </bean>
+    <bean id="aiOssieResource" class="org.saiku.web.rest.resources.AiOssieResource">
+        <property name="askRateLimiter" ref="aiOssieAskRateLimiter"/>
+    </bean>
+
+</beans>

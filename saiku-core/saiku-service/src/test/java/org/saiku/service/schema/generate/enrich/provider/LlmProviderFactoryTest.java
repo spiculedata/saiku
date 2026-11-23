@@ -4,6 +4,8 @@
  */
 package org.saiku.service.schema.generate.enrich.provider;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -33,6 +35,11 @@ public class LlmProviderFactoryTest {
     private static void assertIsAnthropic(LlmProvider p) {
         assertNotNull(p);
         assertTrue("expected AnthropicProvider, got " + p.getClass().getName(), p instanceof AnthropicProvider);
+    }
+
+    private static void assertIsOpenAiCompat(LlmProvider p) {
+        assertNotNull(p);
+        assertTrue("expected OpenAiCompatProvider, got " + p.getClass().getName(), p instanceof OpenAiCompatProvider);
     }
 
     @Test
@@ -102,5 +109,75 @@ public class LlmProviderFactoryTest {
     public void explicitModelIsAccepted() {
         LlmProviderFactory factory = new LlmProviderFactory("anthropic", "sk-test-123", "claude-opus-4-7", emptyEnv());
         assertIsAnthropic(factory.build());
+    }
+
+    /* ---- saiku#904 openai / ollama ---- */
+
+    @Test
+    public void openaiWithoutKeyFallsBackToNoop() {
+        LlmProviderFactory factory = new LlmProviderFactory("openai", null, null, null, null, null, emptyEnv());
+        assertIsNoop(factory.build());
+    }
+
+    @Test
+    public void openaiUsesExplicitKey() {
+        LlmProviderFactory factory = new LlmProviderFactory("openai", null, null, "sk-openai", null, null, emptyEnv());
+        assertIsOpenAiCompat(factory.build());
+    }
+
+    @Test
+    public void openaiFallsBackToEnvKey() {
+        LlmProviderFactory factory = new LlmProviderFactory(
+                "openai", null, null, null, null, null, envWith("OPENAI_API_KEY", "sk-from-env"));
+        assertIsOpenAiCompat(factory.build());
+    }
+
+    @Test
+    public void ollamaWithNoKeyStillBuildsProvider() {
+        // Ollama never checks a key — this must NOT fall back to Noop like openai/anthropic do.
+        LlmProviderFactory factory = new LlmProviderFactory("ollama", null, null, null, null, null, emptyEnv());
+        assertIsOpenAiCompat(factory.build());
+    }
+
+    @Test
+    public void ollamaCaseInsensitive() {
+        LlmProviderFactory factory = new LlmProviderFactory("OLLAMA", null, null, null, null, null, emptyEnv());
+        assertIsOpenAiCompat(factory.build());
+    }
+
+    @Test
+    public void ollamaHonoursExplicitModelAndEndpoint() {
+        String model = "llama3.1:8b-instruct-q4_K_M";
+        String endpoint = "http://gpu-box:11434/v1/chat/completions";
+        LlmProviderFactory factory = new LlmProviderFactory("ollama", null, null, null, model, endpoint, emptyEnv());
+        assertIsOpenAiCompat(factory.build());
+    }
+
+    /* ---- saiku#904 describe() — diagnostics summary, no provider construction ---- */
+
+    @Test
+    public void describeNoopWhenUnconfigured() {
+        LlmProviderFactory.Descriptor d =
+                new LlmProviderFactory(null, null, null, null, null, null, emptyEnv()).describe();
+        assertEquals("noop", d.provider());
+        assertFalse(d.configured());
+    }
+
+    @Test
+    public void describeAnthropicConfiguredWithKey() {
+        LlmProviderFactory.Descriptor d =
+                new LlmProviderFactory("anthropic", "sk-x", null, null, null, null, emptyEnv()).describe();
+        assertEquals("anthropic", d.provider());
+        assertTrue(d.configured());
+    }
+
+    @Test
+    public void describeOllamaAlwaysConfiguredWithDefaults() {
+        LlmProviderFactory.Descriptor d =
+                new LlmProviderFactory("ollama", null, null, null, null, null, emptyEnv()).describe();
+        assertEquals("ollama", d.provider());
+        assertTrue(d.configured());
+        assertEquals(LlmProviderFactory.DEFAULT_OLLAMA_MODEL, d.model());
+        assertEquals(LlmProviderFactory.DEFAULT_OLLAMA_ENDPOINT, d.endpoint());
     }
 }

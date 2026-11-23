@@ -15,6 +15,7 @@
 			token: { type: 'String', attribute: 'token', reflect: false },
 			kind: { type: 'String', attribute: 'kind', reflect: false },
 			path: { type: 'String', attribute: 'path', reflect: false },
+			cube: { type: 'String', attribute: 'cube', reflect: false },
 			render: { type: 'String', attribute: 'render', reflect: false },
 			mode: { type: 'String', attribute: 'mode', reflect: false },
 			height: { type: 'String', attribute: 'height', reflect: false },
@@ -34,13 +35,18 @@
 	 *   server  — origin of the Saiku launcher, e.g. https://demo.saiku.bi
 	 *   token   — opaque embed token from POST /saiku/api/embed/tokens.
 	 *             Omit for anonymous public reads.
-	 *   kind    — "query" (default), "dashboard", "ai", or "app"
+	 *   kind    — "query" (default), "dashboard", "ai", "app", or "creator"
 	 *   path    — kind="query": repository path ending .saiku
 	 *             kind="dashboard": path ending .saikudash
 	 *             kind="ai": cube ref connection/catalog/schema/cubeName
 	 *             kind="app": App Builder document path ending .saikuapp —
 	 *                         the token grants the ONE app read-only; its nav +
 	 *                         every page ride the single grant.
+	 *   cube    — kind="creator" (saiku#1435): the cube ref
+	 *             connection/catalog/schema/cubeName the authoring token pins.
+	 *             The creator builds their own query/dashboard against that ONE
+	 *             cube and saves into their own tenant folder; there is no cube
+	 *             switcher, because the server pins the cube to the token.
 	 *   render  — for kind=query only: "table" (default), "matrix", "chart", "kpi"
 	 *   mode    — for render=chart only: "bar" (default), "line", "pie"
 	 *   height  — CSS height for the rendered surface (default 400px)
@@ -71,6 +77,7 @@
 	import EmbedApp from './EmbedApp.svelte';
 	import EmbedMatrix from './EmbedMatrix.svelte';
 	import EmbedAsk from './EmbedAsk.svelte';
+	import EmbedCreator from './EmbedCreator.svelte';
 	import { fetchSavedQuery, EmbedFetchError, type EmbedFilterOverride } from './api';
 	import type { EmbedCaption, EmbedMatrixRow, EmbedRow } from './types';
 
@@ -79,6 +86,7 @@
 		token?: string;
 		kind?: string;
 		path?: string;
+		cube?: string;
 		render?: string;
 		mode?: string;
 		height?: string;
@@ -92,6 +100,7 @@
 		token = '',
 		kind = 'query',
 		path = '',
+		cube = '',
 		render = 'table',
 		mode = 'bar',
 		height = '400px',
@@ -141,6 +150,14 @@
 		const k = kind.trim() || 'query';
 		const r = (render || '').trim().toLowerCase();
 		const f = parseFilter(filter);
+		if (k === 'creator') {
+			// The creator manages its own fetches (context, preview, saves) and
+			// re-dispatches through the callbacks below.
+			rows = null;
+			matrixRows = null;
+			error = null;
+			return;
+		}
 		if (k !== 'query') {
 			// Dashboards + AI ask both manage their own fetches. Reset so a kind
 			// switch doesn't show stale query rows.
@@ -212,6 +229,14 @@
 		<EmbedApp {server} {token} {path} onLoad={(d) => emit('saiku:load', { kind: 'app', ...d })} />
 	{:else if kind === 'ai'}
 		<EmbedAsk {server} {token} cubeId={path} {space} onResult={(d) => emit('saiku:ai-query', d)} />
+	{:else if kind === 'creator'}
+		<EmbedCreator
+			{server}
+			{token}
+			cube={cube || path}
+			onLoad={(d) => emit('saiku:load', d)}
+			onError={(d) => emit('saiku:error', d)}
+		/>
 	{:else if loading}
 		<div class="state">Loading…</div>
 	{:else if error}

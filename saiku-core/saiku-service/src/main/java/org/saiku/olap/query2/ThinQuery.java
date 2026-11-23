@@ -5,6 +5,7 @@
 package org.saiku.olap.query2;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -12,6 +13,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.saiku.olap.dto.SaikuCube;
 import org.saiku.olap.query2.util.ServiceUtil;
 import org.saiku.service.util.ISaikuQuery;
+import org.saiku.service.util.TypedMdxParameterBinder;
 
 public class ThinQuery implements ISaikuQuery {
 
@@ -20,6 +22,14 @@ public class ThinQuery implements ISaikuQuery {
     private String mdx;
     private String name;
     private Map<String, String> parameters = new HashMap<>();
+
+    /**
+     * Typed {@code :name}-style parameters bound via {@link TypedMdxParameterBinder} (saiku#832)
+     * — the successor to the untyped {@code ${name}}-style {@link #parameters} map, kept
+     * alongside it for one release cycle per the issue's migration plan.
+     */
+    private List<Parameter> typedParameters = new ArrayList<>();
+
     private Map<String, String> plugins = new HashMap<>();
     private Map<String, Object> properties = new HashMap<>();
     private Map<String, String> metadata = new HashMap<>();
@@ -111,10 +121,23 @@ public class ThinQuery implements ISaikuQuery {
     @JsonIgnore
     public String getParameterResolvedMdx() {
         String replacedMdx = mdx;
+        if (typedParameters != null && !typedParameters.isEmpty()) {
+            replacedMdx = TypedMdxParameterBinder.bind(replacedMdx, indexTypedParametersByName(typedParameters));
+        }
         if (parameters != null) {
             replacedMdx = ServiceUtil.replaceParameters(replacedMdx, parameters);
         }
         return replacedMdx;
+    }
+
+    private static Map<String, Parameter> indexTypedParametersByName(List<Parameter> typedParameters) {
+        Map<String, Parameter> byName = new HashMap<>();
+        for (Parameter p : typedParameters) {
+            if (p != null && p.getName() != null) {
+                byName.put(p.getName(), p);
+            }
+        }
+        return byName;
     }
 
     /**
@@ -190,6 +213,26 @@ public class ThinQuery implements ISaikuQuery {
             for (String param : parameters) {
                 addParameter(param);
             }
+        }
+    }
+
+    /**
+     * @return the typed parameters
+     */
+    public List<Parameter> getTypedParameters() {
+        return typedParameters;
+    }
+
+    /**
+     * @param typedParameters the typed parameters to set
+     */
+    public void setTypedParameters(List<Parameter> typedParameters) {
+        this.typedParameters = typedParameters;
+    }
+
+    public void addTypedParameter(Parameter typedParameter) {
+        if (typedParameter != null) {
+            this.typedParameters.add(typedParameter);
         }
     }
 

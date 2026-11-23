@@ -121,4 +121,28 @@ public class AiQueryResourcePolicyTest {
             // expected
         }
     }
+
+    @Test
+    public void narrateDashboard_blocked_under_schema_only() {
+        // saiku#910 — Tier-2 (aggregated) feature: schema-only must refuse before any tile query
+        // is even executed.
+        AiQueryResource r = resourceWith(AiPolicy.SCHEMA_ONLY);
+        try {
+            r.narrateDashboard(new org.saiku.service.olap.ai.ask.AiDashboardNarrativeApi.Request());
+            fail("schema-only must block /ai/narrate-dashboard");
+        } catch (AiPolicyViolation v) {
+            assertEquals(AiDataKind.AGGREGATED_RESULT_VALUES, v.getKind());
+            assertEquals(AiPolicy.SCHEMA_ONLY, v.getCurrent());
+        }
+    }
+
+    @Test
+    public void narrateDashboard_passes_guard_under_aggregated() {
+        AiQueryResource r = resourceWith(AiPolicy.AGGREGATED);
+        try {
+            r.narrateDashboard(new org.saiku.service.olap.ai.ask.AiDashboardNarrativeApi.Request());
+        } catch (AiPolicyViolation e) {
+            fail("AGGREGATED must permit /ai/narrate-dashboard");
+        }
+    }
 }

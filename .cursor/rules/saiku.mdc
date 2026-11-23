@@ -1,0 +1,8 @@
+---
+description: Saiku project guidance — build, architecture, and repo conventions
+alwaysApply: true
+---
+
+Follow the project guidance in @AGENTS.md; it is the single source of truth for every coding agent in this repo. Before starting, also read @.claude/memory/corrections.md for conventions maintainers have had to correct.
+
+Skills in `.agents/skills/*/SKILL.md` (also reachable as `.claude/skills`) and prompts in `.github/prompts/*.prompt.md` are plain markdown workflows. Read the relevant one when a task matches it (rebuilding the launcher after UI changes, cutting a release, fixing a bug test-first).

@@ -14,6 +14,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpServletResponseWrapper;
 import java.io.IOException;
+import org.saiku.web.security.RequestPaths;
 
 /**
  * SPA fallback for the SvelteKit UI at {@code /ui/*}.
@@ -56,13 +57,9 @@ public class SpaFallbackFilter implements Filter {
             return;
         }
 
-        String path = req.getRequestURI();
-        String ctx = req.getContextPath();
-        if (ctx != null && !ctx.isEmpty() && path.startsWith(ctx)) {
-            path = path.substring(ctx.length());
-        }
+        String path = RequestPaths.pathWithinApplication(req);
 
-        if (!shouldFallback(path)) {
+        if (path == null || !shouldFallback(path)) {
             chain.doFilter(request, response);
             return;
         }

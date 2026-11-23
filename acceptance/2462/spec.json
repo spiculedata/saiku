@@ -1,0 +1,39 @@
+{
+  "issue": 2462,
+  "title": "Move the Docker image to a Chainguard JRE base",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "the Dockerfile",
+      "then": "its final stage is cgr.dev/concepttocloud.com/jre:openjdk-21 pinned by sha256 digest, and every other stage is digest-pinned too"
+    },
+    {
+      "id": "C2",
+      "given": "the Dockerfile and docker/",
+      "then": "there is no docker/saiku-entrypoint, the final stage runs no shell (ENTRYPOINT and HEALTHCHECK are exec-form), CMD is [\"serve\"], uid/gid 10001, SAIKU_HOME, JAVA_TOOL_OPTIONS and EXPOSE 8080 are kept"
+    },
+    {
+      "id": "C3",
+      "given": "the launcher's serve path",
+      "then": "it runs the saiku-home / secret.key pre-flight and bridges JAVA_OPTS -D properties and SAIKU_MCP_URL (ContainerPreflight, covered by ContainerPreflightTest)"
+    },
+    {
+      "id": "C4",
+      "given": "the launcher subcommands",
+      "then": "a healthcheck subcommand exists and the HEALTHCHECK uses it instead of curl (HealthcheckCommandTest ships)"
+    },
+    {
+      "id": "C5",
+      "given": "the workflows that build the image (docker.yml, release.yml)",
+      "then": "each logs in to cgr.dev with CHAINGUARD_IDENTITY_ID / CHAINGUARD_TOKEN before building, and docker.yml skips the build where the secrets are absent (fork PRs)"
+    },
+    {
+      "id": "C6",
+      "given": "the docs",
+      "then": "docs/docker-chainguard-evaluation.md records the adoption decision and the 30-day pull-token rotation"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}

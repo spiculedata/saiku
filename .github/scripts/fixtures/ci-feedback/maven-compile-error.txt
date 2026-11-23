@@ -1,0 +1,78 @@
+2026-10-04T20:03:56.5452588Z ##[group]Run mvn -B -ntp -DskipITs=false verify
+2026-10-04T20:03:56.5453002Z [36;1mmvn -B -ntp -DskipITs=false verify[0m
+2026-10-04T20:03:56.5492500Z shell: /usr/bin/bash -e {0}
+2026-10-04T20:03:56.5492818Z env:
+2026-10-04T20:03:56.5493175Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/22.0.2-9/x64
+2026-10-04T20:03:56.5493682Z   JAVA_HOME_22_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/22.0.2-9/x64
+2026-10-04T20:03:56.5494108Z   MAVEN_ARGS: -ntp
+2026-10-04T20:03:56.5494356Z ##[endgroup]
+2026-10-04T20:06:01.7866316Z [INFO] 
+2026-10-04T20:06:01.7867174Z [INFO] -----------------< org.saikuanalytics:saiku-launcher >------------------
+2026-10-04T20:06:01.7868105Z [INFO] Building saiku - launcher 4.8.0                                  [10/11]
+2026-10-04T20:06:01.7869056Z [INFO]   from saiku-launcher/pom.xml
+2026-10-04T20:06:01.7869793Z [INFO] --------------------------------[ jar ]---------------------------------
+2026-10-04T20:06:01.8501771Z [INFO] 
+2026-10-04T20:06:01.8503005Z [INFO] --- enforcer:3.5.0:enforce (ban-hadoop-and-log4j1) @ saiku-launcher ---
+2026-10-04T20:06:01.8665796Z [INFO] Rule 0: org.apache.maven.enforcer.rules.dependency.BannedDependencies passed
+2026-10-04T20:06:01.8667596Z [INFO] 
+2026-10-04T20:06:01.8668423Z [INFO] --- jacoco:0.8.15:prepare-agent (jacoco-prepare-agent) @ saiku-launcher ---
+2026-10-04T20:06:01.8673598Z [INFO] argLine set to -javaagent:/home/runner/.m2/repository/org/jacoco/org.jacoco.agent/0.8.15/org.jacoco.agent-0.8.15-runtime.jar=destfile=/home/runner/work/saiku/saiku/saiku-launcher/target/jacoco.exec
+2026-10-04T20:06:01.8675340Z [INFO] 
+2026-10-04T20:06:01.8676238Z [INFO] --- resources:3.4.0:resources (default-resources) @ saiku-launcher ---
+2026-10-04T20:06:01.8689237Z [INFO] Copying 24 resources from src/main/resources to target/classes
+2026-10-04T20:06:01.8753551Z [INFO] 
+2026-10-04T20:06:01.8782863Z [INFO] --- compiler:3.13.0:compile (default-compile) @ saiku-launcher ---
+2026-10-04T20:06:01.8784523Z [INFO] Recompiling the module because of changed dependency.
+2026-10-04T20:06:01.8789107Z [INFO] Compiling 5 source files with javac [debug release 21] to target/classes
+2026-10-04T20:06:02.0344544Z [INFO] Annotation processing is enabled because one or more processors were found
+2026-10-04T20:06:02.0345906Z   on the class path. A future release of javac may disable annotation processing
+2026-10-04T20:06:02.0347276Z   unless at least one processor is specified by name (-processor), or a search
+2026-10-04T20:06:02.0348404Z   path is specified (--processor-path, --processor-module-path), or annotation
+2026-10-04T20:06:02.0349373Z   processing is enabled explicitly (-proc:only, -proc:full).
+2026-10-04T20:06:02.0350077Z   Use -Xlint:-options to suppress this message.
+2026-10-04T20:06:02.0351003Z   Use -proc:none to disable annotation processing.
+2026-10-04T20:06:02.0352064Z [INFO] -------------------------------------------------------------
+2026-10-04T20:06:02.0355542Z [ERROR] COMPILATION ERROR : 
+2026-10-04T20:06:02.0357687Z [INFO] -------------------------------------------------------------
+2026-10-04T20:06:02.0430187Z ##[error][ERROR] /home/runner/work/saiku/saiku/saiku-launcher/src/main/java/org/saiku/launcher/SaikuLauncher.java:[365,27] cannot find symbol
+2026-10-04T20:06:02.0451901Z   symbol:   method setMaxInactiveInterval(int)
+2026-10-04T20:06:02.0452913Z   location: variable sessionHandler of type org.eclipse.jetty.session.SessionManager
+2026-10-04T20:06:02.0453632Z [INFO] 1 error
+2026-10-04T20:06:02.0454262Z [INFO] -------------------------------------------------------------
+2026-10-04T20:06:02.0454991Z [INFO] ------------------------------------------------------------------------
+2026-10-04T20:06:02.0455573Z [INFO] Reactor Summary for Saiku Module Project 4.8.0:
+2026-10-04T20:06:02.0456075Z [INFO] 
+2026-10-04T20:06:02.0456457Z [INFO] Saiku BOM .......................................... SUCCESS [  0.002 s]
+2026-10-04T20:06:02.0457052Z [INFO] Saiku Module Project ............................... SUCCESS [ 10.621 s]
+2026-10-04T20:06:02.0457625Z [INFO] saiku - core libraries ............................. SUCCESS [  0.023 s]
+2026-10-04T20:06:02.0458183Z [INFO] saiku olap util .................................... SUCCESS [  1.925 s]
+2026-10-04T20:06:02.0458735Z [INFO] saiku - semantic layer ............................. SUCCESS [  8.146 s]
+2026-10-04T20:06:02.0459249Z [INFO] saiku - services ................................... SUCCESS [ 28.815 s]
+2026-10-04T20:06:02.0459808Z [INFO] saiku - sql layer .................................. SUCCESS [  6.267 s]
+2026-10-04T20:06:02.0460364Z [INFO] saiku - web ........................................ SUCCESS [ 16.141 s]
+2026-10-04T20:06:02.0460873Z [INFO] saiku - webapp ..................................... SUCCESS [ 50.011 s]
+2026-10-04T20:06:02.0461403Z [INFO] saiku - launcher ................................... FAILURE [  0.248 s]
+2026-10-04T20:06:02.0468405Z [INFO] saiku-proptest ..................................... SKIPPED
+2026-10-04T20:06:02.0470210Z [INFO] ------------------------------------------------------------------------
+2026-10-04T20:06:02.0470740Z [INFO] BUILD FAILURE
+2026-10-04T20:06:02.0471159Z [INFO] ------------------------------------------------------------------------
+2026-10-04T20:06:02.0472632Z [INFO] Total time:  02:03 min
+2026-10-04T20:06:02.0473155Z [INFO] Finished at: 2026-10-04T20:06:02Z
+2026-10-04T20:06:02.0474328Z [INFO] ------------------------------------------------------------------------
+2026-10-04T20:06:02.0475641Z [ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.13.0:compile (default-compile) on project saiku-launcher: Compilation failure
+2026-10-04T20:06:02.0478119Z ##[error][ERROR] /home/runner/work/saiku/saiku/saiku-launcher/src/main/java/org/saiku/launcher/SaikuLauncher.java:[365,27] cannot find symbol
+2026-10-04T20:06:02.0480500Z [ERROR]   symbol:   method setMaxInactiveInterval(int)
+2026-10-04T20:06:02.0482001Z [ERROR]   location: variable sessionHandler of type org.eclipse.jetty.session.SessionManager
+2026-10-04T20:06:02.0483031Z [ERROR] -> [Help 1]
+2026-10-04T20:06:02.0483396Z [ERROR] 
+2026-10-04T20:06:02.0483872Z [ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+2026-10-04T20:06:02.0484977Z [ERROR] Re-run Maven using the -X switch to enable full debug logging.
+2026-10-04T20:06:02.0485406Z [ERROR] 
+2026-10-04T20:06:02.0486468Z [ERROR] For more information about the errors and possible solutions, please read the following articles:
+2026-10-04T20:06:02.0487595Z [ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException
+2026-10-04T20:06:02.0488150Z [ERROR] 
+2026-10-04T20:06:02.0489312Z [ERROR] After correcting the problems, you can resume the build with the command
+2026-10-04T20:06:02.0490570Z [ERROR]   mvn <args> -rf :saiku-launcher
+2026-10-04T20:06:02.0860245Z ##[error]Process completed with exit code 1.
+2026-10-04T20:06:02.1054078Z Post job cleanup.
+2026-10-04T20:06:02.1985036Z Post job cleanup.

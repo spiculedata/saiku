@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Stand-in where util-linux flock is absent (macOS). Always acquires.
+exit 0

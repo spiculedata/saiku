@@ -1,0 +1,34 @@
+{
+  "issue": 2324,
+  "title": "Ossie values/search and schema sample values honour saiku.roles field allow/deny and row predicates",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "a caller whose roles deny (or do not allow) an Ossie field calls GET /ai/ossie/values/search for it",
+      "then": "searchValues resolves the field from the role-filtered model (OssieRoleContext.filterHidden), so a denied field is refused as unknown instead of enumerated"
+    },
+    {
+      "id": "C2",
+      "given": "a dataset declares row_predicates for the caller's role",
+      "then": "the values-search SQL and the schema sample-value SQL are both ANDed with the caller's combined role predicate (OssieRoleContext.combinedRowPredicateFor), so values from hidden rows are never returned"
+    },
+    {
+      "id": "C3",
+      "given": "two callers with different row scopes request the schema for the same model",
+      "then": "the sample cache is scoped by the row predicate, so one caller's samples are never served to another"
+    },
+    {
+      "id": "C4",
+      "given": "the /ask path projects the schema",
+      "then": "it filters the semantic model by the caller's roles and passes the roles to the projector, so denied fields and their samples never reach the prompt"
+    },
+    {
+      "id": "C5",
+      "given": "regression tests",
+      "then": "tests ship for role-scoped combined predicates, row-scoped samples with cache isolation, and the scoped values-search SQL"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}

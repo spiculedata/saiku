@@ -12,7 +12,7 @@
 	 * sub-folder, rename folder) funnels back to the parent via
 	 * callbacks — the parent already owns the round-trips + toasts.
 	 */
-	import { base } from '$app/paths';
+	import { basePath } from '$lib/paths';
 	import { Button } from '$lib/components/ui';
 	import { displayPath } from '$lib/api/dashboards';
 	import {
@@ -30,6 +30,7 @@
 	import { favouriteDashboards } from '$lib/stores/favouriteDashboards.svelte';
 	import { session } from '$lib/stores/session.svelte';
 	import { i18n } from '$lib/stores/i18n.svelte';
+	const base = basePath();
 
 	interface Props {
 		folderTree: FolderNode;

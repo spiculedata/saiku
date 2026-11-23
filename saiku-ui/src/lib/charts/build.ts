@@ -45,7 +45,10 @@ import {
 	resolvePalette
 } from '$lib/views/chartTheme';
 import { buildSparklineSvg } from '$lib/charts/sparkline';
-import { formatNumber, type NumberFormat } from '$lib/charts/numberFormat';
+import { formatNumber, isFormatActive, type NumberFormat } from '$lib/charts/numberFormat';
+// saiku#1779: per-axis number-format resolution (left/right override, chart-level
+// fallback) — shared with the chart editor modal so both agree on the semantics.
+import { resolveAxisFormats } from '$lib/charts/axisNumberFormat';
 // #1084: threshold-driven per-point colours.
 import { colorForValue, conditionalFormatForMeasure } from '$lib/charts/chartConditionalFormat';
 
@@ -602,7 +605,10 @@ function cartesianTooltipFormatter(
 	cols: string[],
 	matrix: (number | null)[][],
 	tk: ThemeTokens,
-	nf?: NumberFormat,
+	/** Per-SERIES format resolver. saiku#1779: a dual-axis chart formats each
+	 *  series by its own axis, so a single shared `nf` is no longer enough —
+	 *  the caller resolves by series name. */
+	nfForSeries: (seriesName: string) => NumberFormat | undefined,
 	withSparkline = true
 ): (params: AxisTipParam | AxisTipParam[]) => string {
 	// Column name -> its values down the rows (the series' full trend).
@@ -623,13 +629,14 @@ function cartesianTooltipFormatter(
 		const rows = list
 			.map((p) => {
 				const name = String(p.seriesName ?? '');
+				const nf = nfForSeries(name);
 				const v = p.value;
 				// #1082: route the numeric value through formatNumber (prefix/suffix/
 				// decimals/thousands/abbreviate) when a format is set; with none it
 				// falls back to the prior String(v) / "—" behaviour. Still escaped
 				// below because the return is inserted as innerHTML.
 				const valueText =
-					nf && typeof v === 'number'
+					nf && isFormatActive(nf) && typeof v === 'number'
 						? formatNumber(v, nf)
 						: v == null || (typeof v === 'number' && Number.isNaN(v))
 							? '—'
@@ -831,26 +838,30 @@ export function buildChartOption(
 	// values, data labels). `nf` is undefined when no format is set, so every
 	// value-axis/tooltip/label fragment below stays byte-for-byte identical and
 	// legacy snapshots are unchanged. The category axis is never reformatted.
-	const nf: NumberFormat | undefined =
-		o.numberFormat &&
-		Object.values(o.numberFormat).some(
-			(v) => v !== undefined && v !== null && v !== false && v !== ''
-		)
-			? o.numberFormat
-			: undefined;
-	// Value-axis label config: only attach a formatter when nf is active, so the
-	// axisLabel object is unchanged for unformatted charts.
-	const valueAxisLabel = nf
-		? { color: tk.fgMuted, formatter: (val: number) => formatNumber(val, nf) }
-		: axisLabel;
+	// saiku#1779: resolved PER SIDE (see axisNumberFormat.ts). `nf` is the
+	// chart-level format and stays the fallback everywhere (so every single-axis
+	// chart, and the heatmap visualMap text below, is untouched); `leftNf` /
+	// `rightNf` add the per-axis override, and a side that owns an inert format
+	// resolves to undefined — i.e. that axis alone keeps its plain axisLabel.
+	const { chart: nf, left: leftNf, right: rightNf } = resolveAxisFormats(o);
+	// Value-axis label config: only attach a formatter when that side's format is
+	// active, so the axisLabel object is unchanged for unformatted axes.
+	const valueAxisLabelFor = (f?: NumberFormat) =>
+		isFormatActive(f)
+			? { color: tk.fgMuted, formatter: (val: number) => formatNumber(val, f) }
+			: axisLabel;
+	const valueAxisLabel = valueAxisLabelFor(leftNf);
 	// Series data-label formatter (#1082): attached to cartesian series so that
 	// IF data labels are shown they use the format. We don't force labels on —
 	// we only set label.formatter (label.show stays at its ECharts default), and
-	// only when nf is active so the series object is otherwise unchanged. The
-	// value-axis branch always formats; this covers any displayed point labels.
-	const seriesValueLabel: Record<string, unknown> = nf
-		? { label: { formatter: (p: { value?: unknown }) => formatNumber(p?.value as number, nf) } }
-		: {};
+	// only when the series' own format is active so the series object is otherwise
+	// unchanged. The value-axis branch always formats; this covers any displayed
+	// point labels. saiku#1779: takes the format as an argument so a dual-axis
+	// series is labelled with its OWN axis's format.
+	const seriesValueLabelFor = (f?: NumberFormat): Record<string, unknown> =>
+		isFormatActive(f)
+			? { label: { formatter: (p: { value?: unknown }) => formatNumber(p?.value as number, f) } }
+			: {};
 
 	const baseAxis = {
 		type: 'category' as const,
@@ -1414,11 +1425,28 @@ export function buildChartOption(
 	// #1596: the left value axis carries the measure-name title (valueNameCfg);
 	// the right (dual) axis is left untitled — its own series names are in the
 	// legend and a second rotated title would crowd the plot.
+	// saiku#1779: the format a series' own values render with — its axis's format.
+	// Left/right inherit the chart-level `nf` unless that side overrides it.
+	const formatForIndex = (c: number): NumberFormat | undefined =>
+		!hasRight || seriesSides[c] !== 'right' ? leftNf : rightNf;
 	const yAxis = hasRight
 		? [
-				{ ...valueAxis, ...valueNameCfg, position: 'left' as const },
+				{
+					...valueAxis,
+					// saiku#1779: each side gets ITS OWN format — the whole point of a
+					// dual axis is that the two measures aren't in the same units.
+					axisLabel: valueAxisLabelFor(leftNf),
+					...valueNameCfg,
+					position: 'left' as const
+				},
 				// Drop the right axis's splitLine so left-axis gridlines aren't doubled.
-				{ ...valueAxis, name: undefined, position: 'right' as const, splitLine: { show: false } }
+				{
+					...valueAxis,
+					axisLabel: valueAxisLabelFor(rightNf),
+					name: undefined,
+					position: 'right' as const,
+					splitLine: { show: false }
+				}
 			]
 		: { ...valueAxis, ...valueNameCfg };
 
@@ -1463,7 +1491,9 @@ export function buildChartOption(
 			// like series, a same-bg border for bars/points. No-ops when off.
 			...(isLineLike ? { ...lineStyleHC, ...markerHC } : itemStyleHC),
 			// #1082: format any displayed data labels (no-op object when nf is off).
-			...seriesValueLabel,
+			// saiku#1779: resolved per series, so a right-axis series is labelled with
+			// the right axis's format.
+			...seriesValueLabelFor(formatForIndex(c)),
 			yAxisIndex: hasRight ? (seriesSides[c] === 'right' ? 1 : 0) : 0,
 			// Compact (tiles) draws missing cells as gaps; roomy (workspace) as 0.
 			data: matrix.map((row) => {
@@ -1491,12 +1521,24 @@ export function buildChartOption(
 	// tooltip values are formatted, even in compact mode (which has no sparkline).
 	// Without a format we keep the prior behaviour: sparkline formatter in roomy
 	// mode, ECharts' default text formatter otherwise.
+	// saiku#1779: "a format is set" now means per side — a chart whose only format
+	// is the right-axis override formats its right-hand series too.
+	const anyNf = nf ?? leftNf ?? rightNf;
 	const cartesianTooltip =
-		sparklineTip || nf
+		sparklineTip || anyNf
 			? {
 					trigger: 'axis' as const,
 					...tooltipStyle,
-					formatter: cartesianTooltipFormatter(cols, matrix, tk, nf, sparklineTip)
+					formatter: cartesianTooltipFormatter(
+						cols,
+						matrix,
+						tk,
+						(seriesName) => {
+							const c = cols.indexOf(seriesName);
+							return c >= 0 ? formatForIndex(c) : nf;
+						},
+						sparklineTip
+					)
 				}
 			: { trigger: 'axis' as const, ...tooltipStyle };
 

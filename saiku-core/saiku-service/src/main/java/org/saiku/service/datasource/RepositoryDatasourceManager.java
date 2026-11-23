@@ -22,6 +22,9 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.text.Normalizer;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
@@ -36,6 +39,7 @@ import org.saiku.repository.PathNotFoundException;
 import org.saiku.repository.RepositoryException;
 import org.saiku.service.importer.JujuSource;
 import org.saiku.service.user.UserService;
+import org.saiku.service.util.security.MondrianRolePolicy;
 import org.saiku.service.util.security.authentication.PasswordProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -242,6 +246,11 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
         // guard — reject the name here, at the one chokepoint every write below (csv json,
         // workspace mondrian catalog path, and the final .sds descriptor) keys off.
         validateDatasourceName(ds.getName());
+        // saiku#1933: store the NFC spelling. An NFD name (macOS clipboard form) validates fine
+        // once normalized, but persisting the decomposed spelling would key the .sds file and the
+        // in-memory cache on a string that won't byte-match the NFC name a later save, a CSV
+        // catalog path, or a saved query comes back carrying.
+        ds.setName(normalizeNameToNfc(ds.getName()));
 
         // saiku#1864: the load path decorates every name as `<workspace>_<storedName>`
         // (FilesystemRepositoryManager.getAllDataSources). Nothing undid that here, so a client
@@ -290,31 +299,21 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
                 }
             }
 
-            boolean f = true;
+            // saiku#1932 (CWE-116 / CWE-22): the CSV path below is interpolated into the
+            // hand-built Calcite model JSON in getCSVJson, so resolve it against the datadir
+            // FIRST — before it is stat()'d below and before it is serialised. Previously the
+            // path was only ever concatenated with the datadir (and interpolated raw), so a
+            // `..` segment in the datasource location pointed the CSV read outside the repo
+            // root. resolveWithinDatadir normalises `..` away and fails closed on an escape.
+            String csvModelPath = path.startsWith("mondrian:") ? path : resolveWithinDatadir(path);
 
-            if (new File(getDatadir() + path).exists() && new File(getDatadir() + path).isDirectory()) {
-                f = false;
-            }
+            // isDirectory() already implies exists(); the old code asked twice.
+            boolean f = !new File(getDatadir() + csvModelPath).isDirectory();
 
-            path = path.replace("\\", "/");
-            path = path.replaceAll("[/]+", "/");
-
-            if (!path.startsWith("mondrian:")) {
-                String pathToSave = getDatadir() + path;
-
-                pathToSave = pathToSave.replace("\\", "/");
-                pathToSave = pathToSave.replaceAll("[/]+", "/");
-
-                irm.saveInternalFile(
-                        this.getCSVJson(f, ds.getName(), pathToSave),
-                        separator + "datasources" + separator + ds.getName() + "-csv.json",
-                        null);
-            } else {
-                irm.saveInternalFile(
-                        this.getCSVJson(f, ds.getName(), path),
-                        separator + "datasources" + separator + ds.getName() + "-csv.json",
-                        null);
-            }
+            irm.saveInternalFile(
+                    this.getCSVJson(f, ds.getName(), csvModelPath),
+                    separator + "datasources" + separator + ds.getName() + "-csv.json",
+                    null);
 
             irm.saveDataSource(ds, separator + "datasources" + separator + ds.getName() + ".sds", "fixme");
 
@@ -353,6 +352,13 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
      * resulting filename is too long for the underlying filesystem. Fail-closed: null,
      * non-matching, or over-length names are all rejected.
      *
+     * <p>saiku#1933: the name is normalized to NFC ({@link #normalizeNameToNfc}) before it is
+     * matched. The allowlist admits Unicode letters ({@code \p{L}}) but not combining marks
+     * ({@code \p{M}}), so an accented name arriving in NFD form -- the decomposed spelling
+     * macOS puts on the clipboard, and what a naive UTF-8 encode/decode round trip preserves --
+     * used to be rejected even though its composed NFC spelling passed. Normalizing first makes
+     * the two spellings interchangeable at the one chokepoint every write funnels through.
+     *
      * <p>saiku#1906 SEC follow-up (data loss): {@link #DATASOURCE_NAME_PATTERN} caps at 128
      * Unicode code points, but {@code saveDataSource} writes the name as UTF-8 bytes in a
      * filename — 128 CJK/astral characters can already be 380+ UTF-8 bytes, past ext4's
@@ -367,11 +373,26 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
      * attacker-supplied name containing a newline would otherwise be log-line injection.
      */
     private static void validateDatasourceName(String name) {
-        if (name == null
-                || !DATASOURCE_NAME_PATTERN.matcher(name).matches()
-                || name.getBytes(StandardCharsets.UTF_8).length > 200) {
+        if (name == null) {
             throw new IllegalArgumentException("Illegal datasource name");
         }
+        String nfc = normalizeNameToNfc(name);
+        if (!DATASOURCE_NAME_PATTERN.matcher(nfc).matches() || nfc.getBytes(StandardCharsets.UTF_8).length > 200) {
+            throw new IllegalArgumentException("Illegal datasource name");
+        }
+    }
+
+    /**
+     * The NFC (canonical-composed) spelling of a datasource name, or {@code null} for {@code null}
+     * input. saiku#1933.
+     *
+     * <p>NFC is the single spelling every downstream step assumes: it carries no combining marks
+     * for {@link #DATASOURCE_NAME_PATTERN}'s {@code \p{M}} exclusion to trip over, and one
+     * canonical form means an accented datasource lands on ONE filename rather than two that
+     * differ only by normalization.
+     */
+    private static String normalizeNameToNfc(String name) {
+        return name == null ? null : Normalizer.normalize(name, Normalizer.Form.NFC);
     }
 
     /**
@@ -401,8 +422,12 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
                 // filesystem impl; a non-filesystem IRepositoryManager (e.g. Saiku Cloud's
                 // Postgres-backed store) wouldn't get it, so validate here too.
                 validateDatasourceName(ds.getName());
+                // saiku#1933: same NFC storage decision as addDatasource() -- the cache key must
+                // match the name the descriptor was written under, or a reload keys the map by a
+                // string that no longer byte-matches what a caller sends.
+                ds.setName(normalizeNameToNfc(ds.getName()));
                 irm.saveDataSource(ds, separator + "datasources" + separator + ds.getName() + ".sds", "fixme");
-                datasourcesForCurrentWorkspace().put(datasource.getName(), datasource);
+                datasourcesForCurrentWorkspace().put(ds.getName(), datasource);
 
             } catch (IllegalArgumentException | RepositoryException e) {
                 log.error("Could not add data source: {}", datasource.getName(), e);
@@ -456,8 +481,82 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
         }
     }
 
+    /**
+     * saiku#2318 (CWE-863): {@code roles} is no longer ignored. The historical implementation
+     * returned the whole workspace map for every caller, so any role-filtered consumer — notably
+     * the SQL workbench picker — silently offered every datasource on the server, and the
+     * datasource field of a workbench query was a free choice of target.
+     *
+     * <p>The filter mirrors {@code SecurityAwareConnectionManager}'s connection-time enforcement
+     * (saiku#1968/#1972, fail-closed) so a datasource the caller would be DENIED a connection for is
+     * not even offered: a configured admin sees everything; a non-admin loses only security-enabled
+     * datasources whose {@code lookup} mapping grants them no Mondrian role, or whose
+     * {@code security.type} is unrecognised. {@code one2one} stays visible — deciding it needs the
+     * schema's role list, which only the connection path can read, and that path still denies.
+     * Security-disabled datasources (every default install) are unaffected.
+     */
+    @Override
     public Map<String, SaikuDatasource> getDatasources(String[] roles) {
-        return datasourcesForCurrentWorkspace();
+        Map<String, SaikuDatasource> all = datasourcesForCurrentWorkspace();
+        if (isAdmin(roles)) {
+            return all;
+        }
+        Map<String, SaikuDatasource> visible = new LinkedHashMap<>();
+        for (Map.Entry<String, SaikuDatasource> entry : all.entrySet()) {
+            if (isVisibleTo(roles, entry.getValue())) {
+                visible.put(entry.getKey(), entry.getValue());
+            }
+        }
+        return visible;
+    }
+
+    /** True when any of {@code roles} is a configured admin role; unavailable admin roles mean non-admin (fail closed). */
+    private boolean isAdmin(String[] roles) {
+        if (roles == null || roles.length == 0 || userService == null) {
+            return false;
+        }
+        try {
+            List<String> adminRoles = userService.getAdminRoles();
+            if (adminRoles == null || adminRoles.isEmpty()) {
+                return false;
+            }
+            for (String role : roles) {
+                if (role != null && adminRoles.contains(role)) {
+                    return true;
+                }
+            }
+        } catch (Exception e) {
+            log.debug("could not read admin roles; treating caller as non-admin", e);
+        }
+        return false;
+    }
+
+    /**
+     * Whether a non-admin caller may be OFFERED this datasource at all. Only the cases where the
+     * decision needs no schema access are decided here; {@code one2one} defers to the
+     * connection-time check, which has the schema's role list.
+     */
+    static boolean isVisibleTo(String[] roles, SaikuDatasource datasource) {
+        MondrianRolePolicy.Mode mode = MondrianRolePolicy.modeOf(datasource);
+        switch (mode) {
+            case DISABLED:
+            case PASSTHROUGH:
+            case ONE2ONE:
+                return true;
+            case UNKNOWN:
+                // saiku#1972: connection time denies a non-admin outright — don't offer it either.
+                return false;
+            case LOOKUP:
+                List<String> resolved = MondrianRolePolicy.resolveMondrianRoles(
+                        mode, roleList(roles), null, MondrianRolePolicy.mappingOf(datasource));
+                return !resolved.isEmpty();
+            default:
+                return false;
+        }
+    }
+
+    private static Collection<String> roleList(String[] roles) {
+        return roles == null ? List.of() : Arrays.asList(roles);
     }
 
     public SaikuDatasource getDatasource(String datasourceName) {
@@ -950,20 +1049,98 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
         return this.type;
     }
 
+    /**
+     * Resolve a repository-relative CSV path against {@link #getDatadir()}, refusing anything that
+     * normalises outside it.
+     *
+     * <p>saiku#1932 (CWE-22): this mirrors {@code FilesystemRepositoryManager}'s private
+     * {@code resolveWithinDatadir} so the CSV-model path in the Calcite JSON obeys the same
+     * containment rule as the rest of the repository write layer — including the historical
+     * convention that a leading {@code /} is REPO-relative (the code this replaces did plain
+     * {@code getDatadir() + path} string concatenation, so {@code /etc/foo} meant
+     * {@code <datadir>/etc/foo}). Unreachable from the shipped build today (JdbcUrlPolicy denies
+     * the {@code calcite} scheme, saiku#1902) but fixed at the source rather than relied on.
+     *
+     * <p>Fails closed and unchecked, like the repository layer's own guard: a path that escapes
+     * the datadir throws {@link IllegalArgumentException} rather than being silently rewritten.
+     */
+    private String resolveWithinDatadir(String repoRelativePath) {
+        if (repoRelativePath == null) {
+            throw new IllegalArgumentException("Path must not be null");
+        }
+        String stripped = repoRelativePath;
+        while (stripped.startsWith("/") || stripped.startsWith("\\")) {
+            stripped = stripped.substring(1);
+        }
+        Path base = Paths.get(getDatadir()).toAbsolutePath().normalize();
+        Path resolved = base.resolve(stripped).normalize();
+        if (!resolved.startsWith(base)) {
+            // Do not echo the raw path back — it is untrusted input and this message can end up
+            // in a REST body and in logs (same reasoning as validateDatasourceName, saiku#1906).
+            throw new IllegalArgumentException("Path traversal attempt rejected in datasource CSV location");
+        }
+        return resolved.toString().replace("\\", "/");
+    }
+
+    /**
+     * Escape a value for interpolation into the single-quoted Calcite model JSON built by
+     * {@link #getCSVJson(boolean, String, String)}.
+     *
+     * <p>saiku#1932 (CWE-116): the model is a hand-built string, so an unescaped {@code '} in
+     * the datasource name or CSV path terminated the quoted string early and let the remainder be
+     * read as a further model key (e.g. an extra {@code factory:}). Calcite parses this model with
+     * the avatica {@code JsonReader}, whose unquoted-key dialect accepts {@code '}-quoted strings
+     * and the standard JSON escapes, so escaping {@code '}, the quote characters, backslashes and
+     * control characters is both sufficient and round-trip safe.
+     */
+    static String jsonEscape(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(raw.length() + 8);
+        for (int i = 0; i < raw.length(); i++) {
+            char c = raw.charAt(i);
+            switch (c) {
+                case '\\' -> sb.append("\\\\");
+                case '\'' -> sb.append("\\'");
+                case '"' -> sb.append("\\\"");
+                case '\n' -> sb.append("\\n");
+                case '\r' -> sb.append("\\r");
+                case '\t' -> sb.append("\\t");
+                case '\b' -> sb.append("\\b");
+                case '\f' -> sb.append("\\f");
+                default -> {
+                    if (c < 0x20) {
+                        sb.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        sb.append(c);
+                    }
+                }
+            }
+        }
+        return sb.toString();
+    }
+
     private String getCSVJson(boolean file, String name, String path) {
         path = path.replace("\\", "/");
         path = path.replaceAll("[/]+", "/");
 
+        // saiku#1932: never interpolate a raw, unescaped name/path into the model JSON.
+        String safeName = jsonEscape(name);
+        String safePath = jsonEscape(path);
+
         String p;
         if (!file) {
-            p = "directory: '" + path + "'\n";
+            p = "directory: '" + safePath + "'\n";
 
             return "{\n" + "version: '1.0',\n"
                     + "defaultSchema: '"
-                    + name + "',\n" + "schemas: [\n"
+                    + safeName
+                    + "',\n" + "schemas: [\n"
                     + "{\n"
                     + "name: '"
-                    + name + "',\n" + "type: 'custom',\n"
+                    + safeName
+                    + "',\n" + "type: 'custom',\n"
                     + "factory: 'org.apache.calcite.adapter.csv.CsvSchemaFactory',\n"
                     + "operand: {\n"
                     + p
@@ -972,16 +1149,19 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
                     + "]\n"
                     + "}";
         } else {
-            p = "file: '" + path + "',";
+            p = "file: '" + safePath + "',";
 
             return "{\n" + "version: '1.0',\n"
                     + "defaultSchema: '"
-                    + name + "',\n" + "schemas: [\n"
+                    + safeName
+                    + "',\n" + "schemas: [\n"
                     + "{\n"
                     + "name: '"
-                    + name + "',\n" + "tables:[{\n"
+                    + safeName
+                    + "',\n" + "tables:[{\n"
                     + "name: '"
-                    + name + "1',\n" + "type: 'custom',\n"
+                    + safeName
+                    + "1',\n" + "type: 'custom',\n"
                     + "factory: 'org.apache.calcite.adapter.csv.CsvTableFactory',\n"
                     + "operand: {\n"
                     + p
@@ -1214,6 +1394,9 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
         // datasource.<key>.ossieYaml if operators need it.
         if (file.getOssieYaml() != null) {
             props.put("ossieYaml", file.getOssieYaml());
+        }
+        if (file.getCellLinkUrl() != null) {
+            props.put(ISaikuConnection.CELL_LINK_URL_KEY, file.getCellLinkUrl());
         }
         // schema captures the Ossie model name for OSSIE datasources — same semantic as
         // Mondrian's catalog. Existing load path drops it on the floor.

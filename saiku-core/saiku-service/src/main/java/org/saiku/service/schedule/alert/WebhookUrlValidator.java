@@ -164,7 +164,12 @@ public final class WebhookUrlValidator {
         }
     }
 
-    private static boolean isBlockedHostName(String host) {
+    /**
+     * saiku#1918 (17b): public because the SMTP wizard gate ({@code org.saiku.service.mail.SmtpHostValidator})
+     * must apply the SAME host rules as the webhook gate rather than re-deriving (and eventually
+     * diverging from) a second copy of "which addresses are internal".
+     */
+    public static boolean isBlockedHostName(String host) {
         if (host.equals("localhost") || host.endsWith(".localhost") || host.endsWith(".local")) {
             return true;
         }
@@ -179,7 +184,8 @@ public final class WebhookUrlValidator {
     private static final java.util.regex.Pattern DOTTED_QUAD =
             java.util.regex.Pattern.compile("\\d{1,3}(\\.\\d{1,3}){3}");
 
-    private static boolean isIpLiteral(String host) {
+    /** Public for the shared SSRF rule set — see {@link #isBlockedHostName(String)}. */
+    public static boolean isIpLiteral(String host) {
         // Canonical dotted-quad, or any v6 (URI.getHost strips brackets, so a colon means v6).
         return DOTTED_QUAD.matcher(host).matches() || host.contains(":");
     }
@@ -192,7 +198,7 @@ public final class WebhookUrlValidator {
      * (that is a legitimate literal handled by {@link #isIpLiteral}); everything else numeric here is
      * rejected outright by the caller rather than trusted to a resolver that parses these inconsistently.
      */
-    private static boolean isObfuscatedNumericIpv4(String host) {
+    public static boolean isObfuscatedNumericIpv4(String host) {
         if (host.isEmpty() || host.endsWith(".") || host.contains(":")) {
             return false;
         }
@@ -246,8 +252,9 @@ public final class WebhookUrlValidator {
         }
     }
 
-    /** Package-visible so the alert channel can re-check a freshly-resolved address before sending. */
-    static boolean isBlockedAddress(InetAddress addr) {
+    /** Package-visible so the alert channel can re-check a freshly-resolved address before sending.
+     *  Public so the SMTP wizard gate shares one definition of "internal address". */
+    public static boolean isBlockedAddress(InetAddress addr) {
         if (addr.isLoopbackAddress()
                 || addr.isLinkLocalAddress()
                 || addr.isSiteLocalAddress()

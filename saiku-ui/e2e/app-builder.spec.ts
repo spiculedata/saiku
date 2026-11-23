@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Route } from '@playwright/test';
+import { expect, test, type Page, type Route } from './fixtures/coverage';
 
 /**
  * End-to-end smoke test for the App Builder (Phase 1, Task 9) with a mocked
@@ -297,8 +297,10 @@ test.describe('App Builder (mocked backend)', () => {
 		).toBeVisible();
 
 		await page.getByRole('button', { name: /Add tile/ }).click();
-		// The Graph renderer is offered as its own menu entry (label "Graph").
-		await page.getByRole('menuitem', { name: /Graph/ }).click();
+		// The Graph renderer lives in the Chart type gallery's "Relationships" group
+		// (saiku#1837), not as its own top-level menu entry.
+		await page.getByRole('menuitem', { name: /^Chart…/ }).click();
+		await page.getByRole('menuitem', { name: /^Graph/ }).click();
 		await expect(page.locator('.tile')).toHaveCount(1);
 
 		await page.getByRole('button', { name: 'Save', exact: true }).click();

@@ -9,14 +9,10 @@
  * The pure string-shaping parts live here so they are unit-testable without a Svelte harness.
  */
 
-/** Cube coordinates Studio needs to open a freshly published cube. */
-export interface LaunchCoordinates {
-	/** The name the server registered the connection under — NOT the datasource id. */
-	connection: string;
-	/** Mondrian catalog and schema are both the `<Schema name=…>` attribute. */
-	schema: string;
-	cube: string;
-}
+// saiku#1117: buildLaunchUrl/LaunchCoordinates moved to $lib/api/starterCube so the quickstart
+// CSV-upload route can build the same starter-cube URL without an inter-route import. Re-exported
+// here so this route's existing imports (and publish.test.ts) don't need to change.
+export { buildLaunchUrl, type LaunchCoordinates } from '$lib/api/starterCube';
 
 /**
  * The repository path `AdminResource.uploadSchema` writes a schema to.
@@ -41,21 +37,4 @@ export function repositorySchemaPath(schemaName: string): string {
 export function resolveSchemaName(label: string | undefined | null, dataSourceId: string): string {
 	const trimmed = (label ?? '').trim();
 	return trimmed || `${dataSourceId}-cube`;
-}
-
-/**
- * Build the Studio URL that opens `cube` with a populated query model.
- *
- * Uses the generic `starterCube*` contract documented in `$lib/api/starterCube` — the same one
- * Saiku Cloud's `/saiku/launch` ends up at. OSS has no `/saiku/launch` route, which is why the
- * shared Confirm-cube pane takes this as a host-supplied prop.
- */
-export function buildLaunchUrl(coords: LaunchCoordinates): string {
-	const params = new URLSearchParams({
-		starterCubeConnection: coords.connection,
-		starterCubeCatalog: coords.schema,
-		starterCubeSchema: coords.schema,
-		starterCubeName: coords.cube
-	});
-	return `/ui/?${params.toString()}`;
 }

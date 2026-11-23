@@ -13,7 +13,7 @@
 	import { onMount } from 'svelte';
 	import { Button } from '$lib/components/ui';
 	import { goto } from '$app/navigation';
-	import { base } from '$app/paths';
+	import { basePath } from '$lib/paths';
 	import {
 		flatten,
 		getResourceAcl,
@@ -73,6 +73,7 @@
 		type CatalogueLeaf,
 		type FolderNode
 	} from '$lib/dashboard/catalogueTree';
+	const base = basePath();
 
 	let entries = $state<RepositoryNode[]>([]);
 	let loading = $state<boolean>(true);

@@ -1,0 +1,316 @@
+# Releasing Saiku
+
+How a Saiku release is built, what supply-chain material it ships, and how a
+consumer verifies it. The mechanics live in `.github/workflows/release.yml`
+(triggered by pushing a `v*` tag); this doc is the operator- and
+consumer-facing companion.
+
+## What a release publishes
+
+`release.yml` publishes four things on a `v*` tag:
+
+| Artifact | Published to |
+|---|---|
+| `saiku-<version>.jar` (launcher fat JAR) | GitHub release assets |
+| `saiku-dist-<version>.zip` (JAR + `run.sh`/`run.bat` + README) | GitHub release assets |
+| `ghcr.io/spiculedata/saiku:<version>` (multi-arch image) | GHCR |
+| `@concepttocloud/saiku-embed` + `@concepttocloud/saiku-embed-react` | npm |
+
+Plus, since saiku#1990 / saiku#1992, the supply-chain material:
+
+| Item | Where |
+|---|---|
+| `saiku-sbom-<version>.cdx.json` — CycloneDX SBOM (Java/Maven tree) | GitHub release asset |
+| `saiku-ui-sbom-<version>.cdx.json` — CycloneDX SBOM (npm/UI tree) | GitHub release asset |
+| `SHA256SUMS` — checksums over the JAR, dist zip, both SBOMs | GitHub release asset |
+| SLSA build provenance (Sigstore keyless, Rekor-logged) for the JAR, dist zip, both SBOMs | GitHub attestations |
+| SLSA build provenance + SBOM attestation for the image | GHCR (OCI referrers) + GitHub attestations |
+| npm provenance for both embed packages | npm / Sigstore |
+
+The design-system npm package (`@concepttocloud/saiku-design-system`) is
+released by its **own** workflow (`design-system.yml`) on its own cadence. It
+publishes with `npm publish --provenance` like the embed packages (see
+[npm packages](#npm-packages)); nothing else here applies to it. Its
+*dependency* graph is still described: it is an npm workspace of `saiku-ui`, so
+it shows up as a component in the UI SBOM below.
+
+## Who may release: the `guard` job and tag protection (saiku#2333)
+
+Provenance only proves *which workflow and ref* built an artifact, so a release must
+also be restricted to commits that went through the release process. `release.yml`
+starts with a credential-free `guard` job that every other job depends on. It fails
+the run, before any `packages: write`, `id-token: write` or `NPM_TOKEN` job starts,
+unless:
+
+- the tag matches `vMAJOR.MINOR.PATCH[-suffix]` and exists;
+- on a tag push, the tag resolves to the pushed commit;
+- the tagged commit is an ancestor of `origin/main`.
+
+Every build and publish job then checks out the commit the guard verified
+(`needs.guard.outputs.sha`), so a manual `workflow_dispatch` of `release.yml` from a
+feature branch builds the tagged commit on `main`, not the branch. Re-running a
+release for an existing tag on `main` (the repair path) still works.
+
+Maintainer settings that are not in git (repository admin): add a **tag ruleset**
+named `release tags` targeting `refs/tags/v*` with *Restrict creations*, *Restrict
+updates* and *Restrict deletions*, bypass limited to the Repository admin role.
+
+### Approval gate: the `release` environment (saiku#2333)
+
+Every job that publishes or holds a publishing credential declares
+`environment: release`: `deploy-packages`, `docker`, `release`, `npm-embed-publish` and
+`docs-changelog`. The build-only jobs (`guard`, `jar`, `npm-embed-build`) do not, so the
+builds run unattended and a maintainer approves once they are ready. **A release now
+pauses at "Review pending deployments"** (Actions run page) until a required reviewer
+approves. `deploy-packages` and `docker` wait together and are approved in one dialog;
+`release`, `npm-embed-publish` and `docs-changelog` then pause as they become ready.
+Approve only after checking the tag is the intended commit on `main`.
+
+Because the environment is restricted to `v*` tags, a manual `workflow_dispatch` of
+`release.yml` must select the `vX.Y.Z` **tag** as the ref (not a branch), or the
+publishing jobs are rejected.
+
+One-time setup (repository admin, Settings -> Environments):
+
+1. **New environment** `release`: tick *Required reviewers* (add the maintainers; tick
+   *Prevent self-review* if more than one maintainer can approve). Under *Deployment
+   branches and tags* choose *Selected branches and tags*, add a **tag** rule `v*`
+   (and no branch rules).
+2. Confirm the `npm-publish` environment exists (used by `design-system.yml`) with the
+   same reviewers.
+3. Move `NPM_TOKEN` and `DOCS_SITE_PAT` from repository secrets into environment
+   secrets: `NPM_TOKEN` into `release` (rotate it first on npmjs.com and store the new
+   value), `DOCS_SITE_PAT` into `release`. Then delete the repository-level copies.
+   Environment secrets override repository secrets of the same name, and repository
+   secrets stay readable by jobs without an environment, so the workflow works before
+   and after the move; only the move itself removes the credential from unapproved jobs.
+
+## Credential scoping: no write token during a build (saiku#1993)
+
+The `jar` job is the *untrusted* job: it runs `mvn verify` (the full test
+suite) and, through `saiku-webapp`'s frontend-maven-plugin, `npm ci` +
+`npm run build` over saiku-ui's transitive dependency tree — install and
+`postinstall` scripts from packages we do not control execute there. It
+therefore runs with **`contents: read` only**: no `packages: write`, and no
+`github-saiku-self` entry in its `~/.m2/settings.xml`.
+
+Publishing module jars to GitHub Packages lives in its own publish-only job,
+`deploy-packages` (`needs: jar`), which holds `packages: write` and writes the
+ephemeral `GITHUB_TOKEN` entry into `settings.xml`. That job runs `mvn deploy`
+with `-Dmaven.test.skip=true -Dskip.npm=true -Dskip.installnodenpm=true`, so
+while the write-scoped credential is on disk no test, Maven test plugin, or
+npm lifecycle script from the dependency tree can execute. The fat JAR, dist
+zip and SBOM that the release attaches are built in `jar` and never touch this
+job.
+
+Same rule as the embed npm split: *build untrusted, publish trusted.*
+
+## Dependency sourcing: Chainguard Libraries (saiku#2463)
+
+The `jar` job consults [Chainguard Libraries](./chainguard-libraries.md) for Maven first (a settings
+profile adds it as repository + pluginRepository) and falls back to Maven Central for what
+Chainguard has not built; the GH Packages repos are untouched and npm still uses npmjs.org. For an
+emergency, dispatch `release` manually with `skip_chainguard` ticked (logs a warning; Maven then
+uses Central only). Secrets to maintain and rotate (30-day TTL): `CHAINGUARD_JAVA_IDENTITY_ID` and
+`CHAINGUARD_JAVA_TOKEN` (release) plus `CHAINGUARD_JS_IDENTITY_ID` / `CHAINGUARD_JS_TOKEN` (weekly
+coverage only). Details, how to read a release log, and the weekly `chainguard-coverage` workflow
+are in [chainguard-libraries.md](./chainguard-libraries.md).
+
+## SBOM generation
+
+The SBOM is generated by the `cyclonedx-maven-plugin`, bound to `package` in the
+reactor root `pom.xml`. Its `makeAggregateBom` goal walks the whole reactor and
+emits a **single** aggregate CycloneDX 1.6 JSON describing the launcher's
+**Java/Maven** dependency set — the flattened graph the shaded fat JAR ships, not
+just what any one module's pom resolves.
+
+> **Scope:** this SBOM covers the Java/Maven tree only. The SvelteKit UI npm tree
+> (monaco, ECharts, apache-arrow, …) that `saiku-webapp` overlays into the war is
+> covered by its **own** SBOM — see below. The container SBOM (BuildKit) covers
+> the OS layer + OTel agent, but neither Maven nor BuildKit can catalogue a
+> minified JS bundle, which is exactly why the npm SBOM exists.
+
+The **UI SBOM** is generated by `@cyclonedx/cyclonedx-npm`, wired into
+`saiku-ui`'s `npm run build` as its final step (`npm run sbom`, saiku#2000). The
+`saiku-webapp` frontend-maven-plugin runs that same `npm run build` from
+`generate-resources`, so a plain `mvn verify` produces both SBOMs. It is
+CycloneDX 1.6 JSON with `--omit dev`, mirroring the Maven SBOM's test-scope
+exclusion — the SBOM describes what ships, not the build/test harness — and is
+written to `saiku-ui/sbom/` (outside `dist/`, so vite's `emptyOutDir` can't wipe
+it and it is never served as a `/ui/` asset).
+
+What it covers: the whole `saiku-ui` npm tree — runtime deps plus the
+`design-system` workspace package and *its* dependencies (it's a workspace of the
+same lockfile, so `@concepttocloud/saiku-design-system` appears as a component
+with `bits-ui` / `clsx` / `tailwind-merge` / `tailwind-variants` under it). It
+therefore also covers what the two published embed bundles
+(`@concepttocloud/saiku-embed`, `@concepttocloud/saiku-embed-react`) are bundled
+from, since both are staged from the same tree by the same build. Their npm
+release provenance (`npm publish --provenance`) is a separate axis, handled by
+the embed publish jobs.
+
+Two known limits, deliberately left rather than papered over:
+
+- `@concepttocloud/saiku-embed-react` declares `react >=18` as a **peer**
+  dependency, which is resolved by the *consumer*, not by this lockfile — so
+  React is not in this SBOM. Its provenance is `npm`'s.
+- Design tooling excluded by `--omit dev` (storybook, playwright) is build-time
+  only and never reaches a release. `vite` / `typescript` *do* appear, as
+  transitive deps of `@sveltejs/kit` reached through the design-system's peer
+  dependencies — that's real, so it's reported rather than hidden.
+
+To regenerate it locally:
+
+```bash
+cd saiku-ui
+npm ci --no-audit --no-fund
+npm run sbom        # → saiku-ui/sbom/saiku-ui-sbom.cdx.json
+```
+
+- In CI it is produced automatically by the `jar` job's Maven build and attached
+  to the release as `saiku-sbom-<version>.cdx.json`.
+- To regenerate it locally:
+
+  ```bash
+  mvn -q -DskipTests package
+  # single aggregate lands in the reactor root: target/saiku-sbom.json
+  find . -name saiku-sbom.json
+  ```
+
+  (or `mvn -pl saiku-launcher -am package` to cover just the shipped
+  launcher subtree — the aggregate then lands in that subtree's top module's
+  `target/`.)
+
+The container image additionally carries a BuildKit-generated SBOM attestation
+(`docker/build-push-action` `sbom: true`), so the OS layer + side-loaded OTel
+agent are described too — the Maven SBOM only covers the Java dependency graph.
+
+## Verifying release artifacts
+
+All provenance is **keyless Sigstore** — no Saiku-held signing key. Verification
+needs only the public Rekor transparency log and the identity of the workflow
+that produced the artifact. Install the [GitHub CLI](https://cli.github.com/)
+(`gh`) and/or [`cosign`](https://docs.sigstore.dev/cosign/installation/).
+
+### Fat JAR and dist zip
+
+Download the asset, then verify its provenance attestation. Pin the expected
+signer workflow (and the tag ref) so the check rejects an attestation minted by
+any *other* in-repo workflow or ref — `--repo` alone would accept those:
+
+```bash
+gh attestation verify saiku-<version>.jar \
+  --repo spiculedata/saiku \
+  --signer-workflow spiculedata/saiku/.github/workflows/release.yml \
+  --source-ref refs/tags/v<version>
+gh attestation verify saiku-dist-<version>.zip \
+  --repo spiculedata/saiku \
+  --signer-workflow spiculedata/saiku/.github/workflows/release.yml \
+  --source-ref refs/tags/v<version>
+```
+
+A pass prints the signer identity — the `release.yml` workflow on the tag ref.
+Anything else (wrong repo, wrong workflow, wrong ref, no attestation) fails.
+(`--source-ref` requires a recent `gh`; drop it on older versions and rely on
+`--signer-workflow`.)
+
+Low-tech integrity check with the checksums manifest:
+
+```bash
+# from the directory holding the downloaded assets + SHA256SUMS
+sha256sum -c SHA256SUMS
+```
+
+### SBOM
+
+The SBOM is itself attested, and listed in `SHA256SUMS`:
+
+```bash
+gh attestation verify saiku-sbom-<version>.cdx.json \
+  --repo spiculedata/saiku \
+  --signer-workflow spiculedata/saiku/.github/workflows/release.yml \
+  --source-ref refs/tags/v<version>
+
+gh attestation verify saiku-ui-sbom-<version>.cdx.json \
+  --repo spiculedata/saiku \
+  --signer-workflow spiculedata/saiku/.github/workflows/release.yml \
+  --source-ref refs/tags/v<version>
+```
+
+Inspect either with any CycloneDX-aware tool, e.g.:
+
+```bash
+# list every component + version
+jq -r '.components[] | .name + "@" + (.version // "?")' saiku-sbom-<version>.cdx.json
+jq -r '.components[] | .name + "@" + (.version // "?")' saiku-ui-sbom-<version>.cdx.json
+# scan the SBOM for known CVEs
+grype sbom:saiku-sbom-<version>.cdx.json
+grype sbom:saiku-ui-sbom-<version>.cdx.json
+```
+
+Both files together describe the whole shipped artifact: scan the one that
+covers the ecosystem you care about, or point `grype` at both.
+
+### Container image
+
+With `gh` (resolves the tag to its digest under the hood). Pin the signer
+workflow so only the release workflow's attestation is accepted:
+
+```bash
+gh attestation verify oci://ghcr.io/spiculedata/saiku:<version> \
+  --repo spiculedata/saiku \
+  --signer-workflow spiculedata/saiku/.github/workflows/release.yml
+```
+
+Or with `cosign` against the attestation `actions/attest-build-provenance`
+pushed to the registry. Verify against the **digest**, and anchor/escape the
+identity regexp to the `release.yml` workflow on a `v*` tag (a bare
+`.../saiku/` prefix would also accept `docker.yml` / `ci.yml` identities):
+
+```bash
+# resolve the tag to its digest first
+docker buildx imagetools inspect ghcr.io/spiculedata/saiku:<version>
+# → note the top-level "Digest: sha256:<digest>"
+
+cosign verify-attestation \
+  --new-bundle-format \
+  --type slsaprovenance1 \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp '^https://github\.com/spiculedata/saiku/\.github/workflows/release\.yml@refs/tags/v' \
+  ghcr.io/spiculedata/saiku@sha256:<digest>
+```
+
+The image's SBOM is the BuildKit (`sbom: true`) attestation — SPDX, and NOT a
+`cosign download sbom` tag (BuildKit doesn't create that tag). Read it with:
+
+```bash
+docker buildx imagetools inspect ghcr.io/spiculedata/saiku:<version> \
+  --format '{{ json .SBOM }}'
+```
+
+> The `cosign verify-attestation` invocation above (flag names, bundle format,
+> attestation type) has not yet been exercised against a live published image —
+> **smoke-test it on the first real tagged release** and correct this doc if the
+> published recipe drifts. The `gh attestation verify` path is the primary,
+> supported check.
+
+### npm packages
+
+Both embed packages, and the design-system package (from `design-system.yml`),
+publish with `npm publish --provenance`, so npm hosts a verifiable provenance
+statement:
+
+```bash
+npm audit signatures                       # in a project that installed them
+npm view @concepttocloud/saiku-embed dist.attestations
+npm view @concepttocloud/saiku-design-system dist.attestations
+```
+
+## SLSA level
+
+The provenance above puts Saiku's build at roughly **SLSA Build L2**:
+GitHub-hosted runners produce signed, non-forgeable provenance for each
+artifact. **L3** would require a hardened/isolated builder (e.g. the
+`slsa-framework/slsa-github-generator` reusable workflows that run the build in
+an ephemeral, parameterless environment). That's a larger lift — worth
+revisiting if a consumer requires L3, but out of scope for the current wiring.

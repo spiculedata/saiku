@@ -1,0 +1,13 @@
+{
+  "issue": 2346,
+  "title": "The embed quickstart describes the safe cross-origin (CORS) pattern and warns against reflected-origin + credentials",
+  "kind": "ui",
+  "criteria": [
+    { "id": "C1", "given": "docs/embed/quickstart.md", "then": "it states Saiku ships no CORS configuration and that the embed preflights because of the X-Saiku-Embed-Token header" },
+    { "id": "C2", "given": "docs/embed/quickstart.md", "then": "it gives the safe pattern: an explicit origin allowlist, scoped to the guest embed prefixes only, with Access-Control-Allow-Credentials never enabled" },
+    { "id": "C3", "given": "docs/embed/quickstart.md", "then": "it warns explicitly against reflecting the Origin header together with Access-Control-Allow-Credentials: true on /rest/**" },
+    { "id": "C4", "given": "docs/embed/quickstart.md", "then": "the old claim that there are no CORS complications is gone" }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 30
+}

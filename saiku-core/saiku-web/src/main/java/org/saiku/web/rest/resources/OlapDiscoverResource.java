@@ -29,10 +29,13 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.saiku.olap.dto.*;
 import org.saiku.service.olap.OlapDiscoverService;
 import org.saiku.service.ossie.OssieDiscoverService;
 import org.saiku.service.ossie.OssieModelDto;
+import org.saiku.service.ossie.OssieRoleContext;
+import org.saiku.web.rest.util.SessionRoles;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,6 +46,8 @@ public class OlapDiscoverResource implements Serializable {
      *
      */
     private static final long serialVersionUID = 1L;
+
+    private static final String ADMIN_ROLE = "ROLE_ADMIN";
 
     private OlapDiscoverService olapDiscoverService;
 
@@ -80,6 +85,9 @@ public class OlapDiscoverResource implements Serializable {
      * {@code "OSSIE"}; the workbench then calls this endpoint to populate its schema browser
      * (datasets / metrics / relationships) before the user starts dragging fields onto shelves.
      *
+     * <p>saiku#1393 — the returned tree is filtered to what the caller's Spring Security roles are
+     * allowed to see: fields/metrics denied by every one of the caller's roles are removed.
+     *
      * @summary Get the Ossie model for a connection.
      */
     @GET
@@ -93,6 +101,9 @@ public class OlapDiscoverResource implements Serializable {
                         .build();
             }
             OssieModelDto model = ossieDiscoverService.getModel(connectionName);
+            // saiku#1393 — strip fields/metrics the caller's roles deny before the workbench's
+            // schema browser ever renders them.
+            model = OssieRoleContext.filterHidden(model, Set.copyOf(SessionRoles.currentRoles()));
             return Response.ok(model).build();
         } catch (IllegalArgumentException e) {
             return Response.status(Response.Status.NOT_FOUND)
@@ -135,11 +146,10 @@ public class OlapDiscoverResource implements Serializable {
     /**
      * Refresh the Saiku connections.
      *
-     * <p>Deliberately NOT admin-gated (saiku#1903): the workbench's cube picker polls this endpoint
-     * for every user to pick up late-arriving cubes, so a role gate here would break ordinary use.
-     * It is safe to leave open because a refresh can only re-load descriptors an administrator was
-     * able to write (non-admin {@code .sds} writes are refused, {@code /datasources} is SECURED) and
-     * every descriptor is validated by {@code JdbcUrlPolicy} before any driver is touched.
+     * <p>Stays callable by every user (saiku#1903): the workbench's cube picker polls this endpoint
+     * to pick up late-arriving cubes. A refresh, though, flushes the process-wide Mondrian schema
+     * cache and rebuilds every connection (saiku#2332), so only an admin actually triggers it; for
+     * anyone else the call just returns the current connection list.
      *
      * @Summary Refresh connections.
      * @return The existing connections.
@@ -148,8 +158,11 @@ public class OlapDiscoverResource implements Serializable {
     @Produces({"application/json"})
     @Path("/refresh")
     public List<SaikuConnection> refreshConnections() {
+        boolean isAdmin = SessionRoles.currentRoles().contains(ADMIN_ROLE);
         try {
-            olapDiscoverService.refreshAllConnections();
+            if (isAdmin) {
+                olapDiscoverService.refreshAllConnections();
+            }
             return olapDiscoverService.getAllConnections();
         } catch (Exception e) {
             log.error(this.getClass().getName(), e);
@@ -158,7 +171,8 @@ public class OlapDiscoverResource implements Serializable {
     }
 
     /**
-     * Refresh a specific connection by connection name.
+     * Refresh a specific connection by connection name. Admin only (saiku#2332): it flushes the
+     * shared Mondrian schema cache.
      * @summary Refresh connection.
      * @param connectionName The connection name.
      * @return A List of available connections.
@@ -167,6 +181,12 @@ public class OlapDiscoverResource implements Serializable {
     @Produces({"application/json"})
     @Path("/{connection}/refresh")
     public List<SaikuConnection> refreshConnection(@PathParam("connection") String connectionName) {
+        if (!SessionRoles.currentRoles().contains(ADMIN_ROLE)) {
+            throw new WebApplicationException(Response.status(Response.Status.FORBIDDEN)
+                    .type(MediaType.APPLICATION_JSON)
+                    .entity(Map.of("status", "FORBIDDEN", "error", "admin role required"))
+                    .build());
+        }
         try {
             olapDiscoverService.refreshConnection(connectionName);
             return olapDiscoverService.getConnection(connectionName);

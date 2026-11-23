@@ -71,9 +71,13 @@ class MondrianCatalogResolverPropertyTest {
         for (String candidate : MondrianCatalogResolver.candidatePaths(ref)) {
             tc.note("candidate=" + candidate);
             assertTrue(candidate.startsWith("/"), "candidate is not repository-absolute: " + candidate);
-            // Normalising must not walk above the root — i.e. the path may not begin with "/..".
-            String normalised = java.nio.file.Path.of(candidate).normalize().toString();
-            assertFalse(normalised.startsWith("/.."), "candidate escapes the repository root: " + candidate);
+            // No ".." segment may survive into a candidate: the repository read doesn't normalise.
+            // Check segments, not substrings ("/..a" is a legitimate file name), and check the raw
+            // candidate — Path.normalize() silently collapses "/../x" to "/x", which would hide
+            // exactly the traversal this property is about.
+            boolean hasParentSegment =
+                    java.util.Arrays.asList(candidate.split("/")).contains("..");
+            assertFalse(hasParentSegment, "candidate contains a '..' segment: " + candidate);
         }
     }
 

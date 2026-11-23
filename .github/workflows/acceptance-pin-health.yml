@@ -1,0 +1,28 @@
+name: acceptance-pin-health
+
+# How far behind spiculedata/acceptance-spec `main` is the SHA Saiku's callers pin? Reports in the job
+# summary only; it never bumps (bumping is a human decision, docs/acceptance-specs.md "Bumping acceptance-spec").
+# `open-issue: false` for now: no tracking issue is created. Set it to true to keep ONE issue titled
+# "acceptance-spec pin health" up to date.
+#
+# Not a PR check and not part of `ci`: schedule (Mondays) and manual dispatch only.
+#
+# PIN. Same SHA as the callers in ci.yml and thin-caller-gate.yml.
+on:
+  schedule:
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pin-health:
+    # A called workflow cannot hold a scope its caller lacks, so the caller job carries issues: write even
+    # while open-issue is false (the shared workflow uses it only for the opt-in tracking issue).
+    permissions:
+      contents: read
+      issues: write
+    uses: spiculedata/acceptance-spec/.github/workflows/pin-health.yml@e1ee02261986f510ca3be97f09b07546dd0614be
+    with:
+      open-issue: false

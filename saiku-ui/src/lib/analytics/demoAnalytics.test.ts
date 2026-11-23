@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// The module reads `browser` from $app/environment and the `platform` singleton.
+// The module reads `browser` from $app/env and the `platform` singleton.
 // Mock both so we can drive the capability gate deterministically in a node env.
-vi.mock('$app/environment', () => ({ browser: true }));
+vi.mock('$app/env', () => ({ browser: true }));
 
 const platform = { capabilities: null as unknown, version: '9.9.9' };
 vi.mock('$lib/stores/platform.svelte', () => ({ platform }));

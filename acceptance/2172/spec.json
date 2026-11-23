@@ -1,0 +1,29 @@
+{
+  "issue": 2172,
+  "title": "A closing PR is held to the acceptance/<issue>/ convention, the runner logs in with a session, and a failed spec reads as a failure in ci-feedback.json",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "a PR body that closes an issue at or above the rollout cutoff and no acceptance/<issue>/ spec",
+      "then": "the convention check fails and names the missing directory; with the cutoff unset nothing is enforced"
+    },
+    {
+      "id": "C2",
+      "given": "the same PR with the spec shipped, or labelled acceptance-waived on a docs-or-tests-only change",
+      "then": "the convention check passes; the waiver is refused when a production file changed"
+    },
+    {
+      "id": "C3",
+      "given": "an api spec with \"auth\": \"session\" and SAIKU_ACCEPTANCE_USER / SAIKU_ACCEPTANCE_PASSWORD in the environment",
+      "then": "the runner logs in at /rest/saiku/session and sends the session cookie on later steps; without credentials the spec is not-run, never a pass"
+    },
+    {
+      "id": "C4",
+      "given": "an acceptance run in which a spec failed",
+      "then": "ci-feedback.json carries the acceptance verdict, reports status failed and offers a repro, and its schemaVersion does not move"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}

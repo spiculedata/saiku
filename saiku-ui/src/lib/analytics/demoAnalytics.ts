@@ -20,7 +20,7 @@
  * Events batch and flush on a short debounce, on tab-hide (sendBeacon), and when
  * the queue fills. Failures are swallowed — analytics must never break the app.
  */
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 import { platform } from '$lib/stores/platform.svelte';
 
 /** Coarse event category. Keep the set small + stable so the report stays useful. */

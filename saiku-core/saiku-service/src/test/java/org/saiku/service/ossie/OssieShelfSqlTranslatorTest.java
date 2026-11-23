@@ -9,9 +9,11 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.util.List;
+import java.util.Set;
 import org.junit.Before;
 import org.junit.Test;
 import org.saiku.olap.query2.OssieQueryModel;
+import org.saiku.service.util.exception.SaikuAccessDeniedException;
 
 /**
  * Shelf-state → SQL translation. String-compare assertions on the emitted SQL — the actual query
@@ -271,6 +273,144 @@ public class OssieShelfSqlTranslatorTest {
         assertTrue("original SUM should be gone", !sql.contains("SUM(\"orders\".\"amount\")"));
     }
 
+    // ---- saiku#1393: role-based row predicates + HIDE enforcement ----
+
+    private static void addRowPredicate(OssieModelDto semantic, String dataset, String role, String expression) {
+        for (OssieModelDto.Dataset ds : semantic.getDatasets()) {
+            if (ds.getName().equals(dataset)) {
+                ds.getRowPredicates().add(new OssieModelDto.RowPredicate(role, expression));
+                return;
+            }
+        }
+        OssieModelDto.Dataset ds = new OssieModelDto.Dataset();
+        ds.setName(dataset);
+        ds.getRowPredicates().add(new OssieModelDto.RowPredicate(role, expression));
+        semantic.getDatasets().add(ds);
+    }
+
+    @Test
+    public void rowPredicateInjectedForMatchingRole() {
+        addRowPredicate(semantic, "customers", "ROLE_APAC", "REGION IN ('APAC', 'Japan')");
+
+        OssieQueryModel m = new OssieQueryModel();
+        m.setFactDataset("orders");
+        m.setRows(List.of(fieldRef("customers", "region")));
+        m.setValues(List.of(metric("revenue")));
+
+        String sql = translator.translate(m, semantic, Set.of("ROLE_APAC"));
+        assertTrue(sql, sql.contains("WHERE REGION IN ('APAC', 'Japan')"));
+    }
+
+    @Test
+    public void rowPredicateNotInjectedWhenCallerLacksRole() {
+        addRowPredicate(semantic, "customers", "ROLE_APAC", "REGION IN ('APAC', 'Japan')");
+
+        OssieQueryModel m = new OssieQueryModel();
+        m.setFactDataset("orders");
+        m.setRows(List.of(fieldRef("customers", "region")));
+        m.setValues(List.of(metric("revenue")));
+
+        String sql = translator.translate(m, semantic, Set.of("ROLE_OTHER"));
+        assertTrue(sql, !sql.contains("WHERE"));
+    }
+
+    @Test
+    public void rowPredicatesFromTwoHeldRolesAreOred() {
+        addRowPredicate(semantic, "customers", "ROLE_APAC", "REGION = 'APAC'");
+        addRowPredicate(semantic, "customers", "ROLE_EMEA", "REGION = 'EMEA'");
+
+        OssieQueryModel m = new OssieQueryModel();
+        m.setFactDataset("orders");
+        m.setRows(List.of(fieldRef("customers", "region")));
+        m.setValues(List.of(metric("revenue")));
+
+        String sql = translator.translate(m, semantic, Set.of("ROLE_APAC", "ROLE_EMEA"));
+        assertTrue(sql, sql.contains("WHERE (REGION = 'APAC' OR REGION = 'EMEA')"));
+    }
+
+    @Test
+    public void rowPredicateAndsWithShelfFilter() {
+        addRowPredicate(semantic, "customers", "ROLE_APAC", "REGION = 'APAC'");
+
+        OssieQueryModel m = new OssieQueryModel();
+        m.setFactDataset("orders");
+        m.setRows(List.of(fieldRef("customers", "region")));
+        m.setValues(List.of(metric("revenue")));
+        OssieQueryModel.FilterExpr eq = new OssieQueryModel.FilterExpr();
+        eq.setDataset("customers");
+        eq.setField("region");
+        eq.setOp("NEQ");
+        eq.setValue("TEST");
+        m.setFilters(List.of(eq));
+
+        String sql = translator.translate(m, semantic, Set.of("ROLE_APAC"));
+        assertTrue(sql, sql.contains("WHERE \"customers\".\"region\" <> 'TEST' AND REGION = 'APAC'"));
+    }
+
+    @Test
+    public void hiddenFieldDeniedForNonMatchingRole() {
+        OssieModelDto.Dataset customers = new OssieModelDto.Dataset();
+        customers.setName("customers");
+        OssieModelDto.Field ssn = new OssieModelDto.Field();
+        ssn.setName("ssn");
+        ssn.setAllowRoles(List.of("ROLE_ADMIN"));
+        customers.getFields().add(ssn);
+        semantic.getDatasets().add(customers);
+
+        OssieQueryModel m = new OssieQueryModel();
+        m.setFactDataset("orders");
+        m.setRows(List.of(fieldRef("customers", "ssn")));
+        m.setValues(List.of(metric("revenue")));
+
+        try {
+            translator.translate(m, semantic, Set.of("ROLE_ANALYST"));
+            fail("expected SaikuAccessDeniedException");
+        } catch (SaikuAccessDeniedException e) {
+            assertTrue(e.getMessage(), e.getMessage().contains("customers.ssn"));
+        }
+    }
+
+    @Test
+    public void hiddenFieldPermittedForMatchingRole() {
+        OssieModelDto.Dataset customers = new OssieModelDto.Dataset();
+        customers.setName("customers");
+        OssieModelDto.Field ssn = new OssieModelDto.Field();
+        ssn.setName("ssn");
+        ssn.setAllowRoles(List.of("ROLE_ADMIN"));
+        customers.getFields().add(ssn);
+        semantic.getDatasets().add(customers);
+
+        OssieQueryModel m = new OssieQueryModel();
+        m.setFactDataset("orders");
+        m.setRows(List.of(fieldRef("customers", "ssn")));
+        m.setValues(List.of(metric("revenue")));
+
+        // Doesn't throw — the field has no ANSI expression declared so it falls back to its own
+        // name, same as any other unresolved-expression field.
+        String sql = translator.translate(m, semantic, Set.of("ROLE_ADMIN"));
+        assertTrue(sql, sql.contains("\"customers\".\"ssn\""));
+    }
+
+    @Test
+    public void deniedMetricRejectedRegardlessOfRowPredicates() {
+        OssieModelDto.Metric exec = new OssieModelDto.Metric();
+        exec.setName("exec_only");
+        exec.setExpression("SUM(\"orders\".\"amount\")");
+        exec.setAllowRoles(List.of("ROLE_EXEC"));
+        semantic.getMetrics().add(exec);
+
+        OssieQueryModel m = new OssieQueryModel();
+        m.setFactDataset("orders");
+        m.setValues(List.of(metric("exec_only")));
+
+        try {
+            translator.translate(m, semantic, Set.of("ROLE_ANALYST"));
+            fail("expected SaikuAccessDeniedException");
+        } catch (SaikuAccessDeniedException e) {
+            assertTrue(e.getMessage(), e.getMessage().contains("exec_only"));
+        }
+    }
+
     private static OssieQueryModel.FieldRef fieldRef(String dataset, String field) {
         OssieQueryModel.FieldRef f = new OssieQueryModel.FieldRef();
         f.setDataset(dataset);
@@ -282,5 +422,69 @@ public class OssieShelfSqlTranslatorTest {
         OssieQueryModel.MetricRef m = new OssieQueryModel.MetricRef();
         m.setMetric(name);
         return m;
+    }
+
+    // ---- saiku#2319: backslash literals on backslash-escaping warehouses ----
+
+    private OssieQueryModel modelFilteringRegion(String op, String value, List<String> values) {
+        OssieQueryModel m = new OssieQueryModel();
+        m.setConnection("SALES");
+        m.setModel("SALES");
+        m.setFactDataset("orders");
+        m.setRows(List.of(fieldRef("customers", "region")));
+        m.setValues(List.of(metric("revenue")));
+        OssieQueryModel.FilterExpr f = new OssieQueryModel.FilterExpr();
+        f.setDataset("customers");
+        f.setField("region");
+        f.setOp(op);
+        f.setValue(value);
+        if (values != null) f.setValues(values);
+        m.setFilters(List.of(f));
+        return m;
+    }
+
+    @Test
+    public void backslashFilterValueIsRejectedOnMysql() {
+        for (String url : new String[] {"jdbc:mysql://db/sales", "jdbc:mariadb://db/sales", null, "jdbc:weird:x"}) {
+            try {
+                translator.translate(modelFilteringRegion("EQ", "\\' OR 1=1 -- ", null), semantic, Set.of(), url);
+                org.junit.Assert.fail("expected backslash rejection for " + url);
+            } catch (IllegalArgumentException expected) {
+                assertTrue(
+                        expected.getMessage(),
+                        expected.getMessage().toLowerCase().contains("backslash"));
+            }
+        }
+    }
+
+    @Test
+    public void backslashInInAndBetweenValuesIsRejectedOnMysql() {
+        String mysql = "jdbc:mysql://db/sales";
+        try {
+            translator.translate(modelFilteringRegion("IN", null, List.of("ok", "a\\b")), semantic, Set.of(), mysql);
+            org.junit.Assert.fail("IN value with backslash must be rejected");
+        } catch (IllegalArgumentException expected) {
+            // expected
+        }
+        try {
+            translator.translate(modelFilteringRegion("BETWEEN", null, List.of("a", "b\\")), semantic, Set.of(), mysql);
+            org.junit.Assert.fail("BETWEEN value with backslash must be rejected");
+        } catch (IllegalArgumentException expected) {
+            // expected
+        }
+    }
+
+    @Test
+    public void backslashFilterValueStillWorksOnStandardConformingWarehouses() {
+        String sql = translator.translate(
+                modelFilteringRegion("EQ", "C:\\data", null), semantic, Set.of(), "jdbc:postgresql://db/sales");
+        assertTrue(sql, sql.contains("= 'C:\\data'"));
+    }
+
+    @Test
+    public void valuesWithoutBackslashAreUnaffectedOnMysql() {
+        String sql = translator.translate(
+                modelFilteringRegion("EQ", "O'Neil", null), semantic, Set.of(), "jdbc:mysql://db/sales");
+        assertTrue(sql, sql.contains("= 'O''Neil'"));
     }
 }

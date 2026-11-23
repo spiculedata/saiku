@@ -179,4 +179,88 @@ public class DatasourcePasswordEncryptionTest {
         InstallKeyProvider.resetForTesting();
         assertEquals("key persisted to disk must decrypt prior ciphertext", plaintext, CryptoUtil.decrypt(encrypted));
     }
+
+    /** #1919 18c: the key file must be created 0600, not chmod-ed after the fact. */
+    @Test
+    public void persistedKeyFileIsOwnerOnly() {
+        CryptoUtil.encrypt("force-key-materialisation");
+        Path keyFile = tempHome.resolve("conf").resolve("secret.key");
+        if (Files.getFileAttributeView(keyFile, java.nio.file.attribute.PosixFileAttributeView.class) == null) {
+            return; // non-POSIX filesystem (Windows) — an owner-only ACL is applied instead
+        }
+        try {
+            assertEquals(
+                    "the install key must be 0600",
+                    java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"),
+                    Files.getPosixFilePermissions(keyFile));
+        } catch (Exception e) {
+            fail("could not read permissions: " + e);
+        }
+    }
+
+    /**
+     * #1919 18c: a key file that exists but is unreadable must NOT be silently replaced. Rotating
+     * silently would orphan every stored {@code v2:} password with no log line.
+     */
+    @Test
+    public void unreadableButPresentKeyRefusesToBoot() throws Exception {
+        Path keyFile = tempHome.resolve("conf").resolve("secret.key");
+        Files.createDirectories(keyFile.getParent());
+        Files.write(keyFile, Base64.getEncoder().encodeToString(new byte[32]).getBytes("UTF-8"));
+        Files.setPosixFilePermissions(keyFile, java.nio.file.attribute.PosixFilePermissions.fromString("---------"));
+        if (Files.isReadable(keyFile)) {
+            // running as root, which bypasses the mode bits: the assertion cannot be exercised here
+            return;
+        }
+        InstallKeyProvider.resetForTesting();
+        try {
+            InstallKeyProvider.getKey();
+            fail("an unreadable-but-present key must be fatal, never silently rotated");
+        } catch (IllegalStateException expected) {
+            assertTrue(
+                    "the error must name the key file: " + expected.getMessage(),
+                    expected.getMessage().contains("secret.key"));
+        }
+    }
+
+    /** #1919 18c: a corrupt key file is fatal too — overwriting it would orphan stored passwords. */
+    @Test
+    public void corruptKeyFileRefusesToBootRatherThanRotating() throws Exception {
+        Path keyFile = tempHome.resolve("conf").resolve("secret.key");
+        Files.createDirectories(keyFile.getParent());
+        Files.write(keyFile, "not-base64!!".getBytes("UTF-8"));
+        InstallKeyProvider.resetForTesting();
+        try {
+            InstallKeyProvider.getKey();
+            fail("a corrupt key file must be fatal, never silently rotated");
+        } catch (IllegalStateException expected) {
+            assertTrue(expected.getMessage().contains("secret.key"));
+        }
+        assertEquals(
+                "the corrupt key file must be left on disk for the operator to inspect",
+                "not-base64!!",
+                new String(Files.readAllBytes(keyFile), "UTF-8"));
+    }
+
+    /** #1919 18c: a key that cannot be persisted is fatal — the alternative is silent password loss. */
+    @Test
+    public void unpersistableKeyRefusesToBoot() throws Exception {
+        Path readOnlyHome = tempHome.resolve("read-only-home");
+        Files.createDirectories(readOnlyHome);
+        Files.setPosixFilePermissions(
+                readOnlyHome, java.nio.file.attribute.PosixFilePermissions.fromString("r-xr-xr-x"));
+        if (Files.isWritable(readOnlyHome)) {
+            return; // running as root — the mode bits do not deny us
+        }
+        System.setProperty("saiku.home", readOnlyHome.toString());
+        InstallKeyProvider.resetForTesting();
+        try {
+            InstallKeyProvider.getKey();
+            fail("an unpersistable key must be fatal");
+        } catch (IllegalStateException expected) {
+            assertTrue(
+                    "the error must point at the key file: " + expected.getMessage(),
+                    expected.getMessage().contains("secret.key"));
+        }
+    }
 }

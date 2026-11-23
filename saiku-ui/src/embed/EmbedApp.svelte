@@ -25,6 +25,7 @@
 	} from './api';
 	import type { EmbedAppDoc } from './types';
 	import EmbedGrid from './EmbedGrid.svelte';
+	import { safeEmbedImageSrc } from './embedResource';
 
 	interface Props {
 		server: string;
@@ -41,6 +42,11 @@
 	let activePageId = $state<string | null>(null);
 
 	let activePage = $derived(app?.pages.find((p) => p.id === activePageId) ?? app?.pages[0] ?? null);
+
+	// saiku#1938: the app doc is served verbatim, so `logo` is author-controlled
+	// and must clear the same no-remote-subresource rule the option/plugin tiles
+	// follow. Null → the header renders no logo at all.
+	let safeLogo = $derived(safeEmbedImageSrc(app?.logo));
 
 	$effect(() => {
 		const s = server.trim();
@@ -129,8 +135,16 @@
 {:else if app}
 	<div class="saiku-embed-app">
 		<header class="app-header">
-			{#if app.logo}
-				<img class="app-logo" src={app.logo} alt="" />
+			<!-- saiku#1938: `logo` is author-controlled and the launcher serves the
+			     app doc verbatim, so it is filtered through the same no-remote-
+			     subresource rule the option/plugin tiles already follow (relative /
+			     same-origin, or a raster data: image). Without this an app author
+			     could point the logo at an arbitrary origin and every host-page
+			     visitor's browser would fetch it — an IP + Referer beacon.
+			     `no-referrer` additionally keeps the host page's URL out of the
+			     request even for the relative/same-origin case. -->
+			{#if safeLogo}
+				<img class="app-logo" src={safeLogo} referrerpolicy="no-referrer" alt="" />
 			{/if}
 			<span class="app-name">{app.name}</span>
 		</header>

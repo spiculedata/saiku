@@ -1,0 +1,29 @@
+{
+  "issue": 2440,
+  "title": "Dashboard plugin tiles render under the enforced shell CSP: the frame is a network-loaded, sandboxed same-origin document with its own policy instead of an srcdoc that inherits script-src",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "the in-app plugin tile (PluginTile.svelte)",
+      "then": "its iframe no longer uses srcdoc (an about:srcdoc document inherits the shell's script-src and blocks the plugin); it loads the same-origin bootstrap plugin-frame.html with sandbox=\"allow-scripts\" only"
+    },
+    {
+      "id": "C2",
+      "given": "the bootstrap saiku-ui/static/plugin-frame.html",
+      "then": "it only runs framed and only accepts the plugin document from its parent window, sent from its own origin; it never fetches anything itself"
+    },
+    {
+      "id": "C3",
+      "given": "GET /ui/plugin-frame.html on a running launcher (or SecurityHeadersFilter when no launcher is configured)",
+      "then": "the response carries its own enforced Content-Security-Policy: sandbox allow-scripts (no allow-same-origin), default-src 'none', script-src 'unsafe-inline', connect-src 'none', form-action 'none', base-uri 'none' and frame-ancestors, and no report-only shell policy"
+    },
+    {
+      "id": "C4",
+      "given": "saiku-ui/e2e",
+      "then": "a Playwright spec mounts a records-bars plugin tile under the enforced shell policy and asserts it renders with zero enforced CSP violations"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}

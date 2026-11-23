@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-J0kePTQQcqTb+zPx8MDtlzE7w69WaNDwVARAvCQTkqo='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' https:; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>FoodMart Ops — Store Intelligence</title>
 <style>
   /* ============================================================
@@ -469,19 +470,32 @@ let sessionReady = false;
 const history = [];               // [{role, content}]
 
 /* Warm an admin/admin session so anonymous demo visitors' same-origin API calls
-   authenticate — mirrors the /showcase demo bootstrap. Harmless off the demo host
-   (the fetch just fails and we fall back to demo data). */
-async function ensureSession() {
-  if (sessionReady) return;
-  try {
-    const body = new URLSearchParams({ username: 'admin', password: 'admin' });
-    await fetch((CFG.base||'') + '/rest/saiku/session/', {
-      method: 'POST', credentials: 'include',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: body.toString()
-    });
-    sessionReady = true;
-  } catch { /* surfaced by the API fetch that follows */ }
+   authenticate — mirrors the /showcase demo bootstrap.
+   saiku#1908: the default-credential login fires ONLY when the target server
+   itself reports demo mode (GET /rest/saiku/info/capabilities → demoMode:true).
+   On any other deployment the page never POSTs admin/admin: live calls ride the
+   visitor's own session if they have one, otherwise we fall back to demo data. */
+let sessionPromise = null;
+function ensureSession() {
+  if (sessionReady) return Promise.resolve();
+  return sessionPromise || (sessionPromise = (async () => {
+    try {
+      const base = CFG.base || '';
+      const info = await fetch(base + '/rest/saiku/info/capabilities', {
+        credentials: 'include', headers: { 'Accept': 'application/json' }
+      });
+      const caps = info.ok ? await info.json() : null;
+      if (!caps || caps.demoMode !== true) { sessionReady = true; return; }
+      const body = new URLSearchParams({ username: 'admin', password: 'admin' });
+      await fetch(base + '/rest/saiku/session/', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString()
+      });
+      sessionReady = true;
+    } catch { /* surfaced by the API fetch that follows */ }
+    finally { sessionPromise = null; }
+  })());
 }
 /* Saiku echoes an XSRF token on state-changing requests. */
 function withCsrf(headers) {
@@ -574,7 +588,7 @@ function renderBars() {
   $('#mainChart').innerHTML = barData.map((d,i)=>{
     const pct = (d.value/max)*100, share = total? (d.value/total*100):0;
     return `<div class="barrow">
-      <div class="nm" title="${d.name}">${d.name}</div>
+      <div class="nm" title="${escapeHtml(d.name)}">${escapeHtml(d.name)}</div>
       <div class="track"><div class="fill" style="background:${palette[i%palette.length]}" data-w="${pct}"></div></div>
       <div class="v"><b>${money(d.value)}</b> · ${share.toFixed(0)}%</div>
     </div>`;
@@ -609,7 +623,9 @@ function addBot() {
   return node.querySelector('.b');
 }
 function scrollThread(){ const t=$('#thread'); t.scrollTop = t.scrollHeight; }
-function escapeHtml(s){ return s.replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+// saiku#1908: every caption from the live API must go through this before it
+// reaches innerHTML — a warehouse member name is attacker-controllable data.
+function escapeHtml(s){ return String(s ?? '').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 // light markdown: **bold**, `code`, $figures
 function fmt(s){
   return escapeHtml(s)
@@ -867,6 +883,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
   $('#modalSave').onclick=async ()=>{
     CFG.base=$('#baseUrl').value.trim().replace(/\/$/,''); CFG.space=$('#spaceId').value.trim()||'foodmart-sales-analyst';
     localStorage.setItem('fm.base',CFG.base); localStorage.setItem('fm.space',CFG.space);
+    sessionReady = false;
     $('#modalBack').classList.remove('show'); await probeLive();
   };
 

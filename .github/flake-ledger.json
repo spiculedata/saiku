@@ -1,0 +1,7 @@
+{
+	"version": 1,
+	"generatedAt": null,
+	"runsInWindow": 0,
+	"comment": "Rolling flake rate per test id, rebuilt by .github/workflows/flake-ledger.yml from the flake-records-* artifacts of recent CI runs. `rate` is hits (flaked + failed + quarantined) over runsInWindow. Do not hand-edit: regenerate with `node .github/scripts/flake-ledger.mjs ledger --records <dir> --window-runs N`. See docs/ci-flakes.md.",
+	"entries": []
+}

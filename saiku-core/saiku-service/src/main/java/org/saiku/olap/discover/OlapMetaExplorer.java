@@ -61,6 +61,7 @@ public class OlapMetaExplorer {
             return new SaikuConnection(connectionName, new ArrayList<>(), SaikuConnection.TYPE_OSSIE);
         }
         OlapConnection olapcon = connections.getOlapConnection(connectionName);
+        String sdsCellLink = resolveCellLinkUrl(connectionName);
         SaikuConnection connection;
         if (olapcon != null) {
             List<SaikuCatalog> catalogs = new ArrayList<>();
@@ -70,14 +71,16 @@ public class OlapMetaExplorer {
                     for (Schema schem : cat.getSchemas()) {
                         List<SaikuCube> cubes = new ArrayList<>();
                         for (Cube cub : schem.getCubes()) {
-                            cubes.add(new SaikuCube(
+                            SaikuCube sc = new SaikuCube(
                                     connectionName,
                                     cub.getUniqueName(),
                                     cub.getName(),
                                     cub.getCaption(),
                                     cat.getName(),
                                     schem.getName(),
-                                    cub.isVisible()));
+                                    cub.isVisible());
+                            applyCellLinkUrl(sc, cub, sdsCellLink);
+                            cubes.add(sc);
                         }
                         Collections.sort(cubes, new SaikuCubeCaptionComparator());
                         schemas.add(new SaikuSchema(schem.getName(), cubes));
@@ -90,13 +93,15 @@ public class OlapMetaExplorer {
                             List<SaikuCube> cubes = new ArrayList<>();
                             while (cubesResult.next()) {
 
-                                cubes.add(new SaikuCube(
+                                SaikuCube sc = new SaikuCube(
                                         connectionName,
                                         cubesResult.getString("CUBE_NAME"),
                                         cubesResult.getString("CUBE_NAME"),
                                         cubesResult.getString("CUBE_NAME"),
                                         cubesResult.getString("CATALOG_NAME"),
-                                        cubesResult.getString("SCHEMA_NAME")));
+                                        cubesResult.getString("SCHEMA_NAME"));
+                                applyCellLinkUrl(sc, null, sdsCellLink);
+                                cubes.add(sc);
                             }
                             Collections.sort(cubes, new SaikuCubeCaptionComparator());
                             schemas.add(new SaikuSchema("", cubes));
@@ -149,6 +154,7 @@ public class OlapMetaExplorer {
         // call so we can parse TimeCalc directives per cube. Empty when the
         // connection isn't configured with a Mondrian Catalog= URL.
         String catalogUrl = resolveCatalogUrl(connectionName);
+        String sdsCellLink = resolveCellLinkUrl(connectionName);
         List<SaikuCube> cubes = new ArrayList<>();
         if (olapcon != null) {
             try {
@@ -166,6 +172,7 @@ public class OlapMetaExplorer {
                             if (catalogUrl != null) {
                                 sc.setTimeCalcs(org.saiku.olap.util.TimeCalcParser.parse(catalogUrl, cub.getName()));
                             }
+                            applyCellLinkUrl(sc, cub, sdsCellLink);
                             cubes.add(sc);
                         }
                     }
@@ -193,6 +200,29 @@ public class OlapMetaExplorer {
         } catch (Exception ignored) {
             return null;
         }
+    }
+
+    /** {@code <cellLinkUrl>} on the {@code .sds}, or {@code null} when unset. */
+    private String resolveCellLinkUrl(String connectionName) {
+        try {
+            ISaikuConnection scon = connections.getConnection(connectionName);
+            if (scon == null) {
+                return null;
+            }
+            java.util.Properties props = scon.getProperties();
+            if (props == null) {
+                return null;
+            }
+            return org.saiku.olap.util.CellLinkUrl.preferCubeThenSds(
+                    null, props.getProperty(ISaikuConnection.CELL_LINK_URL_KEY));
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private static void applyCellLinkUrl(SaikuCube sc, Cube cub, String sdsFallback) {
+        sc.setCellLinkUrl(
+                org.saiku.olap.util.CellLinkUrl.preferCubeThenSds(ObjectUtil.cellLinkUrlFrom(cub), sdsFallback));
     }
 
     public List<SaikuCube> getCubes(List<String> connectionNames) throws SaikuOlapException {
@@ -419,7 +449,11 @@ public class OlapMetaExplorer {
                             ResultSet rs = SaikuMondrianHelper.getSQLMemberLookup(
                                     con, MondrianDictionary.SQLMemberLookup, l, searchString);
                             try {
-                                simpleMembers = ObjectUtil.convert2simple(rs);
+                                // saiku#2331: the SQL runs on the raw DataSource, outside Mondrian's
+                                // role evaluation, so re-check each hit against the role-applied cube
+                                // and apply the caller's limit.
+                                simpleMembers =
+                                        restrictToRoleAndLimit(nativeCube, ObjectUtil.convert2simple(rs), searchLimit);
                                 log.debug("Found " + simpleMembers.size() + " members using SQL lookup for level "
                                         + level);
                             } finally {
@@ -479,6 +513,46 @@ public class OlapMetaExplorer {
         }
 
         return new ArrayList<>();
+    }
+
+    /** Upper bound on SQLMemberLookup hits when the caller passes no (or a non-positive) limit. */
+    static final int MAX_SQL_LOOKUP_RESULTS = 1000;
+
+    /**
+     * saiku#2331: keep only the SQL-lookup hits the caller's Mondrian role can see, up to the limit.
+     * The annotation SQL runs against the warehouse directly, so a member the role hides
+     * ({@code access='none'}, outside a member grant) would otherwise be returned. A hit is kept only
+     * when the role-applied cube resolves its unique name; an unresolvable name or a lookup failure
+     * drops the hit (fail closed). A non-positive {@code searchLimit} falls back to
+     * {@link #MAX_SQL_LOOKUP_RESULTS}.
+     */
+    static List<SimpleCubeElement> restrictToRoleAndLimit(
+            Cube nativeCube, List<SimpleCubeElement> hits, int searchLimit) {
+        int cap = searchLimit > 0 ? Math.min(searchLimit, MAX_SQL_LOOKUP_RESULTS) : MAX_SQL_LOOKUP_RESULTS;
+        List<SimpleCubeElement> visible = new ArrayList<>();
+        for (SimpleCubeElement hit : hits) {
+            if (visible.size() >= cap) {
+                break;
+            }
+            if (isVisibleToRole(nativeCube, hit.getUniqueName())) {
+                visible.add(hit);
+            }
+        }
+        return visible;
+    }
+
+    private static boolean isVisibleToRole(Cube nativeCube, String uniqueName) {
+        if (uniqueName == null || uniqueName.isEmpty()) {
+            return false;
+        }
+        try {
+            return nativeCube.lookupMember(
+                            IdentifierNode.parseIdentifier(uniqueName).getSegmentList())
+                    != null;
+        } catch (Exception e) {
+            log.debug("SQL member lookup hit {} not resolvable under the caller's role: {}", uniqueName, e.toString());
+            return false;
+        }
     }
 
     /**

@@ -414,7 +414,7 @@
 				<ChevronDown class="h-3.5 w-3.5" aria-hidden="true" />
 			</button>
 			{#if layoutMenuOpen}
-				<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+				<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
 				<div class="fixed inset-0 z-30" onclick={() => (layoutMenuOpen = false)}></div>
 				<div
 					role="menu"

@@ -1,0 +1,29 @@
+{
+  "issue": 2328,
+  "title": "Explain endpoint SQL capture is a global, un-thread-filtered log appender - returns another concurrent user's SQL",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "a SqlCaptureProbe is open for one cell explain while another thread (another user's query) logs SQL on mondrian.sql",
+      "then": "the probe's appender only accepts an event its scope claims for the explaining execution; a statement from another thread or execution is never added to the captured list"
+    },
+    {
+      "id": "C2",
+      "given": "Mondrian logs the cell's SQL from its own worker threads (shepherd and segment-load pools)",
+      "then": "CellExplainService scopes the probe to the olap4j statement it runs, matching the Mondrian execution (Locus) active on the logging thread, so the explaining user's own SQL is still captured"
+    },
+    {
+      "id": "C3",
+      "given": "the regression tests for the fix",
+      "then": "SqlCaptureProbeTest covers a foreign-thread statement being ignored and two interleaved probes not cross-feeding"
+    },
+    {
+      "id": "C4",
+      "given": "AGENTS.md describes the explain SQL probe",
+      "then": "it says log4j2 appender, not java.util.logging"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}

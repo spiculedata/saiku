@@ -3,7 +3,7 @@
  */
 
 import { describe, test, expect } from 'vitest';
-import { formatNumber, type NumberFormat } from '$lib/charts/numberFormat';
+import { formatNumber, isFormatActive, type NumberFormat } from '$lib/charts/numberFormat';
 
 describe('formatNumber — inert / null handling', () => {
 	test('no format renders the raw value exactly as String() did before', () => {
@@ -106,5 +106,40 @@ describe('formatNumber — prefix / suffix', () => {
 
 	test('prefix + suffix combine with abbreviate', () => {
 		expect(formatNumber(2_500_000, { prefix: '$', abbreviate: true })).toBe('$2.5M');
+	});
+});
+
+/* saiku#1779: `percent` exists so a dual-axis chart's right side can label a
+ * fraction-valued measure as a percentage while the left side stays a count —
+ * a plain "%" suffix would have printed the fraction's own digits (1.284%). */
+describe('formatNumber — percent', () => {
+	test('scales the stored fraction by 100 and appends %', () => {
+		expect(formatNumber(1.284, { percent: true })).toBe('128.4%');
+		expect(formatNumber(0.512, { percent: true })).toBe('51.2%');
+		expect(formatNumber(0, { percent: true })).toBe('0%');
+	});
+
+	test('decimals pin the percentage’s fractional digits, not the fraction’s', () => {
+		expect(formatNumber(1.284, { percent: true, decimals: 0 })).toBe('128%');
+		expect(formatNumber(1.284, { percent: true, decimals: 1 })).toBe('128.4%');
+	});
+
+	test('percent composes with thousands and abbreviate', () => {
+		expect(formatNumber(12.345, { percent: true, thousands: true }).replace(/[^0-9]/g, '')).toBe(
+			'12345'
+		);
+		expect(formatNumber(1500, { percent: true, abbreviate: true })).toBe('150.0k%');
+	});
+
+	test('an explicit suffix replaces the %, a prefix wraps both', () => {
+		expect(formatNumber(1.284, { percent: true, suffix: ' pp' })).toBe('128.4 pp');
+		expect(formatNumber(1.284, { percent: true, prefix: '~' })).toBe('~128.4%');
+	});
+
+	test('percent alone makes a format active (an empty one still is inert)', () => {
+		expect(isFormatActive({ percent: true })).toBe(true);
+		expect(isFormatActive({})).toBe(false);
+		expect(isFormatActive({ percent: false, decimals: null })).toBe(false);
+		expect(isFormatActive(undefined)).toBe(false);
 	});
 });

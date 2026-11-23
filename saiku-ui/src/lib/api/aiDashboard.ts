@@ -14,8 +14,14 @@
  *   - On degrade: {tiles:[], degraded:true, reason, model?} — `title` absent.
  *   - Per tile: `title`, `type`, `query` always present; `chartType` present
  *     only for chart tiles (absent on table/kpi).
- *   - type ∈ {chart, table, kpi}; chartType ∈ {bar, line, pie, area, scatter}
- *     — exact UI-valid subsets, no casing drift.
+ *   - type ∈ {chart, table, kpi}; chartType ∈ CHART_TYPES (the UI palette —
+ *     bar, stackedBar, waterfall, line, stackedLine, area, stackedArea, pie,
+ *     donut, treemap, sunburst, heatmap, radar, scatter, bubble, map) — the
+ *     dashboard builder advertises the FULL catalog, so an AI-built dashboard
+ *     can use any tile chart the workspace can draw.
+ *     The TS binding types it as `ChartType` (imported from
+ *     `$lib/views/chartTypes`) rather than a hand-copied union, so it can't
+ *     drift from the palette (#1481).
  *   - Each tile `query` is a full AiQueryRequest (cube pinned to the session
  *     ref) — the same shape /ai/query consumes and InlineQuery.body expects.
  *
@@ -23,6 +29,7 @@
  */
 
 import { AiAskTransportError, type AiCubeRef, type NlAskMessageDto } from './aiAsk';
+import type { ChartType } from '$lib/views/chartTypes';
 
 const DASHBOARD_URL = '/rest/saiku/api/ai/ask/dashboard';
 
@@ -43,7 +50,7 @@ export interface DashboardTileSpec {
 	title: string;
 	type: 'chart' | 'table' | 'kpi';
 	/** Present only for chart tiles (absent on table/kpi). */
-	chartType?: 'bar' | 'line' | 'pie' | 'area' | 'scatter';
+	chartType?: ChartType;
 	/** Full AiQueryRequest (cube pinned to the session ref). */
 	query: Record<string, unknown>;
 }

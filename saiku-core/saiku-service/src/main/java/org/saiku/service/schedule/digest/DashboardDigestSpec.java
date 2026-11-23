@@ -49,9 +49,17 @@ import org.saiku.service.schedule.alert.PayloadParsing;
  *       "cube":    "conn/catalog/schema/cube",  // string or {connectionName,catalog,schema,cubeName}
  *       "measure": "Unit Sales",
  *       "label":   "Total Units",               // optional display label; defaults to the measure name
- *       "filters": [ ... ]                      // optional slicer(s), AiFilterSelection shape
+ *       "filters": [ ... ],                     // optional slicer(s), AiFilterSelection shape
+ *       "period":  {                            // optional period-over-period slicer (saiku#1119)
+ *         "dimension": "Time", "hierarchy": "Time", "level": "Quarter",
+ *         "current":   "qtd"                    // optional; default "qtd"
+ *       }
  *     }
  *   ],
+ *   "insight": {                                // optional insight block (saiku#1119); absent = #943 behaviour
+ *     "narrate":    true,                       // optional; default true — LLM narration (falls back to template)
+ *     "maxBullets": 3                           // optional; default 3
+ *   },
  *   "recipients": [ "ops@example.com", ... ]  // optional; empty/absent => self-email fallback
  * }
  * }</pre>
@@ -62,12 +70,29 @@ public final class DashboardDigestSpec {
     private final String dashboardTitle;
     private final List<Measure> measures;
     private final List<String> recipients;
+    private final boolean insightEnabled;
+    private final boolean insightNarrate;
+    private final int insightMaxBullets;
 
     DashboardDigestSpec(String dashboardPath, String dashboardTitle, List<Measure> measures, List<String> recipients) {
+        this(dashboardPath, dashboardTitle, measures, recipients, false, true, Insight.DEFAULT_MAX_BULLETS);
+    }
+
+    DashboardDigestSpec(
+            String dashboardPath,
+            String dashboardTitle,
+            List<Measure> measures,
+            List<String> recipients,
+            boolean insightEnabled,
+            boolean insightNarrate,
+            int insightMaxBullets) {
         this.dashboardPath = dashboardPath;
         this.dashboardTitle = dashboardTitle;
         this.measures = measures == null ? new ArrayList<>() : measures;
         this.recipients = recipients == null ? new ArrayList<>() : recipients;
+        this.insightEnabled = insightEnabled;
+        this.insightNarrate = insightNarrate;
+        this.insightMaxBullets = insightMaxBullets;
     }
 
     /** The dashboard's JCR repository path (used to build the deep link), or null when unspecified. */
@@ -88,6 +113,109 @@ public final class DashboardDigestSpec {
     /** The admin-supplied recipient references — may be empty (then self-email fallback). Never null. */
     public List<String> getRecipients() {
         return recipients;
+    }
+
+    /**
+     * Whether the insight digest runs at all (saiku#1119). False — the #943 behaviour — whenever the
+     * payload carries no {@code insight} block, so every job written before this feature keeps producing
+     * exactly the measure table it always did.
+     */
+    public boolean isInsightEnabled() {
+        return insightEnabled;
+    }
+
+    /**
+     * Whether the bullets are LLM-narrated. When false the deterministic
+     * {@link TemplateDigestNarrator} writes them. Narration also degrades to the template at runtime
+     * (no provider, egress policy denies, transport error), so this only chooses the first attempt.
+     */
+    public boolean isInsightNarrate() {
+        return insightNarrate;
+    }
+
+    /** The bullet cap for the insight digest. Always &ge; 1. */
+    public int getInsightMaxBullets() {
+        return insightMaxBullets;
+    }
+
+    /** Defaults + parsing for the optional {@code insight} block. */
+    public static final class Insight {
+
+        static final int DEFAULT_MAX_BULLETS = 3;
+        /** A digest longer than this stops being a digest. */
+        static final int MAX_MAX_BULLETS = 10;
+
+        private final boolean narrate;
+        private final int maxBullets;
+
+        private Insight(boolean narrate, int maxBullets) {
+            this.narrate = narrate;
+            this.maxBullets = maxBullets;
+        }
+
+        /**
+         * Parse the optional block. An absent (or null) block means the feature is OFF; an empty object
+         * means ON with defaults.
+         *
+         * @return {@code null} when absent
+         * @throws IllegalArgumentException on an unusable value (a non-boolean flag, a non-numeric or
+         *     out-of-range cap) — the engine turns this into a recorded FAILED run, never a stack trace
+         */
+        static Insight fromPayload(Object raw) {
+            if (raw == null) {
+                return null;
+            }
+            if (!(raw instanceof Map<?, ?> m)) {
+                throw new IllegalArgumentException("payload.insight must be an object");
+            }
+            boolean narrate = readBoolean(m.get("narrate"), true);
+            int maxBullets = readMaxBullets(m.get("maxBullets"));
+            return new Insight(narrate, maxBullets);
+        }
+
+        boolean narrate() {
+            return narrate;
+        }
+
+        int maxBullets() {
+            return maxBullets;
+        }
+
+        private static boolean readBoolean(Object v, boolean fallback) {
+            if (v == null) {
+                return fallback;
+            }
+            if (v instanceof Boolean b) {
+                return b;
+            }
+            String s = PayloadParsing.readString(v);
+            if (s == null) {
+                return fallback;
+            }
+            if ("true".equalsIgnoreCase(s)) {
+                return true;
+            }
+            if ("false".equalsIgnoreCase(s)) {
+                return false;
+            }
+            throw new IllegalArgumentException("payload.insight.narrate must be true or false");
+        }
+
+        private static int readMaxBullets(Object v) {
+            if (v == null) {
+                return DEFAULT_MAX_BULLETS;
+            }
+            Double n = PayloadParsing.readDouble(v);
+            if (n == null) {
+                return DEFAULT_MAX_BULLETS;
+            }
+            int cap = n.intValue();
+            if (cap < 1 || cap > MAX_MAX_BULLETS) {
+                throw new IllegalArgumentException(
+                        "payload.insight.maxBullets must be between 1 and " + MAX_MAX_BULLETS);
+            }
+            return cap;
+        }
     }
 
     /**
@@ -131,11 +259,20 @@ public final class DashboardDigestSpec {
             }
             String label = PayloadParsing.readString(m.get("label"));
             List<AiFilterSelection> filters = PayloadParsing.readFilters(m.get("filters"));
-            measures.add(new Measure(cube, measure, label == null ? measure : label, filters));
+            PeriodSpec period = PeriodSpec.fromPayload(m.get("period"));
+            measures.add(new Measure(cube, measure, label == null ? measure : label, filters, period));
         }
 
         List<String> recipients = readRecipients(payload.get("recipients"));
-        return new DashboardDigestSpec(dashboardPath, dashboardTitle, measures, recipients);
+        Insight insight = Insight.fromPayload(payload.get("insight"));
+        return new DashboardDigestSpec(
+                dashboardPath,
+                dashboardTitle,
+                measures,
+                recipients,
+                insight != null,
+                insight == null || insight.narrate(),
+                insight == null ? Insight.DEFAULT_MAX_BULLETS : insight.maxBullets());
     }
 
     private static List<String> readRecipients(Object v) {
@@ -165,12 +302,14 @@ public final class DashboardDigestSpec {
         private final String measure;
         private final String label;
         private final List<AiFilterSelection> filters;
+        private final PeriodSpec period;
 
-        Measure(AiCubeRef cube, String measure, String label, List<AiFilterSelection> filters) {
+        Measure(AiCubeRef cube, String measure, String label, List<AiFilterSelection> filters, PeriodSpec period) {
             this.cube = cube;
             this.measure = measure;
             this.label = label;
             this.filters = filters == null ? new ArrayList<>() : filters;
+            this.period = period;
         }
 
         public AiCubeRef getCube() {
@@ -188,6 +327,14 @@ public final class DashboardDigestSpec {
 
         public List<AiFilterSelection> getFilters() {
             return filters;
+        }
+
+        /**
+         * The period-over-period slicer for this measure (saiku#1119), or null when the payload
+         * declares none — in which case the measure contributes a current value only, exactly as before.
+         */
+        public PeriodSpec getPeriod() {
+            return period;
         }
     }
 }

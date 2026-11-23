@@ -5,12 +5,13 @@
 	 * disturb the editing tab), and restores one (which itself archives the
 	 * current state, so restore is reversible).
 	 */
-	import { base } from '$app/paths';
+	import { basePath } from '$lib/paths';
 	import { Button } from '$lib/components/ui';
 	import Modal from '$lib/components/Modal.svelte';
 	import { RotateCcw, ExternalLink } from '@lucide/svelte';
 	import { getHistory, restoreHistory, type DashboardHistoryEntry } from '$lib/api/dashboards';
 	import { buildHistoryPreviewUrl } from '$lib/dashboard/historyPreview';
+	const base = basePath();
 
 	interface Props {
 		dashboardPath: string;

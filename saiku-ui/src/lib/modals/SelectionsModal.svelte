@@ -77,6 +77,7 @@
 		>
 	>({});
 
+	// svelte-ignore state_referenced_locally — capturing the initial level name to seed the search state is intentional
 	let activeLevel = $state<string>(initialLevelName);
 	let search = $state('');
 

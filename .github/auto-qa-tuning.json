@@ -1,0 +1,26 @@
+{
+  "_": "Config for scripts/auto-qa-tuner.mjs (ACMM acmm:auto-qa-tuning, saiku#2123). The tuner reads measured test/coverage data and PROPOSES ratchet bumps as a report. It never edits .github/test-floors.json or .coverage-thresholds.json and is not a CI gate; a human applies any bump in a normal PR.",
+  "floorsFile": ".github/test-floors.json",
+  "coverageThresholdsFile": ".coverage-thresholds.json",
+  "signals": {
+    "testFloorHeadroom": {
+      "enabled": true,
+      "_": "Propose raising a test-count floor when measured total exceeds floor by more than minHeadroomTests. Proposed floor = measured - keepHeadroomTests, so ordinary churn does not trip the gate.",
+      "minHeadroomTests": 15,
+      "keepHeadroomTests": 5
+    },
+    "coverageHeadroom": {
+      "enabled": true,
+      "_": "Propose raising a JaCoCo line-coverage floor (percent) when measured coverage exceeds floor by more than minHeadroomPercent. Proposed floor = floor(measured) - keepHeadroomPercent.",
+      "minHeadroomPercent": 3,
+      "keepHeadroomPercent": 1
+    },
+    "flakyTests": {
+      "enabled": true,
+      "_": "Report testcases whose surefire XML carries flakyFailure/flakyError/rerunFailure/rerunError elements (surefire rerunFailingTestsCount). Report-only: flaky tests should be fixed, not floored.",
+      "maxReported": 20
+    }
+  },
+  "surefireReportsGlob": "{module}/target/surefire-reports",
+  "jacocoCsv": "{module}/target/site/jacoco/jacoco.csv"
+}

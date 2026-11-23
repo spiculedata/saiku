@@ -14,12 +14,18 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.After;
 import org.junit.Test;
 import org.olap4j.CellSet;
 import org.saiku.olap.query2.ThinQuery;
 import org.saiku.service.olap.ThinQueryService;
 import org.saiku.service.util.QueryContext;
+import org.springframework.aop.TargetSource;
+import org.springframework.aop.framework.ProxyFactory;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.AuthorityUtils;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 /**
  * Unit tests for {@link AsyncQueryService}. Drives a synthetic {@link ThinQueryService}
@@ -34,6 +40,131 @@ public class AsyncQueryServiceTest {
         if (svc != null) {
             svc.shutdown();
         }
+        SecurityContextHolder.clearContext();
+    }
+
+    /**
+     * saiku#1968 (CWE-863) WIRING test: {@code submit()} must propagate the caller's Spring
+     * SecurityContext to the executor worker. The worker runs on a pooled thread with no security
+     * context of its own; before the fix {@code SecurityContextHolder.getContext()} was empty there,
+     * so {@code SecurityAwareConnectionManager.applySecurity()} resolved to no role -> Mondrian root
+     * (full access) for any async caller, AND the role-aware cellset cache keyed a root result under
+     * an empty-role key. This asserts the actual submit() call site (not a helper): seed a principal
+     * on THIS thread, submit, and confirm the worker body observed that same principal.
+     */
+    @Test
+    public void submit_propagatesSecurityContextToWorker() throws Exception {
+        SecurityContextHolder.getContext()
+                .setAuthentication(new UsernamePasswordAuthenticationToken(
+                        "alice", "n/a", AuthorityUtils.createAuthorityList("ROLE_USER")));
+
+        StubThinQueryService stub = new StubThinQueryService();
+        svc = new AsyncQueryService();
+        svc.setThinQueryService(stub);
+
+        AsyncQueryHandle h = svc.submit(named("q-secctx"));
+        awaitStatus(h, AsyncQueryHandle.Status.DONE, 2000);
+
+        assertEquals("worker must see the submitting thread's principal", "alice", stub.seenPrincipal.get());
+    }
+
+    /**
+     * saiku#1849: exercise the scoped-proxy unwrap branch of {@code submit()}. When
+     * {@code thinQueryService} is a Spring AOP scoped proxy (session-scoped bean in the real webapp
+     * wiring), {@code submit()} must resolve the CONCRETE target on the submitting thread — where the
+     * 'session' scope is active — and run the worker against that instance, never re-resolving the
+     * proxy on the pool thread (which has no active session scope and would throw "Scope 'session'
+     * is not active for the current thread"). Uses a real {@link ProxyFactory} + a {@link TargetSource}
+     * that mints a DISTINCT stub per {@code getTarget()} call to mimic per-session resolution — no
+     * Mockito. Asserts (a) the worker executed against the target resolved at submit() time, and
+     * (b) two submits do not share a target instance (per-session isolation), and that the handle
+     * stashes the concrete target (used by the off-thread cancel path), not the proxy.
+     */
+    @Test
+    public void submit_unwrapsScopedProxyAndExecutesAgainstResolvedTarget() throws Exception {
+        final java.util.List<StubThinQueryService> minted = new java.util.concurrent.CopyOnWriteArrayList<>();
+        TargetSource perCallTargets = new TargetSource() {
+            @Override
+            public Class<?> getTargetClass() {
+                return ThinQueryService.class;
+            }
+
+            @Override
+            public boolean isStatic() {
+                return false; // like a scoped proxy: resolve a fresh target each getTarget()
+            }
+
+            @Override
+            public Object getTarget() {
+                StubThinQueryService s = new StubThinQueryService();
+                minted.add(s);
+                return s;
+            }
+
+            @Override
+            public void releaseTarget(Object target) {}
+        };
+        ProxyFactory pf = new ProxyFactory();
+        pf.setProxyTargetClass(true);
+        pf.setTargetSource(perCallTargets);
+        ThinQueryService proxy = (ThinQueryService) pf.getProxy();
+        assertTrue(
+                "precondition: proxy must be a Spring AOP proxy",
+                proxy instanceof org.springframework.aop.framework.Advised);
+
+        svc = new AsyncQueryService();
+        svc.setThinQueryService(proxy);
+
+        AsyncQueryHandle h1 = svc.submit(named("q-unwrap-1"));
+        awaitStatus(h1, AsyncQueryHandle.Status.DONE, 2000);
+        AsyncQueryHandle h2 = svc.submit(named("q-unwrap-2"));
+        awaitStatus(h2, AsyncQueryHandle.Status.DONE, 2000);
+
+        assertEquals("each submit must resolve its own target instance", 2, minted.size());
+        StubThinQueryService t1 = minted.get(0);
+        StubThinQueryService t2 = minted.get(1);
+        assertNotSame("two submits must not share a target instance", t1, t2);
+        assertEquals("first submit executed against the first resolved target", 1, t1.executeCount.get());
+        assertEquals("second submit executed against the second resolved target", 1, t2.executeCount.get());
+        assertSame("handle must stash the target resolved at submit()", t1, h1.getResolvedThinQueryService());
+        assertSame("handle must stash the target resolved at submit()", t2, h2.getResolvedThinQueryService());
+        assertFalse(
+                "handle must hold the concrete target, not the AOP proxy",
+                h1.getResolvedThinQueryService() instanceof org.springframework.aop.framework.Advised);
+    }
+
+    /**
+     * The worker may first touch the session-scoped ThinQueryService proxy after the submitting HTTP
+     * request has completed. Spring's ServletRequestAttributes can only create a session-scoped bean
+     * post-completion if it cached the HttpSession while the request was live — otherwise it throws
+     * "Scope 'session' is not active for the current thread" (the AiQueryAsyncIT failure: the AI
+     * endpoint never touches thinQueryBean on the request thread). submit() must obtain the session
+     * on the calling thread.
+     */
+    @Test
+    public void submit_obtainsSessionOnCallingThread() throws Exception {
+        AtomicReference<Thread> sessionObtainedOn = new AtomicReference<>();
+        org.springframework.web.context.request.RequestAttributes attrs =
+                (org.springframework.web.context.request.RequestAttributes) Proxy.newProxyInstance(
+                        getClass().getClassLoader(),
+                        new Class<?>[] {org.springframework.web.context.request.RequestAttributes.class},
+                        (proxy, method, args) -> {
+                            if ("getSessionId".equals(method.getName())) {
+                                sessionObtainedOn.compareAndSet(null, Thread.currentThread());
+                                return "session-1";
+                            }
+                            return null;
+                        });
+
+        StubThinQueryService stub = new StubThinQueryService();
+        svc = new AsyncQueryService();
+        svc.setThinQueryService(stub);
+
+        AsyncQueryHandle h = svc.submit(named("q-session"), attrs);
+        awaitStatus(h, AsyncQueryHandle.Status.DONE, 2000);
+
+        assertSame(
+                "session must be obtained on the submitting thread", Thread.currentThread(), sessionObtainedOn.get());
     }
 
     @Test(expected = IllegalStateException.class)
@@ -434,6 +565,7 @@ public class AsyncQueryServiceTest {
     private static final class StubThinQueryService extends ThinQueryService {
         final AtomicInteger executeCount = new AtomicInteger();
         final AtomicInteger cancelCount = new AtomicInteger();
+        final AtomicReference<String> seenPrincipal = new AtomicReference<>();
         volatile RuntimeException failure;
         volatile SQLException cancelFailure;
         volatile CellSet resultCellSet;
@@ -441,6 +573,10 @@ public class AsyncQueryServiceTest {
 
         @Override
         public org.saiku.olap.dto.resultset.CellDataSet execute(ThinQuery tq) {
+            // saiku#1968: capture the principal visible on the worker thread at execute() time.
+            org.springframework.security.core.Authentication auth =
+                    SecurityContextHolder.getContext().getAuthentication();
+            seenPrincipal.set(auth == null ? null : auth.getName());
             executeCount.incrementAndGet();
             if (block != null) {
                 try {

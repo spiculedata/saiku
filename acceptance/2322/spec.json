@@ -1,0 +1,52 @@
+{
+  "issue": 2322,
+  "title": "The Ossie AI data policy is enforced: raw-row egress (/ai/ossie/row-detail) is refused under the aggregated tier while schema metadata stays available",
+  "kind": "api",
+  "auth": "session",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "a logged-in user on the demo launcher, whose AI data policy is at the aggregated tier (the launcher's demo-mode default)",
+      "then": "POST /rest/saiku/api/ai/ossie/row-detail is refused with 403 and the PERMISSION_DENIED envelope (field ai.policy, available [full]) — raw warehouse rows require the full tier"
+    },
+    {
+      "id": "C2",
+      "given": "the same user and policy",
+      "then": "GET /rest/saiku/api/ai/ossie/schema/Flights/Flights still answers 200 — schema metadata stays available under a restrictive tier (the gate is per data kind, not a blanket block)"
+    }
+  ],
+  "steps": [
+    {
+      "name": "row-detail raw rows are refused under the aggregated tier",
+      "criterion": "C1",
+      "request": {
+        "method": "POST",
+        "path": "/ai/ossie/row-detail",
+        "json": {
+          "connection": "Flights",
+          "model": "Flights",
+          "rows": [ { "dataset": "flight", "field": "carrier_id" } ]
+        }
+      },
+      "expect": {
+        "status": 403,
+        "json": {
+          "status": { "equals": "PERMISSION_DENIED" },
+          "field": { "equals": "ai.policy" },
+          "available[0]": { "equals": "full" }
+        }
+      }
+    },
+    {
+      "name": "schema metadata stays available — the gate is per data kind",
+      "criterion": "C2",
+      "request": { "method": "GET", "path": "/ai/ossie/schema/Flights/Flights" },
+      "expect": {
+        "status": 200,
+        "json": {
+          "$": { "type": "object" }
+        }
+      }
+    }
+  ]
+}

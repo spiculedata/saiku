@@ -22,17 +22,70 @@ default in the fork and therefore the default in Saiku.
 - Force legacy: `-Dmondrian.backend=legacy`.
 
 The legacy backend is still useful for databases where the Calcite dialect
-mapping is incomplete. Current Calcite dialects shipped by the fork:
+mapping is incomplete.
 
-- H2
-- HSQLDB
-- Microsoft SQL Server
-- MySQL / MariaDB
-- Oracle
-- PostgreSQL
+### Dialect coverage — read this before claiming a database "is supported"
 
-Extending `mondrian.calcite.CalciteDialectMap` is the path for further
-dialect coverage.
+Coverage is **tiered**, and the tiers are not equivalent. Earlier
+revisions of this file listed one flat set of supported databases; that was
+wrong, and it is what made saiku#1886 look like a Saiku bug when it is a
+fork bug.
+
+**Tier 1 — hand-curated in `CalciteDialectMap.forProductNameOrNull()`.**
+These keep their product dialect and only have identifier quoting forced on:
+
+H2, HSQLDB, PostgreSQL, DuckDB, Redshift, Hive, Trino, Exasol, Spark,
+Phoenix, LucidDB, BigQuery.
+
+**Tier 2 — Calcite auto-detect, wrapped in `forceQuoting()`.** Every other
+product Calcite recognises (MySQL / MariaDB, Oracle, Microsoft SQL Server,
+DB2, Vertica, ClickHouse, Snowflake, …) resolves to a Calcite
+`MysqlSqlDialect` / `OracleSqlDialect` / … which `forceQuoting()` then
+discards: it rebuilds a bare `org.apache.calcite.sql.SqlDialect` and copies
+only product name, null collation and conformance, forcing `"` quoting. The
+product dialect's own unparse is **not** inherited (the Calcite context
+`getContext()` is not public in 1.41), so a Tier-2 database gets ANSI
+double-quoted identifiers and the ANSI default for the rest of the emission
+— on MySQL 8.3 that surfaces as a bare `SQLSyntaxErrorException` on
+generated SQL (saiku#1886). It also means `dialect="mysql"`-specific
+emission in the *legacy* `SqlQuery` builder is untouched; only the Calcite
+planner's physical SQL is affected.
+
+**Tier 3 — unknown to Calcite.** `forDataSource()` returns `null`, emits a
+one-shot WARN on both the logger and `System.err`, and the datasource falls
+back to the legacy Mondrian SQL builder. Calcite cross-DB features
+(translator coverage, `LIMIT n` emission, MV rewrite) are inactive for that
+datasource only; other datasources keep the Calcite backend.
+
+Extending `mondrian.calcite.CalciteDialectMap` — adding a Tier-1 entry, not
+Tier 2 — is the path for further dialect coverage.
+
+### Known defect: MySQL / MariaDB on the Calcite path (saiku#1886)
+
+Reported against `pentaho:mondrian:4.8.1.33`/`.34` on MySQL 8.3. Two
+independent causes, **both of them in `spiculedata/mondrian-saiku`, not
+here** — Saiku only consumes the published `pentaho:mondrian` artifact, so a
+fix requires a new fork build and a `saiku-bom` version bump here.
+
+1. A `<View>` whose SQL uses MySQL's JSON operators (`->>`, `->`) fails to
+   parse on the Calcite path with `ParseException: Encountered "->"`, even
+   when the view is declared `dialect="generic"` and the statement will be
+   executed by MySQL, not by Calcite.
+2. `forceQuoting()` strips the auto-detected product dialect, so generated
+   SQL carries ANSI `"` quoting and `NULLS LAST` that MySQL rejects.
+
+Workarounds until a fork build carries the fix:
+
+- `-Dmondrian.calcite.strict=false` — lets the parse failure fall back to
+  the legacy builder instead of propagating. It is global and blunt (it
+  relaxes *every* Calcite failure, not just this statement), so prefer the
+  fork fix over carrying it.
+- `-Dmondrian.backend=legacy` — routes the whole datasource back to the
+  legacy SQL builder. The user-side workaround of patching
+  `CalciteDialectMap` to return `null` for `mysql` is equivalent to this for
+  that datasource.
+
+Tracking: saiku#1886 (Saiku side), reported to the fork maintainer.
 
 ## Classpath impact
 

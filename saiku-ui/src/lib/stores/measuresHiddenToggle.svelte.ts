@@ -26,7 +26,7 @@ const STORAGE_KEY = 'saiku:measures:includeHidden';
 function hasSessionStorage(): boolean {
 	// SSR-safe: SvelteKit can prerender pages, so sessionStorage may not
 	// exist when this module is first evaluated. We don't import
-	// `$app/environment` here so the helper stays trivially unit-testable
+	// `$app/env` here so the helper stays trivially unit-testable
 	// outside the SvelteKit harness (vitest doesn't load SvelteKit).
 	return typeof globalThis !== 'undefined' && typeof globalThis.sessionStorage !== 'undefined';
 }

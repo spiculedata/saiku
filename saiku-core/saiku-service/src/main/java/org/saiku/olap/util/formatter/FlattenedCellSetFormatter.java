@@ -18,6 +18,7 @@ package org.saiku.olap.util.formatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import org.olap4j.Cell;
 import org.olap4j.CellSet;
 import org.olap4j.CellSetAxis;
@@ -271,22 +272,18 @@ public class FlattenedCellSetFormatter extends AbstractCellSetFormatter {
                     memberInfo.setUniquename(member.getUniqueName());
                     memberInfo.setHierarchy(member.getHierarchy().getUniqueName());
                     memberInfo.setLevel(member.getLevel().getUniqueName());
+                    // saiku#827: surface olap4j member-level properties (custom
+                    // hierarchy properties, description, member key, caption, ...)
+                    // the same way saiku#773/PR #821 did for cell properties.
+                    for (Map.Entry<String, String> e :
+                            MemberPropertyExtractor.extract(member).entrySet()) {
+                        memberInfo.setProperty(e.getKey(), e.getValue());
+                    }
                     //					try {
                     //						memberInfo.setChildMemberCount(member.getChildMemberCount());
                     //					} catch (OlapException e) {
                     //						e.printStackTrace();
                     //						throw new RuntimeException(e);
-                    //					}
-                    //					NamedList<Property> values = member.getLevel().getProperties();
-                    //					for(int j=0; j<values.size();j++){
-                    //						String val;
-                    //						try {
-                    //							val = member.getPropertyFormattedValue(values.get(j));
-                    //						} catch (OlapException e) {
-                    //							e.printStackTrace();
-                    //							throw new RuntimeException(e);
-                    //						}
-                    //						memberInfo.setProperty(values.get(j).getCaption(), val);
                     //					}
 
                     //					if (y > 0) {

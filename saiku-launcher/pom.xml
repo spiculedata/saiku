@@ -6,7 +6,7 @@
     <parent>
         <groupId>org.saikuanalytics</groupId>
         <artifactId>saiku</artifactId>
-        <version>4.8.0</version>
+        <version>4.9.0</version>
     </parent>
 
     <artifactId>saiku-launcher</artifactId>
@@ -15,7 +15,7 @@
     <description>Executable Saiku distribution: Picocli CLI + embedded Jetty serving the Saiku webapp.</description>
 
     <properties>
-        <jetty.version>12.1.10</jetty.version>
+        <jetty.version>12.1.14</jetty.version>
         <picocli.version>4.7.7</picocli.version>
         <maven.compiler.release>21</maven.compiler.release>
         <!-- Default: skip launcher ITs so a bare local `mvn verify` stays fast.
@@ -118,7 +118,7 @@
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-simple</artifactId>
-            <version>1.7.36</version>
+            <version>2.0.20</version>
             <scope>runtime</scope>
         </dependency>
 
@@ -156,14 +156,14 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-deploy-plugin</artifactId>
-                <version>3.1.4</version>
+                <version>3.2.0</version>
                 <configuration>
                     <skip>true</skip>
                 </configuration>
             </plugin>
             <plugin>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.13.0</version>
+                <version>3.16.0</version>
                 <configuration>
                     <release>${maven.compiler.release}</release>
                 </configuration>
@@ -221,7 +221,7 @@
                     <!-- Real OLAP queries are heavyweight; ITs run serially. -->
                     <forkCount>1</forkCount>
                     <reuseForks>true</reuseForks>
-                    <argLine>--add-opens=java.base/java.nio=ALL-UNNAMED</argLine>
+                    <argLine>@{argLine} --add-opens=java.base/java.nio=ALL-UNNAMED</argLine>
                     <!-- Skip driven by the ${skipITs} property (default true in
                          <properties>). CI's `-DskipITs=false` and the
                          {@code integration} profile both flip it on. A literal
@@ -253,7 +253,7 @@
                                     </excludes>
                                 </filter>
                                 <!-- xerces/xalan are transitively pulled by
-                                     mondrian + hadoop (via hive-jdbc) and
+                                     mondrian (formerly also hadoop via hive-jdbc) and
                                      hijack JAXP via META-INF/services
                                      overrides. With Spring 6.2's stricter
                                      XML namespace validation, the

@@ -3,6 +3,504 @@
 All notable changes to Saiku are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+## 4.9.0 — 2026-11-23
+
+Also published: `@concepttocloud/saiku-embed` and `@concepttocloud/saiku-embed-react`
+3.21.0, and `@concepttocloud/saiku-design-system` 2.3.0.
+
+### Changed
+
+- **CSP follow-ups (saiku#2430, after #1917).** (1) The SPA shell's policy is
+  baked into `index.html` as a `<meta>` at build time, so `saiku.security.csp`
+  can tighten it but never relax it. Deployments that relied on `http:` image
+  tiles (`img-src` allows only `'self' data: blob: https:`) or CDN fonts / remote
+  stylesheets in `brand.css` (`font-src 'self' data:`, `style-src 'self'
+  'unsafe-inline'`) will see them blocked: serve tiles over `https:` and
+  self-host the fonts under `<saiku.home>/branding/`, or rebuild the UI with the
+  extra sources added to `csp.directives` in `saiku-ui/kit.config.js`. There is
+  no runtime switch. (2) `form-action 'self'` is added to that policy. (3) There
+  is no longer a default `Content-Security-Policy-Report-Only` header: it
+  reported the shell's inline bootstrap on every page load (it still honours
+  `saiku.security.cspReportOnly` when set). (4) Responses outside `/ui/**` and
+  the hash-pinned demo pages now carry an enforced
+  `script-src 'self'; object-src 'none'; base-uri 'self'` header by default;
+  `saiku.security.csp` overrides it. New live e2e `csp-launcher.live.spec.ts`
+  covers the launcher-served `/ui/` and a deep link.
+- **The Docker image is now built on a Chainguard JRE with no shell**
+  (saiku#2462, `cgr.dev/concepttocloud.com/jre:openjdk-21`, digest-pinned;
+  grype findings on the same jar: 311 before, 30 after). What changes for
+  operators: `docker/saiku-entrypoint` is gone, so `JAVA_OPTS` only carries
+  `-D` properties (JVM flags such as `-Xmx` are reported and ignored: use
+  `JDK_JAVA_OPTIONS`, or `JAVA_TOOL_OPTIONS` to replace the image defaults);
+  the OTel agent is attached by `JDK_JAVA_OPTIONS=-javaagent:/opt/saiku/otel/opentelemetry-javaagent.jar`
+  rather than automatically from `OTEL_EXPORTER_OTLP_ENDPOINT`; the image has no
+  shell or `chown`, so fix a root-owned volume with
+  `docker run --rm -v <vol>:/h --user 0 cgr.dev/chainguard/wolfi-base chown -R 10001:10001 /h`;
+  `docker run <image> <cmd>` passes `<cmd>` to the launcher (`--entrypoint` for
+  anything else). The pre-boot saiku-home checks now live in the launcher's
+  `serve` command (same `FATAL:` refusal) and `HEALTHCHECK` uses a new
+  `healthcheck` subcommand. uid/gid 10001, `SAIKU_HOME` and the JVM defaults
+  are unchanged. The `-XX:-UseBASE64Intrinsics` workaround for CVE-2026-114938
+  is dropped from the image because the base JDK (21.0.13.1) includes the fix
+  (the dist scripts keep it). Building the image needs a Chainguard pull token
+  (`docs/docker-chainguard-evaluation.md`).
+
+- **Upgrade note: an H2 user row now decides admin status** (saiku#2345,
+  saiku#2432). For an account that exists in both `users.properties` and the
+  admin console's H2 store, the H2 row wins: a row without `ROLE_ADMIN` means
+  no admin, even if `users.properties` grants it, and a disabled row is refused.
+  Before upgrading, check that your admins have `ROLE_ADMIN` in their H2 row;
+  the audit query and recovery SQL are in the "Upgrading" section of
+  `docs/operator-hardening.md`.
+
+### Known issues
+
+- **MySQL / MariaDB on the Calcite SQL path** (saiku#1886, reported against
+  `pentaho:mondrian:4.8.1.33`/`.34` on MySQL 8.3). Two independent causes,
+  **both in the `spiculedata/mondrian-saiku` fork** — Saiku only consumes the
+  published `pentaho:mondrian` artifact, so a fix needs a new fork build and a
+  `saiku-bom` version bump here:
+
+  1. a `<View>` whose SQL uses MySQL's JSON operators (`->>`, `->`) fails to
+     parse on the Calcite path with `ParseException: Encountered "->"`, even
+     with `dialect="generic"` on a statement MySQL itself will execute;
+  2. `CalciteDialectMap.forceQuoting()` rebuilds a bare ANSI `SqlDialect` and
+     drops the auto-detected product dialect, so generated SQL carries `"`
+     quoting (and ANSI `ORDER BY … NULLS LAST`) that MySQL rejects with a
+     bare `SQLSyntaxErrorException`.
+
+  Workarounds: `-Dmondrian.calcite.strict=false` (global and blunt) or
+  `-Dmondrian.backend=legacy` (per-process).
+
+  The documentation previously listed MySQL/MariaDB, Oracle and MSSQL as
+  natively mapped dialects. They are not — only a Tier-1 subset in
+  `CalciteDialectMap` is; the rest go through `forceQuoting()` and lose their
+  product dialect. `docs/mondrian-fork.md` and `AGENTS.md` now document the
+  tiers and the defect.
+
+### Added
+
+- **MDX workbench, phase 1+2 (saiku#1106).** A new `/ui/workbench` route
+  promotes the toolbar's MDXModal to a full page: Monaco-backed MDX editor,
+  a cube selector, and a read-only result grid, so raw MDX isn't trapped
+  behind a modal anymore. `mdx-lang.ts` now also wires a
+  cube-grounded completion provider — typing `[Measures].` or `[<Dimension>].`
+  suggests that cube's live measures / dimensions / hierarchies / levels,
+  sourced from the same schema cache the sidebar uses. The completion
+  context is shared with the existing MDXModal, so autocomplete works there
+  too. Query history (last 20 runs, per-user, local) and save-as-query
+  (writing into the same repository canvas queries use) round out the page.
+  Member-value completion and a Playwright e2e spec are tracked as
+  follow-ups on the issue.
+
+- **SCIM 2.0 provisioning endpoint for enterprise IdPs** (saiku#1438). Saiku now
+  speaks the SCIM 2.0 core profile (RFC 7643 schema, RFC 7644 protocol) at
+  `/rest/scim/v2`, so Okta, Microsoft Entra ID or OneLogin can own the user
+  lifecycle end to end — create, update, deactivate, reactivate, delete (a soft
+  `active=false`), and group membership — without anyone touching the admin
+  console. `GET/POST/PUT/PATCH/DELETE` on `/Users` and `/Groups`, plus the
+  `ServiceProviderConfig` / `ResourceTypes` / `Schemas` discovery pass both
+  connectors validate before their first create.
+
+  SCIM is kept **isolated** from the Saiku session/Basic surface: it runs on its
+  own Spring Security chain, authenticates only `Authorization: Bearer <token>`,
+  and the principal it establishes carries a single authority no other URL rule
+  grants. Tokens are minted per connector at
+  `POST /rest/saiku/admin/scim/tokens` (admin-only) and stored under
+  `${saiku.home}/scim-tokens/` as a SHA-256 of the secret — the plaintext is
+  shown once and is never persisted, so a leaked home directory yields no usable
+  credential. Revocation takes effect on the connector's next request; SCIM calls
+  are stateless and mint no HTTP session. Each token is rate limited to 100
+  requests/minute (`saiku.scim.rate-limit.per-minute`) and every call is
+  audit-logged with its token label, IdP and operation.
+
+  Mapping: `userName` ⇄ `USERS.USERNAME` (canonicalised, so the IdP's casing
+  can't split one person across two ACL identities), `emails[primary]` ⇄
+  `USERS.EMAIL`, `active` ⇄ `USERS.ENABLED`, `name.*`/`displayName` ⇄ new
+  nullable `GIVEN_NAME`/`FAMILY_NAME`/`DISPLAY_NAME` columns (added by an
+  idempotent `ALTER` at boot), and a group's `displayName` is the role granted to
+  its members. `externalId` and `enterprise:2.0:User` are accepted and dropped —
+  Saiku has no column for them, and refusing a filter on one is more honest than
+  a silent wrong answer. See
+  [`docs/SCIM-PROVISIONING.md`](docs/SCIM-PROVISIONING.md) for the connector
+  walkthrough, the mapping limits and troubleshooting.
+
+- **`POST /ai/describe-query` — AI-suggested tile titles and descriptions**
+  (Tier-1, schema-only; saiku#909). Given a query's structure — selected
+  measures, row/column axes, slicer — but no data values, suggests a short
+  title and one-line description for the dashboard tile it will render as.
+  Gated at the `schema-only` policy tier (the least-trusted, default tier);
+  respects saiku#902 PII annotations by redacting member captions on any
+  PII-flagged level before they reach the prompt. 503s with a clear message
+  when no LLM upstream is configured.
+
+- **"Explain this number" — right-click any cell, get the story (saiku#1118).**
+  New `POST /saiku/api/ai/explain` takes `{queryName, position:{row,column}}` and
+  answers from the cellset already cached for that session query, so opening the
+  panel never re-runs the user's query. It returns the cell's value and caption
+  path, the parent MDX, a **cell MDX** (the single-cell query that actually
+  computes this number) and, best-effort, the SQL the planner emitted for it,
+  plus structured **drivers** (share of column total, share of row total, rank in
+  column, change vs the previous sibling column, largest in row) and a
+  **narrative**. The narrative is written by the configured LLM provider when one
+  is configured — reached through the same ask service, egress policy and audit
+  trail as `/ai/ask`, and grounded on the computed drivers rather than the raw
+  cellset — and falls back to a deterministic summary built from those drivers
+  when no provider is set or the provider degrades; `narrativeSource` always says
+  which. Missing pieces (no SQL captured, no provider) are reported as absent
+  fields with a `notes` line, never as plausible-looking placeholders. In the
+  workspace, right-clicking a grid cell or a chart data point opens a docked side
+  panel: the number, the story, the drivers, and the MDX/SQL one click away.
+  Documented in [`docs/AI-QUERY-API.md`](./docs/AI-QUERY-API.md).
+
+- **`ai.provider=ollama` — local/self-hosted model support for the AI ask layer
+  and schema-generation enrichment.** Both now accept `ollama` as a first-class
+  provider value alongside `anthropic`/`openai`: it talks to a local Ollama
+  instance's OpenAI-compatible endpoint (`http://localhost:11434/v1/chat/completions`
+  by default) and needs **no API key**, unlike `openai`/`azure-openai` — Ollama
+  doesn't check one. For PII-strict deployments this means the model never
+  leaves the operator's own trust boundary; the only operator-visible
+  difference from a hosted provider is the URL. Schema-generation enrichment
+  (`saiku.schemagen.llm.provider`) also gained plain `openai` support as part
+  of this, previously Anthropic-only. New `GET /saiku/info/diagnostics`
+  reports each stack's configured provider/model/endpoint plus a live
+  reachability probe — never the API key — so an operator can confirm the
+  wiring without running a query. (saiku#904)
+- **Creator Mode: `<saiku-embed kind="creator">` — customer-authored
+  dashboards in an OEM/ISV embed (saiku#1435).** The embed suite shipped
+  read-only kinds: a token pins a saved query, dashboard, app or cube, and the
+  visitor looks. There was no "let the visitor build their own against a pinned
+  cube" mode — the objection that loses self-serve-analytics deals. A new
+  `resourceKind: "authoring"` token pins **one cube and one `tenantId`**;
+  `<saiku-embed kind="creator" cube="connection/catalog/schema/cube">` renders a
+  stripped workbench (rows picker, measures picker, table/bar/line/pie, Save
+  query, Save dashboard, "your saved items") inside the shadow DOM.
+  - Writes are confined to `/rest/saiku/api/embed/authoring/**` and require a
+    second role, `ROLE_EMBED_AUTHOR`, that a read token never carries. The target
+    path is always re-derived from the token's tenant; no endpoint there accepts
+    a caller-supplied path, and object names are reduced to a single safe
+    segment. Public grants for authoring are refused — an anonymous write scope
+    has no tenant to attribute it to.
+  - Creator queries are `QUERYMODEL`-only. Raw MDX (on the query, an axis, a
+    hierarchy or a level), filters, sort expressions, calculated members, named
+    sets and query parameters are refused, and every hierarchy / level / member /
+    measure is checked against a frozen catalogue of the pinned cube before the
+    MDX is generated server-side. A member on a level the catalogue could not
+    enumerate is refused rather than guessed.
+  - Queries and saves run under the token owner's identity and roles (the same
+    `sessionService.runAs` delegation the read surface uses), so the tenant's
+    RLS still applies and the saved objects live in the owner's home, where they
+    open in the full Saiku workbench.
+  - Embed JWTs work too: `saiku.resourceKind: "authoring"` +
+    `saiku.tenantId`, same `SAIKU_EMBED_JWT_SECRET`. A token with no usable
+    tenant claim is refused with the same opaque 401 as a bad signature.
+  - Docs: [`docs/embed/creator-mode.md`](docs/embed/creator-mode.md).
+  - Known gap, called out in the docs: a saved dashboard is a single saved query
+    plus a chart type — no drag-and-drop grid yet.
+- **True per-token LLM streaming behind the existing SSE ask endpoints**
+  (saiku#1484). `/ai/ask/stream` and `/ai/spaces/{id}/ask/stream` used to
+  *replay* a finished response as word-sized deltas, so a client rendered
+  progressively while the first token was still seconds away. The provider
+  call is now a real stream: Anthropic's `input_json_delta` events and
+  OpenAI's `tool_calls[].function.arguments` fragments are decoded on the fly,
+  and each piece of the model's prose is forwarded as a `chunk` event as it is
+  written. The wire shape is unchanged — `model`, then `intent` (as soon as
+  the model commits to a tool), then `chunk`s, then `final` — so no client
+  change is needed, and a provider with no streaming transport (or an
+  OpenAI-compatible gateway that answers a streaming request with a buffered
+  body) still produces exactly the old event sequence. A `QUERY` or dashboard
+  payload streams no `chunk` events: half a JSON query is not something a user
+  should watch being typed.
+
+### Fixed
+
+- **XMLA: Excel / MSOLAP could not connect at all after the #1905 auth gate.**
+  `/xmla` was moved behind a dedicated stateless secured chain, which is the
+  right call, but it inherited the SPA's `HttpStatusEntryPoint(401)` entry
+  point — the one added in #878 so the browser would not pop a native auth
+  dialog over the SPA's routine XHR 401s. That entry point emits **no**
+  `WWW-Authenticate` header, and challenge-driven clients only ever send
+  credentials *in response to* a challenge: Excel/MSOLAP over WinHTTP (the
+  endpoint's `web.xml` mapping literally ships `Source=Excel`) sends an
+  anonymous request, waits for `401 WWW-Authenticate: Basic`, then retries with
+  credentials. With the header suppressed they never got past step one.
+  Pre-emptive-Basic clients (olap4j with credentials in the connect string,
+  `curl -u`, most Python/Java XMLA libraries) were unaffected, which is why the
+  breakage was invisible to them. `/xmla/**` now uses its own
+  `BasicAuthenticationEntryPoint` (`realm="Saiku XMLA"`) so challenge-driven
+  clients can negotiate, while the SPA chain keeps its bare-401 entry point —
+  the two chains pick per surface, because sharing one entry point would
+  either resurrect the browser dialog or strip the challenge back off XMLA.
+  Auth policy is unchanged: still `isFullyAuthenticated()`, still CSRF-off,
+  still the shared per-IP login rate limiter, still stateless. Only the 401's
+  headers differ. (saiku#1950)
+
+### Security
+
+- **Interim mitigation for CVE-2026-114938 (HotSpot x86-64 Base64 decode
+  intrinsic).** The Docker image (its `JAVA_TOOL_OPTIONS` and the entrypoint's
+  built-in JVM options) and the dist zip's `run.sh` / `run.bat` now pass
+  `-XX:-UseBASE64Intrinsics`, which keeps the affected intrinsic out of the
+  JVM. The bundled base image still ships Temurin 21.0.12.1; the flag can come
+  out of the image once its base carries Temurin 21.0.13.1 or later.
+  `dist/README.md` now states a security baseline alongside "Java 21 or
+  newer": HotSpot 21.0.13.1+, 25.0.5.1+ or 27.0.1.1+, with end-of-life
+  releases (22, 23, 24, 26) called out as unpatched.
+
+- **A CycloneDX SBOM now covers the npm/UI half of what we ship (saiku#2000).**
+  The release SBOM added for saiku#1990 is the `cyclonedx-maven-plugin`
+  aggregate — **Java/Maven only**. The SvelteKit bundle that `saiku-webapp`
+  overlays into the war (monaco, ECharts, apache-arrow, …) and the shared
+  `@concepttocloud/saiku-design-system` workspace were in no SBOM at all, and
+  neither Maven nor BuildKit's image SBOM can catalogue a minified JS bundle —
+  so "does this release contain a vulnerable version of X?" was unanswerable
+  for that entire tree. `@cyclonedx/cyclonedx-npm` now emits a CycloneDX 1.6
+  JSON document as the last step of `saiku-ui`'s `npm run build`
+  (`npm run sbom`), which the `saiku-webapp` frontend plugin already drives
+  during `mvn verify`; `release.yml` stages it as a second asset,
+  `saiku-ui-sbom-<version>.cdx.json`, alongside the Java one, and it is attested
+  (SLSA/Sigstore) and listed in `SHA256SUMS` like every other asset. Dev-only
+  deps are omitted, mirroring the Maven SBOM's test-scope exclusion. See
+  [docs/releasing.md](docs/releasing.md#sbom-generation).
+
+- **Per-endpoint rate limiters are no longer silently disabled by request-scoped
+  instance state (CWE-837 / CWE-307, saiku#1913).** `AiRateLimiter` kept its
+  fixed-window buckets in an *instance* field, but every consumer held one as
+  `new AiRateLimiter(...)` inside a `scope="request"` resource — a fresh, EMPTY
+  bucket map per HTTP request, so `tryAcquire` always saw count = 1 and returned
+  true. The caps on the public one-click unsubscribe / consent-confirm
+  endpoints, admin mail send / invite / test-send, self-send email, job run-now,
+  and the two AI ask endpoints never tripped. `AiRateLimiter.shared(name)`
+  (plus `sharedFromProperty(name, prop, default)`) now keys the bucket store by
+  name, and `saiku-beans.xml` declares those as singleton beans
+  (`mailUnsubscribeRateLimiter`, `mailConsentRateLimiter`,
+  `mailConsentAddressRateLimiter`, `mailTestSendRateLimiter`,
+  `mailInviteRateLimiter`, `mailSendRateLimiter`, `mailEmailRateLimiter`,
+  `aiQueryAskRateLimiter`, `aiOssieAskRateLimiter`, `jobRunNowRateLimiter`)
+  injected into the request-scoped resources, so one request's spend counts
+  against the next. The bare constructors keep private per-instance storage
+  (what unit tests want), and the shared store is bounded at 50,000 distinct
+  keys per limiter so an attacker-shaped key space (client IP) can't grow it
+  without limit. No configuration change is required; the existing
+  `saiku.*.ratelimit.maxPerMinute` properties still tune each endpoint, and
+  `AiRateLimiterWiringTest` fails if a limiter is ever left unwired.
+
+- **`sql-serve` no longer exposes an unauthenticated SQL proxy on every interface**
+  (CWE-306 / CWE-1327, saiku#1910). The Avatica and Postgres-wire endpoints now
+  bind to `127.0.0.1` by default; a new `--bind` option moves them, and a
+  non-loopback bind is refused unless `--auth-user` plus a password
+  (`--auth-password-file` or `SAIKU_SQL_AUTH_PASSWORD`) is set. With it, Avatica
+  requires HTTP basic auth and PG-wire requires SCRAM-SHA-256.
+  `--allow-unauthenticated-remote` overrides the refusal for isolated networks
+  and prints a warning banner. The warehouse password can now come from
+  `--jdbc-password-file` or `SAIKU_SQL_JDBC_PASSWORD`; `--jdbc-password` still
+  works but warns, because it is visible in the process list. Neither endpoint
+  speaks TLS, so put a TLS-terminating proxy in front of a network-facing one.
+
+  **Upgrade action:** clients that reached `sql-serve` from another host stop
+  connecting. Add `--bind 0.0.0.0 --auth-user <name>` with a password file, and
+  give clients those credentials (`authentication=BASIC;avatica_user=…;avatica_password=…`
+  for Avatica, the normal user/password for Postgres clients).
+
+- **The default-credential boot gate now checks the password, not the hash**
+  (CWE-1392 / CWE-521, saiku#1915). `enforceDefaultCredentialPolicy` compared
+  the stored bcrypt **string** against the two shipped defaults, so any
+  password supplied through `SAIKU_ADMIN_PASSWORD` sailed past the gate: bcrypt
+  salts are random, so `SAIKU_ADMIN_PASSWORD=admin` produced a new hash,
+  `isDefaultAdminValue` returned false, the boot proceeded with `admin`/`admin`
+  and the post-boot warning was silenced — defeating the control with the exact
+  credential it claims to block. A re-encoded `admin` hash (in the WAR or in an
+  external `users.properties`) is now recognised as the default, and a supplied
+  password must additionally clear a strength policy: **≥ 12 characters**, not
+  a well-known weak password (`admin`, `password`, `changeme`, `12345678`, …)
+  and not equal to the username. The hash-side denylist is matched with bcrypt
+  `matches` against an operators-supplied `users.properties`, where length
+  cannot be asserted. New `SAIKU_ADMIN_PASSWORD_FILE` reads the password from a
+  secret-manager mount (trailing newline stripped). Escape hatches, unchanged in
+  spirit: `SAIKU_ALLOW_WEAK_ADMIN_PASSWORD=true`, plus the existing
+  `SAIKU_ALLOW_DEFAULT_ADMIN=true` / `SAIKU_DEMO=true` (so the local IT harness
+  and demo installs are unaffected). Refused boots print the same `FATAL:` fix-it
+  block and exit non-zero.
+
+- **Bare saved-query embeds scope guest slicer overrides to the saved
+  query's own FILTER axis (CWE-863, presentation scope, saiku#1946).** A
+  `kind=query` embed (`POST /saiku/api/embed/query/{path}`) has no filter
+  panel and no filter tiles, so — unlike the dashboard / app tile paths fixed
+  by saiku#1911 — nothing stopped a guest from re-pointing an arbitrary
+  non-forced hierarchy at arbitrary members, or adding a deeper level beside an
+  authored rows level, surfacing finer-grain rows than the author published
+  (e.g. individual customer names under an authored country roll-up). Forced
+  RLS filters were still enforced, so this was a presentation-scope
+  over-exposure bounded by the owner's `runAs` scope, not an RLS bypass — but
+  it bit hardest for public grants and pre-#1104 opaque tokens, which carry no
+  forced filters at all. Guest overrides are now reduced by
+  `SavedQueryFilterScope` to hierarchies the saved query already carries on its
+  FILTER axis, at an authored level, with the client members intersected with
+  the authored members. Anything else (unknown axis, different level, a
+  non-`in` operator, an entirely out-of-scope selection) is dropped, so the
+  query runs as authored rather than failing open; an MDX-mode, unreadable, or
+  unparseable saved query authorises no overrides at all.
+- **The SPA ships a default CSP and `frame-ancestors` (CWE-693 / CWE-1021,
+  saiku#1917).** `SecurityHeadersFilter` emitted *no* framing headers unless
+  `-Dsaiku.security.frameAncestors` was set, and a full CSP only under
+  `-Dsaiku.security.csp` — so out of the box `/ui/**` (a `security="none"`
+  Spring chain, which is why Spring's own `X-Frame-Options: DENY` never reached
+  the SPA HTML) was frameable by any origin and script execution was
+  unconstrained. Defaults are now:
+  - `Content-Security-Policy: frame-ancestors 'self'` + `X-Frame-Options: SAMEORIGIN`
+    on every response, closing the clickjacking path to delete / share-link
+    creation / admin toggles.
+  - `Content-Security-Policy-Report-Only` carrying the documented policy
+    (`default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';
+    img-src 'self' data: blob: https:; font-src 'self' data:; worker-src 'self'
+    blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors
+    'self'`). Report-only, so nothing breaks while a deployment validates it in
+    a browser; `script-src 'self'` is the directive that neutralises the
+    inline-handler payloads from the XSS findings once enforced.
+  - An operator-supplied `saiku.security.csp` that omits `frame-ancestors` now
+    gets the directive appended, so a hand-written policy can't silently
+    re-open the clickjacking hole.
+
+  **Upgrade action — iframe embedders.** If you frame `/ui/?embed=1` from a
+  foreign origin, widen the allow-list:
+  `-Dsaiku.security.frameAncestors="'self' https://wiki.example.com"`.
+  `X-Frame-Options` is then omitted (it cannot express a list) and the CSP
+  `frame-ancestors` directive carries the list. `-Dsaiku.security.frameAncestors=off`
+  restores the old, fully framable behaviour. The web-component embed
+  (`docs/embed/quickstart.md`) is unaffected. To enforce the CSP instead of
+  reporting it, set `-Dsaiku.security.csp` to the policy above; to silence the
+  report-only header, set `-Dsaiku.security.cspReportOnly=off`.
+
+- **Hive/Hadoop are no longer bundled; the Hive JDBC driver is an opt-in
+  `plugins/` drop-in** (CWE-1104 / CWE-1395, saiku#1916). `hive-cli`,
+  `hive-jdbc` and `hadoop-common` pulled ~150 Hadoop/Hive/YARN/ZooKeeper server
+  jars into the WAR purely so `jdbc:hive2://` URLs would load — among them
+  ZooKeeper 3.4.6, a full Jetty 9.4 stack, YARN ResourceManager and LLAP
+  classes, a test jar, gson 2.2.4, avro 1.7.7, jackson-mapper-asl 1.9.13 and
+  jsch 0.1.55. The WAR also carried `log4j-1.2.x` next to the `log4j-1.2-api`
+  bridge (both define `org.apache.log4j`, so which class loaded depended on jar
+  order) plus extra slf4j bindings; `log4j:log4j` is now excluded from
+  `olap4j-xmlaserver` as well, which only needs `Logger` from the bridge. A
+  `maven-enforcer` `bannedDependencies` rule in the root pom fails the build if
+  any of it comes back.
+
+  **Upgrade action — Hive / Spark Thrift users.** Copy the standalone Hive
+  JDBC driver (`hive-jdbc-<version>-standalone.jar`) into
+  `saiku-home/plugins/` and restart; see *Adding a Hive / Spark Thrift
+  datasource* in `dist/README.md`. **SQL Server users**: the old
+  `mssql-jdbc` 6.2.1 driver was only on the classpath as a side effect of the
+  Hive tree, so drop a current `mssql-jdbc` jar into `plugins/` too.
+
+- **Docker image now runs as a non-root user** (`saiku`, uid/gid `10001:10001`;
+  CWE-250, saiku#1989). Previously the JVM ran as uid 0 with write access to the
+  mounted `saiku-home` volume — which holds `conf/secret.key` (the AES key that
+  decrypts every stored datasource password), `users.properties`, and the
+  auto-loaded `plugins/` directory. This is the defense-in-depth layer under the
+  authenticated-user RCE chain closed in 4.8.0. The base image is now
+  digest-pinned, a `HEALTHCHECK` hits the anonymous `/rest/saiku/info` endpoint,
+  and the JVM runs with `-XX:+ExitOnOutOfMemoryError -XX:MaxRAMPercentage=75`.
+
+  **Upgrade action — any pre-existing `saiku-home` (named volume OR bind mount).**
+  Docker only seeds image ownership into a *fresh, empty* volume. A `saiku-home`
+  written by an older root container — whether a named/anonymous volume or a
+  bind-mounted host directory — stays root-owned, and the non-root container can
+  no longer read `conf/secret.key` or write the home. Re-own it to `10001:10001`
+  **once** before starting the upgraded image:
+
+  ```sh
+  # Bind-mounted host directory:
+  sudo chown -R 10001:10001 /path/to/your/saiku-home
+
+  # Named Docker volume (run once, as root, using the image itself):
+  docker run --rm -v saiku-home:/app/saiku-home --user 0 \
+    --entrypoint chown ghcr.io/spiculedata/saiku:<version> \
+    -R 10001:10001 /app/saiku-home
+  ```
+
+  For the demo box (`demo.saiku.bi`, bind mount `/opt/saiku/home`) this is
+  `sudo chown -R 10001:10001 /opt/saiku/home`.
+
+  Skipping this no longer fails silently: the entrypoint runs a pre-flight and
+  **refuses to start with a `FATAL:` message** (naming the exact `chown`) if the
+  home is unwritable or `secret.key` is unreadable — so you can't accidentally
+  rotate the AES key and orphan stored datasource passwords. A genuinely fresh,
+  empty home still boots normally.
+
+  **Kubernetes:** PVCs don't inherit image ownership either — set
+  `securityContext: { runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001 }` on
+  the pod so the mounted volume is group-owned by the runtime user.
+
+- **AI dashboard narrative summary — `POST /ai/narrate-dashboard`** (Tier-2,
+  aggregated; saiku#910). A 2-4 sentence plain-English summary of a
+  dashboard's current state. Requires `ai.policy=aggregated` or `full`. The
+  server re-executes each posted tile's query itself, applies k-anonymity
+  small-cell suppression (saiku#905) and redacts PII-tagged member captions
+  (saiku#902) before the digest reaches the LLM. An empty/all-zero-row
+  dashboard returns a fixed "No data to summarise." message without calling
+  the LLM. See [docs/AI-QUERY-API.md](docs/AI-QUERY-API.md#dashboard-narrative-summary--post-ainarrate-dashboard-saiku910).
+- **Secret files under `saiku-home` are now created 0600 and written
+  atomically** (CWE-732 / CWE-377, saiku#1919 item 18c). `conf/secret.key`
+  (the per-install AES key), `mail-config.json` (encrypted SMTP password),
+  `mail-consent.json` and the Jetty `sessions/` store (serialised
+  `SecurityContext` — a session file is a bearer credential) were written with
+  default permissions and, in the key's case, tightened *after* the write, so
+  on a default-umask host they were world-readable for at least the duration of
+  the write and forever where the umask was wide. A new `SecretFileStore`
+  creates every one of them already owner-only (POSIX `0600`, or an owner-only
+  ACL on Windows) and moves a restricted temp sibling into place, so a reader
+  never sees a half-written file. The `sessions/` directory itself is now
+  `0700`.
+
+  **Behaviour change — a key that exists but cannot be used now stops startup
+  instead of rotating silently.** Previously an unreadable or corrupt
+  `conf/secret.key` (e.g. a `saiku-home` that changed owner) was quietly
+  replaced with a fresh random key, which made every stored `v2:` datasource
+  password permanently undecryptable with no log line. Startup now fails with an
+  ERROR naming the file, and a key that cannot be *persisted* (read-only home)
+  is fatal for the same reason. Fix the ownership/permissions of `saiku-home`,
+  or restore `conf/secret.key` from backup. Set `-Dsaiku.home` (or
+  `SAIKU_DS_ENCRYPTION_KEY`) in production: with `saiku.home` unset the key
+  still falls back to `java.io.tmpdir` — now a WARN instead of silence.
+
+### Added
+
+- **Role-based security for Ossie models** (saiku#1393) — the first slice of
+  Mondrian-`<Role>` parity for the semantic-YAML query path. A `saiku.roles`
+  `custom_extensions` block on a field or metric (`allow`/`deny`, matched
+  against the caller's existing Spring Security authorities) is now enforced,
+  not just parsed: denied fields/metrics disappear from the workbench schema
+  browser and the AI schema response, and a shelf state that references one
+  anyway gets a `403`-mapped `SaikuAccessDeniedException` instead of a 500. The
+  same block on a **dataset** (`row_predicates`) injects an extra role-scoped
+  `WHERE` conjunction for `/query/execute` and `/query/preview-sql`, OR-ed
+  across every role a multi-role caller holds. See
+  [`docs/ossie-yaml.md`](docs/ossie-yaml.md) for the YAML shape and current
+  scope — column masking, dataset-level HIDE, and a top-level named-role block
+  are follow-up phases.
+
+- **Role management for Mondrian role-based security** (saiku#779). A new
+  **Roles** admin tab and `/rest/saiku/admin/roles` API show which Spring role
+  grants which Mondrian role on which datasource, and who holds it. You can
+  preview what a user, or an arbitrary set of roles, gets on every datasource
+  ("test as"). The preview runs the same resolution code as enforcement,
+  including the saiku#1968 fail-closed rule. Grants on `lookup`-mode
+  datasources can be edited in place. See `docs/ROLE-SECURITY.md`.
+
+- **SQL workbench (phase 1, saiku#1107).** A new `/ui/sql-workbench` route lets a
+  user holding the new `ROLE_SQL_EXEC` role (admins get it too) run read-only SQL
+  directly against a datasource's underlying JDBC connection — the row-level
+  companion to the MDX/cube layer, useful for data-quality probes and ad-hoc
+  rollups Mondrian can't express. Monaco-backed editor, paginated result grid,
+  CSV export. Enforced `SELECT`/`WITH`/`SHOW`/`EXPLAIN`/`DESCRIBE`-only at the
+  statement level (`ReadOnlySqlGuard`), with `Connection.setReadOnly(true)` and
+  `executeQuery()` as further layers; every run is written to an append-only
+  audit log at `${saiku.home}/logs/sql-workbench-audit.jsonl`, readable by an
+  admin at `GET /rest/saiku/admin/sql-workbench-audit`. Cube-aware autocomplete
+  (phase 2) and a per-datasource read/write toggle (phase 3) are tracked as
+  follow-ups on the issue.
+
 ## 4.8.0 — 2026-09-15
 
 Minor release, and a **security release** — nine hardening fixes close an
@@ -54,6 +552,18 @@ Two changes are visible behaviour changes for API clients — see **Breaking**.
   takeover plus owner lockout. Colons, a `home:` prefix, and blank input also
   slipped through. (saiku#1906, saiku#1907, saiku#1934)
 - **Datasource names can no longer traverse paths.** (saiku#1906)
+- **The CSV-datasource Calcite model JSON is now escaped and
+  path-contained.** (saiku#1932) `getCSVJson` interpolated the datasource name
+  and a `location`-derived path into a hand-built model string with no
+  escaping — a `'` closed the quoted operand and the remainder was read as
+  further model keys — and the path was concatenated onto the datadir with no
+  containment check, so a `..` segment pointed the CSV read outside the repo
+  root. Both values are JSON-escaped now, and the path is resolved through the
+  same `resolveWithinDatadir` containment rule the rest of the repository write
+  layer uses (a path that normalises outside the datadir is rejected). The
+  branch is dormant in the shipped build — `JdbcUrlPolicy` (saiku#1902) denies
+  the `calcite` scheme — but it is now safe at the source rather than by
+  reliance on an upstream validator.
 
 ### Breaking
 
@@ -94,6 +604,12 @@ Two changes are visible behaviour changes for API clients — see **Breaking**.
 
 ### Added
 
+- **Hierarchy-aware drill down / drill up on the pivot grid.** Clicking the caret
+  on a row header now injects that member's children as nested rows directly
+  beneath it — `GET /rest/saiku/api/query/{name}/drill/{rowIndex}` — instead of
+  the old "zoom in" behaviour of replacing the whole level. Clicking again
+  (`GET .../drillup/{rowIndex}`) collapses just that member's children, leaving
+  any other independently drilled-down rows expanded. (saiku#776)
 - **Cube Designer — query preview.** "Try a query" now runs against the schema
   you are editing, before it is saved. The proposed XML is held in memory and the
   connection reuses the datasource's own JDBC settings, so the preview hits the
@@ -103,6 +619,22 @@ Two changes are visible behaviour changes for API clients — see **Breaking**.
   account-level key/value store, keyed on the authenticated caller. The first
   consumer is the onboarding tour, which now stays dismissed per *person* rather
   than per browser. (saiku#1857)
+- **Insight digests — the scheduled dashboard digest now says what *changed*.**
+  An optional `insight` block on a `DASHBOARD_DIGEST` job adds a
+  period-over-period comparison above the usual measure table: each measure may
+  declare a `period` (time axis + level + current preset), the job reads it twice
+  — current period and `previous_period`, both as ordinary typed-AI-Query
+  relative slicers, so no MDX is hand-written — and emails up to three
+  "what changed" bullets plus the delta table behind them. The bullets are
+  narrated by the configured LLM from the *server-computed* deltas (the
+  `emit_insight` tool is forced, so nothing is executed), and fall back to a
+  deterministic template whenever narration is off, the provider is
+  unconfigured, or the LLM-egress policy withholds aggregates — an unwired
+  egress guard denies, so figures never leave the box unasked. A per-user
+  opt-out (`{"dashboardDigestOptOut": true}` in the user's own preferences
+  document) suppresses the run *before the first query*. A payload with no
+  `insight` block produces exactly the email it did before. Docs:
+  [`docs/INSIGHT-DIGESTS.md`](docs/INSIGHT-DIGESTS.md). (saiku#1119)
 
 ### Fixed
 

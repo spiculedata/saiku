@@ -6,6 +6,7 @@ package org.saiku.service.schema.ossie;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -242,6 +243,59 @@ public class MondrianToOssieConverterTest {
         assertNotNull(fact.getFields().get(0).getDimension());
         // And there's no relationship — nothing to join to.
         assertTrue(sm.getRelationships().isEmpty());
+    }
+
+    @Test
+    public void m4TimeDimensionOnTheFactTableFoldsIntoTheFactDatasetWithoutASelfJoin() throws Exception {
+        // A TIME dimension declared on the fact's own table is degenerate: emitting it as a second
+        // dataset gave two datasets called ORDERS (Ossie resolves relationships by name, so the
+        // second was unreachable and validation rejected the model), plus a fact->fact join.
+        OssieDocument doc = convert("<Schema name='T' metamodelVersion='4.0'>"
+                + "<PhysicalSchema><Table name='orders'><Key><Column name='orderkey'/></Key></Table>"
+                + "<Table name='dim_customer'><Key><Column name='customerkey'/></Key></Table></PhysicalSchema>"
+                + "<Cube name='Orders'>"
+                + "  <Dimensions>"
+                + "    <Dimension name='Order Date' table='orders' type='TIME' key='Order Date'>"
+                + "      <Attributes><Attribute name='Order Date' keyColumn='order_date' levelType='TimeDays'/>"
+                + "      </Attributes>"
+                + "      <Hierarchies><Hierarchy name='Order Date'><Level attribute='Order Date'/></Hierarchy>"
+                + "      </Hierarchies>"
+                + "    </Dimension>"
+                + "    <Dimension name='Customer' table='dim_customer' key='Customer'>"
+                + "      <Attributes><Attribute name='Customer' keyColumn='customerkey' nameColumn='customername'/>"
+                + "      </Attributes>"
+                + "      <Hierarchies><Hierarchy name='Customer'><Level attribute='Customer'/></Hierarchy>"
+                + "      </Hierarchies>"
+                + "    </Dimension>"
+                + "  </Dimensions>"
+                + "  <MeasureGroups><MeasureGroup name='Orders' table='orders'>"
+                + "    <Measures><Measure name='Amount' column='amount' aggregator='sum'/></Measures>"
+                + "    <DimensionLinks>"
+                + "      <ForeignKeyLink dimension='Order Date' foreignKeyColumn='orderkey'/>"
+                + "      <ForeignKeyLink dimension='Customer' foreignKeyColumn='customerkey'/>"
+                + "    </DimensionLinks>"
+                + "  </MeasureGroup></MeasureGroups></Cube></Schema>");
+
+        SemanticModel sm = doc.getSemanticModel().get(0);
+        assertEquals(
+                "one dataset per table, no duplicate ORDERS",
+                2,
+                sm.getDatasets().size());
+        Dataset fact = sm.getDatasets().stream()
+                .filter(d -> d.getName().equalsIgnoreCase("orders"))
+                .findFirst()
+                .orElseThrow();
+        assertTrue(
+                "the TIME dimension's field lives on the fact dataset",
+                fact.getFields().stream().anyMatch(f -> "Order Date".equals(f.getName())));
+        assertEquals(
+                "only the real dimension is joined; the fact is never joined to itself",
+                1,
+                sm.getRelationships().size());
+        assertEquals("orders", sm.getRelationships().get(0).getFrom().toLowerCase());
+        assertNotEquals(
+                sm.getRelationships().get(0).getFrom(),
+                sm.getRelationships().get(0).getTo());
     }
 
     @Test

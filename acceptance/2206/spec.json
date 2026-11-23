@@ -1,0 +1,14 @@
+{
+  "issue": 2206,
+  "title": "The UI lockfile resolves patched parser dependencies",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "the UI installs dependencies from its lockfile",
+      "then": "brace-expansion, source-map-js, and postcss-selector-parser resolve to patched versions"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 30
+}

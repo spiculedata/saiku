@@ -1,4 +1,4 @@
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 
 /** Shape returned by GET /rest/saiku/info/capabilities. */
 export interface PlatformCapabilities {

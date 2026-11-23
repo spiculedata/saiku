@@ -37,10 +37,10 @@ import org.saiku.service.util.exception.SaikuServiceException;
  *       cases that legitimately need those characters.</li>
  * </ul>
  *
- * <p>This is a hardening pass, not a complete fix. The full solution is
- * the typed-parameter API at #780 — see the issue body for the
- * roadmap. Until that lands, this class closes the immediate injection
- * surface without breaking the parameter-substitution flow.
+ * <p>This is a hardening pass, not a complete fix. The typed-parameter API landed in {@link
+ * TypedMdxParameterBinder} (saiku#832) — prefer it for new callers that need member references,
+ * quoted strings, or sets, since it validates by type instead of denying by character. This class
+ * remains the fallback for the existing untyped {@code ${name}} syntax for one release cycle.
  */
 public final class MdxParameterSubstitutor {
 

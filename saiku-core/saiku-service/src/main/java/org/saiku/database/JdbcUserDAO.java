@@ -22,8 +22,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.support.JdbcDaoSupport;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.support.TransactionTemplate;
 
 public class JdbcUserDAO extends JdbcDaoSupport implements UserDAO {
 
@@ -74,6 +76,9 @@ public class JdbcUserDAO extends JdbcDaoSupport implements UserDAO {
         user.setId(name);
 
         insertRole(user);
+        // saiku#1438: name/displayName ride their own statement so the legacy INSERT (which
+        // predates the columns) stays untouched for every non-SCIM caller.
+        updateUserProfile(user);
         return user;
     }
 
@@ -81,15 +86,32 @@ public class JdbcUserDAO extends JdbcDaoSupport implements UserDAO {
         String sql = prop.getProperty("insertRole");
         String removeSQL = prop.getProperty("deleteRole");
 
-        getJdbcTemplate().update(removeSQL, user.getId());
+        // saiku#2432: delete-then-insert in ONE transaction, so a concurrent account-status lookup can
+        // never read the half-written (role-less) state and cache a spurious demotion.
+        new TransactionTemplate(new DataSourceTransactionManager(getDataSource())).executeWithoutResult(tx -> {
+            getJdbcTemplate().update(removeSQL, user.getId());
 
-        if (user.getRoles() != null) {
-            for (String r : user.getRoles()) {
-                if (r != null && !r.equals("")) {
-                    getJdbcTemplate().update(sql, Integer.valueOf(user.getId()), user.getUsername(), r);
+            if (user.getRoles() != null) {
+                for (String r : user.getRoles()) {
+                    if (r != null && !r.equals("")) {
+                        getJdbcTemplate().update(sql, Integer.valueOf(user.getId()), user.getUsername(), r);
+                    }
                 }
             }
+        });
+    }
+
+    /**
+     * saiku#2432: every row whose username matches {@code username} case-insensitively, via a keyed
+     * query (the account-status check runs on every request, so it must not read every user). Falls
+     * back to scanning when the shipped query is absent from a customised queries file.
+     */
+    public Collection findByUsername(String username) {
+        String sql = prop.getProperty("getUserByUsername");
+        if (sql == null) {
+            return findAllUsers();
         }
+        return getJdbcTemplate().query(sql, new Object[] {username}, new UserMapper());
     }
 
     public void deleteUser(SaikuUser user) {
@@ -145,20 +167,17 @@ public class JdbcUserDAO extends JdbcDaoSupport implements UserDAO {
         String newsql = prop.getProperty("maxUser");
         String encrypt = servletContext.getInitParameter("db.encryptpassword");
 
+        // saiku#2345: carry the CURRENT flag through; the legacy statements take it as a parameter and
+        // used to pass TRUE, so a role/email edit silently reactivated a deactivated account.
+        Boolean enabled = Boolean.valueOf(currentlyEnabled(user.getId()));
         if (updatepassword) {
             if (encrypt.equals("true")) {
                 user.setPassword(passwordEncoder.encode(user.getPassword()));
             }
             getJdbcTemplate()
-                    .update(
-                            sql,
-                            user.getUsername(),
-                            user.getPassword(),
-                            user.getEmail(),
-                            Boolean.valueOf(true),
-                            user.getId());
+                    .update(sql, user.getUsername(), user.getPassword(), user.getEmail(), enabled, user.getId());
         } else {
-            getJdbcTemplate().update(sql, user.getUsername(), user.getEmail(), Boolean.valueOf(true), user.getId());
+            getJdbcTemplate().update(sql, user.getUsername(), user.getEmail(), enabled, user.getId());
         }
 
         Integer name = getJdbcTemplate().queryForObject(newsql, new Object[] {user.getUsername()}, Integer.class);
@@ -173,8 +192,74 @@ public class JdbcUserDAO extends JdbcDaoSupport implements UserDAO {
         return user;
     }
 
+    /** The row's ENABLED flag; a missing row reads as enabled so the legacy behaviour is unchanged. */
+    private boolean currentlyEnabled(int userId) {
+        try {
+            return findByUserId(userId).isEnabled();
+        } catch (RuntimeException noSuchRow) {
+            return true;
+        }
+    }
+
     public void updateRoles(SaikuUser user) {
         insertRole(user);
+    }
+
+    /**
+     * saiku#1438 (SCIM {@code active=false}) — flip the {@code USERS.ENABLED} flag on its own.
+     *
+     * <p>{@link #updateUser} and {@link #updateUser(SaikuUser, boolean)} both hard-code
+     * {@code enabled = TRUE} in their SQL, so there was previously no way to deactivate an
+     * account short of a hand-edited row. A dedicated statement is required: reusing the full-row
+     * UPDATE to carry a flag would re-write username/email from whatever DTO the caller held.
+     */
+    public void updateUserEnabled(int userId, boolean enabled) {
+        String sql = prop.getProperty("updateUserEnabled");
+        if (sql == null) {
+            log.warn("updateUserEnabled query is not configured — cannot change ENABLED for user_id={}", userId);
+            return;
+        }
+        getJdbcTemplate().update(sql, Boolean.valueOf(enabled), Integer.valueOf(userId));
+    }
+
+    /**
+     * saiku#1438 — write the SCIM display attributes (name.givenName, name.familyName,
+     * displayName). Separate from the row update for the same reason as
+     * {@link #updateUserEnabled}: the legacy UPDATE statements predate the columns and hard-code
+     * the rest of the row, so a profile sync must not drag username/email/ENABLED along with it.
+     * A NULL means "clear it" — which is exactly what a SCIM attribute removal asks for.
+     */
+    public void updateUserProfile(SaikuUser user) {
+        String sql = prop.getProperty("updateUserProfile");
+        if (sql == null) {
+            return;
+        }
+        try {
+            getJdbcTemplate()
+                    .update(
+                            sql,
+                            user.getGivenName(),
+                            user.getFamilyName(),
+                            user.getDisplayName(),
+                            Integer.valueOf(user.getId()));
+        } catch (Exception e) {
+            // A pre-migration H2 file without the GIVEN_NAME/... columns must not break user
+            // creation — display attributes are cosmetic, unlike the enabled flag.
+            log.warn("Could not persist display attributes for user_id={} (columns missing?)", user.getId(), e);
+        }
+    }
+
+    /**
+     * saiku#1438 — write just the email address. Split from the display-attribute statement so a
+     * query file that predates the SCIM columns still updates email, and vice versa: a missing
+     * column degrades one attribute, never the whole profile sync.
+     */
+    public void updateUserEmail(int userId, String email) {
+        String sql = prop.getProperty("updateUserEmail");
+        if (sql == null) {
+            return;
+        }
+        getJdbcTemplate().update(sql, email, Integer.valueOf(userId));
     }
 
     // Package-private (was private) so JdbcUserDAOUserMapperTest can drive mapRow directly against
@@ -202,6 +287,12 @@ public class JdbcUserDAO extends JdbcDaoSupport implements UserDAO {
                 // Query didn't select ENABLED — leave the default (enabled).
             }
             user.setEnabled(enabled);
+            // saiku#1438: SCIM display attributes. Read defensively — a query that doesn't
+            // select them, or a pre-migration table without the columns, degrades to "no name"
+            // rather than failing the whole directory read.
+            user.setGivenName(optionalString(rs, "GIVEN_NAME"));
+            user.setFamilyName(optionalString(rs, "FAMILY_NAME"));
+            user.setDisplayName(optionalString(rs, "DISPLAY_NAME"));
             if (rs.getString("ROLES") != null) {
                 List<String> list =
                         new ArrayList(Arrays.asList(rs.getString("ROLES").split(",")));
@@ -210,6 +301,15 @@ public class JdbcUserDAO extends JdbcDaoSupport implements UserDAO {
                 user.setRoles(stockArr);
             }
             return user;
+        }
+
+        /** Null-safe column read that tolerates the column not being selected / not existing. */
+        private static String optionalString(ResultSet rs, String column) {
+            try {
+                return rs.getString(column);
+            } catch (SQLException missing) {
+                return null;
+            }
         }
     }
 

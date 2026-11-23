@@ -6,9 +6,18 @@ package org.saiku.sql.server;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.sql.SQLException;
+import java.util.HexFormat;
+import java.util.List;
 import java.util.Objects;
 import org.apache.calcite.avatica.jdbc.JdbcMeta;
 import org.apache.calcite.avatica.remote.LocalService;
@@ -16,6 +25,10 @@ import org.apache.calcite.avatica.remote.Service;
 import org.apache.calcite.avatica.server.AvaticaJsonHandler;
 import org.apache.calcite.avatica.server.AvaticaProtobufHandler;
 import org.apache.calcite.avatica.server.HttpServer;
+import org.apache.calcite.avatica.server.ServerCustomizer;
+import org.eclipse.jetty.server.Connector;
+import org.eclipse.jetty.server.Server;
+import org.eclipse.jetty.server.ServerConnector;
 
 /**
  * Network endpoint that exposes the Ossie/Calcite SQL surface over Apache Avatica's HTTP+
@@ -28,14 +41,25 @@ import org.apache.calcite.avatica.server.HttpServer;
  * gets forwarded to a fresh Calcite prepare cycle; connection state (transactions, cursors) is
  * tracked per-remote-session by {@link JdbcMeta}.
  *
+ * <p>The listener binds to loopback unless told otherwise. When {@link SqlServerCredentials}
+ * are supplied the endpoint requires HTTP basic auth for that one user (clients connect with
+ * {@code authentication=BASIC;avatica_user=...;avatica_password=...}); basic auth over plain
+ * HTTP only protects a trusted network, so anything wider needs a TLS-terminating proxy in front
+ * (saiku#1910).
+ *
  * <p>This is the first slice of #1386. Full Postgres wire protocol is a separate follow-up —
  * Avatica speaks its own wire, not Postgres's, so a native {@code psql}/{@code libpq}-compatible
  * frontend requires a separate PG-wire adapter layered on the same {@link JdbcMeta} backend.
  */
 public class OssieSqlServer implements AutoCloseable {
 
+    /** Jetty role every authenticated sql-serve user is granted. */
+    private static final String ROLE = "saiku-sql";
+
     private final HttpServer server;
     private final String jdbcConnectString;
+    private final String bindHost;
+    private final Path loginProperties;
 
     /**
      * Build a Calcite JDBC connect string pointing at an on-disk model.json that instantiates
@@ -101,6 +125,8 @@ public class OssieSqlServer implements AutoCloseable {
      * <p>Serialization is protobuf by default because it's the format the Avatica JDBC driver
      * uses. JSON is available on the same endpoint via a separate handler for humans debugging
      * with curl — see {@link AvaticaJsonHandler}. For this first slice we only wire protobuf.
+     *
+     * <p>Binds to loopback with no authentication; see the full constructor for anything else.
      */
     public OssieSqlServer(
             int port,
@@ -110,26 +136,105 @@ public class OssieSqlServer implements AutoCloseable {
             String warehouseUser,
             String warehousePassword)
             throws SQLException {
+        this(
+                SqlServerCredentials.DEFAULT_BIND_HOST,
+                port,
+                null,
+                ossieYaml,
+                schemaName,
+                warehouseJdbcUrl,
+                warehouseUser,
+                warehousePassword);
+    }
+
+    /**
+     * @param bindHost address to listen on; {@code null} means {@link
+     *     SqlServerCredentials#DEFAULT_BIND_HOST}
+     * @param credentials the user clients must authenticate as via HTTP basic auth, or {@code
+     *     null} for no authentication
+     */
+    public OssieSqlServer(
+            String bindHost,
+            int port,
+            SqlServerCredentials credentials,
+            Path ossieYaml,
+            String schemaName,
+            String warehouseJdbcUrl,
+            String warehouseUser,
+            String warehousePassword)
+            throws SQLException {
+        this.bindHost = bindHost == null ? SqlServerCredentials.DEFAULT_BIND_HOST : bindHost;
         this.jdbcConnectString =
                 buildCalciteConnectString(ossieYaml, schemaName, warehouseJdbcUrl, warehouseUser, warehousePassword);
         // JdbcMeta owns the outbound Calcite connection pool; every incoming Avatica request
         // borrows a Statement from a Connection. Auto-connects lazily on first use.
         JdbcMeta meta = new JdbcMeta(jdbcConnectString);
         Service service = new LocalService(meta);
-        this.server = new HttpServer.Builder<Object>()
+        // Avatica's builder has no host option; a customizer runs after it creates the
+        // connector and before Jetty starts, so the listener never opens on the wildcard.
+        ServerCustomizer<Server> bindToHost = jetty -> {
+            for (Connector connector : jetty.getConnectors()) {
+                if (connector instanceof ServerConnector) ((ServerConnector) connector).setHost(this.bindHost);
+            }
+        };
+        HttpServer.Builder<Server> builder = new HttpServer.Builder<Server>()
                 .withHandler(new AvaticaProtobufHandler(service))
                 .withPort(port)
-                .build();
+                .withServerCustomizers(List.of(bindToHost), Server.class);
+        if (credentials != null) {
+            this.loginProperties = writeLoginProperties(credentials);
+            builder.withBasicAuthentication(loginProperties.toString(), new String[] {ROLE});
+        } else {
+            this.loginProperties = null;
+        }
+        this.server = builder.build();
         this.server.start();
+    }
+
+    /**
+     * Stages the Jetty {@code HashLoginService} file for basic auth. The password is stored as
+     * Jetty's {@code MD5:} credential rather than in the clear, which also keeps characters such
+     * as {@code ,} out of the properties syntax; the file is owner-only and deleted on close.
+     */
+    private static Path writeLoginProperties(SqlServerCredentials credentials) {
+        try {
+            Path file = FileSystems.getDefault().supportedFileAttributeViews().contains("posix")
+                    ? Files.createTempFile(
+                            "ossie-sql-server-users-",
+                            ".properties",
+                            PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")))
+                    : Files.createTempFile("ossie-sql-server-users-", ".properties");
+            file.toFile().deleteOnExit();
+            String md5 = HexFormat.of()
+                    .formatHex(MessageDigest.getInstance("MD5")
+                            .digest(credentials.getPassword().getBytes(StandardCharsets.UTF_8)));
+            Files.writeString(file, credentials.getUsername() + ": MD5:" + md5 + "," + ROLE + "\n");
+            return file;
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to stage Avatica login properties", e);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     public int getPort() {
         return server.getPort();
     }
 
-    /** Returns the Avatica remote connect URL clients use — e.g. {@code http://localhost:8765}. */
+    /**
+     * Returns the Avatica remote connect URL clients use — e.g. {@code http://localhost:8765}.
+     * Loopback and wildcard binds report {@code localhost}; a specific address reports itself.
+     */
     public String getUrl() {
-        return "http://localhost:" + getPort();
+        String host = bindHost;
+        try {
+            InetAddress address = InetAddress.getByName(bindHost);
+            if (address.isLoopbackAddress() || address.isAnyLocalAddress()) host = "localhost";
+            else if (host.indexOf(':') >= 0) host = "[" + host + "]";
+        } catch (UnknownHostException e) {
+            // keep the configured name
+        }
+        return "http://" + host + ":" + getPort();
     }
 
     /** Diagnostic hook for tests; the exact connect string is otherwise internal. */
@@ -140,5 +245,12 @@ public class OssieSqlServer implements AutoCloseable {
     @Override
     public void close() {
         server.stop();
+        if (loginProperties != null) {
+            try {
+                Files.deleteIfExists(loginProperties);
+            } catch (IOException ignored) {
+                // deleteOnExit is the fallback.
+            }
+        }
     }
 }

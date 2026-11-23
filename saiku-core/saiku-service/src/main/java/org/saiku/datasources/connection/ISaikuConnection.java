@@ -32,6 +32,9 @@ public interface ISaikuConnection {
      *  multiple; optional (defaults to the first entry). */
     String OSSIE_MODEL_KEY = "ossieModel"; // $NON-NLS-1$
 
+    /** Optional HTTP(S) cell-link template on the {@code .sds} ({@code <cellLinkUrl>}). */
+    String CELL_LINK_URL_KEY = "cellLinkUrl"; // $NON-NLS-1$
+
     String NAME_KEY = "name"; // $NON-NLS-1$
     String DRIVER_KEY = "driver"; // $NON-NLS-1$
     String URL_KEY = "location"; // $NON-NLS-1$

@@ -137,6 +137,141 @@ public class EmbedViewResourceTest {
         assertEquals(401, r.getStatus());
     }
 
+    /* ------------ saiku#1946: bare saved-query override scope ------------ */
+
+    private static final String CA = "[Geography].[Geography].[State].&[CA]";
+    private static final String WA = "[Geography].[Geography].[State].&[WA]";
+    private static final String SF = "[Geography].[Geography].[City].&[San Francisco]";
+    private static final String NY = "[Geography].[Geography].[State].&[NY]";
+    private static final String FRESNO = "[Store].[Store].[Store Name].&[Fresno]";
+
+    /** A saved query whose authored slicer publishes exactly CA + WA at State. */
+    private static final String SAVED_QUERY_WITH_SLICER = "{"
+            + "\"name\":\"sales\",\"type\":\"QUERYMODEL\",\"queryModel\":{\"axes\":{\"FILTER\":{"
+            + "\"location\":\"FILTER\",\"nonEmpty\":false,\"hierarchies\":[{"
+            + "\"name\":\"[Geography].[Geography]\",\"caption\":\"Geography\",\"dimension\":\"Geography\","
+            + "\"levels\":{\"State\":{\"name\":\"State\",\"caption\":\"State\",\"aggregators\":[],"
+            + "\"selection\":{\"type\":\"INCLUSION\",\"members\":["
+            + "{\"name\":\"" + CA + "\",\"uniqueName\":\"" + CA + "\",\"caption\":\"CA\"},"
+            + "{\"name\":\"" + WA + "\",\"uniqueName\":\"" + WA + "\",\"caption\":\"WA\"}"
+            + "]}}}}]}}}}";
+
+    private static EmbedViewResource.TileQueryOverrides overrides(AiFilterSelection... filters) {
+        EmbedViewResource.TileQueryOverrides o = new EmbedViewResource.TileQueryOverrides();
+        o.filters = new ArrayList<>(Arrays.asList(filters));
+        return o;
+    }
+
+    private static AiFilterSelection filter(String dim, String hier, String level, String... members) {
+        return new AiFilterSelection(dim, hier, level, new ArrayList<>(Arrays.asList(members)));
+    }
+
+    @Test
+    public void queryFiltered_narrowsOverrideToTheAuthoredSlicerMembers() {
+        ds.fileContent = SAVED_QUERY_WITH_SLICER;
+        pinGuest("query", "/homes/admin/sales.saiku", "admin", List.of("ROLE_ADMIN"));
+
+        Response r = resource.queryFiltered(
+                "homes/admin/sales.saiku", null, overrides(filter("Geography", "Geography", "State", CA)));
+
+        assertEquals(200, r.getStatus());
+        assertNotNull(ai.lastSavedRequest.getFilters());
+        assertEquals(1, ai.lastSavedRequest.getFilters().size());
+        assertEquals(List.of(CA), ai.lastSavedRequest.getFilters().get(0).getMembers());
+    }
+
+    @Test
+    public void queryFiltered_dropsMembersOutsideTheAuthoredSlicer() {
+        ds.fileContent = SAVED_QUERY_WITH_SLICER;
+        pinGuest("query", "/homes/admin/sales.saiku", "admin", List.of("ROLE_ADMIN"));
+
+        Response r = resource.queryFiltered(
+                "homes/admin/sales.saiku", null, overrides(filter("Geography", "Geography", "State", CA, NY)));
+
+        assertEquals(200, r.getStatus());
+        assertEquals(List.of(CA), ai.lastSavedRequest.getFilters().get(0).getMembers());
+    }
+
+    @Test
+    public void queryFiltered_dropsOverrideOnAnUndeclaredAxis() {
+        // saiku#1946 exploit (b): re-pointing an arbitrary non-forced axis. The saved query's slicer
+        // is the only declared scope, so an override on anything else never reaches executeSaved.
+        ds.fileContent = SAVED_QUERY_WITH_SLICER;
+        pinGuest("query", "/homes/admin/sales.saiku", "admin", List.of("ROLE_ADMIN"));
+
+        Response r = resource.queryFiltered(
+                "homes/admin/sales.saiku", null, overrides(filter("Store", "Store", "Store Name", FRESNO)));
+
+        assertEquals(200, r.getStatus());
+        assertTrue(ai.lastSavedRequest.getFilters() == null
+                || ai.lastSavedRequest.getFilters().isEmpty());
+    }
+
+    @Test
+    public void queryFiltered_dropsAFinerLevelOfTheAuthoredHierarchy() {
+        // Adding a City level beside the authored State slicer would surface individual city rows
+        // under a roll-up the author published — dropped fail-closed.
+        ds.fileContent = SAVED_QUERY_WITH_SLICER;
+        pinGuest("query", "/homes/admin/sales.saiku", "admin", List.of("ROLE_ADMIN"));
+
+        Response r = resource.queryFiltered(
+                "homes/admin/sales.saiku", null, overrides(filter("Geography", "Geography", "City", SF)));
+
+        assertEquals(200, r.getStatus());
+        assertTrue(ai.lastSavedRequest.getFilters() == null
+                || ai.lastSavedRequest.getFilters().isEmpty());
+    }
+
+    @Test
+    public void queryFiltered_unreadableOrMdxSavedQueryForwardsNoOverrides() {
+        // MDX-mode (or unparseable) saved query ⇒ no authored scope ⇒ the guest's overrides are
+        // dropped and the query runs as authored. Fail-closed, never fail-open.
+        ds.fileContent =
+                "{\"name\":\"m\",\"type\":\"MDX\",\"mdx\":\"SELECT [Measures].[Unit Sales] ON 0 FROM [Sales]\"}";
+        pinGuest("query", "/homes/admin/sales.saiku", "admin", List.of("ROLE_ADMIN"));
+
+        Response r = resource.queryFiltered(
+                "homes/admin/sales.saiku", null, overrides(filter("Geography", "Geography", "State", CA)));
+
+        assertEquals(200, r.getStatus());
+        assertTrue(ai.lastSavedRequest.getFilters() == null
+                || ai.lastSavedRequest.getFilters().isEmpty());
+    }
+
+    @Test
+    public void queryFiltered_stillAppliesForcedRlsFiltersAlongsideScopedOverrides() {
+        // The scope gate is presentation-scope only — it must not weaken the forced-RLS channel.
+        ds.fileContent = SAVED_QUERY_WITH_SLICER;
+        pinGuestJwt(
+                "query",
+                "/homes/admin/sales.saiku",
+                "admin",
+                List.of("ROLE_ADMIN"),
+                "end-user",
+                "[{\"dimension\":\"Store\",\"hierarchy\":\"Store\",\"level\":\"Store Name\","
+                        + "\"members\":[\"[Store].[Store].[Store Name].&[San Jose]\"]}]");
+
+        resource.queryFiltered(
+                "homes/admin/sales.saiku", null, overrides(filter("Geography", "Geography", "State", CA)));
+
+        assertNotNull(ai.lastSavedRequest.getForcedFilters());
+        assertEquals(1, ai.lastSavedRequest.getForcedFilters().size());
+        assertEquals(1, ai.lastSavedRequest.getFilters().size());
+        assertEquals(List.of(CA), ai.lastSavedRequest.getFilters().get(0).getMembers());
+    }
+
+    @Test
+    public void queryFiltered_scopedOverrideNeverTouchesTheOwnerScope() {
+        ds.fileContent = SAVED_QUERY_WITH_SLICER;
+        pinGuest("query", "/homes/admin/sales.saiku", "admin", List.of("ROLE_ADMIN"));
+
+        resource.queryFiltered(
+                "homes/admin/sales.saiku", null, overrides(filter("Geography", "Geography", "State", CA)));
+
+        assertEquals("admin", session.lastRunAsUser);
+        assertEquals(List.of("ROLE_ADMIN"), session.lastRunAsRoles);
+    }
+
     /* -------------------------- dashboard -------------------------- */
 
     @Test
@@ -937,13 +1072,6 @@ public class EmbedViewResourceTest {
     }
 
     /* --------------------------- helpers ---------------------------- */
-
-    /** Build a TileQueryOverrides from client filter selections. */
-    private static EmbedViewResource.TileQueryOverrides overrides(AiFilterSelection... fs) {
-        EmbedViewResource.TileQueryOverrides o = new EmbedViewResource.TileQueryOverrides();
-        o.filters = new ArrayList<>(Arrays.asList(fs));
-        return o;
-    }
 
     /** op:"in" client filter on dim (dim=hierarchy=level for the test cube). */
     private static AiFilterSelection in(String dim, String... members) {

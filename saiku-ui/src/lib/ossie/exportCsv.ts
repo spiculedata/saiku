@@ -2,9 +2,11 @@ import type { OssieQueryResult } from '$lib/api/ossie';
 
 /**
  * Escape a single CSV field per RFC 4180: wrap in quotes when the value contains a
- * comma / double-quote / newline; double any embedded quotes.
+ * comma / double-quote / newline; double any embedded quotes. Exported so other CSV
+ * export paths (e.g. the SQL workbench, saiku#1107) reuse the same escaping instead
+ * of re-implementing it.
  */
-function csvEscape(v: string | undefined | null): string {
+export function csvEscape(v: string | undefined | null): string {
 	if (v == null) return '';
 	const s = String(v);
 	if (/[",\r\n]/.test(s)) {

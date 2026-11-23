@@ -18,7 +18,7 @@
  * Saiku? That's exactly what fails when a container dies or a token expires.
  */
 
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 import { getCurrentSession } from '$lib/api/session';
 import { platform } from '$lib/stores/platform.svelte';
 

@@ -1,0 +1,40 @@
+name: issue-gate
+
+# `issue-approved` is the only label that admits an issue to agents (AGENTS.md, "Queues and
+# labels"), and it requires acceptance criteria. When the label is added to an issue whose body has
+# neither an "Acceptance criteria" heading nor a markdown task-list item, this removes the label
+# and explains why. The issue body reaches the shell only through an environment variable, never
+# through interpolation. The matching patterns are pinned by .github/scripts/issue-gate.test.mjs.
+on:
+  issues:
+    types: [labeled]
+
+permissions: {}
+
+concurrency:
+  group: issue-gate-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    if: github.event.label.name == 'issue-approved'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Require acceptance criteria
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          heading='^[[:space:]]*#{1,6}[[:space:]]*acceptance criteria'
+          checklist='^[[:space:]]*[-*][[:space:]]+\[[ xX]\]'
+          if printf '%s\n' "$ISSUE_BODY" | grep -Eiq "$heading" || printf '%s\n' "$ISSUE_BODY" | grep -Eq "$checklist"; then
+            echo "Acceptance criteria found; leaving issue-approved in place."
+            exit 0
+          fi
+          gh issue edit "$ISSUE_NUMBER" --remove-label issue-approved
+          gh issue comment "$ISSUE_NUMBER" --body "Removed \`issue-approved\`: this issue has no acceptance criteria. Add an **Acceptance criteria** heading, or a checklist (\`- [ ] ...\`) that says how done is verified, then re-apply the label. Agents only pick up issues that carry \`issue-approved\`."

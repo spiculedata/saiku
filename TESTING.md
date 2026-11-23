@@ -28,6 +28,19 @@ mvn -P integration verify                                              # run the
 GitHub-Packages artifacts (`mondrian-saiku`, `olap4j`, `olap4j-xmlaserver`, `saiku-query`) — see
 `CLAUDE.md`. Locally pass `-s "<settings.xml>"` if it isn't at the default path.
 
+### UI end-to-end (Playwright)
+
+`saiku-ui/e2e/` holds the browser suite (`saiku-ui/playwright.config.ts`). The mocked-backend
+specs intercept `/rest/saiku/*` and need no Java; CI's `ui` job runs them after the production
+build (saiku#2009). `*.live.spec.ts` specs need a running launcher and stay out of CI.
+
+```bash
+cd saiku-ui
+npx playwright install chromium   # one-time
+npm run e2e                       # mocked backend: builds, then serves on :4173
+npm run e2e:live                  # live backend on :8080 (RUN_LIVE_E2E=1)
+```
+
 ## Current coverage
 
 Roughly **990 `@Test` methods across ~155 test classes** (a long way past the Phase-0 baseline of 10).
@@ -67,6 +80,12 @@ against **JDK 21**. A PR is green only when, on both OSes:
 4. **Per-module test-count floors** (`.github/test-floors.json`) are met — CI fails if a module's
    surefire total drops below its floor (`saiku-core/saiku-service`: 252, `saiku-core/saiku-web`: 44),
    catching accidental test deletions. Bump the floor when you add tests.
+5. **Per-module line-coverage floors** (`.coverage-thresholds.json`, saiku#2011) are met. JaCoCo
+   (bound in the root pom) writes `<module>/target/site/jacoco/jacoco.csv` during `verify`;
+   `./scripts/check-coverage.sh` compares each module's line coverage to its floor. Run it locally
+   after `mvn verify`; the HTML report is `<module>/target/site/jacoco/index.html`. Floors are
+   ratchets — raise one when coverage rises. Surefire `argLine`s must start with `@{argLine}` so the
+   JaCoCo agent attaches; `-Djacoco.skip=true` skips instrumentation.
 
 A separate `docker` workflow builds the launcher image and does **not** gate the Maven build.
 

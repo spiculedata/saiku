@@ -1,13 +1,22 @@
 {
   "name": "@concepttocloud/saiku-embed",
   "version": "0.0.0-PLACEHOLDER",
-  "description": "<saiku-embed> Web Component — drop a saved Saiku query or dashboard into any page.",
+  "description": "<saiku-embed> Web Component — drop a saved Saiku query or dashboard into any page. Also ships the narrower <saiku-chart> and <saiku-dashboard> elements (issue #1103).",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./saiku-embed.js",
+  "exports": {
+    ".": "./saiku-embed.js",
+    "./chart": "./saiku-chart.js",
+    "./dashboard": "./saiku-dashboard.js"
+  },
   "files": [
     "saiku-embed.js",
     "saiku-embed.js.map",
+    "saiku-chart.js",
+    "saiku-chart.js.map",
+    "saiku-dashboard.js",
+    "saiku-dashboard.js.map",
     "README.md"
   ],
   "keywords": [

@@ -72,6 +72,7 @@ public class FilesystemRepositoryManagerHomeIsolationTest {
 
     @After
     public void tearDown() throws Exception {
+        org.saiku.service.datasource.MockHttpSession.unbindRequest();
         resetSingleton();
     }
 
@@ -193,7 +194,7 @@ public class FilesystemRepositoryManagerHomeIsolationTest {
         ScopedRepo repo = new ScopedRepo();
         java.util.Map<String, Object> attrs = new java.util.HashMap<>();
         attrs.put("workspace", "tenantA");
-        repo.setSession(new org.saiku.service.datasource.MockHttpSession(attrs));
+        org.saiku.service.datasource.MockHttpSession.bindRequest(attrs);
 
         FilesystemRepositoryManager wsMgr = newManager(datadir.getAbsolutePath(), repo, true);
         UserService us = new UserService();

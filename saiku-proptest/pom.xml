@@ -7,11 +7,11 @@
   <parent>
     <groupId>org.saikuanalytics</groupId>
     <artifactId>saiku</artifactId>
-    <version>4.8.0</version>
+    <version>4.9.0</version>
   </parent>
 
   <artifactId>saiku-proptest</artifactId>
-  <version>4.8.0</version>
+  <version>4.9.0</version>
   <packaging>jar</packaging>
   <name>saiku-proptest</name>
   <description>
@@ -23,7 +23,7 @@
   </description>
 
   <properties>
-    <hegel.version>0.4.0</hegel.version>
+    <hegel.version>0.13.0</hegel.version>
   </properties>
 
   <dependencyManagement>
@@ -31,7 +31,7 @@
       <dependency>
         <groupId>org.saikuanalytics</groupId>
         <artifactId>saiku-bom</artifactId>
-        <version>4.8.0</version>
+        <version>4.9.0</version>
         <type>pom</type>
         <scope>import</scope>
       </dependency>
@@ -84,7 +84,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
-        <version>3.13.0</version>
+        <version>3.16.0</version>
         <!-- combine.self=override drops the root pom's inherited source/target 1.6
              so a bare <release> does not collide with the inherited source/target
              (the compiler plugin rejects having both set at once). -->
@@ -95,10 +95,10 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
-        <version>3.5.2</version>
+        <version>3.6.0</version>
         <configuration>
           <!-- Hegel calls native code via FFM; silence the JVM native-access warning. -->
-          <argLine>--enable-native-access=ALL-UNNAMED</argLine>
+          <argLine>@{argLine} --enable-native-access=ALL-UNNAMED</argLine>
         </configuration>
       </plugin>
       <!-- Test-only module: never deploy it to a repository. -->

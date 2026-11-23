@@ -15,7 +15,7 @@ const { gotoMock, beginReviewMock, assembleMock, buildMock, dangerMock } = vi.ho
 }));
 
 vi.mock('$app/navigation', () => ({ goto: gotoMock }));
-vi.mock('$app/paths', () => ({ base: '' }));
+vi.mock('$app/paths', () => ({ resolve: () => '/' }));
 vi.mock('$lib/api/aiDashboard', () => ({ buildAiDashboard: buildMock }));
 vi.mock('$lib/dashboard/aiDashboardAssembler', () => ({ assembleDashboard: assembleMock }));
 vi.mock('$lib/stores/dashboard.svelte', () => ({

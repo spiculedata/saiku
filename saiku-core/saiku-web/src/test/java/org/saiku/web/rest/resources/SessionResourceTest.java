@@ -141,19 +141,11 @@ public class SessionResourceTest {
     }
 
     @Test
-    public void clearSession_success_returns200() {
-        Response resp = resource.clearSession(req, "admin", "secret");
-        assertEquals(200, resp.getStatus());
-        assertEquals("Session cleared", resp.getEntity());
-        assertEquals(1, session.clearCalls);
-    }
-
-    @Test
-    public void clearSession_failure_returns500WithMessage() {
-        session.clearException = new RuntimeException("forbidden");
-        Response resp = resource.clearSession(req, "admin", "secret");
-        assertEquals(500, resp.getStatus());
-        assertEquals("forbidden", resp.getEntity());
+    public void resource_exposesNoCredentialAcceptingSubPath() {
+        for (java.lang.reflect.Method m : SessionResource.class.getDeclaredMethods()) {
+            jakarta.ws.rs.Path path = m.getAnnotation(jakarta.ws.rs.Path.class);
+            assertNull("no sub-resource may accept credentials outside login: " + m.getName(), path);
+        }
     }
 
     @Test

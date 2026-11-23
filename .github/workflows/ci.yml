@@ -1,12 +1,30 @@
 name: ci
+
+# Flake policy (docs/ci-flakes.md): a failing test is retried ONCE and recorded; a pass on
+# retry is a flake that stays visible in the run summary and the `flake-records-*` artifact,
+# a quarantined test (.github/flake-quarantine.json) still runs but does not block, and a
+# step that fails for a non-test reason is never swallowed. Mechanism:
+# .github/scripts/flake-ledger.mjs (Maven: Surefire rerun, Playwright: retries, vitest: a
+# second attempt of the failing files). Failures are explained for automated fixers by
+# .github/workflows/ci-feedback.yml (docs/ci-feedback.md).
 on:
   push:
     branches: [development, "phase-*"]
   pull_request:
+  # GitHub's merge queue tests the exact merge result (the PR rebased onto the
+  # queue ahead of it) before merging, so a PR cannot land on a stale base. The
+  # queue only merges when this workflow's required check (`ci`) passes on the
+  # `gh-readonly-queue/...` ref, so the workflow MUST run on merge_group.
+  merge_group:
+    types: [checks_requested]
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
+
+# Least-privilege default token: read-only. No job here writes to the repo.
+permissions:
+  contents: read
 
 jobs:
   # Path-filter once so the downstream jobs can skip when nothing they care
@@ -15,19 +33,28 @@ jobs:
   changes:
     name: detect changes
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # actions/checkout
+      pull-requests: read # dorny/paths-filter lists PR files via the REST API on pull_request events
     outputs:
       java: ${{ steps.filter.outputs.java }}
       ui: ${{ steps.filter.outputs.ui }}
       docs: ${{ steps.filter.outputs.docs }}
+      sheets: ${{ steps.filter.outputs.sheets }}
+      acceptance: ${{ steps.filter.outputs.acceptance }}
+      specs: ${{ steps.filter.outputs.specs }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: dorny/paths-filter@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
+        # A queued merge always runs everything (see the job conditions below), so
+        # there is nothing to filter and no PR to list files from.
+        if: github.event_name != 'merge_group'
         with:
           # Default predicate-quantifier ("some") matches when ANY changed
           # file hits ANY pattern in the filter — the semantics we want.
-          # The downstream jobs ALSO have `|| github.event_name == 'push'`
-          # so the merge commit to development always exercises everything.
+          # The downstream jobs ALSO run on `push` and `merge_group`, so the merge
+          # commit to development and every queued merge always exercise everything.
           filters: |
             java:
               - 'saiku-bom/**'
@@ -44,23 +71,41 @@ jobs:
               # sits as BLOCKED waiting for required checks that never fire.
               - '.github/workflows/**'
               - '.github/test-floors.json'
+              - '.github/flake-quarantine.json'
+              - '.github/scripts/flake-ledger.mjs'
+              - '.coverage-thresholds.json'
+              - 'scripts/check-coverage.sh'
             ui:
               - 'saiku-ui/**'
+              - '.github/flake-quarantine.json'
+              - '.github/scripts/flake-ledger.mjs'
               - '.github/workflows/**'
             docs:
               - 'docs/**'
               - 'README.md'
               - 'CLAUDE.md'
+            # Google Sheets add-on (spiculedata/saiku#1436). Pure-logic unit
+            # tests under `node --test`; no npm install needed (no deps).
+            sheets:
+              - 'integrations/google-sheets/**'
+            # Acceptance specs (docs/acceptance-specs.md). `acceptance` is any change under acceptance/ (a
+            # spec added, edited or deleted, or its helper files): the specs must run again. `specs` is a
+            # spec.json ADDED or MODIFIED, which is exactly what base-check treats as "changed" (a deletion
+            # leaves nothing to prove), so the `ci` rollup can insist the red-on-base proof really ran.
+            acceptance:
+              - 'acceptance/**'
+            specs:
+              - added|modified: 'acceptance/*/spec.json'
 
   build:
     name: build (JDK 22, ubuntu-latest)
     needs: changes
-    if: needs.changes.outputs.java == 'true' || github.event_name == 'push'
+    if: needs.changes.outputs.java == 'true' || github.event_name == 'push' || github.event_name == 'merge_group'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up JDK 22
-        uses: actions/setup-java@v6.0.0
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: "22"
@@ -94,11 +139,65 @@ jobs:
         run: ./scripts/check-licence-headers.sh
 
       - name: mvn verify
+        id: mvn
         # spotless:check is bound to the verify phase by the root pom's
         # <execution>, so `mvn verify` covers formatting too. A standalone
         # `mvn spotless:check` would fail on saiku-bom (a pom-only module
         # that doesn't have spotless plugin bound). Keep the single step.
-        run: mvn -B -ntp -DskipITs=false verify
+        #
+        # Flake policy (docs/ci-flakes.md). Surefire/Failsafe re-run a failing test
+        # once in-process (rerunFailingTestsCount=1) and write the evidence into the
+        # report (<flakyFailure>); test failures do not stop the reactor
+        # (maven.test.failure.ignore) so every module's tests run and the verdict step
+        # below sees them all. The exit code is captured, not propagated: the verdict
+        # step is what fails this job, and it fails it for ANY non-zero exit here
+        # (compile error, spotless, dependency resolution, a lost runner), so nothing is
+        # swallowed. (A step that fails with continue-on-error would still print the
+        # runner's `Process completed with exit code` trailer, which ci-feedback.mjs
+        # reads as "the step that failed the job"; capturing the code keeps that true.)
+        run: |
+          set +e
+          mvn -B -ntp -DskipITs=false \
+            -Dmaven.test.failure.ignore=true \
+            -Dsurefire.rerunFailingTestsCount=1 \
+            -Dfailsafe.rerunFailingTestsCount=1 \
+            verify 2>&1 | tee "$RUNNER_TEMP/mvn.log"
+          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Flake policy - Maven verdict
+        if: always() && steps.mvn.outputs.exit_code != ''
+        env:
+          MVN_EXIT_CODE: ${{ steps.mvn.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+          sources=$(find . -type d \( -path '*/target/surefire-reports' -o -path '*/target/failsafe-reports' \) | sort)
+          flags=(--require-results)
+          # `|| true`: under `set -e` a false test would abort the step.
+          { [ "$MVN_EXIT_CODE" != 0 ] && flags+=(--build-failed); } || true
+          if [ "$MVN_EXIT_CODE" != 0 ]; then
+            # The real error is in the `mvn verify` step above, which did not fail (its exit
+            # code is captured). Repeat Maven's [ERROR] lines here, in the step that does
+            # fail, so ci-feedback.json finds the compile error / Spotless diff / failing
+            # goal instead of this step's bookkeeping.
+            echo "Maven exited $MVN_EXIT_CODE. Its [ERROR] lines, repeated from the mvn verify step:"
+            { grep -E '^\[ERROR\]' "$RUNNER_TEMP/mvn.log" || true; } | head -n 120
+          fi
+          mkdir -p flake-records
+          node .github/scripts/flake-ledger.mjs record --source "$sources" "${flags[@]}" \
+            --signal "maven / verify" \
+            --branch "$GITHUB_REF_NAME" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --out flake-records/maven.json
+
+      - name: Upload flake record
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: flake-records-maven
+          path: flake-records/
+          retention-days: 30
+          if-no-files-found: ignore
 
       - name: Verify test floors (saiku#8)
         # Fails if any module's surefire test count drops below the floor
@@ -125,18 +224,41 @@ jobs:
           done < <(jq -r '.modules | to_entries[] | "\(.key)\t\(.value)"' "$FLOORS")
           exit "$fail"
 
+      - name: Verify coverage floors (saiku#2011)
+        # Fails if any module's JaCoCo line coverage drops below its floor in
+        # .coverage-thresholds.json. Reads the jacoco.csv reports mvn verify
+        # just wrote. Raise a floor explicitly when coverage goes up.
+        run: ./scripts/check-coverage.sh
+
+      # Headline coverage figure for the Hive ci-maintainer card and the README. Built
+      # here (read-only token) and published by coverage-badge.yml, which is the only
+      # place that can write the `badges` branch. Only on a push to development: a PR
+      # run has nothing to publish.
+      - name: Build coverage badge
+        if: github.event_name == 'push' && github.ref == 'refs/heads/development'
+        run: ./scripts/coverage-badge.sh "$RUNNER_TEMP/coverage-badge"
+
+      - name: Upload coverage badge
+        if: github.event_name == 'push' && github.ref == 'refs/heads/development'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-badge
+          path: ${{ runner.temp }}/coverage-badge
+          if-no-files-found: error
+          retention-days: 7
+
   ui:
-    name: ui (svelte-check + vitest + build)
+    name: ui (svelte-check + vitest + build + e2e)
     needs: changes
-    if: needs.changes.outputs.ui == 'true' || github.event_name == 'push'
-    runs-on: ubuntu-latest
+    if: needs.changes.outputs.ui == 'true' || github.event_name == 'push' || github.event_name == 'merge_group'
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: saiku-ui
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up Node 24
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
           cache: npm
@@ -145,8 +267,66 @@ jobs:
         run: npm ci
       - name: svelte-check + tsc
         run: npm run check
-      - name: vitest
-        run: npm test -- --run
+      # Flake policy for vitest (docs/ci-flakes.md): attempt 1, then ONE re-run of only
+      # the failing files; the verdict step needs the id to appear in attempt 2's results
+      # before it calls a failure a flake. `npm test` (vitest + lint) is split so a lint
+      # error is its own step with its own output.
+      - name: vitest (attempt 1)
+        id: vitest1
+        run: |
+          mkdir -p "$RUNNER_TEMP/flake"
+          set +e
+          npx vitest run --reporter=default --reporter=junit --outputFile.junit="$RUNNER_TEMP/flake/vitest-attempt1.xml"
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Flake policy - choose the vitest files worth retrying
+        if: steps.vitest1.outputs.exit_code != '0'
+        run: |
+          node ../.github/scripts/flake-ledger.mjs select \
+            --source "$RUNNER_TEMP/flake/vitest-attempt1.xml" --as-file \
+            --out "$RUNNER_TEMP/flake/vitest-retry.txt"
+
+      - name: vitest (retry the failing files once)
+        id: vitest2
+        if: steps.vitest1.outputs.exit_code != '0'
+        run: |
+          mapfile -t files < <(grep -v '^$' "$RUNNER_TEMP/flake/vitest-retry.txt" || true)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "Nothing to retry: no failing test file was found in the results, or every failure is quarantined (.github/flake-quarantine.json)."
+            echo "exit_code=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Retrying once: ${files[*]}"
+          set +e
+          npx vitest run "${files[@]}" --reporter=default --reporter=junit --outputFile.junit="$RUNNER_TEMP/flake/vitest-attempt2.xml"
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Flake policy - vitest verdict
+        if: always() && steps.vitest1.outputs.exit_code != ''
+        env:
+          FIRST_RUN_EXIT: ${{ steps.vitest1.outputs.exit_code }}
+          RETRY_RUN_EXIT: ${{ steps.vitest2.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+          args=(--source1 "$RUNNER_TEMP/flake/vitest-attempt1.xml" --require-results)
+          if [ -f "$RUNNER_TEMP/flake/vitest-attempt2.xml" ]; then
+            args+=(--source2 "$RUNNER_TEMP/flake/vitest-attempt2.xml")
+          fi
+          flags=()
+          # `|| true`: under `set -e` a false test would abort the step.
+          { [ "$FIRST_RUN_EXIT" != 0 ] && flags+=(--attempt1-failed); } || true
+          { [ -n "$RETRY_RUN_EXIT" ] && [ "$RETRY_RUN_EXIT" != 0 ] && flags+=(--attempt2-failed); } || true
+          mkdir -p ../flake-records
+          node ../.github/scripts/flake-ledger.mjs record "${args[@]}" "${flags[@]}" \
+            --signal "ui / vitest" \
+            --branch "$GITHUB_REF_NAME" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --out ../flake-records/ui-vitest.json
+
+      - name: Lint (prettier, token rules, eslint)
+        run: npm run lint
+
       # Run the production build in the fast UI lane so a broken `vite build`
       # fails here instead of only surfacing later inside the heavier Maven
       # jobs (saiku-webapp's frontend-maven-plugin runs the same `npm run
@@ -154,20 +334,126 @@ jobs:
       # build's fault, not a type/test failure. (saiku#1551)
       - name: Production build
         run: npm run build
+      # saiku#2000: `npm run build` ends with `npm run sbom`, so the UI
+      # CycloneDX SBOM the release publishes is produced right here. Assert
+      # it's a real, populated CycloneDX 1.6 document rather than trusting
+      # the tool's exit code alone — an empty or truncated SBOM is worse than
+      # none, because a scanner treats it as "scanned, nothing found".
+      - name: Verify UI SBOM is well-formed
+        run: |
+          set -euo pipefail
+          SBOM=sbom/saiku-ui-sbom.cdx.json
+          if [ ! -s "$SBOM" ]; then
+            echo "::error::$SBOM missing or empty — the release would ship an unusable UI SBOM"
+            exit 1
+          fi
+          node -e '
+            const fs = require("fs");
+            const bom = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            if (bom.bomFormat !== "CycloneDX") throw new Error("not a CycloneDX document");
+            if (bom.specVersion !== "1.6") throw new Error("specVersion is " + bom.specVersion);
+            const names = (bom.components || []).map((c) => c.name);
+            if (names.length < 20) throw new Error("only " + names.length + " components");
+            for (const must of ["monaco-editor", "echarts", "apache-arrow", "saiku-design-system"]) {
+              if (!names.includes(must)) throw new Error("expected component missing: " + must);
+            }
+            console.log("UI SBOM OK: " + names.length + " components");
+          ' "$SBOM"
+      # Mocked-backend Playwright suite (saiku#2009). Reuses the build above:
+      # with CI set, playwright.config.ts's webServer only runs `vite preview`.
+      # Live specs (*.live.spec.ts) stay excluded — they need a running launcher.
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+      # One in-process retry (playwright.config.ts: retries: 1) and the JSON reporter, whose
+      # per-test `status: "flaky"` is Playwright's own positive evidence of fail-then-pass.
+      - name: E2E (Playwright, mocked backend)
+        id: e2e
+        run: |
+          set +e
+          npm run e2e
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Flake policy - Playwright verdict
+        if: always() && steps.e2e.outputs.exit_code != ''
+        env:
+          E2E_EXIT_CODE: ${{ steps.e2e.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+          flags=(--require-results)
+          { [ "$E2E_EXIT_CODE" != 0 ] && flags+=(--attempt1-failed); } || true
+          mkdir -p ../flake-records
+          node ../.github/scripts/flake-ledger.mjs record --source test-results/flake-report.json "${flags[@]}" \
+            --signal "ui / e2e" \
+            --branch "$GITHUB_REF_NAME" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --out ../flake-records/ui-e2e.json
+
+      - name: Upload flake records
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: flake-records-ui
+          path: flake-records/
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Upload Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playwright-test-results
+          path: saiku-ui/test-results/
+          retention-days: 7
+
+  # Google Sheets add-on (spiculedata/saiku#1436). The add-on's request-shaping
+  # and write-planning logic is deliberately Apps-Script-free so it can be
+  # tested with the built-in Node test runner — no package.json, no install
+  # step, nothing to lock.
+  sheets:
+    name: sheets (add-on unit tests)
+    needs: changes
+    if: needs.changes.outputs.sheets == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+      - name: Add-on unit tests
+        run: node --test integrations/google-sheets/test/*.test.js
+
+  # Demo-deploy script (deploy/demo/): shellcheck + the fake-docker test suite.
+  # No build tooling, no docker daemon, no network - cheap enough for every PR and
+  # push, so it is not path-filtered (a skipped required check would hide a break).
+  demo-deploy:
+    name: demo deploy script (shellcheck + tests)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: shellcheck
+        run: shellcheck -x -P SCRIPTDIR deploy/demo/saiku-demo-deploy.sh deploy/demo/saiku-demo-reset.sh deploy/demo/tests/run.sh deploy/demo/tests/reset-test.sh deploy/demo/tests/shims/*
+      - name: Run deploy script tests
+        run: bash deploy/demo/tests/run.sh
+      - name: Run nightly reset script tests
+        run: bash deploy/demo/tests/reset-test.sh
 
   dist:
     name: bundle (saiku-dist zip)
     needs: changes
-    if: needs.changes.outputs.java == 'true' || github.event_name == 'push'
+    if: needs.changes.outputs.java == 'true' || github.event_name == 'push' || github.event_name == 'merge_group'
     runs-on: ubuntu-latest
     # Independent of build — give people a downloadable bundle even if a slow
     # integration test in `build` is still running. CI passing the bundle ⇔
     # the launcher fat-JAR is reproducible from this commit. Skipped on
     # UI-only PRs since the launcher hasn't changed.
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up JDK 22
-        uses: actions/setup-java@v6.0.0
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: "22"
@@ -213,12 +499,238 @@ jobs:
           zip -r "$STAGE.zip" "$STAGE"
           ls -la "$STAGE.zip"
       - name: Upload distribution artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: saiku-dist-${{ steps.ver.outputs.version }}
           path: saiku-dist-${{ steps.ver.outputs.version }}.zip
           if-no-files-found: error
           retention-days: 30
+
+  # CI-script tests (python unittest): the GHCR tag-retention policy and the
+  # guard that every hex-looking `uses:` pin is a full 40-char SHA. No build
+  # tooling, so it is cheap enough to run on every PR and push.
+  scripts:
+    name: ci scripts (python unittest)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Run .github/scripts tests
+        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v
+
+  # The CI tooling is logic someone can break silently (the flake policy, the failure
+  # feedback, the acceptance gate), so its unit tests run inside the gate. Hermetic: no
+  # network, no secrets. Always runs (it takes seconds); a skip would hide a broken gate.
+  flake-policy:
+    name: ci / flake-policy tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+      - name: CI tooling unit tests (flake policy, ci-feedback, acceptance)
+        run: node --test ".github/scripts/*.test.mjs"
+      - name: Quarantine entries are valid and unexpired
+        run: node .github/scripts/flake-ledger.mjs quarantine --check
+
+  # The `acceptance/<issue>/` convention: a PR that claims to close issue N (at or above
+  # the cutoff) must ship acceptance/N/spec.json, or carry the `acceptance-waived` label on a
+  # docs-or-tests-only change. The logic is spiculedata/acceptance-spec's convention.yml, called
+  # at a full commit SHA (same pin as run-specs and spec-first below; bump all three, see docs/acceptance-specs.md).
+  # The PR body and labels are untrusted text: upstream passes them through env:, never by
+  # interpolation into a script. Pull requests only (a push has no PR body): `skip-outside-pull-request`
+  # makes the called job skip itself on push / merge_group. Do not replace it with a job-level condition here,
+  # a skipped calling job reports a bare check named `ci` that could shadow the required aggregate.
+  #
+  # CHECK NAME. A called job reads `<caller job name> / <called job name>`; the called job is
+  # `acceptance convention`, so the caller's `name: ci` renders the required-by-the-rollup name
+  # `ci / acceptance convention` exactly as before. The caller job id stays `acceptance-convention`
+  # (the `ci` rollup below keys on it); only its display name is `ci`.
+  acceptance-convention:
+    name: ci
+    uses: spiculedata/acceptance-spec/.github/workflows/convention.yml@e1ee02261986f510ca3be97f09b07546dd0614be
+    with:
+      skip-outside-pull-request: true
+      mode: enforce
+      node-version: "24"
+      # The rollout cutoff: only issues numbered at or above it owe a spec. Unset (or not a number)
+      # means nothing is enforced yet. Still read from the repository variable (currently 2181).
+      enforce-from-issue: ${{ vars.ACCEPTANCE_ENFORCE_FROM_ISSUE }}
+      # Saiku's exact waiver list (JavaScript regular expressions, one per line). It REPLACES the shared
+      # built-in list, which also waives any e2e/ or test/ directory. Equivalent to the former local list
+      # (acceptance-spec.mjs WAIVABLE_PATHS); `\.md` was case-insensitive, hence [mM][dD].
+      # Guarded by .github/scripts/ci-wiring.test.mjs.
+      waivable-paths: |
+        ^docs/
+        \.[mM][dD]$
+        ^\.github/ISSUE_TEMPLATE/
+        (^|/)src/test/
+        (^|/)__tests__/
+        ^saiku-ui/e2e/
+        ^tests/
+        \.(test|spec)\.[cm]?[jt]sx?$
+        \.e2e\.[cm]?[jt]s$
+
+  # ACCEPTANCE SPECS ARE PART OF THE GATE. The two shared workflows below used to live in a separate acceptance.yml and
+  # were visible but not required. They are called from here so that the one required check, `ci`, waits for
+  # them (see the `ci` job: it reads their RESULT and their VERDICT output). Check names are unchanged:
+  # a called job reads `<caller job name> / <called job name>`. Pin, trust model and how to bump:
+  # docs/acceptance-specs.md.
+  #
+  # SECURITY. Same as before the move: `pull_request` (never `pull_request_target`), read-only token. The
+  # runner executes the PR's own spec files, which is the point. The launcher listens on loopback only and
+  # its login is the public demo pair admin/admin (passed as workflow inputs of that name only because that is how a reusable
+  # workflow takes them; GitHub masks the word "admin" in these logs). The one real credential is
+  # GH_PACKAGES_TOKEN, handed over as BUILD_TOKEN; it is withheld from fork PRs, which then run only the specs
+  # that need no server (api specs are recorded `not-run`, never `pass`, and `ci` treats `not-run` as red).
+  #
+  # Do NOT give these callers an `if:` that is true on a merge_group: the shared workflows refuse every event
+  # but pull_request. A skipped caller reports a bare check named `acceptance`, which shadows nothing required.
+  #
+  # Builds the launcher fat JAR from the PR head, starts it on loopback with the FoodMart demo and runs
+  # every spec against it. Check name: `acceptance / acceptance specs`.
+  run-specs:
+    name: acceptance
+    needs: changes
+    # pull_request only: the shared workflows refuse every other event (the merge queue re-runs the build and
+    # tests, not the specs; see docs/acceptance-specs.md). Skipped when nothing the specs can observe changed:
+    # product code, the UI bundled into the launcher, workflows (all in the `java`/`ui` filters), or acceptance/.
+    if: >-
+      github.event_name == 'pull_request' && (
+      needs.changes.outputs.java == 'true' ||
+      needs.changes.outputs.ui == 'true' ||
+      needs.changes.outputs.acceptance == 'true')
+    uses: spiculedata/acceptance-spec/.github/workflows/run-specs.yml@e1ee02261986f510ca3be97f09b07546dd0614be
+    with:
+      mode: enforce
+      node-version: "24"
+      java-version: "22"
+      java-cache: maven
+      # Maven cold build ~5 min + boot ~1 min + specs (seconds).
+      timeout-minutes: 25
+      skip-without-build-token: true
+      base-url: http://127.0.0.1:18080
+      # Anonymous endpoint, answers 200 once the launcher is up. Bounded wait of 5 minutes.
+      ready-url: http://127.0.0.1:18080/rest/saiku/info
+      ready-timeout: 300
+      base-path: /rest/saiku/api
+      session-path: /rest/saiku/session
+      # BUILD_TOKEN (= GH_PACKAGES_TOKEN) and GITHUB_ACTOR reach this command; same settings.xml as ci.yml's
+      # `build` and `dist` jobs. The fat JAR is copied to a fixed name so that starting, caching and
+      # (if ever turned on) sharing it need no glob.
+      build-command: |
+        mkdir -p ~/.m2
+        cat > ~/.m2/settings.xml <<EOF
+        <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+          <servers>
+            <server><id>github-mondrian-saiku</id><username>${GITHUB_ACTOR}</username><password>${BUILD_TOKEN}</password></server>
+            <server><id>github-olap4j</id><username>${GITHUB_ACTOR}</username><password>${BUILD_TOKEN}</password></server>
+            <server><id>github-olap4j-xmlaserver</id><username>${GITHUB_ACTOR}</username><password>${BUILD_TOKEN}</password></server>
+            <server><id>github-saiku-query</id><username>${GITHUB_ACTOR}</username><password>${BUILD_TOKEN}</password></server>
+            <server><id>github-ossie</id><username>${GITHUB_ACTOR}</username><password>${BUILD_TOKEN}</password></server>
+          </servers>
+        </settings>
+        EOF
+        mvn -B -ntp -pl saiku-launcher -am -Dmaven.test.skip=true package
+        JAR=$(ls saiku-launcher/target/saiku-*.jar | grep -E '/saiku-[0-9][^/]*\.jar$' | grep -Ev -- '-(sources|test-sources|tests)\.jar$' | head -n1)
+        echo "Launcher: $JAR"
+        cp "$JAR" acceptance-launcher.jar
+      # SAIKU_DEMO=true seeds FoodMart, the admin/admin login and the relaxed AI policy, exactly like
+      # demo.saiku.bi. The shared start script detaches it (setsid) so it outlives the step, not the job.
+      start-command: |
+        mkdir -p "$RUNNER_TEMP/saiku-home"
+        SAIKU_DEMO=true SAIKU_TELEMETRY=off exec java -XX:+ExitOnOutOfMemoryError -jar acceptance-launcher.jar serve \
+          --host 127.0.0.1 --port 18080 --home "$RUNNER_TEMP/saiku-home"
+    secrets:
+      BUILD_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+      ACCEPTANCE_USER: admin
+      ACCEPTANCE_PASSWORD: admin
+
+  # Runs ONLY when the PR adds or changes an acceptance/<issue>/spec.json: that spec must FAIL on the base
+  # branch's launcher and PASS on the PR's. Self-contained (builds and runs both sides), so it does not wait
+  # for `run-specs`. The base launcher jar is meant to be cached on the base SHA (see base-cache-paths below).
+  # Check names: `acceptance / detect changed specs`, `acceptance / specs on head`,
+  # `acceptance / specs on base`, `acceptance / spec fails on base`. A human-applied `spec-already-green`
+  # label excuses a spec that legitimately passes on base.
+  spec-first:
+    name: acceptance
+    needs: changes
+    # Not path-filtered: its own `detect changed specs` job (seconds) decides whether there is anything to
+    # prove, and the rollup cross-checks that against the `specs` filter above.
+    if: github.event_name == 'pull_request'
+    uses: spiculedata/acceptance-spec/.github/workflows/base-check.yml@e1ee02261986f510ca3be97f09b07546dd0614be
+    with:
+      mode: enforce
+      node-version: "24"
+      java-version: "22"
+      java-cache: maven
+      timeout-minutes: 25
+      skip-without-build-token: true
+      base-url: http://127.0.0.1:18080
+      ready-url: http://127.0.0.1:18080/rest/saiku/info
+      ready-timeout: 300
+      base-path: /rest/saiku/api
+      session-path: /rest/saiku/session
+      # Cache the base launcher jar on the base SHA. Works since acceptance-spec#4 (380780e): before that the
+      # cache path built for working-directory "." was rejected by actions/cache and nothing was saved.
+      base-cache-paths: |
+        acceptance-launcher.jar
+      # Keep identical to run-specs above (guarded by .github/scripts/acceptance-caller.test.mjs).
+      build-command: |
+        mkdir -p ~/.m2
+        cat > ~/.m2/settings.xml <<EOF
+        <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+          <servers>
+            <server><id>github-mondrian-saiku</id><username>${GITHUB_ACTOR}</username><password>${BUILD_TOKEN}</password></server>
+            <server><id>github-olap4j</id><username>${GITHUB_ACTOR}</username><password>${BUILD_TOKEN}</password></server>
+            <server><id>github-olap4j-xmlaserver</id><username>${GITHUB_ACTOR}</username><password>${BUILD_TOKEN}</password></server>
+            <server><id>github-saiku-query</id><username>${GITHUB_ACTOR}</username><password>${BUILD_TOKEN}</password></server>
+            <server><id>github-ossie</id><username>${GITHUB_ACTOR}</username><password>${BUILD_TOKEN}</password></server>
+          </servers>
+        </settings>
+        EOF
+        mvn -B -ntp -pl saiku-launcher -am -Dmaven.test.skip=true package
+        JAR=$(ls saiku-launcher/target/saiku-*.jar | grep -E '/saiku-[0-9][^/]*\.jar$' | grep -Ev -- '-(sources|test-sources|tests)\.jar$' | head -n1)
+        echo "Launcher: $JAR"
+        cp "$JAR" acceptance-launcher.jar
+      start-command: |
+        mkdir -p "$RUNNER_TEMP/saiku-home"
+        SAIKU_DEMO=true SAIKU_TELEMETRY=off exec java -XX:+ExitOnOutOfMemoryError -jar acceptance-launcher.jar serve \
+          --host 127.0.0.1 --port 18080 --home "$RUNNER_TEMP/saiku-home"
+    secrets:
+      BUILD_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+      ACCEPTANCE_USER: admin
+      ACCEPTANCE_PASSWORD: admin
+
+  # Keeps the check name `acceptance / specs` alive (the hive label watcher reads it). It is red exactly when
+  # `ci` would be red because of `run-specs`: the call failed or was cancelled, or its verdict is `fail` or
+  # `not-run` (a spec that could not run is never a pass). Skipped (merge queue, push, or a PR that changes
+  # nothing the specs observe) is fine.
+  specs:
+    name: acceptance / specs
+    needs: [run-specs]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Same result as the called run-specs workflow
+        env:
+          RUN_SPECS_RESULT: ${{ needs.run-specs.result }}
+          RUN_SPECS_VERDICT: ${{ needs.run-specs.outputs.verdict }}
+        run: |
+          echo "acceptance specs concluded: $RUN_SPECS_RESULT (verdict: ${RUN_SPECS_VERDICT:-none})"
+          case "$RUN_SPECS_RESULT" in
+            skipped) exit 0 ;;
+            success) ;;
+            *) echo "::error::acceptance specs concluded $RUN_SPECS_RESULT (see the 'acceptance / acceptance specs' check)"; exit 1 ;;
+          esac
+          case "$RUN_SPECS_VERDICT" in
+            pass|skipped) ;;
+            *) echo "::error::acceptance specs verdict is '$RUN_SPECS_VERDICT': a spec failed or could not run, which is never a pass"; exit 1 ;;
+          esac
 
   # Single aggregator status check. Branch protection requires only `ci`,
   # which makes the rule stable across:
@@ -229,9 +741,16 @@ jobs:
   # `if: always()` runs the gate regardless of upstream outcomes; the
   # script then fails if any upstream reports anything other than
   # success/skipped — so a real build failure still blocks the merge.
+  #
+  # ACCEPTANCE. A RESULT of success/skipped is not enough for the three acceptance jobs: the shared workflows
+  # exit 0 for a spec that was `not-run` (a fork PR without the build token) and for a spec that passes on the
+  # base build when the PR is excused. So the second step reads their VERDICT outputs and decides explicitly
+  # (rules in docs/acceptance-specs.md, tested by .github/scripts/acceptance-gate.test.mjs, which runs this
+  # very step). `skipped` is only accepted where it is legitimate: on push / merge_group, or on a PR that
+  # changes nothing the specs observe.
   ci:
     name: ci
-    needs: [changes, build, ui, dist]
+    needs: [changes, build, ui, sheets, dist, scripts, flake-policy, acceptance-convention, demo-deploy, run-specs, spec-first, specs]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -243,7 +762,15 @@ jobs:
             "changes=${{ needs.changes.result }}" \
             "build=${{ needs.build.result }}" \
             "ui=${{ needs.ui.result }}" \
-            "dist=${{ needs.dist.result }}"; do
+            "sheets=${{ needs.sheets.result }}" \
+            "dist=${{ needs.dist.result }}" \
+            "scripts=${{ needs.scripts.result }}" \
+            "flake-policy=${{ needs.flake-policy.result }}" \
+            "acceptance-convention=${{ needs.acceptance-convention.result }}" \
+            "demo-deploy=${{ needs.demo-deploy.result }}" \
+            "run-specs=${{ needs.run-specs.result }}" \
+            "spec-first=${{ needs.spec-first.result }}" \
+            "specs=${{ needs.specs.result }}"; do
             name="${entry%%=*}"
             result="${entry#*=}"
             case "$result" in
@@ -251,4 +778,56 @@ jobs:
               *) echo "::error::$name=$result"; fail=1 ;;
             esac
           done
+          exit "$fail"
+
+      - name: Acceptance gate (verdicts, not just results)
+        if: always()
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CHANGED_JAVA: ${{ needs.changes.outputs.java }}
+          CHANGED_UI: ${{ needs.changes.outputs.ui }}
+          CHANGED_ACCEPTANCE: ${{ needs.changes.outputs.acceptance }}
+          CHANGED_SPECS: ${{ needs.changes.outputs.specs }}
+          RUN_SPECS_RESULT: ${{ needs.run-specs.result }}
+          RUN_SPECS_VERDICT: ${{ needs.run-specs.outputs.verdict }}
+          SPEC_FIRST_RESULT: ${{ needs.spec-first.result }}
+          SPEC_FIRST_VERDICT: ${{ needs.spec-first.outputs.verdict }}
+        run: |
+          set -uo pipefail
+          fail=0
+          bad() { echo "::error::$*"; fail=1; }
+
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            # push / merge_group: the shared workflows only run on pull_request, so there is nothing to read.
+            echo "ok: acceptance is a pull_request check (event: $EVENT_NAME); run-specs=$RUN_SPECS_RESULT spec-first=$SPEC_FIRST_RESULT"
+            exit 0
+          fi
+
+          # 1. Does the PR change anything the specs can observe? Then run-specs MUST have run and be green.
+          must_run=false
+          for v in "$CHANGED_JAVA" "$CHANGED_UI" "$CHANGED_ACCEPTANCE" "$CHANGED_SPECS"; do
+            [ "$v" = "true" ] && must_run=true
+          done
+          if [ "$must_run" = "true" ]; then
+            [ "$RUN_SPECS_RESULT" = "success" ] || bad "acceptance specs must run on this PR but concluded '$RUN_SPECS_RESULT'"
+            case "$RUN_SPECS_VERDICT" in
+              pass|skipped) echo "ok: acceptance specs verdict=$RUN_SPECS_VERDICT" ;;
+              *) bad "acceptance specs verdict is '${RUN_SPECS_VERDICT:-none}': a spec failed or could not run (not-run is never a pass)" ;;
+            esac
+          else
+            echo "ok: no product, UI, workflow or acceptance/ change, so acceptance specs are not re-run (result=$RUN_SPECS_RESULT)"
+          fi
+
+          # 2. Spec-first proof. Always called on a PR; its own detect step decides if there is anything to prove.
+          [ "$SPEC_FIRST_RESULT" = "success" ] || bad "acceptance spec-first proof concluded '$SPEC_FIRST_RESULT'"
+          case "$SPEC_FIRST_VERDICT" in
+            pass|red-on-base-green-on-head) echo "ok: spec-first verdict=$SPEC_FIRST_VERDICT" ;;
+            skipped)
+              if [ "$CHANGED_SPECS" = "true" ]; then
+                bad "this PR adds or changes an acceptance/<issue>/spec.json but the red-on-base proof reports 'skipped'; it did not run"
+              else
+                echo "ok: no spec changed, nothing to prove on base"
+              fi ;;
+            *) bad "acceptance spec-first verdict is '${SPEC_FIRST_VERDICT:-none}' (passes-on-base, fail and not-run are all red; only a human-applied spec-already-green label excuses a base-green spec)" ;;
+          esac
           exit "$fail"

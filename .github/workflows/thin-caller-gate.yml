@@ -1,0 +1,36 @@
+name: thin-caller-gate
+
+# Static drift check of Saiku's acceptance-spec wiring (docs/acceptance-specs.md, "Guards"). It is
+# deliberately NOT part of ci.yml: it must not feed the `ci` rollup, shadow the required `ci` check, or make
+# a docs-only PR wait. It runs on pull_request only (the gate refuses every other event) and always reports:
+# a PR that touches neither .github/workflows/ nor acceptance/ gets a clean `skipped` verdict without scanning.
+#
+# REPORT mode: findings are warnings and the job stays green; read the `verdict` in the job summary. It is
+# not a required check. Switch to `mode: enforce` (and only then consider requiring
+# `thin-caller-gate / thin-caller gate`) after it has stayed clean for a while.
+#
+# PIN. Same full commit SHA as the three callers in ci.yml (the gate itself fails the PR if they differ;
+# .github/scripts/acceptance-caller.test.mjs also checks this file). Bump all of them together.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: thin-caller-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  thin-caller-gate:
+    uses: spiculedata/acceptance-spec/.github/workflows/thin-caller-gate.yml@e1ee02261986f510ca3be97f09b07546dd0614be
+    with:
+      mode: report
+      node-version: "24"
+      # Local copies of shared scripts that Saiku keeps ON PURPOSE. CI does not run either; both stay because
+      # acceptance/2172/check.mjs imports them and asserts the ci-feedback.json `acceptance` key, which the
+      # shared workflows do not write (docs/acceptance-specs.md, "What is still local"). Remove an entry
+      # when its file goes; do not add one without a reason.
+      allow-local-scripts: |
+        .github/scripts/acceptance-runner.mjs
+        .github/scripts/acceptance-spec.mjs

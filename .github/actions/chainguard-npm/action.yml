@@ -1,0 +1,62 @@
+name: chainguard-npm
+description: >-
+  Point npm at Chainguard Libraries for JavaScript for the rest of the job (saiku#2463): installs
+  chainctl, writes a temporary user-level .npmrc outside the repo, and appends Chainguard's
+  integrity hashes to the runner's copy of the lockfile. Nothing is committed.
+
+inputs:
+  identity-id:
+    description: Chainguard Libraries JavaScript pull-token username (CHAINGUARD_JS_IDENTITY_ID).
+    required: true
+  token:
+    description: Chainguard Libraries JavaScript pull-token password (CHAINGUARD_JS_TOKEN).
+    required: true
+  lockfile-dir:
+    description: Directory holding the package-lock.json to update.
+    required: false
+    default: saiku-ui
+  skip:
+    description: >-
+      "true" = emergency bypass. Leaves npm on registry.npmjs.org and logs a warning. A maintainer
+      must choose this deliberately (docs/chainguard-libraries.md).
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Chainguard bypass warning
+      if: inputs.skip == 'true'
+      shell: bash
+      run: |
+        echo "::warning title=Chainguard Libraries BYPASSED::npm resolves directly from registry.npmjs.org. Packages are NOT Chainguard-built or malware-gated and the 7-day cooldown does NOT apply. Use only for an emergency release (docs/chainguard-libraries.md)."
+
+    - name: Install chainctl
+      if: inputs.skip != 'true'
+      uses: chainguard-dev/setup-chainctl@bfe7503a12660737d9d66d02d2610a399d804316 # v0.6.0
+      with:
+        version: 0.2.407 # no identity: only installs (checksum-verified); we authenticate with the pull token below
+
+    - name: Write temporary .npmrc (Chainguard registry)
+      if: inputs.skip != 'true'
+      shell: bash
+      env:
+        CHAINGUARD_JS_IDENTITY_ID: ${{ inputs.identity-id }}
+        CHAINGUARD_JS_TOKEN: ${{ inputs.token }}
+      run: bash "${GITHUB_ACTION_PATH}/../../../scripts/chainguard/write-npmrc.sh"
+
+    # Chainguard rebuilds packages from source, so their tarball hashes differ from the npmjs hashes
+    # in package-lock.json and `npm ci` would fail with EINTEGRITY. `update-hashes` APPENDS the
+    # Chainguard hash next to the upstream one (npm accepts either) in this runner's copy only.
+    # Packages Chainguard has not built keep their upstream hash and are served by Chainguard's
+    # upstream fallback (malware scan + cooldown) when the entitlement allows it.
+    - name: Append Chainguard hashes to the runner's lockfile
+      if: inputs.skip != 'true'
+      shell: bash
+      working-directory: ${{ inputs.lockfile-dir }}
+      env:
+        CHAINCTL_REGISTRY_USERNAME: ${{ inputs.identity-id }}
+        CHAINCTL_REGISTRY_PASSWORD: ${{ inputs.token }}
+      run: |
+        set -euo pipefail
+        chainctl libraries update-hashes --ecosystem js package-lock.json

@@ -1,0 +1,57 @@
+name: ghcr / per-PR tag retention
+
+# Retention for the per-PR image tags docker.yml pushes to
+# ghcr.io/spiculedata/saiku: `pr-<n>` and the bare 7-hex head SHA.
+# Policy and safety rules live in .github/scripts/ghcr_tag_retention.py:
+#   - only `pr-<n>` (14d) and `<hex sha>` (30d) tags are ever eligible;
+#   - a version carrying ANY other tag (development, main, latest, 4.6.1,
+#     sha-<short>, ...) is never deleted;
+#   - the 10 most recently updated versions are always kept.
+#
+# DRY RUN BY DEFAULT. Deletion happens only when a manual run sets `apply`, or
+# a scheduled run finds the repo variable GHCR_RETENTION_APPLY == 'true'. Run a
+# few dry-run sweeps and read the log before setting that variable.
+#
+# --apply needs the package to grant this repo's GITHUB_TOKEN write access; if
+# it does not, the delete fails loudly (exit 1) and nothing is silently skipped.
+on:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Really delete expired tags (default: dry run)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ghcr-tag-retention
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    name: saiku
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # checkout
+      packages: write # delete package versions (only exercised with apply)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Fetch versions
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 .github/scripts/ghcr_tag_retention.py fetch --package saiku > versions.json
+
+      - name: Plan (and apply when enabled)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLY: ${{ (github.event_name == 'workflow_dispatch' && inputs.apply) || (github.event_name == 'schedule' && vars.GHCR_RETENTION_APPLY == 'true') }}
+        run: |
+          flags=()
+          [ "$APPLY" = "true" ] && flags+=(--apply)
+          python3 .github/scripts/ghcr_tag_retention.py plan \
+            --package saiku --versions versions.json "${flags[@]}"

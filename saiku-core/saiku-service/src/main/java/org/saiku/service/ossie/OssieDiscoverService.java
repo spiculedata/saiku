@@ -172,10 +172,25 @@ public class OssieDiscoverService {
         d.setDescription(src.getDescription());
         d.setPrimaryKey(new ArrayList<>(src.getPrimaryKey()));
         d.setCustomExtensions(projectCustomExtensions(src.getCustomExtensions()));
+        applyWellKnownExtensionsToDataset(d, src.getCustomExtensions());
         for (Field f : src.getFields()) {
             d.getFields().add(projectField(f));
         }
         return d;
+    }
+
+    /**
+     * Overlay the {@code saiku.roles.row_predicates} well-known (saiku#1393) onto a projected
+     * dataset. Absent the extension, the dataset carries no row-level-security predicates.
+     */
+    private static void applyWellKnownExtensionsToDataset(OssieModelDto.Dataset d, List<CustomExtension> src) {
+        SaikuWellKnownExtensions.Parsed w = SaikuWellKnownExtensions.read(src);
+        if (w.isEmpty() || w.roles() == null) return;
+        List<OssieModelDto.RowPredicate> predicates = new ArrayList<>();
+        for (SaikuWellKnownExtensions.Roles.RowPredicate rp : w.roles().rowPredicates()) {
+            predicates.add(new OssieModelDto.RowPredicate(rp.role(), rp.expression()));
+        }
+        d.setRowPredicates(predicates);
     }
 
     private OssieModelDto.Field projectField(Field src) {

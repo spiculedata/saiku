@@ -1,0 +1,37 @@
+{
+  "issue": 2339,
+  "title": "Failed logins for one username do not lock a different username out from the same client address",
+  "kind": "api",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "a client address that has just failed to log in repeatedly as an unknown user",
+      "then": "that user is locked out (429) for the window"
+    },
+    {
+      "id": "C2",
+      "given": "the same client address, a different and valid user presenting the correct password",
+      "then": "the login is not blocked: the lockout is keyed on (client IP, username), not the IP alone"
+    }
+  ],
+  "steps": [
+    {
+      "name": "repeated bad Basic credentials for an unknown user trip the lockout for that user",
+      "criterion": "C1",
+      "request": {
+        "method": "GET",
+        "path": "/rest/saiku/info",
+        "headers": { "Authorization": "Basic bm9ib2R5Ondyb25n" }
+      },
+      "repeat": { "count": 12, "untilStatus": 429 },
+      "expect": { "status": 429 }
+    },
+    {
+      "name": "a valid user from the same address is still let in",
+      "criterion": "C2",
+      "auth": "basic",
+      "request": { "method": "GET", "path": "/rest/saiku/info" },
+      "expect": { "status": 200 }
+    }
+  ]
+}

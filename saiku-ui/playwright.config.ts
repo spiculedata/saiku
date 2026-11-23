@@ -15,9 +15,14 @@ export default defineConfig({
 	testDir: './e2e',
 	fullyParallel: true,
 	forbidOnly: !!process.env.CI,
-	retries: process.env.CI ? 2 : 0,
+	// One retry in CI, not two: a test that needs a second chance is a flake, and the flake
+	// policy (docs/ci-flakes.md) records it from the JSON report below. Playwright marks a
+	// fail-then-pass test `flaky` itself, which is the evidence the policy needs.
+	retries: process.env.CI ? 1 : 0,
 	workers: process.env.CI ? 1 : undefined,
-	reporter: process.env.CI ? 'list' : 'html',
+	reporter: process.env.CI
+		? [['list'], ['json', { outputFile: 'test-results/flake-report.json' }]]
+		: 'html',
 	// Ignore the live spec unless RUN_LIVE_E2E=1 is set. The live spec assumes a running
 	// launcher — we don't want CI to pick it up accidentally.
 	testIgnore: runLive ? undefined : /live\.spec\.ts$/,
@@ -36,13 +41,17 @@ export default defineConfig({
 	// Boot the vite preview server for the mocked path. `npm run preview` serves the built
 	// static output on :4173 — running against dev's :5173 works too but produces a lot of
 	// noise from HMR. Skip webServer entirely when RUN_LIVE_E2E=1 so we target the real
-	// launcher.
+	// launcher. In CI the workflow builds in its own step first (saiku#2009), so a build
+	// break fails there rather than eating this server-start timeout.
 	webServer: runLive
 		? undefined
 		: {
-				command: 'npm run build && npm run preview -- --port 4173 --host 127.0.0.1',
+				command:
+					process.env.CI || process.env.SAIKU_COVERAGE
+						? 'npm run preview -- --port 4173 --host 127.0.0.1'
+						: 'npm run build && npm run preview -- --port 4173 --host 127.0.0.1',
 				url: 'http://localhost:4173',
-				reuseExistingServer: !process.env.CI,
+				reuseExistingServer: !process.env.CI && !process.env.SAIKU_COVERAGE,
 				timeout: 180_000
 			}
 });

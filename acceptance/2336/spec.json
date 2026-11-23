@@ -1,0 +1,24 @@
+{
+  "issue": 2336,
+  "title": "The Tailscale client is pinned to a version and checksum, every uses: ref is a full commit SHA, and every workflow declares explicit permissions",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "the preview-host-access composite action",
+      "then": "it passes tailscale/github-action a concrete version (not latest) and a 64-hex sha256sum"
+    },
+    {
+      "id": "C2",
+      "given": "every uses: line in .github/workflows and .github/actions that is not a local or docker reference",
+      "then": "its ref is a full 40-character commit SHA (no tags or branches)"
+    },
+    {
+      "id": "C3",
+      "given": "every workflow file",
+      "then": "it declares a top-level permissions: block, so the repository default token scope is never inherited"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/spiculedata/saiku/blob/development/SECURITY.md
+    about: Please don't open a public issue — follow the private reporting process in SECURITY.md.
+  - name: Documentation
+    url: https://saiku.bi
+    about: Guides and reference for installing and using Saiku.

@@ -29,11 +29,21 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Owner-facing CRUD for dashboard share links (issue #941): mint, list, and
- * revoke. Everything here sits behind {@code isFullyAuthenticated()} — only a
- * logged-in user who can GRANT the target dashboard may mint a link for it, and
- * only the creator / an admin / someone who can still GRANT may revoke one. The
- * account-free guest VIEW path lives in {@link ShareViewResource}.
+ * Owner-facing CRUD for share links (issue #941, widened by issue #1108 to
+ * also cover notebooks): mint, list, and revoke. Everything here sits behind
+ * {@code isFullyAuthenticated()} — only a logged-in user who can GRANT the
+ * target dashboard or notebook may mint a link for it, and only the creator /
+ * an admin / someone who can still GRANT may revoke one. The account-free
+ * guest VIEW path lives in {@link ShareViewResource} (dashboards) and {@link
+ * org.saiku.web.rest.resources.share.NotebookShareViewResource} (notebooks).
+ *
+ * <p>{@code MintRequest.dashboardPath} and the {@link ShareToken#dashboardPath}
+ * it mints keep their #941 name for both kinds — it is simply "the shared
+ * repository path" — because {@link org.saiku.web.share.ShareTokenStore} and
+ * {@link org.saiku.web.security.share.ShareTokenAuthFilter} are already
+ * generic over what that path points at (see #1108's design note in {@link
+ * org.saiku.web.rest.resources.share.NotebookShareViewResource}); only the
+ * suffix check below and the viewer URL it returns are resource-kind-aware.
  */
 @Path("/saiku/share")
 public class ShareTokenResource {
@@ -68,7 +78,10 @@ public class ShareTokenResource {
     }
 
     public static class MintRequest {
+        /** Repository path of the resource to share — a {@code .saikudash}
+         *  dashboard or (issue #1108) a {@code .saikunb} notebook. */
         public String dashboardPath;
+
         public Integer ttlHours;
         public String label;
     }
@@ -82,8 +95,9 @@ public class ShareTokenResource {
             return badRequest("dashboardPath", "dashboardPath required");
         }
         String path = body.dashboardPath;
-        if (!path.endsWith(".saikudash")) {
-            return badRequest("dashboardPath", "must reference a .saikudash dashboard");
+        boolean isNotebook = path.endsWith(".saikunb");
+        if (!path.endsWith(".saikudash") && !isNotebook) {
+            return badRequest("dashboardPath", "must reference a .saikudash dashboard or .saikunb notebook");
         }
         String username = currentUsername();
         List<String> roles = currentRoles();
@@ -131,8 +145,9 @@ public class ShareTokenResource {
         // server, proxies, access logs, or in the Referer header, so the secret
         // doesn't leak from the share link itself. The SPA reads location.hash
         // and replays it as the X-Saiku-Share-Token header (#941 hardening).
-        return Response.ok(Map.of(
-                        "status", "OK", "token", t.token, "url", "/ui/share#" + t.token, "expiresAt", t.expiresAt))
+        String viewerPath = isNotebook ? "/ui/notebooks/share#" : "/ui/share#";
+        return Response.ok(
+                        Map.of("status", "OK", "token", t.token, "url", viewerPath + t.token, "expiresAt", t.expiresAt))
                 .type(MediaType.APPLICATION_JSON)
                 .build();
     }

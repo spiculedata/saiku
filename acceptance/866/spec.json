@@ -1,0 +1,34 @@
+{
+  "issue": 866,
+  "title": "HEAD and GET /rest/saiku/info answer promptly and anonymously, so a monitor can poll them",
+  "kind": "api",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "an anonymous monitor (no session, no credentials)",
+      "then": "HEAD /rest/saiku/info returns 200 straight away instead of hanging until the connection is reset"
+    },
+    {
+      "id": "C2",
+      "given": "the same anonymous caller",
+      "then": "GET /rest/saiku/info returns a JSON array (the installed plugins; empty is fine)"
+    }
+  ],
+  "steps": [
+    {
+      "name": "HEAD /rest/saiku/info answers within the runner timeout",
+      "criterion": "C1",
+      "request": { "method": "HEAD", "path": "/rest/saiku/info" },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "GET /rest/saiku/info is anonymous and returns an array",
+      "criterion": "C2",
+      "request": { "method": "GET", "path": "/rest/saiku/info" },
+      "expect": {
+        "status": 200,
+        "json": { "$": { "type": "array", "because": "the endpoint lists plugins; an object here means the contract changed" } }
+      }
+    }
+  ]
+}

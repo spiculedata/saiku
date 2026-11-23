@@ -1,0 +1,24 @@
+{
+  "issue": 2436,
+  "title": "H2 confinement rejects every database (FoodMart included) when saiku.home is reached through a symlink",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "an H2 candidate path whose database file does not exist yet (an H2 URL names the database without .mv.db) under a symlinked saiku.home",
+      "then": "containment resolves the nearest existing ancestor with toRealPath() and appends the remainder — the candidate is compared against the home's real path, so the seeded FoodMart H2 database under a symlinked saiku.home is accepted, not rejected"
+    },
+    {
+      "id": "C2",
+      "given": "a symlink inside an allowed root whose target escapes it",
+      "then": "the candidate is still judged on its target: resolving the nearest existing ancestor must not let an existing symlink's escape through, and an unresolvable path (root missing entirely) still falls back to the lexical form so ../ traversal keeps being refused"
+    },
+    {
+      "id": "C3",
+      "given": "the regression test the issue asks for",
+      "then": "a test with a symlinked saiku.home opens (validates) the FoodMart H2 database URL, and a guard-level test covers a not-yet-existing file under a symlinked root"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}

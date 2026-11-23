@@ -33,8 +33,9 @@ import java.util.Set;
  *   <li>{@code display} — caption / format / unit / hidden. Overlays field/metric presentation and
  *       gates whether the entry surfaces in the AI schema response at all.
  *   <li>{@code roles} — {@code allow} / {@code deny} role lists that filter which fields/metrics
- *       are visible to a given user. Enforcement lives with the Ossie RLS work (saiku#1393); this
- *       class just parses the annotation.
+ *       are visible to a given user, plus a dataset-scoped {@code row_predicates} list (saiku#1393)
+ *       that names, per Spring {@code GrantedAuthority}, an extra ANSI SQL WHERE conjunction the
+ *       translator injects for that role. Enforcement of both lives in {@code OssieRoleContext}.
  *   <li>{@code pii} — extends the legacy {@code "pii": true} boolean into a graded {@code {level:
  *       "redact" | "mask" | "hash"}} shape. Backwards compatible: {@code true} keeps meaning
  *       {@code REDACT}.
@@ -118,8 +119,22 @@ public final class SaikuWellKnownExtensions {
         if (r == null || !r.isObject()) return null;
         Set<String> allow = readStringSet(r.get("allow"));
         Set<String> deny = readStringSet(r.get("deny"));
-        if (allow.isEmpty() && deny.isEmpty()) return null;
-        return new Roles(allow, deny);
+        List<Roles.RowPredicate> rowPredicates = readRowPredicates(r.get("row_predicates"));
+        if (allow.isEmpty() && deny.isEmpty() && rowPredicates.isEmpty()) return null;
+        return new Roles(allow, deny, rowPredicates);
+    }
+
+    private static List<Roles.RowPredicate> readRowPredicates(JsonNode arr) {
+        if (arr == null || !arr.isArray()) return List.of();
+        List<Roles.RowPredicate> out = new ArrayList<>();
+        for (JsonNode e : arr) {
+            if (!e.isObject()) continue;
+            String role = readTextField(e, "role");
+            String expression = readTextField(e, "expression");
+            if (role == null || expression == null) continue;
+            out.add(new Roles.RowPredicate(role, expression));
+        }
+        return Collections.unmodifiableList(out);
     }
 
     private static PiiLevel readPii(JsonNode p) {
@@ -188,18 +203,27 @@ public final class SaikuWellKnownExtensions {
     }
 
     /**
-     * {@code saiku.roles} — role allow/deny lists. Enforcement (filtering schema + query responses
-     * against the current user's roles) lives with the Ossie RLS work in saiku#1393; this record is
-     * the shared parse target so the annotation lands in the DTO layer today.
+     * {@code saiku.roles} — role allow/deny lists plus dataset-scoped row predicates. Enforcement
+     * (filtering schema + query responses, and injecting row predicates into emitted SQL, against
+     * the current user's roles) lives in {@code OssieRoleContext} (saiku#1393); this record is the
+     * shared parse target so the annotation lands in the DTO layer.
      *
      * <p>Semantics: {@code allow} empty = allow all; a non-empty {@code allow} requires the caller
      * to have at least one matching role. {@code deny} overrides {@code allow}.
+     *
+     * <p>{@code rowPredicates} is authored on a <em>dataset's own</em> {@code custom_extensions} —
+     * each entry names one role (a Spring {@code GrantedAuthority} string, matched case-sensitively)
+     * and the raw ANSI SQL WHERE-conjunction to inject whenever that dataset is referenced by a
+     * caller holding that role. A caller holding none of a dataset's listed roles sees it
+     * unrestricted (opt-in per dataset, matching the allow/deny fail-open-when-unconfigured
+     * posture above); predicates from every role the caller DOES hold are OR-ed together.
      */
-    public record Roles(Set<String> allow, Set<String> deny) {
+    public record Roles(Set<String> allow, Set<String> deny, List<RowPredicate> rowPredicates) {
 
         public Roles {
             allow = allow == null ? Set.of() : Collections.unmodifiableSet(new LinkedHashSet<>(allow));
             deny = deny == null ? Set.of() : Collections.unmodifiableSet(new LinkedHashSet<>(deny));
+            rowPredicates = rowPredicates == null ? List.of() : List.copyOf(rowPredicates);
         }
 
         /**
@@ -218,6 +242,9 @@ public final class SaikuWellKnownExtensions {
             }
             return false;
         }
+
+        /** One {@code row_predicates[]} entry: the role it applies to, and the raw SQL to inject. */
+        public record RowPredicate(String role, String expression) {}
     }
 
     /**

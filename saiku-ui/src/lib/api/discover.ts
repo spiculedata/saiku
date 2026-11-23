@@ -12,6 +12,10 @@ export interface SaikuCube {
 	 *  measures rather than asking the user to author MDX. Empty / undefined
 	 *  for cubes that don't ship any (the common case today). */
 	timeCalcs?: SaikuTimeCalc[];
+	/** Optional HTTP(S) template for opening a business-system URL from a
+	 *  cellset intersection (`saiku.cellLink.url` cube annotation, else
+	 *  `<cellLinkUrl>` on the `.sds`). */
+	cellLinkUrl?: string | null;
 }
 
 export interface SaikuTimeCalc {

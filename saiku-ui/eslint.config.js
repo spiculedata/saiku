@@ -6,7 +6,7 @@ import svelte from 'eslint-plugin-svelte';
 import { defineConfig } from 'eslint/config';
 import globals from 'globals';
 import ts from 'typescript-eslint';
-import svelteConfig from './svelte.config.js';
+import svelteConfig from './kit.config.js';
 
 const gitignorePath = path.resolve(import.meta.dirname, '.gitignore');
 

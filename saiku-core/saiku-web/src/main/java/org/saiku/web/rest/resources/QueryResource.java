@@ -30,7 +30,6 @@ import java.io.InputStream;
 import java.io.StringReader;
 import java.sql.Connection;
 import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.*;
 import org.apache.commons.io.IOUtils;
@@ -47,6 +46,7 @@ import org.saiku.olap.util.formatter.HierarchicalCellSetFormatter;
 import org.saiku.olap.util.formatter.ICellSetFormatter;
 import org.saiku.service.olap.OlapDiscoverService;
 import org.saiku.service.olap.OlapQueryService;
+import org.saiku.service.util.exception.SaikuQueryRejectedException;
 import org.saiku.service.util.exception.SaikuServiceException;
 import org.saiku.web.export.JSConverter;
 import org.saiku.web.rest.objects.MdxQueryObject;
@@ -56,6 +56,7 @@ import org.saiku.web.rest.objects.resultset.QueryResult;
 import org.saiku.web.rest.util.RestUtil;
 import org.saiku.web.rest.util.ServletUtil;
 import org.saiku.web.svg.PdfReport;
+import org.saiku.web.util.JdbcCleanup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -527,13 +528,23 @@ public class QueryResource {
             if (olapQueryService.isMdxDrillthrough(queryName, mdx)) {
                 Long start = (new Date()).getTime();
                 ResultSet rs = olapQueryService.drillthrough(queryName, mdx);
-                QueryResult rsc = RestUtil.convert(rs);
-                Long runtime = (new Date()).getTime() - start;
-                rsc.setRuntime(runtime.intValue());
-                return rsc;
+                try {
+                    QueryResult rsc = RestUtil.convert(rs);
+                    Long runtime = (new Date()).getTime() - start;
+                    rsc.setRuntime(runtime.intValue());
+                    return rsc;
+                } finally {
+                    // Release the engine's SQL statement once the rows are copied out.
+                    JdbcCleanup.closeQuietly(rs);
+                }
             }
             CellDataSet cs = olapQueryService.executeMdx(queryName, mdx, icf);
             return RestUtil.convert(cs, limit);
+        } catch (SaikuQueryRejectedException e) {
+            // saiku#2420: the raw drillthrough cap could not prove its bound — a typed client
+            // error about the submitted statement, not a server fault. The message is static;
+            // the statement stays in the server log (already written by the rejection site).
+            throw queryRejected(e);
         } catch (Exception e) {
             log.error("Cannot execute query (" + queryName + ") using mdx:\n" + mdx, e);
             // saiku#1165: detail is logged server-side above; return a generic
@@ -554,12 +565,26 @@ public class QueryResource {
         }
         try {
             return executeMdx(queryName, null, mdx, limit);
+        } catch (SaikuQueryRejectedException e) {
+            // saiku#2420: propagate as a typed 400 (see the sibling catch above).
+            throw queryRejected(e);
         } catch (Exception e) {
             log.error("Cannot execute query (" + queryName + ") using mdx:\n" + mdx, e);
             // saiku#1165: detail is logged server-side above; return a generic
             // message so Mondrian/SQL internals don't leak in QueryResult.error.
             return new QueryResult(GENERIC_ERROR);
         }
+    }
+
+    /** saiku#2420 — rethrow a typed guardrail rejection as a 400 WebApplicationException;
+     *  GenericExceptionMapper hands {@code WebApplicationException} responses straight through. */
+    private static WebApplicationException queryRejected(SaikuQueryRejectedException e) {
+        return new WebApplicationException(Response.status(Status.BAD_REQUEST)
+                .type(MediaType.APPLICATION_JSON)
+                .entity(Map.of(
+                        "status", "REJECTED",
+                        "error", "Query refused: the server could not enforce its row cap on this statement"))
+                .build());
     }
 
     @GET
@@ -762,17 +787,8 @@ public class QueryResource {
             log.error("Cannot export drillthrough query (" + queryName + ")", e);
             return Response.serverError().build();
         } finally {
-            if (rs != null) {
-                try {
-                    Statement statement = rs.getStatement();
-                    statement.close();
-                    rs.close();
-                } catch (SQLException e) {
-                    throw new SaikuServiceException(e);
-                } finally {
-                    rs = null;
-                }
-            }
+            // Close the ResultSet even when closing its statement fails.
+            JdbcCleanup.closeQuietly(rs);
         }
     }
 

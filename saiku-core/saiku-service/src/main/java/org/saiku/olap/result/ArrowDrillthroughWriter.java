@@ -36,6 +36,9 @@ import org.apache.arrow.vector.types.pojo.DictionaryEncoding;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.FieldType;
 import org.apache.arrow.vector.types.pojo.Schema;
+import org.saiku.olap.util.QueryGuardrails;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Serialises a drillthrough {@link ResultSet} into an Apache Arrow IPC stream
@@ -46,7 +49,8 @@ import org.apache.arrow.vector.types.pojo.Schema;
  * <ul>
  *   <li>Schema metadata key {@code saiku.drillthrough} holds a JSON blob with
  *       {@code captions} (pretty column captions used for display),
- *       {@code rowCount}, {@code runtimeMs}.</li>
+ *       {@code rowCount}, {@code runtimeMs}, {@code truncated} (saiku#1914 —
+ *       {@code true} when the server row ceiling cut the result short).</li>
  *   <li>One field per JDBC column, named after the JDBC column name:
  *       numeric JDBC types collapse to nullable Float64 (we don't try to
  *       preserve scale — drillthrough output is for display, not
@@ -63,6 +67,8 @@ import org.apache.arrow.vector.types.pojo.Schema;
  * the TODO.
  */
 public final class ArrowDrillthroughWriter {
+
+    private static final Logger log = LoggerFactory.getLogger(ArrowDrillthroughWriter.class);
 
     private static final String METADATA_KEY = "saiku.drillthrough";
 
@@ -131,8 +137,20 @@ public final class ArrowDrillthroughWriter {
         // We need the row count for schema metadata, but metadata is written
         // at stream start. Materialise rows into per-column buffers first,
         // then emit the stream with a fully-populated metadata blob.
+        //
+        // saiku#1914: hard row ceiling on the materialisation loop. The MDX-level
+        // MAXROWS (DrillthroughMdxBuilder) is the primary bound, but it is a
+        // backend feature — a non-Mondrian OLAP server that ignores MAXROWS would
+        // otherwise let this loop (and its per-row Object[] garbage) run away.
+        final int maxRows = QueryGuardrails.maxRows();
+        boolean truncated = false;
         List<Object[]> rows = new ArrayList<>();
         while (rs.next()) {
+            if (rows.size() >= maxRows) {
+                truncated = true;
+                log.warn("Drillthrough result truncated at server row ceiling {} (saiku#1914)", maxRows);
+                break;
+            }
             Object[] row = new Object[colCount];
             for (int i = 0; i < colCount; i++) {
                 row[i] = readCell(rs, i + 1, specs[i]);
@@ -143,9 +161,11 @@ public final class ArrowDrillthroughWriter {
         long runtimeMs = Math.max(0L, System.currentTimeMillis() - started);
 
         String[] outCaptions = captions != null && captions.length == colCount ? captions : fallbackCaptions(specs);
-        Schema schema = new Schema(fields, buildMetadata(outCaptions, rowCount, runtimeMs));
+        Schema schema = new Schema(fields, buildMetadata(outCaptions, rowCount, runtimeMs, truncated));
 
-        try (BufferAllocator allocator = new RootAllocator();
+        // saiku#1914: bounded allocator (saiku.olap.arrow.max.bytes, default 256 MiB)
+        // instead of the unbounded `new RootAllocator()`.
+        try (BufferAllocator allocator = new RootAllocator(QueryGuardrails.arrowAllocatorBytes());
                 VectorSchemaRoot root = VectorSchemaRoot.create(schema, allocator);
                 DictionaryProvider.MapDictionaryProvider provider = new DictionaryProvider.MapDictionaryProvider()) {
             root.setRowCount(rowCount);
@@ -249,13 +269,16 @@ public final class ArrowDrillthroughWriter {
         return out;
     }
 
-    private static Map<String, String> buildMetadata(String[] captions, int rowCount, long runtimeMs) {
+    private static Map<String, String> buildMetadata(
+            String[] captions, int rowCount, long runtimeMs, boolean truncated) {
         Map<String, Object> blob = new LinkedHashMap<>();
         List<String> captionList = new ArrayList<>(captions.length);
         for (String c : captions) captionList.add(c == null ? "" : c);
         blob.put("captions", captionList);
         blob.put("rowCount", rowCount);
         blob.put("runtimeMs", runtimeMs);
+        // saiku#1914: true when the server row ceiling cut the result short.
+        blob.put("truncated", truncated);
         try {
             String json = new ObjectMapper().writeValueAsString(blob);
             Map<String, String> md = new LinkedHashMap<>();

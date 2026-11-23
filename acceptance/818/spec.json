@@ -1,0 +1,58 @@
+{
+  "issue": 818,
+  "title": "The AI Query API lists the FoodMart cubes and describes a cube with semantic annotations, behind a login",
+  "kind": "api",
+  "auth": "session",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "a logged-in user on a default install (FoodMart demo seeded)",
+      "then": "GET /rest/saiku/api/ai/cubes lists the FoodMart Sales cube"
+    },
+    {
+      "id": "C2",
+      "given": "the same user",
+      "then": "GET /rest/saiku/api/ai/schema/foodmart/FoodMart/FoodMart/Sales describes the cube and its measures carry a description and synonyms"
+    },
+    {
+      "id": "C3",
+      "given": "an anonymous caller",
+      "then": "the cube list is refused with 401 and never served"
+    }
+  ],
+  "steps": [
+    {
+      "name": "the cube list names FoodMart Sales",
+      "criterion": "C1",
+      "request": { "method": "GET", "path": "/ai/cubes" },
+      "expect": {
+        "status": 200,
+        "json": {
+          "$": { "type": "array" },
+          "[0].cubeName": { "type": "string" }
+        },
+        "bodyContains": "\"cubeName\":\"Sales\""
+      }
+    },
+    {
+      "name": "the Sales cube is self-describing: measures carry a description and synonyms",
+      "criterion": "C2",
+      "request": { "method": "GET", "path": "/ai/schema/foodmart/FoodMart/FoodMart/Sales" },
+      "expect": {
+        "status": 200,
+        "json": {
+          "cubeName": { "equals": "Sales" },
+          "measures.unit sales.description": { "type": "string" },
+          "measures.unit sales.synonyms": { "type": "array" }
+        }
+      }
+    },
+    {
+      "name": "an anonymous caller is refused",
+      "criterion": "C3",
+      "auth": "none",
+      "request": { "method": "GET", "path": "/ai/cubes" },
+      "expect": { "status": 401 }
+    }
+  ]
+}

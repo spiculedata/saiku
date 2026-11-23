@@ -1,4 +1,4 @@
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 import enBundle from '$lib/i18n/en.json';
 import deBundle from '$lib/i18n/de.json';
 import esBundle from '$lib/i18n/es.json';

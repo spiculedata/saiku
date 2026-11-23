@@ -1,0 +1,28 @@
+2026-10-04T12:00:00.0370000Z ##[group]Run mvn -B -ntp -DskipITs=false verify
+2026-10-04T12:00:00.0740000Z [36;1mmvn -B -ntp -DskipITs=false verify[0m
+2026-10-04T12:00:00.1110000Z shell: /usr/bin/bash -e {0}
+2026-10-04T12:00:00.1480000Z ##[endgroup]
+2026-10-04T12:00:00.1850000Z [INFO] Scanning for projects...
+2026-10-04T12:00:00.2220000Z [INFO] --- spotless:3.9.0:check (default) @ saiku-olap-util ---
+2026-10-04T12:00:00.2590000Z [ERROR] Failed to execute goal com.diffplug.spotless:spotless-maven-plugin:3.9.0:check (default-cli) on project saiku-olap-util: The following files had format violations:
+2026-10-04T12:00:00.2960000Z [ERROR]     src/main/java/zz/BadFormat.java
+2026-10-04T12:00:00.3330000Z [ERROR]         @@ -3,6 +3,9 @@
+2026-10-04T12:00:00.3700000Z [ERROR]          ·*···Apache·License,·Version·2.0.
+2026-10-04T12:00:00.4070000Z [ERROR]          ·*/
+2026-10-04T12:00:00.4440000Z [ERROR]          package·zz;
+2026-10-04T12:00:00.4810000Z [ERROR]         +
+2026-10-04T12:00:00.5180000Z [ERROR]          public·class·BadFormat·{
+2026-10-04T12:00:00.5550000Z [ERROR]         -···public·int···f(·int·a·){return·a+1;}
+2026-10-04T12:00:00.5920000Z [ERROR]         +····public·int·f(int·a)·{
+2026-10-04T12:00:00.6290000Z [ERROR]         +········return·a·+·1;
+2026-10-04T12:00:00.6660000Z [ERROR]         +····}
+2026-10-04T12:00:00.7030000Z [ERROR]          }
+2026-10-04T12:00:00.7400000Z [ERROR] Run 'mvn spotless:apply' to fix these violations.
+2026-10-04T12:00:00.7770000Z [ERROR] -> [Help 1]
+2026-10-04T12:00:00.8140000Z [ERROR] 
+2026-10-04T12:00:00.8510000Z [ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+2026-10-04T12:00:00.8880000Z [ERROR] Re-run Maven using the -X switch to enable full debug logging.
+2026-10-04T12:00:00.9250000Z [ERROR] 
+2026-10-04T12:00:00.9620000Z [ERROR] For more information about the errors and possible solutions, please read the following articles:
+2026-10-04T12:00:00.9990000Z [ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoExecutionException
+2026-10-04T12:00:01.0360000Z ##[error]Process completed with exit code 1.

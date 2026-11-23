@@ -1,0 +1,29 @@
+{
+  "issue": 2443,
+  "title": "Explain closes only the statement it created, never the shared OLAP connection other users' queries run on",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "CellExplainService captures the SQL for a cell on the connection it borrows from the connection manager's cache",
+      "then": "it closes the statement and cellset it created and does not close the borrowed connection, on success or failure"
+    },
+    {
+      "id": "C2",
+      "given": "two sessions explain cells while a third runs ordinary queries on the same datasource",
+      "then": "every ordinary query succeeds (launcher integration test ExplainKeepsSharedConnectionIT ships)"
+    },
+    {
+      "id": "C3",
+      "given": "any production method under saiku-core (package-private included) that binds a variable to getNativeConnection(...) or getOlapConnection(...)",
+      "then": "it does not close that variable (close(), closeQuietly, try-with-resources), and every such call sits in a method the check examined; connections passed on unbound, or closed through another method, are outside the check"
+    },
+    {
+      "id": "C4",
+      "given": "the regression tests for C1",
+      "then": "CellExplainServiceTest asserts the connection stays open and the statement and cellset are closed"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}

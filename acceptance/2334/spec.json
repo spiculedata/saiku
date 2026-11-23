@@ -1,0 +1,24 @@
+{
+  "issue": 2334,
+  "title": "The @claude workflows no longer run on issue assignment or on fork pull requests, and claude.yml frames untrusted text as data with a tool allow-list",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "claude.yml triggers",
+      "then": "the issues trigger fires on opened only; assigning an issue does not start the agent"
+    },
+    {
+      "id": "C2",
+      "given": "a @claude comment or review on a pull request whose head is a fork",
+      "then": "claude.yml refuses before the agent step, and claude-code-review.yml only runs for same-repository pull requests"
+    },
+    {
+      "id": "C3",
+      "given": "the agent step of claude.yml",
+      "then": "it has a fixed prompt that marks issue/PR text as untrusted data, and a tool allow-list in claude_args that does not allow git push or edits under .github/"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}

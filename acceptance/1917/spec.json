@@ -1,0 +1,13 @@
+{
+  "issue": 1917,
+  "title": "The SPA shell ships an enforced Content-Security-Policy with script-src 'self' (no unsafe-inline), without inline handlers that the policy would block",
+  "kind": "ui",
+  "criteria": [
+    { "id": "C1", "given": "saiku-ui/kit.config.js", "then": "SvelteKit CSP hash mode is on and enforces script-src 'self' without 'unsafe-inline' or 'unsafe-eval'" },
+    { "id": "C2", "given": "the same directives", "then": "they keep what the UI needs: worker-src blob: (monaco), style-src 'unsafe-inline', img-src data:/blob:, connect-src 'self', object-src 'none', base-uri 'self'" },
+    { "id": "C3", "given": "saiku-ui/src/app.html", "then": "it has no inline event-handler attributes (they would be blocked by script-src 'self')" },
+    { "id": "C4", "given": "SecurityHeadersFilter", "then": "frame-ancestors stays configurable through saiku.security.frameAncestors" }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 30
+}

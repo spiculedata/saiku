@@ -1,0 +1,13 @@
+{
+  "issue": 2337,
+  "title": "saiku-ui ships a patched dompurify and security-scan.yml scans advisories on a schedule",
+  "kind": "ui",
+  "criteria": [
+    { "id": "C1", "given": "saiku-ui/package-lock.json", "then": "dompurify resolves to 3.4.17 or newer (single copy)" },
+    { "id": "C2", "given": ".github/workflows/security-scan.yml", "then": "a job runs npm audit --omit=dev --audit-level=high for saiku-ui on schedule and on push, with read-only permissions" },
+    { "id": "C3", "given": ".github/workflows/security-scan.yml", "then": "a scheduled job scans the Java tree with a version-pinned, sha256-verified osv-scanner, with read-only permissions" },
+    { "id": "C4", "given": ".github/workflows/security-scan.yml", "then": "the dependency-review PR gate is unchanged" }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}

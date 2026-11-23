@@ -83,6 +83,22 @@ public final class PiiFilter {
     }
 
     /**
+     * Whether {@code column} — a bare column name, not a table-qualified key — is on the deny
+     * list. Exposed so callers that need to <em>report</em> what was withheld (saiku#1439's
+     * rationale document) share this class's list instead of re-declaring it, which is how the
+     * two drift apart.
+     *
+     * @param column bare column name; a table-qualified {@code table.column} is also accepted and
+     *     the table part ignored
+     */
+    public boolean isPiiColumn(String column) {
+        if (column == null) {
+            return false;
+        }
+        return isPii(columnOf(column));
+    }
+
+    /**
      * Return a new map containing every entry from {@code samples} whose column name is not on the
      * deny list. Input is not mutated. Iteration order is preserved.
      */

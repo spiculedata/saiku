@@ -19,7 +19,7 @@
 	let ready = $state(false);
 
 	onMount(async () => {
-		const params = parseHistoryPreviewParams(page.url.searchParams);
+		const params = parseHistoryPreviewParams(page.url.search);
 		if (!params) {
 			error = 'This preview link is missing its dashboard or version.';
 			loading = false;

@@ -16,6 +16,7 @@
 	 *  drop targets the way users from the Backbone-era UI expect. */
 	type ZoneId = AxisLocation | 'MEASURES';
 	import CellsetTable from '$lib/views/CellsetTable.svelte';
+	import CellExplainPanel from '$lib/views/CellExplainPanel.svelte';
 	import ChartView from '$lib/views/ChartView.svelte';
 	import StatsView from '$lib/views/StatsView.svelte';
 	import { CHART_TYPES } from '$lib/views/chartTypes';
@@ -53,7 +54,11 @@
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import { listLevelMembers, listRootMembers, type SaikuMember } from '$lib/api/discover';
 	import { datasources } from '$lib/stores/datasources.svelte';
-	import { drillthrough as fetchDrillthrough, type QueryResult } from '$lib/api/query';
+	import {
+		drillthrough as fetchDrillthrough,
+		drillthroughColumns as fetchDrillthroughColumns,
+		type QueryResult
+	} from '$lib/api/query';
 	import { toasts } from '$lib/stores/toasts.svelte';
 	import { i18n } from '$lib/stores/i18n.svelte';
 
@@ -151,6 +156,11 @@
 	let drillResultOpen = $state(false);
 	let drillResult = $state<QueryResult | null>(null);
 	let drillPosition = $state<string | null>(null);
+
+	/** saiku#1118 — the cell the "Explain this number" panel is explaining, or null when
+	 *  the panel is closed. Coordinates are the plain data row/column CellsetTable
+	 *  right-clicked; the server addresses cells the same way. */
+	let explainTarget = $state<{ row: number; col: number } | null>(null);
 
 	// --- Context menu state + downstream modals ---
 	interface MenuCtx {
@@ -652,7 +662,8 @@
 		if (
 			e.dataTransfer?.types?.includes('application/x-saiku-level') ||
 			e.dataTransfer?.types?.includes('application/x-saiku-measure') ||
-			e.dataTransfer?.types?.includes('application/x-saiku-chip')
+			e.dataTransfer?.types?.includes('application/x-saiku-chip') ||
+			e.dataTransfer?.types?.includes('application/x-saiku-namedset')
 		) {
 			e.preventDefault();
 			e.dataTransfer.dropEffect = 'move';
@@ -685,6 +696,7 @@
 		if (
 			types.includes('application/x-saiku-level') ||
 			types.includes('application/x-saiku-measure') ||
+			types.includes('application/x-saiku-namedset') ||
 			isChipDrag
 		) {
 			dragOverAxis = axis;
@@ -736,7 +748,10 @@
 		const chipPayload = e.dataTransfer?.getData('application/x-saiku-chip');
 		const levelPayload = e.dataTransfer?.getData('application/x-saiku-level');
 		const measurePayload = e.dataTransfer?.getData('application/x-saiku-measure');
-		if (chipPayload) {
+		const namedSetPayload = e.dataTransfer?.getData('application/x-saiku-namedset');
+		if (namedSetPayload) {
+			onDropNamedSet(axis, namedSetPayload);
+		} else if (chipPayload) {
 			try {
 				const p = JSON.parse(chipPayload) as
 					| { kind: 'hierarchy'; axis: ZoneId; name: string }
@@ -762,6 +777,38 @@
 			const m = JSON.parse(measurePayload) as ThinMeasure;
 			query.addMeasure(m);
 		}
+	}
+
+	/** saiku#826 — drop a SetsPanel row onto ROWS/COLUMNS. Named sets aren't a
+	 *  hierarchy/level and can't join a chip stack, so (like Top-N / date-filter)
+	 *  the drop sets the axis's raw MDX override to the bracketed set reference,
+	 *  replacing whatever chip-derived or previously-overridden expression was
+	 *  there. MEASURES/FILTER aren't valid drop targets for a set (issue #826
+	 *  scopes this to rows/columns), so those silently no-op. */
+	function onDropNamedSet(axis: ZoneId, payload: string): void {
+		if (axis !== 'ROWS' && axis !== 'COLUMNS') return;
+		if (!query.current?.queryModel) return;
+		let p: { name: string; uniqueName: string };
+		try {
+			p = JSON.parse(payload);
+		} catch {
+			return;
+		}
+		const axisModel = query.current.queryModel.axes[axis];
+		const hadExisting = !!axisModel.mdx;
+		axisModel.mdx = p.uniqueName;
+		if (hadExisting) {
+			toasts.warning(
+				i18n.t('toast.namedSetOnAxis'),
+				i18n.t('toast.namedSetOnAxis.replaced').replace('{name}', p.name)
+			);
+		} else {
+			toasts.success(
+				i18n.t('toast.namedSetOnAxis'),
+				i18n.t('toast.namedSetOnAxis.body').replace('{name}', p.name)
+			);
+		}
+		void query.run();
 	}
 
 	function onHierChipDragStart(e: DragEvent, axis: AxisLocation, h: ThinHierarchy) {
@@ -1028,6 +1075,14 @@
 		};
 		el.addEventListener('saiku-drillthrough', drillHandler);
 
+		// saiku#1118: right-click "Explain this number" on a cell.
+		const explainHandler = (ev: Event) => {
+			const ce = ev as CustomEvent<{ row: number; col: number }>;
+			if (!ce.detail) return;
+			explainTarget = { row: ce.detail.row, col: ce.detail.col };
+		};
+		el.addEventListener('saiku-explain', explainHandler);
+
 		const openDrillFromToolbar = () => {
 			drillPosition = null;
 			drillModalOpen = true;
@@ -1037,6 +1092,7 @@
 		return () => {
 			el.removeEventListener('saiku-filter-level', handler);
 			el.removeEventListener('saiku-drillthrough', drillHandler);
+			el.removeEventListener('saiku-explain', explainHandler);
 			window.removeEventListener('saiku-open-drillthrough', openDrillFromToolbar);
 		};
 	});
@@ -1045,6 +1101,7 @@
 		dimensions: string[];
 		measures: string[];
 		maxRows: number;
+		firstRowset?: number;
 	}) {
 		drillModalOpen = false;
 		if (!query.current) return;
@@ -1058,6 +1115,7 @@
 			// currently drill through the whole cellset and let the user filter by `returns`.
 			drillResult = await fetchDrillthrough(query.current.name, {
 				maxRows: opts.maxRows,
+				firstRowset: opts.firstRowset,
 				returns
 			});
 		} catch (err) {
@@ -1493,42 +1551,51 @@
 						</button>
 					</div>
 				{/if}
-				<div class="result-host" bind:this={resultHostEl}>
-					{#if query.running && !query.result}
-						<p class="m-0 text-sm text-fg-subtle">{i18n.t('canvas.running')}</p>
-					{:else if query.error}
-						<div class="callout callout--danger" role="alert">
-							<p class="callout__text">{query.error}</p>
-							{#if query.errorDetail}
-								<details class="callout__details">
-									<summary>{i18n.t('canvas.error.showDetails')}</summary>
-									<pre class="callout__detail-text">{query.errorDetail}</pre>
-								</details>
+				<div class="result-row">
+					<div class="result-host" bind:this={resultHostEl}>
+						{#if query.running && !query.result}
+							<p class="m-0 text-sm text-fg-subtle">{i18n.t('canvas.running')}</p>
+						{:else if query.error}
+							<div class="callout callout--danger" role="alert">
+								<p class="callout__text">{query.error}</p>
+								{#if query.errorDetail}
+									<details class="callout__details">
+										<summary>{i18n.t('canvas.error.showDetails')}</summary>
+										<pre class="callout__detail-text">{query.errorDetail}</pre>
+									</details>
+								{/if}
+							</div>
+						{:else if query.result}
+							{#if query.viewMode === 'chart'}
+								<ChartView
+									result={query.result}
+									type={query.chartType}
+									options={query.chartOptions}
+								/>
+							{:else if query.viewMode === 'stats'}
+								<StatsView result={query.result} />
+							{:else if query.viewMode === 'sparkline'}
+								<CellsetTable result={query.result} spark="line" />
+							{:else if query.viewMode === 'sparkbar'}
+								<CellsetTable result={query.result} spark="bar" />
+							{:else}
+								<CellsetTable result={query.result} />
 							{/if}
-						</div>
-					{:else if query.result}
-						{#if query.viewMode === 'chart'}
-							<ChartView
-								result={query.result}
-								type={query.chartType}
-								options={query.chartOptions}
-							/>
-						{:else if query.viewMode === 'stats'}
-							<StatsView result={query.result} />
-						{:else if query.viewMode === 'sparkline'}
-							<CellsetTable result={query.result} spark="line" />
-						{:else if query.viewMode === 'sparkbar'}
-							<CellsetTable result={query.result} spark="bar" />
 						{:else}
-							<CellsetTable result={query.result} />
+							<EmptyState
+								icon={Sparkles}
+								title="Build a query"
+								description={i18n.t('canvas.buildPrompt')}
+							/>
 						{/if}
-					{:else}
-						<EmptyState
-							icon={Sparkles}
-							title="Build a query"
-							description={i18n.t('canvas.buildPrompt')}
-						/>
-					{/if}
+					</div>
+					<CellExplainPanel
+						open={explainTarget !== null}
+						queryName={query.current?.name ?? ''}
+						row={explainTarget?.row ?? 0}
+						column={explainTarget?.col ?? 0}
+						onClose={() => (explainTarget = null)}
+					/>
 				</div>
 			</div>
 		</div>
@@ -1590,6 +1657,8 @@
 	measures={cubeMetadata?.measures ?? []}
 	maxRows={1000}
 	open={drillModalOpen}
+	discoverColumns={() =>
+		query.current ? fetchDrillthroughColumns(query.current.name) : Promise.resolve([])}
 	onRun={runDrillthrough}
 	onExportCsv={(opts) => {
 		drillModalOpen = false;
@@ -1599,6 +1668,10 @@
 		if (drillPosition) params.set('position', drillPosition);
 		const returns = [...opts.dimensions, ...opts.measures];
 		if (returns.length) params.set('returns', returns.join(','));
+		// NOTE: the CSV export endpoint doesn't accept firstRowset (saiku#822
+		// scoped that param to the JSON drillthrough endpoint only) — the
+		// export always uses the maxrows cap above regardless of the modal's
+		// row-bound toggle.
 		window.open(
 			`/rest/saiku/api/query/${encodeURIComponent(query.current.name)}/drillthrough/export/csv?${params.toString()}`,
 			'_blank'
@@ -2039,6 +2112,14 @@
 		display: flex;
 		flex-direction: column;
 		overflow: hidden;
+	}
+	/* saiku#1118: the explain panel docks to the right of the result rather than
+	   over it, so the cell it explains stays visible while you read it. */
+	.result-row {
+		flex: 1;
+		min-height: 0;
+		display: flex;
+		align-items: stretch;
 	}
 	.result-host :global(.runtime) {
 		flex: 0 0 auto;

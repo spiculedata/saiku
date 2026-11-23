@@ -1,0 +1,19 @@
+{
+  "issue": 2332,
+  "title": "GET /discover/refresh and /discover/{connection}/refresh no longer let a non-admin flush the shared Mondrian schema cache and rebuild every connection",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "a caller without ROLE_ADMIN calls GET /rest/saiku/{username}/discover/refresh",
+      "then": "no connection is refreshed (no cache flush); the current connection list is returned so the cube picker keeps working"
+    },
+    {
+      "id": "C2",
+      "given": "a caller without ROLE_ADMIN calls GET /rest/saiku/{username}/discover/{connection}/refresh",
+      "then": "the call is refused with 403 and nothing is refreshed"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}

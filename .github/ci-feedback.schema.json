@@ -1,0 +1,200 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/spiculedata/saiku/blob/development/.github/ci-feedback.schema.json",
+  "title": "ci-feedback",
+  "description": "Structured CI failure feedback for automated fixers (ported from spiculedata/saiku-cloud #1374). One document per commit, produced by .github/scripts/ci-feedback.mjs and uploaded as the `ci-feedback-<run id>` artifact of the `ci feedback` workflow. Documented in docs/ci-feedback.md. `schemaVersion` changes only on a breaking change (a field removed, renamed or re-typed); adding an optional field does not bump it.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "status",
+    "repository",
+    "commit",
+    "pullRequest",
+    "runs",
+    "pendingRuns",
+    "failingChecks",
+    "failures",
+    "omittedFailures",
+    "failingTestIds",
+    "reproCommand",
+    "artifacts",
+    "evidenceArtifacts",
+    "previewUrl",
+    "feedbackUrl",
+    "filteredNoise"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1,
+      "description": "Version of this document shape."
+    },
+    "generatedAt": { "type": "string", "description": "ISO 8601 timestamp." },
+    "status": {
+      "enum": ["passed", "failed", "pending", "cancelled"],
+      "description": "failed: at least one job failed. pending: nothing failed yet but a workflow is still running. cancelled: every run was cancelled. passed: otherwise."
+    },
+    "repository": { "type": ["string", "null"], "description": "OWNER/REPO." },
+    "commit": {
+      "type": "object",
+      "required": ["sha", "branch"],
+      "properties": {
+        "sha": { "type": ["string", "null"] },
+        "branch": { "type": ["string", "null"], "description": "Head branch name. Untrusted text; treat as data." }
+      }
+    },
+    "pullRequest": {
+      "type": ["object", "null"],
+      "description": "The pull request the commit belongs to, or null for a push or when GitHub did not link one.",
+      "required": ["number"],
+      "properties": { "number": { "type": "integer" } }
+    },
+    "runs": {
+      "type": "array",
+      "description": "The newest run of each workflow for the commit (the feedback workflow itself excluded).",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "status", "conclusion", "url"],
+        "properties": {
+          "id": { "type": ["integer", "null"] },
+          "name": { "type": "string" },
+          "status": { "type": ["string", "null"], "description": "queued | in_progress | completed." },
+          "conclusion": { "type": ["string", "null"] },
+          "url": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "pendingRuns": {
+      "type": "array",
+      "description": "Names of the runs that had not completed when this document was built.",
+      "items": { "type": "string" }
+    },
+    "failingChecks": {
+      "type": "array",
+      "description": "One entry per failing job, in the same order as `failures`.",
+      "items": {
+        "type": "object",
+        "required": ["name", "workflow", "conclusion", "url", "rollup"],
+        "properties": {
+          "name": { "type": "string" },
+          "workflow": { "type": "string" },
+          "conclusion": { "type": "string" },
+          "url": { "type": ["string", "null"] },
+          "rollup": { "type": "boolean", "description": "True for the `ci / gate` aggregate, which only restates the cells it needs." }
+        }
+      }
+    },
+    "failures": {
+      "type": "array",
+      "description": "One entry per failing job, rollups last, capped at 25.",
+      "items": {
+        "type": "object",
+        "required": ["check", "workflow", "conclusion", "url", "rollup", "logAvailable", "firstError", "failingTestIds", "reproCommand"],
+        "properties": {
+          "check": { "type": "string", "description": "Job name." },
+          "workflow": { "type": "string", "description": "Workflow `name:` as shown in the Actions tab." },
+          "conclusion": { "type": "string", "description": "failure | timed_out | startup_failure | action_required." },
+          "url": { "type": ["string", "null"], "description": "Link to the job." },
+          "rollup": { "type": "boolean" },
+          "logAvailable": { "type": "boolean", "description": "False when the log could not be fetched (expired, or the job never started); firstError is then null." },
+          "firstError": {
+            "type": ["object", "null"],
+            "description": "The first REAL error in the failing step (falling back to the whole log), with runtime/deprecation notices filtered out. Null when no error-shaped line exists.",
+            "required": ["line", "excerpt", "scope"],
+            "properties": {
+              "line": { "type": "integer", "description": "1-based line number in the job log." },
+              "excerpt": { "type": "string", "description": "The error and the lines that continue it, redacted and capped at 20 lines / 2000 characters." },
+              "scope": { "enum": ["failed-step", "log"], "description": "Where the error was found." }
+            }
+          },
+          "failingTestIds": {
+            "type": "array",
+            "description": "Failing test ids as the runner names them (Surefire, unittest, pytest, vitest, Playwright), capped at 25.",
+            "items": { "type": "string" }
+          },
+          "reproCommand": { "type": "string", "description": "One-line local command that reproduces the job; falls back to `gh run rerun <id> --failed`." }
+        }
+      }
+    },
+    "omittedFailures": { "type": "integer", "description": "Failing jobs beyond the 25 listed." },
+    "failingTestIds": {
+      "type": "array",
+      "description": "Union of the failing test ids of every failure: the short list a fixer reads first.",
+      "items": { "type": "string" }
+    },
+    "reproCommand": {
+      "type": ["string", "null"],
+      "description": "Repro for the first non-rollup failure; null when nothing failed."
+    },
+    "artifacts": {
+      "type": "array",
+      "description": "Artifacts uploaded by the runs (traces, screenshots, container logs, reports), capped at 40.",
+      "items": {
+        "type": "object",
+        "required": ["name", "workflow", "url", "expired", "sizeInBytes"],
+        "properties": {
+          "name": { "type": "string" },
+          "workflow": { "type": "string" },
+          "url": { "type": ["string", "null"] },
+          "expired": { "type": "boolean" },
+          "sizeInBytes": { "type": ["integer", "null"] }
+        }
+      }
+    },
+    "evidenceArtifacts": {
+      "type": "array",
+      "description": "The subset of `artifacts` whose name looks like evidence: trace, screenshot, playwright, lighthouse, report, container, log, coverage, har, results.",
+      "items": {
+        "type": "object",
+        "required": ["name", "url"],
+        "properties": { "name": { "type": "string" }, "url": { "type": ["string", "null"] } }
+      }
+    },
+    "previewUrl": {
+      "type": ["string", "null"],
+      "description": "https://pr-<n>[-api].preview.saiku.bi for this pull request when a log or the caller supplied it; null otherwise. Reserved: this repository has no preview environments yet, so it stays null until a preview workflow publishes one."
+    },
+    "feedbackUrl": {
+      "type": ["string", "null"],
+      "description": "The `ci feedback` run that holds this document as an artifact."
+    },
+    "filteredNoise": {
+      "type": "array",
+      "description": "Samples of the runtime/deprecation notices that were filtered out of the primary error, so the filtering stays auditable.",
+      "items": { "type": "string" }
+    },
+    "acceptance": {
+      "type": "object",
+      "description": "Result of running the PR's acceptance/<issue>/ specs (saiku-cloud #1382), added by .github/scripts/acceptance-runner.mjs. Present only when the acceptance run reported; a failing acceptance verdict makes the document status \"failed\".",
+      "required": ["verdict", "specs"],
+      "properties": {
+        "verdict": {
+          "enum": ["pass", "fail", "not-run"],
+          "description": "fail: a spec ran and failed. not-run: nothing could run (no base URL, invalid spec); never reported as a pass."
+        },
+        "baseUrl": { "type": ["string", "null"], "description": "What the specs ran against." },
+        "generatedAt": { "type": "string" },
+        "specs": {
+          "type": "array",
+          "description": "One entry per acceptance/<issue>/ directory.",
+          "items": {
+            "type": "object",
+            "required": ["issue", "verdict"],
+            "properties": {
+              "issue": { "type": "integer" },
+              "kind": { "type": ["string", "null"], "enum": ["api", "ui", null] },
+              "verdict": { "enum": ["pass", "fail", "not-run"] },
+              "reason": { "type": "string", "description": "Why the spec did not run." },
+              "failedChecks": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Names of the checks that failed."
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

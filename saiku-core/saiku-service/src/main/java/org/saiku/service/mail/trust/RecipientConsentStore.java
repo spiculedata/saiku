@@ -13,7 +13,6 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
@@ -21,6 +20,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
+import org.saiku.service.security.SecretFileStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -330,16 +330,10 @@ public class RecipientConsentStore {
             return;
         }
         try {
-            Files.createDirectories(file.getParent());
-            // Atomic write: serialise to a temp sibling, then atomically move over the target.
-            Path tmp = file.resolveSibling(FILE_NAME + ".tmp");
-            MAPPER.writeValue(tmp.toFile(), f);
-            try {
-                Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-            } catch (IOException atomicUnsupported) {
-                // Some filesystems don't support ATOMIC_MOVE; fall back to a plain replace.
-                Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
-            }
+            // Atomic write, owner-only permissions (#1919 18c): serialise to a restricted temp
+            // sibling created 0600, then move it over the target so a reader never sees a partial
+            // file and the consent store is never world-readable.
+            SecretFileStore.writeOwnerOnly(file, tmp -> MAPPER.writeValue(tmp.toFile(), f));
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to write " + FILE_NAME, e);
         }

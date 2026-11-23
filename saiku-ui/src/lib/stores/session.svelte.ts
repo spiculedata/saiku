@@ -35,6 +35,13 @@ class SessionStore {
 	get isAdmin(): boolean {
 		return this.current?.isadmin === true;
 	}
+
+	/** True for any role in the session's `roles` array. Admins implicitly pass every check —
+	 *  ROLE_ADMIN is treated as a superset of every feature-gating role (mirrors the backend's
+	 *  `@RolesAllowed({"ROLE_ADMIN", ...})` convention, e.g. the SQL workbench's ROLE_SQL_EXEC). */
+	hasRole(role: string): boolean {
+		return this.isAdmin || this.current?.roles.includes(role) === true;
+	}
 }
 
 export const session = new SessionStore();

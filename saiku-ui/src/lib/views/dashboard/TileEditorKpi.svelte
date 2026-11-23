@@ -31,6 +31,7 @@
 	const showTimeLevel = $derived(
 		kpiConfig.comparison === 'prior-period' ||
 			kpiConfig.comparison === 'year-over-year' ||
+			kpiConfig.comparison === 'period-to-date' ||
 			kpiConfig.sparkline
 	);
 </script>
@@ -91,8 +92,23 @@
 			<option value="none">None</option>
 			<option value="prior-period">Prior period</option>
 			<option value="year-over-year">Year over year</option>
+			<!-- saiku#1749. Reads the cube's own finer level below the time level to
+         truncate the baseline; degrades to "value + partial, no percentage" on a
+         hierarchy with nothing below it. -->
+			<option value="period-to-date">Period to date</option>
 			<option value="target">Target value</option>
 		</select>
+		{#if kpiConfig.comparison === 'period-to-date'}
+			<span class="hint">
+				Compares the newest period <em>so far</em> against the same portion of the period before it
+				— week 52's first two days against week 51's first two days, rather than two days against
+				seven. The number on the tile is the real period-to-date total, so nothing is hidden. The
+				offset is read from the time hierarchy's next level down (e.g. Week → Day), never guessed
+				from the values; on a hierarchy with no finer level the tile shows the value, marks the
+				period
+				<em>partial</em> and withholds the comparison, as it does today.
+			</span>
+		{/if}
 	</label>
 	{#if kpiConfig.comparison === 'target'}
 		<label class="field flex-1">
@@ -143,9 +159,10 @@
 		/>
 		<span class="hint">
 			How many of the newest periods are still filling up. Their values are still shown in full —
-			they are marked <em>partial</em> and the percentage comparison is withheld, because measuring a
-			part-period against a whole one reports the calendar rather than the business. 0 = every period
-			is complete.
+			they are marked <em>partial</em> and the percentage comparison is withheld, because measuring
+			a part-period against a whole one reports the calendar rather than the business. 0 = every
+			period is complete. Ignored while the mode is <em>Period to date</em>, which resolves the
+			comparison itself (and withholds it on a hierarchy that can't support one).
 		</span>
 	</label>
 {/if}

@@ -1,0 +1,112 @@
+# Saiku OSS: PER-PR preview stack.
+#
+# Ported in spirit from spiculedata/saiku-cloud infra/preview/docker-compose.preview.yml
+# (spiculedata/saiku-cloud#1378). Unlike the cloud, the OSS preview is ONE
+# container (the launcher fat JAR image) and this file is standalone: there is no
+# base compose file to layer on.
+#
+# Everything here exists to make an ephemeral validation environment for one PR on
+# the SHARED preview box (which also runs the saiku-cloud previews):
+#
+#   * its OWN compose project (`-p saiku-oss-pr-<n>`, see render-env.sh), so its
+#     network and volume are its own and cannot collide with the cloud's
+#     `saiku-pr-<n>` stacks;
+#   * NO published host ports. The shared Traefik on the box picks the container
+#     up by its docker labels (it is host-networked and reaches any bridge via the
+#     `traefik.docker.network` label) and terminates TLS for the wildcard
+#     `*.<base domain>` certificate on the `websecure` entrypoint. The hostname is
+#     `oss-pr-<n>.<base domain>`: ONE label under the base, so the existing
+#     wildcard certificate covers it;
+#   * a memory limit sized so three OSS stacks fit beside four cloud previews on a
+#     16 GB box (the JVM sizes its heap from the container limit: the image sets
+#     -XX:MaxRAMPercentage=75).
+#
+# Usage (project directory MUST be the synced tree root, the self-check mounts
+# ./infra/preview relative to it):
+#
+#   docker compose -p saiku-oss-pr-12 --project-directory <dir> \
+#     --env-file <dir>/saiku-oss-pr-12.env \
+#     -f <dir>/infra/preview/docker-compose.preview.yml up -d --wait
+#
+# Per-PR values (image tag, hostnames, admin password) come from
+# infra/preview/render-env.sh. See infra/preview/README.md.
+
+services:
+  saiku:
+    image: ${SAIKU_IMAGE:?set by render-env.sh}
+    # No container_name: a fixed name would collide between PRs.
+    restart: unless-stopped
+    mem_limit: 1536m
+    networks: [preview]
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    environment:
+      # A real, random, per-environment admin password. Without it the launcher
+      # refuses to boot on the shipped admin/admin (saiku#1153), and demo mode
+      # would publish the bob/krishna/smith accounts.
+      SAIKU_ADMIN_PASSWORD: ${SAIKU_ADMIN_PASSWORD:?set by render-env.sh}
+      # Fixture data (FoodMart and the other bundled samples) WITHOUT demo mode and
+      # its publicly documented accounts. Honoured by launchers that gate seeding on
+      # SAIKU_SEED (saiku#1953); older ones always stage the fixtures.
+      SAIKU_SEED: "true"
+      # A throwaway environment must not count as an install.
+      SAIKU_TELEMETRY: "off"
+    volumes:
+      - saiku-home:/app/saiku-home
+    # /rest/saiku/info is anonymous; --head is the cheap handler InfoResource adds
+    # for monitors. First boot seeds saiku-home and loads the H2 FoodMart bootstrap,
+    # hence the long start period (the image's own HEALTHCHECK uses the same probe).
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/rest/saiku/info -o /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=${COMPOSE_PROJECT_NAME:-saiku-oss-preview}_preview"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-saiku-oss-preview}.rule=Host(`${PREVIEW_HOST:-oss-pr-0.preview.invalid}`)"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-saiku-oss-preview}.entrypoints=websecure"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-saiku-oss-preview}.tls=true"
+      - "traefik.http.services.${COMPOSE_PROJECT_NAME:-saiku-oss-preview}.loadbalancer.server.port=8080"
+
+  # ---------------------------------------------------------------
+  # preview-selfcheck: logs in through the REST session endpoint, asserts the
+  # FoodMart cube is discoverable and reports every feature as active/inactive
+  # with its evidence. It never prints the password.
+  #
+  # Behind the `selfcheck` profile, so `up -d --wait` never starts it: preview-ctl
+  # runs it (`compose run --rm`) AFTER the container is healthy. `--require-all`
+  # (PREVIEW_SELFCHECK_ARGS) turns the report into a gate.
+  # ---------------------------------------------------------------
+  preview-selfcheck:
+    profiles: ["selfcheck"]
+    image: curlimages/curl:8.12.1
+    restart: "no"
+    networks: [preview]
+    depends_on:
+      saiku:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "/selfcheck/selfcheck.sh"]
+    command: ${PREVIEW_SELFCHECK_ARGS:-}
+    environment:
+      SAIKU_URL: http://saiku:8080
+      PREVIEW_ADMIN_USER: ${PREVIEW_ADMIN_USER:-admin}
+      SAIKU_ADMIN_PASSWORD: ${SAIKU_ADMIN_PASSWORD:-}
+      PREVIEW_STACK: ${COMPOSE_PROJECT_NAME:-saiku-oss-preview}
+    volumes:
+      - ./infra/preview:/selfcheck:ro
+    mem_limit: 64m
+
+networks:
+  preview:
+    # Project-scoped (`<project>_preview`): a globally named network would let
+    # every PR's container reach every other's.
+    driver: bridge
+
+volumes:
+  saiku-home:
+    # Project-scoped (`<project>_saiku-home`): the guard removes a volume only if
+    # it carries the project prefix.
+    driver: local

@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<!--
+  Copyright 2026 Spicule Ltd
+  Apache License, Version 2.0.
+
+  Saiku add-on sidebar (spiculedata/saiku#1436). Plain HTML/CSS/JS: no
+  templating, no build step — Apps Script serves this file verbatim and
+  google.script.run bridges each call to the server-side entry points in
+  Code.js. The layout mirrors the Office.js add-in: connection form, cube
+  picker, measure shelf, row-axis shelf, then Insert / Refresh.
+-->
+<html>
+  <head>
+    <base target="_top" />
+    <meta charset="utf-8" />
+    <style>
+      :root {
+        --saiku-fg: #0f172a;
+        --saiku-muted: #64748b;
+        --saiku-line: #cbd5e1;
+        --saiku-accent: #1d4ed8;
+        --saiku-bg-soft: #f8fafc;
+        --saiku-danger: #b91c1c;
+        --saiku-ok: #15803d;
+      }
+      body {
+        font: 13px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        color: var(--saiku-fg);
+        margin: 0;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 15px;
+        margin: 0 0 2px;
+      }
+      .sub {
+        color: var(--saiku-muted);
+        margin: 0 0 12px;
+      }
+      fieldset {
+        border: 1px solid var(--saiku-line);
+        border-radius: 6px;
+        margin: 0 0 12px;
+        padding: 8px 10px 10px;
+      }
+      legend {
+        color: var(--saiku-muted);
+        font-size: 11px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        padding: 0 4px;
+      }
+      label {
+        display: block;
+        font-size: 12px;
+        margin: 6px 0 2px;
+      }
+      input[type='text'],
+      input[type='password'],
+      input[type='number'],
+      select {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 5px 6px;
+        border: 1px solid var(--saiku-line);
+        border-radius: 4px;
+        font: inherit;
+        background: #fff;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+      }
+      .row > * {
+        flex: 1;
+      }
+      button {
+        font: inherit;
+        padding: 6px 10px;
+        border-radius: 4px;
+        border: 1px solid var(--saiku-line);
+        background: #fff;
+        cursor: pointer;
+      }
+      button.primary {
+        background: var(--saiku-accent);
+        border-color: var(--saiku-accent);
+        color: #fff;
+        font-weight: 600;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .shelf {
+        max-height: 168px;
+        overflow: auto;
+        border: 1px solid var(--saiku-line);
+        border-radius: 4px;
+        background: var(--saiku-bg-soft);
+        padding: 4px 6px;
+        margin-bottom: 6px;
+      }
+      .shelf label {
+        display: flex;
+        gap: 6px;
+        align-items: baseline;
+        margin: 2px 0;
+        font-size: 12px;
+      }
+      .shelf .hint {
+        color: var(--saiku-muted);
+        font-size: 11px;
+      }
+      .status {
+        min-height: 34px;
+        margin-top: 10px;
+        font-size: 12px;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .status.error {
+        color: var(--saiku-danger);
+      }
+      .status.ok {
+        color: var(--saiku-ok);
+      }
+      .busy {
+        color: var(--saiku-muted);
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 8px;
+      }
+      .actions button {
+        flex: 1;
+      }
+      .hidden {
+        display: none;
+      }
+      footer {
+        color: var(--saiku-muted);
+        font-size: 11px;
+        margin-top: 12px;
+        border-top: 1px solid var(--saiku-line);
+        padding-top: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Saiku</h1>
+    <p class="sub">Query the Saiku semantic layer and write the result into this sheet.</p>
+
+    <fieldset id="connection">
+      <legend>Connection</legend>
+      <label for="serverUrl">Server URL</label>
+      <input type="text" id="serverUrl" placeholder="https://saiku.example.com" autocomplete="off" />
+      <div class="row">
+        <div>
+          <label for="username">Username</label>
+          <input type="text" id="username" autocomplete="off" />
+        </div>
+        <div>
+          <label for="password">Password</label>
+          <input type="password" id="password" autocomplete="off" />
+        </div>
+      </div>
+      <div class="actions">
+        <button id="connect" class="primary">Connect</button>
+      </div>
+    </fieldset>
+
+    <fieldset id="shelf" class="hidden">
+      <legend>Query</legend>
+      <label for="cube">Cube</label>
+      <select id="cube"></select>
+
+      <label>Measures</label>
+      <div class="shelf" id="measures"></div>
+
+      <label for="rowLevel">Rows — dimension / hierarchy / level</label>
+      <select id="rowLevel"></select>
+
+      <div class="row">
+        <div>
+          <label for="limit">Row limit</label>
+          <input type="number" id="limit" min="0" step="1" value="50" />
+        </div>
+        <div>
+          <label for="asNumbers">Values</label>
+          <select id="asNumbers">
+            <option value="numbers">Numbers (chartable)</option>
+            <option value="text">Formatted text</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="insert" class="primary">Insert as table</button>
+        <button id="refresh" disabled>Refresh</button>
+      </div>
+    </fieldset>
+
+    <div id="status" class="status"></div>
+
+    <footer>
+      Rows are written at the active cell. <b>Refresh</b> re-runs the query and
+      rewrites the same block in place, so your formatting survives.
+    </footer>
+
+    <script>
+      var state = { config: null, cubes: [], schema: null, block: null };
+
+      function el(id) {
+        return document.getElementById(id);
+      }
+
+      function setStatus(message, kind) {
+        var node = el('status');
+        node.textContent = message || '';
+        node.className = 'status' + (kind ? ' ' + kind : '');
+      }
+
+      function setBusy(busy, label) {
+        ['connect', 'insert', 'refresh'].forEach(function (id) {
+          el(id).disabled = busy;
+        });
+        if (busy) {
+          setStatus(label || 'Working…', 'busy');
+        }
+      }
+
+      /** Wrap a google.script.run promise so both paths report failures the same way. */
+      function callServer(fn, onSuccess, busyLabel) {
+        setBusy(true, busyLabel);
+        fn()
+          .withSuccessHandler(function (result) {
+            setBusy(false);
+            onSuccess(result);
+          })
+          .withFailureHandler(function (err) {
+            setBusy(false);
+            setStatus((err && err.message ? err.message : String(err)) || 'Request failed.', 'error');
+          });
+      }
+
+      function readConfig() {
+        state.config = {
+          serverUrl: el('serverUrl').value,
+          username: el('username').value,
+          password: el('password').value,
+        };
+        return state.config;
+      }
+
+      function renderCubes() {
+        var select = el('cube');
+        select.innerHTML = '';
+        state.cubes.forEach(function (cube) {
+          var option = document.createElement('option');
+          option.value = cube.id;
+          option.textContent = cube.caption + ' (' + cube.measureCount + ' measures)';
+          select.appendChild(option);
+        });
+      }
+
+      function renderMeasures() {
+        var host = el('measures');
+        host.innerHTML = '';
+        if (!state.schema.measures.length) {
+          host.innerHTML = '<span class="hint">This cube exposes no measures.</span>';
+          return;
+        }
+        state.schema.measures.forEach(function (measure) {
+          var label = document.createElement('label');
+          var box = document.createElement('input');
+          box.type = 'checkbox';
+          box.value = measure.key;
+          // Preselect the cube's own default measure so Insert works immediately.
+          box.checked = measure.key === state.schema.defaultMeasure;
+          label.appendChild(box);
+          var text = document.createElement('span');
+          text.textContent = measure.unit ? measure.label + ' (' + measure.unit + ')' : measure.label;
+          label.appendChild(text);
+          if (measure.description) {
+            label.title = measure.description;
+          }
+          host.appendChild(label);
+        });
+      }
+
+      function renderLevels() {
+        var select = el('rowLevel');
+        select.innerHTML = '';
+        var none = document.createElement('option');
+        none.value = '';
+        none.textContent = 'No row axis (single total row)';
+        select.appendChild(none);
+        state.schema.levels.forEach(function (level) {
+          var option = document.createElement('option');
+          option.value = level.key;
+          option.textContent = level.label;
+          select.appendChild(option);
+        });
+      }
+
+      function loadSchema(cubeId) {
+        callServer(
+          function () {
+            return google.script.run.saikuLoadSchema(readConfig(), cubeId);
+          },
+          function (schema) {
+            state.schema = schema;
+            renderMeasures();
+            renderLevels();
+            el('shelf').classList.remove('hidden');
+            setStatus('Connected. Pick measures and press Insert as table.');
+          },
+          'Loading cube schema…'
+        );
+      }
+
+      el('connect').addEventListener('click', function () {
+        var config = readConfig();
+        callServer(
+          function () {
+            return google.script.run.saikuListCubes(config);
+          },
+          function (cubes) {
+            state.cubes = cubes || [];
+            renderCubes();
+            if (!state.cubes.length) {
+              setStatus('Connected, but this user can see no cubes.', 'error');
+              return;
+            }
+            loadSchema(state.cubes[0].id);
+          },
+          'Connecting…'
+        );
+      });
+
+      el('cube').addEventListener('change', function () {
+        loadSchema(el('cube').value);
+      });
+
+      el('insert').addEventListener('click', function () {
+        var config = readConfig();
+        var selected = Array.prototype.slice
+          .call(el('measures').querySelectorAll('input[type=checkbox]:checked'))
+          .map(function (box) {
+            return box.value;
+          });
+        var shelf = {
+          cubeId: el('cube').value,
+          measures: selected,
+          rowKey: el('rowLevel').value,
+          limit: el('limit').value,
+          asNumbers: el('asNumbers').value === 'numbers',
+        };
+        callServer(
+          function () {
+            return google.script.run.saikuInsertBlock(config, shelf);
+          },
+          function (result) {
+            state.block = result;
+            el('refresh').disabled = false;
+            setStatus(
+              'Wrote ' + result.rowCount + '×' + result.columnCount + ' to ' +
+                result.range + ' in ' + (result.runtimeMs || 0) + ' ms.',
+              'ok'
+            );
+          },
+          'Querying Saiku…'
+        );
+      });
+
+      el('refresh').addEventListener('click', function () {
+        callServer(
+          function () {
+            return google.script.run.saikuRefreshBlock();
+          },
+          function (result) {
+            setStatus(
+              'Refreshed ' + result.rowCount + '×' + result.columnCount + ' at ' +
+                result.range + ' in ' + (result.runtimeMs || 0) + ' ms.',
+              'ok'
+            );
+          },
+          'Re-running the query…'
+        );
+      });
+
+      // Restore whatever can be refreshed without asking for credentials again.
+      google.script.run
+        .withSuccessHandler(function (block) {
+          if (block && block.present) {
+            state.block = block;
+            el('refresh').disabled = false;
+            setStatus(
+              'A Saiku result (' + block.rowCount + '×' + block.columnCount + ') is available to refresh.',
+              ''
+            );
+          }
+        })
+        .saikuBlockStatus();
+    </script>
+  </body>
+</html>

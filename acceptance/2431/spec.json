@@ -1,0 +1,71 @@
+{
+  "issue": 2431,
+  "title": "An account whose H2 row was written the way the admin console and SCIM always write it (the same role listed twice) is still found and enforced: a demoted admin is refused, not left to the authenticator",
+  "kind": "api",
+  "auth": "session",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "the admin's H2 role list was rewritten to a shape the stores produce on every console/SCIM create — ROLE_USER listed twice, ROLE_ADMIN gone (JdbcUserDAO.insert always prepends ROLE_USER, so a caller that sends it duplicates it)",
+      "then": "the row is still treated as FOUND and managed: the next /rest/saiku/admin/** request is refused with 403 because the stored row no longer lists an admin role, instead of being read as unparseable/unmanaged and the authenticator's admin authority left in place (saiku#2431: Set.of threw on the duplicate and the catch turned a found row into UNMANAGED)"
+    },
+    {
+      "id": "C2",
+      "given": "a role list that contains the same role twice is written through PUT /rest/saiku/admin/users/{username} — the exact duplicate shape the console and SCIM create paths produce via JdbcUserDAO.insert",
+      "then": "the write is accepted with 200, so the repro's precondition is reachable through the REST surface the admin console itself uses"
+    }
+  ],
+  "steps": [
+    {
+      "name": "the admin session still has admin authority before the rewrite",
+      "criterion": "C1",
+      "auth": "session",
+      "request": { "method": "GET", "path": "/rest/saiku/admin/users" },
+      "expect": { "status": 200, "because": "the seeded admin row parses cleanly, so the baseline must be an admin answering 200" }
+    },
+    {
+      "name": "the console/SCIM-shaped duplicate role write is accepted",
+      "criterion": "C2",
+      "auth": "session",
+      "request": {
+        "method": "PUT",
+        "path": "/rest/saiku/admin/users/admin",
+        "json": {
+          "id": 1,
+          "username": "admin",
+          "email": "test@admin.com",
+          "password": "",
+          "roles": ["ROLE_USER", "ROLE_USER"]
+        }
+      },
+      "expect": { "status": 200, "because": "the duplicate ROLE_USER list is the normal shape of a console/SCIM-created row and must not fail the write" }
+    },
+    {
+      "name": "cooldown: outlive the ~2s status cache so the next admin read is fresh",
+      "criterion": "C1",
+      "auth": "none",
+      "request": { "method": "GET", "path": "/rest/saiku/info" },
+      "repeat": { "count": 500, "untilStatus": 599 },
+      "expect": { "status": 200, "because": "an anonymous endpoint, polled to burn wall time past the policy's 2s lookup cache without touching it" }
+    },
+    {
+      "name": "cooldown (second pass): the fresh read must happen after the cached entry expired",
+      "criterion": "C1",
+      "auth": "none",
+      "request": { "method": "GET", "path": "/rest/saiku/info" },
+      "repeat": { "count": 500, "untilStatus": 599 },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "the demoted admin is refused: the row was found and enforced, not discarded as unparseable",
+      "criterion": "C1",
+      "auth": "session",
+      "request": { "method": "GET", "path": "/rest/saiku/admin/users" },
+      "repeat": { "count": 500, "untilStatus": 403 },
+      "expect": {
+        "status": 403,
+        "because": "the H2 row for admin exists, is enabled, and lists no admin role — the URL gate hasRole('ADMIN') must refuse the request; on saiku#2431's base the duplicate role made the row read as UNMANAGED and this stayed 200"
+      }
+    }
+  ]
+}

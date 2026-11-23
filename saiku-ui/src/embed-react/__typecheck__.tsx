@@ -40,7 +40,7 @@ const fullProps: SaikuEmbedProps = {
 };
 
 // ---- Type narrowing: kind literal unions ----
-const kinds: SaikuEmbedKind[] = ['query', 'dashboard', 'ai'];
+const kinds: SaikuEmbedKind[] = ['query', 'dashboard', 'ai', 'app', 'creator'];
 const renders: SaikuEmbedRender[] = ['table', 'matrix', 'chart'];
 
 // ---- Component usage in JSX ----
@@ -56,6 +56,14 @@ function ExampleTree() {
 			{/* AI kind example. */}
 			<SaikuEmbed kind="ai" path="foodmart/FoodMart/FoodMart/Sales" token="tx-ai" height="200px" />
 
+			{/* saiku#1435 Creator Mode — the visitor builds their own against the pinned cube. */}
+			<SaikuEmbed
+				kind="creator"
+				cube="foodmart/FoodMart/FoodMart/Sales"
+				token="tx-author"
+				height="640px"
+			/>
+
 			{/* Raw custom element — augmented JSX namespace makes this typed too. */}
 			<saiku-embed server="https://saiku.example.com" path="a.saiku" render="chart" mode="line" />
 		</>
@@ -70,7 +78,9 @@ async function mint(): Promise<MintEmbedTokenResult> {
 		resourceKind: 'query',
 		resourcePath: 'homes/admin/Trend.saiku',
 		ttlHours: 24,
-		label: 'unit test'
+		label: 'unit test',
+		// saiku#1435: Creator Mode tokens pin a tenant.
+		tenantId: 'acme'
 	};
 	const result = await mintEmbedToken(opts);
 	return result;

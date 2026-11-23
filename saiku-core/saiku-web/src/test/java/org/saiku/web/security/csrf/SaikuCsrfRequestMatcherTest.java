@@ -56,7 +56,21 @@ public class SaikuCsrfRequestMatcherTest {
     @Test
     public void loginEndpointIsExempt() {
         assertFalse(matcher.matches(req("POST", "/rest/saiku/session")));
-        assertFalse(matcher.matches(req("POST", "/rest/saiku/session/clear")));
+    }
+
+    @Test
+    public void trailingSlashLoginIsExempt() {
+        // saiku#2439: embed-demo, aqvira-demo and both showcase pages sign in at this exact URL.
+        assertFalse(matcher.matches(req("POST", "/rest/saiku/session/")));
+    }
+
+    @Test
+    public void sessionSubPathsAreNotCsrfExempt() {
+        assertTrue(matcher.matches(req("POST", "/rest/saiku/session/clear")));
+        assertTrue(matcher.matches(req("POST", "/rest/saiku/session/clear/")));
+        assertTrue(matcher.matches(req("POST", "/rest/saiku/session/anything")));
+        assertTrue(matcher.matches(req("POST", "/rest/saiku/sessionx")));
+        assertTrue(matcher.matches(req("POST", "/rest/saiku/session/;x/clear")));
     }
 
     @Test
@@ -152,6 +166,41 @@ public class SaikuCsrfRequestMatcherTest {
         MockHttpServletRequest r =
                 req("POST", "/rest/saiku/api/embed/app/homes/home:admin/sales.saikuapp/page/p1/tile/t1/query");
         r.addHeader(SHARE_HEADER, "shr-abc");
+        assertTrue(matcher.matches(r));
+    }
+
+    /* ------------------- normalised path (#2342) ------------------- */
+
+    @Test
+    public void percentEncodedRestPrefix_stillRequiresCsrf() {
+        assertTrue(matcher.matches(req("POST", "/%72est/saiku/foo")));
+    }
+
+    @Test
+    public void percentEncodedLoginPath_matchesCanonicalExemption() {
+        // The decoded form IS the login path the container routes to, so it gets the same treatment.
+        assertFalse(matcher.matches(req("POST", "/rest/saiku/%73ession")));
+    }
+
+    @Test
+    public void dotSegmentAndPathParameterVariants_stillRequireCsrf() {
+        assertTrue(matcher.matches(req("POST", "/rest/./saiku/api/repository/resource")));
+        assertTrue(matcher.matches(req("POST", "/rest/saiku/api/repository/resource;jsessionid=abc")));
+        assertTrue(matcher.matches(req("POST", "//rest/saiku/api/repository/resource")));
+    }
+
+    @Test
+    public void percentEncodedEmbedReadPrefix_keepsTokenExemption() {
+        MockHttpServletRequest r = req("POST", "/%72est/saiku/api/embed/query/x");
+        r.addHeader(EMBED_HEADER, "tok");
+        assertFalse(matcher.matches(r));
+    }
+
+    @Test
+    public void nonNormalisablePath_failsClosedAndRequiresCsrf() {
+        assertTrue(matcher.matches(req("POST", "/rest/saiku/../saiku/session")));
+        MockHttpServletRequest r = req("POST", "/rest/saiku/api/embed/query/%2e%2e/tokens");
+        r.addHeader(EMBED_HEADER, "tok");
         assertTrue(matcher.matches(r));
     }
 }

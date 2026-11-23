@@ -14,10 +14,13 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -34,6 +37,9 @@ import org.saiku.olap.util.exception.SaikuOlapException;
 import org.saiku.service.datasource.IDatasourceManager;
 import org.saiku.service.datasource.RepositoryDatasourceManager;
 import org.saiku.service.olap.OlapDiscoverService;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 /**
  * Fuzz suite for the Ossie shelf-state → SQL pipeline. Seeds a Pharma-shaped H2 warehouse
@@ -102,6 +108,9 @@ public class OssieFuzzIT {
 
     @After
     public void tearDown() throws Exception {
+        // Role tests below authenticate through SecurityContextHolder — always clear it so
+        // an unrelated test method never inherits a caller identity.
+        SecurityContextHolder.clearContext();
         if (h2 != null) h2.close();
         if (yaml != null) Files.deleteIfExists(yaml);
     }
@@ -174,6 +183,14 @@ public class OssieFuzzIT {
                 + "        - dialect: ANSI_SQL\n          expression: REGION\n"
                 + "    - name: state\n      expression:\n        dialects:\n"
                 + "        - dialect: ANSI_SQL\n          expression: STATE\n"
+                // saiku#1393 — row predicates naming two roles. Unauthenticated callers (every
+                // pre-existing fuzz case) match neither role and stay unrestricted, so adding
+                // these does not move any existing expected value.
+                + "    custom_extensions:\n"
+                + "    - vendor_name: SAIKU\n"
+                + "      data: '{\"roles\":{\"row_predicates\":["
+                + "{\"role\":\"ROLE_NORTHEAST\",\"expression\":\"REGION = ''Northeast''\"},"
+                + "{\"role\":\"ROLE_SOUTH\",\"expression\":\"REGION = ''South''\"}]}}'\n"
                 + "  - name: payer\n    source: DIM_PAYER\n    primary_key: [PAYERKEY]\n"
                 + "    fields:\n"
                 + "    - name: payerkey\n      expression:\n        dialects:\n"
@@ -401,6 +418,240 @@ public class OssieFuzzIT {
         if (!failures.isEmpty()) {
             fail(String.format("Ossie fuzz: %d / %d failed%n%s", failures.size(), total, String.join("\n", failures)));
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // saiku#1393 — role-restricted runs (row-level security)
+    // -------------------------------------------------------------------------
+
+    /**
+     * saiku#1393 acceptance: every fuzz case runs twice — once unrestricted, once as a caller
+     * holding the two roles the geography fixture names. The pair of predicates (Northeast ∪
+     * South) keeps 6 of the 12 fact rows, i.e. a predicate that excludes half the fixture. The
+     * restricted run must be a row subset of the unrestricted one, <b>strictly</b> smaller
+     * whenever the shelf references the restricted dataset, and — the leak assertion — no
+     * {@code geography.REGION} cell may ever show a region outside the caller's window. Shelves
+     * that never reference geography must produce byte-identical results, proving the injected
+     * predicates never over-restrict an unrelated dataset.
+     */
+    @Test
+    public void roleRestrictedFuzzIsAStrictSubsetAndNeverLeaks() throws Exception {
+        List<FuzzCase> cases = defineCases();
+        List<FuzzCase> restrictedCases = defineCases(); // fresh models — execute() may mutate them
+
+        // Pass 1 — unrestricted baseline (no authentication on the SecurityContextHolder).
+        Map<String, Integer> unrestrictedRows = new LinkedHashMap<>();
+        Map<String, String> unrestrictedSummaries = new LinkedHashMap<>();
+        for (FuzzCase c : cases) {
+            SecurityContextHolder.clearContext();
+            CellDataSet r = execute(c.model());
+            unrestrictedRows.put(c.name(), bodyRowCount(r));
+            unrestrictedSummaries.put(c.name(), summarize(r));
+        }
+
+        // Pass 2 — restricted caller. Roles are supplied exactly the way production does it:
+        // Spring Security authorities on the SecurityContextHolder, read by OssieQueryService.
+        authenticateAs("rls-analyst", "ROLE_NORTHEAST", "ROLE_SOUTH");
+
+        // A REGION value outside the Northeast ∪ South window is a leak — these two are
+        // exactly what the fixture's predicates exclude.
+        Set<String> forbiddenRegions = Set.of("Midwest", "West");
+        List<String> failures = new ArrayList<>();
+        int strictSubsets = 0;
+        for (int i = 0; i < cases.size(); i++) {
+            FuzzCase c = cases.get(i);
+            try {
+                CellDataSet restricted = execute(restrictedCases.get(i).model());
+                String summary = summarize(restricted);
+                int got = bodyRowCount(restricted);
+                int want = unrestrictedRows.get(c.name());
+                boolean refsGeography = referencesGeography(c.model());
+                if (got > want) {
+                    failures.add(String.format(
+                            "  %s%n    restricted rows %d > unrestricted %d (over-restriction or leak)",
+                            c.name(), got, want));
+                    continue;
+                }
+                if (!refsGeography && !summary.equals(unrestrictedSummaries.get(c.name()))) {
+                    failures.add(String.format(
+                            "  %s%n    unrelated dataset changed under a restricted caller:%n    expected: %s%n    actual:   %s",
+                            c.name(), unrestrictedSummaries.get(c.name()), summary));
+                    continue;
+                }
+                if (refsGeography && c.model().getLimit() == null && want > 0 && got >= want) {
+                    failures.add(String.format(
+                            "  %s%n    restricted rows %d not a strict subset of unrestricted %d",
+                            c.name(), got, want));
+                    continue;
+                }
+                if (refsGeography && leaksRegion(restricted, forbiddenRegions)) {
+                    failures.add(String.format(
+                            "  %s%n    restricted result leaked a region outside the Northeast ∪ South window",
+                            c.name()));
+                    continue;
+                }
+                if (refsGeography && want > 0 && got < want) strictSubsets++;
+            } catch (Exception e) {
+                failures.add(String.format(
+                        "  %s%n    threw:    %s: %s", c.name(), e.getClass().getSimpleName(), e.getMessage()));
+            }
+        }
+
+        System.out.println(String.format(
+                "[Ossie role-restricted fuzz] %d cases, %d strict subsets, %d failures",
+                cases.size(), strictSubsets, failures.size()));
+        if (strictSubsets == 0) {
+            // Every geography-referencing case hit LIMIT or an empty envelope — the suite
+            // stopped proving anything about the predicate.
+            fail("role-restricted fuzz proved no strict subset — fixture or case list changed?");
+        }
+        if (!failures.isEmpty()) {
+            fail(String.format(
+                    "Role-restricted fuzz: %d / %d failed%n%s",
+                    failures.size(), cases.size(), String.join("\n", failures)));
+        }
+    }
+
+    /**
+     * saiku#1393: the restricted windows pin hand-computed aggregates, not just row shapes —
+     * proving the injected clause is the <i>declared</i> predicate (the right region window),
+     * not merely "some extra WHERE". Northeast = fact rows 1, 2, 9 (545.50 revenue / 35 rx / 3
+     * lines); Northeast ∪ South adds rows 7, 8, 12 (526.00 / 44 / 3) via OR-ed predicates.
+     */
+    @Test
+    public void roleRestrictedWindowsMatchHandComputedValues() throws Exception {
+        List<RestrictedCase> cases = defineRestrictedCases();
+        List<String> failures = new ArrayList<>();
+        int passed = 0;
+        for (RestrictedCase c : cases) {
+            try {
+                authenticateAs("rls-analyst", c.roles().toArray(new String[0]));
+                CellDataSet result = execute(c.model());
+                String actual = summarize(result);
+                if (actual.equals(c.expected())) {
+                    passed++;
+                } else {
+                    failures.add(
+                            String.format("  %s%n    expected: %s%n    actual:   %s", c.name(), c.expected(), actual));
+                }
+            } catch (Exception e) {
+                failures.add(String.format(
+                        "  %s%n    threw:    %s: %s", c.name(), e.getClass().getSimpleName(), e.getMessage()));
+            }
+        }
+        System.out.println(String.format("[Ossie role-restricted windows] passed %d / %d", passed, cases.size()));
+        if (!failures.isEmpty()) {
+            fail(String.format(
+                    "Role-restricted windows: %d / %d failed%n%s",
+                    failures.size(), cases.size(), String.join("\n", failures)));
+        }
+    }
+
+    private List<RestrictedCase> defineRestrictedCases() {
+        List<RestrictedCase> cases = new ArrayList<>();
+
+        // -- ROLE_NORTHEAST alone: GEOKEY 1 → fact rows 1, 2, 9 -------------------
+        cases.add(rc(
+                "Northeast window: region × net_revenue",
+                model(m -> {
+                    m.setFactDataset("fact_pharma");
+                    m.getRows().add(fieldRef("geography", "REGION"));
+                    m.getValues().add(metric("net_revenue"));
+                    m.getSorts().add(sortByField("geography", "REGION", "ASC"));
+                }),
+                List.of("ROLE_NORTHEAST"),
+                "[geography.REGION, net_revenue]|[Northeast, 545.50]"));
+        cases.add(rc(
+                "Northeast window: region × (net_revenue, rx_count)",
+                model(m -> {
+                    m.setFactDataset("fact_pharma");
+                    m.getRows().add(fieldRef("geography", "REGION"));
+                    m.getValues().add(metric("net_revenue"));
+                    m.getValues().add(metric("rx_count"));
+                    m.getSorts().add(sortByField("geography", "REGION", "ASC"));
+                }),
+                List.of("ROLE_NORTHEAST"),
+                "[geography.REGION, net_revenue, rx_count]|[Northeast, 545.50, 35]"));
+        cases.add(rc(
+                "Northeast window: brand × net_revenue (predicate crosses joins)",
+                model(m -> {
+                    m.setFactDataset("fact_pharma");
+                    m.getRows().add(fieldRef("product", "BRAND"));
+                    m.getValues().add(metric("net_revenue"));
+                    m.getSorts().add(sortByField("product", "BRAND", "ASC"));
+                }),
+                List.of("ROLE_NORTHEAST"),
+                "[product.BRAND, net_revenue]|[Alfa, 250.00]|[Beta, 120.50]|[Gamma, 175.00]"));
+        cases.add(rc(
+                "Northeast window: channel × net_revenue",
+                model(m -> {
+                    m.setFactDataset("fact_pharma");
+                    m.getRows().add(fieldRef("payer", "CHANNEL"));
+                    m.getValues().add(metric("net_revenue"));
+                    m.getSorts().add(sortByField("payer", "CHANNEL", "ASC"));
+                }),
+                List.of("ROLE_NORTHEAST"),
+                "[payer.CHANNEL, net_revenue]|[Commercial, 250.00]|[Medicaid, 175.00]|[Medicare, 120.50]"));
+        cases.add(rc(
+                "Northeast window: global totals shrink to the window",
+                model(m -> {
+                    m.setFactDataset("fact_pharma");
+                    m.getValues().add(metric("net_revenue"));
+                    m.getValues().add(metric("line_count"));
+                }),
+                List.of("ROLE_NORTHEAST"),
+                "[net_revenue, line_count]|[545.50, 3]"));
+        cases.add(rc(
+                "Northeast window: shelf filter inside the window (STATE='NY')",
+                model(m -> {
+                    m.setFactDataset("fact_pharma");
+                    m.getValues().add(metric("net_revenue"));
+                    m.getFilters().add(filter("geography", "STATE", "EQ", "NY", List.of()));
+                }),
+                List.of("ROLE_NORTHEAST"),
+                "[net_revenue]|[545.50]"));
+
+        // -- ROLE_NORTHEAST + ROLE_SOUTH: predicates OR into one access window ----
+        cases.add(rc(
+                "Union of two roles: region × net_revenue",
+                model(m -> {
+                    m.setFactDataset("fact_pharma");
+                    m.getRows().add(fieldRef("geography", "REGION"));
+                    m.getValues().add(metric("net_revenue"));
+                    m.getSorts().add(sortByField("geography", "REGION", "ASC"));
+                }),
+                List.of("ROLE_NORTHEAST", "ROLE_SOUTH"),
+                "[geography.REGION, net_revenue]|[Northeast, 545.50]|[South, 526.00]"));
+        cases.add(rc(
+                "Union of two roles: global totals",
+                model(m -> {
+                    m.setFactDataset("fact_pharma");
+                    m.getValues().add(metric("net_revenue"));
+                    m.getValues().add(metric("line_count"));
+                }),
+                List.of("ROLE_NORTHEAST", "ROLE_SOUTH"),
+                "[net_revenue, line_count]|[1071.50, 6]"));
+        cases.add(rc(
+                "Union of two roles: brand × net_revenue",
+                model(m -> {
+                    m.setFactDataset("fact_pharma");
+                    m.getRows().add(fieldRef("product", "BRAND"));
+                    m.getValues().add(metric("net_revenue"));
+                    m.getSorts().add(sortByField("product", "BRAND", "ASC"));
+                }),
+                List.of("ROLE_NORTHEAST", "ROLE_SOUTH"),
+                "[product.BRAND, net_revenue]|[Alfa, 460.00]|[Beta, 216.00]|[Gamma, 395.50]"));
+        cases.add(rc(
+                "Union of two roles intersected with a shelf filter (STATE='NY')",
+                model(m -> {
+                    m.setFactDataset("fact_pharma");
+                    m.getValues().add(metric("net_revenue"));
+                    m.getFilters().add(filter("geography", "STATE", "EQ", "NY", List.of()));
+                }),
+                List.of("ROLE_NORTHEAST", "ROLE_SOUTH"),
+                "[net_revenue]|[545.50]"));
+
+        return cases;
     }
 
     // -------------------------------------------------------------------------
@@ -1125,12 +1376,71 @@ public class OssieFuzzIT {
         return new FuzzCase(name, model, expected);
     }
 
+    private static RestrictedCase rc(String name, OssieQueryModel model, List<String> roles, String expected) {
+        return new RestrictedCase(name, model, roles, expected);
+    }
+
     /**
      * One fuzz case: a shelf state + the exact summary string the executor should produce.
      * Kept as a plain record because we want the case list to be a dense, glanceable
      * declaration.
      */
     private record FuzzCase(String name, OssieQueryModel model, String expected) {}
+
+    /**
+     * One role-restricted case (saiku#1393): shelf state + the roles the caller holds + the
+     * exact summary the executor must produce for that caller's access window.
+     */
+    private record RestrictedCase(String name, OssieQueryModel model, List<String> roles, String expected) {}
+
+    private static int bodyRowCount(CellDataSet result) {
+        if (result == null || result.getCellSetBody() == null) return 0;
+        return result.getCellSetBody().length;
+    }
+
+    /** True when any shelf entry (row, column, filter, sort) references the geography dataset. */
+    private static boolean referencesGeography(OssieQueryModel m) {
+        for (OssieQueryModel.FieldRef f : m.getRows()) {
+            if (refersTo(f.getDataset())) return true;
+        }
+        for (OssieQueryModel.FieldRef f : m.getColumns()) {
+            if (refersTo(f.getDataset())) return true;
+        }
+        for (OssieQueryModel.FilterExpr f : m.getFilters()) {
+            if (refersTo(f.getDataset())) return true;
+        }
+        for (OssieQueryModel.SortRef s : m.getSorts()) {
+            if (refersTo(s.getDataset())) return true;
+        }
+        return false;
+    }
+
+    private static boolean refersTo(String dataset) {
+        return "geography".equalsIgnoreCase(dataset);
+    }
+
+    /**
+     * True when any body cell of the result shows one of {@code forbidden} region values —
+     * i.e. a row outside the caller's row-predicate window reached the caller. The region
+     * names are distinctive enough that no other fixture column can produce them.
+     */
+    private static boolean leaksRegion(CellDataSet result, Set<String> forbidden) {
+        if (result == null || result.getCellSetBody() == null) return false;
+        for (AbstractBaseCell[] row : result.getCellSetBody()) {
+            for (AbstractBaseCell cell : row) {
+                if (cell != null && forbidden.contains(cell.getFormattedValue())) return true;
+            }
+        }
+        return false;
+    }
+
+    /** Authenticate the caller the way production does — Spring Security granted authorities. */
+    private static void authenticateAs(String user, String... authorities) {
+        List<SimpleGrantedAuthority> auths =
+                Arrays.stream(authorities).map(SimpleGrantedAuthority::new).toList();
+        SecurityContextHolder.getContext()
+                .setAuthentication(new UsernamePasswordAuthenticationToken(user, "n/a", auths));
+    }
 
     // -------------------------------------------------------------------------
     // Test doubles — copied from OssieQueryServiceIT

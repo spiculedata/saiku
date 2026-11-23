@@ -39,6 +39,12 @@ public final class DashboardDigestContent {
     public record MeasureLine(String label, String value) {}
 
     /**
+     * One row of the insight delta table (saiku#1119): the measure, its value in both periods, and the
+     * computed change. The bullets above this table are narration of exactly these numbers.
+     */
+    public record DeltaLine(String label, String current, String previous, String change) {}
+
+    /**
      * The email subject. Includes the dashboard title when present, else a generic label. The subject is
      * plain text (no HTML), so it is NOT escaped here.
      */
@@ -59,10 +65,40 @@ public final class DashboardDigestContent {
      * @param dashboardUrl the absolute deep link, or null when unavailable (then no link is emitted)
      */
     public static String htmlBody(String dashboardTitle, List<MeasureLine> lines, String dashboardUrl) {
+        return htmlBody(dashboardTitle, lines, null, null, dashboardUrl);
+    }
+
+    /**
+     * Build the HTML body with the optional insight section (saiku#1119) rendered above the measure
+     * table: the "what changed" bullets, then the period-over-period delta table they describe. When
+     * {@code bullets} and {@code deltaLines} are both absent the output is byte-for-byte the #943
+     * layout, so a job that does not opt in renders exactly as it did before.
+     *
+     * @param dashboardTitle optional display title (escaped)
+     * @param lines the resolved measure rows (labels + values, both escaped)
+     * @param dashboardUrl the absolute deep link, or null when unavailable (then no link is emitted)
+     * @param bullets the insight bullets, or null for none
+     * @param deltaLines the period-over-period rows, or null for none
+     */
+    public static String htmlBody(
+            String dashboardTitle,
+            List<MeasureLine> lines,
+            List<String> bullets,
+            List<DeltaLine> deltaLines,
+            String dashboardUrl) {
         StringBuilder sb = new StringBuilder();
         sb.append("<html><body>");
         sb.append("<h2>").append(escape(heading(dashboardTitle))).append("</h2>");
-        sb.append("<p>Here is your scheduled summary of key measures.</p>");
+        if (bullets == null || bullets.isEmpty()) {
+            sb.append("<p>Here is your scheduled summary of key measures.</p>");
+        } else {
+            sb.append("<p><b>What changed since the previous period</b></p>");
+            sb.append("<ul>");
+            for (String bullet : bullets) {
+                sb.append("<li>").append(escape(bullet)).append("</li>");
+            }
+            sb.append("</ul>");
+        }
 
         sb.append("<table cellpadding=\"6\" cellspacing=\"0\" border=\"1\">");
         sb.append("<thead><tr><th align=\"left\">Measure</th><th align=\"left\">Current value</th></tr></thead>");
@@ -77,6 +113,26 @@ public final class DashboardDigestContent {
             }
         }
         sb.append("</tbody></table>");
+
+        if (deltaLines != null && !deltaLines.isEmpty()) {
+            sb.append("<h3>Period over period</h3>");
+            sb.append("<table cellpadding=\"6\" cellspacing=\"0\" border=\"1\">");
+            sb.append("<thead><tr><th align=\"left\">Measure</th><th align=\"left\">Current</th>")
+                    .append("<th align=\"left\">Previous</th><th align=\"left\">Change</th></tr></thead>");
+            sb.append("<tbody>");
+            for (DeltaLine row : deltaLines) {
+                sb.append("<tr><td>")
+                        .append(escape(row.label()))
+                        .append("</td><td>")
+                        .append(escape(row.current()))
+                        .append("</td><td>")
+                        .append(escape(row.previous()))
+                        .append("</td><td>")
+                        .append(escape(row.change()))
+                        .append("</td></tr>");
+            }
+            sb.append("</tbody></table>");
+        }
 
         if (dashboardUrl != null && !dashboardUrl.isBlank()) {
             sb.append("<p style=\"margin-top:16px\">");

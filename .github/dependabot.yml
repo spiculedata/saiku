@@ -12,6 +12,24 @@ updates:
       interval: weekly
     open-pull-requests-limit: 3
     labels: [dependencies, github-actions]
+  # The Dockerfile FROM is digest-pinned (eclipse-temurin:21-jre-noble@sha256:…)
+  # for supply-chain integrity (#1989). Dependabot understands the tag@sha256
+  # form and bumps BOTH the tag and the digest, so the base JRE gets CVE-driven
+  # update PRs instead of freezing on a stale digest.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    labels: [dependencies, docker]
+    # The runtime baseline is JRE 21 (an LTS). Dependabot bumped 21-jre-noble to
+    # 23-jre-noble (#2149), whose image ships no curl: the OpenTelemetry-agent download
+    # in the Dockerfile and the container HEALTHCHECK both call curl, so every image
+    # build on development failed until it was reverted. Digest refreshes of the 21 tag
+    # still arrive; a JRE major change is a decision with its own PR, not a bot bump.
+    ignore:
+      - dependency-name: "eclipse-temurin"
+        update-types: ["version-update:semver-major"]
   # saiku-ui has its own package.json and is not part of the Maven reactor, so
   # it needs its own entry — without one it is never scanned at all.
   #
@@ -46,6 +64,12 @@ updates:
     # and we would be back to never seeing them.
     open-pull-requests-limit: 10
     labels: [dependencies, npm]
+    # prettier-plugin-svelte 4.2 rewraps inline markup (moves text and closing
+    # tags onto their own lines), which adds rendered whitespace across ~70
+    # components. Held at 4.1.x until that reformat is done and checked visually.
+    ignore:
+      - dependency-name: prettier-plugin-svelte
+        versions: [">=4.2.0"]
     groups:
       build-toolchain:
         dependency-type: development

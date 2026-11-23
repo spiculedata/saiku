@@ -19,6 +19,8 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.saiku.service.olap.ai.AiQueryRequest;
+import org.saiku.service.olap.ai.AiSchemaConverter;
+import org.saiku.service.olap.ai.OlapAiCubeMetadataService;
 import org.saiku.web.rest.resources.AiQueryResource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -125,8 +127,11 @@ public class McpResource {
         } catch (SessionRequiredException e) {
             return rpcError(idNode, RPC_INVALID_REQUEST, e.getMessage(), null);
         } catch (RuntimeException e) {
-            log.error("MCP request handling failed for method={}", method, e);
-            return rpcError(idNode, RPC_INTERNAL_ERROR, "Internal error: " + e.getMessage(), sessionId);
+            // saiku#1920: the message can carry SQL, JDBC URLs or RLS predicates and an MCP host
+            // feeds it to the model. Log it with a ref; return only the ref.
+            String ref = java.util.UUID.randomUUID().toString().substring(0, 8);
+            log.error("MCP request handling failed for method={} [ref={}]", method, ref, e);
+            return rpcError(idNode, RPC_INTERNAL_ERROR, "Internal error (ref=" + ref + ")", sessionId);
         }
     }
 
@@ -180,7 +185,29 @@ public class McpResource {
             return rpcError(idNode, RPC_METHOD_NOT_FOUND, e.getMessage(), sessionId);
         } catch (InvalidArgsException e) {
             return rpcError(idNode, RPC_INVALID_PARAMS, e.getMessage(), sessionId);
+        } catch (org.saiku.service.olap.ai.AiPolicyViolation e) {
+            // saiku#2322: an operator's SAIKU_AI_POLICY denial is not an internal error — it is a
+            // tool-level failure the host agent must see as such. MCP models this as a tool
+            // result with isError:true (not a -32603 RPC error), carrying the same
+            // PERMISSION_DENIED envelope the REST endpoints return via AiPolicyViolationMapper.
+            return rpcResult(idNode, wrapPolicyDeniedToolResult(e), sessionId);
         }
+    }
+
+    /** Build the isError CallToolResult for an {@link AiPolicyViolation}: structuredContent is
+     *  the PERMISSION_DENIED envelope (status / field / available) agents already know from the
+     *  REST 403, and the text block carries the same JSON for hosts that only read text. */
+    ObjectNode wrapPolicyDeniedToolResult(org.saiku.service.olap.ai.AiPolicyViolation e) {
+        org.saiku.service.olap.ai.AiQueryResponse denied = new org.saiku.service.olap.ai.AiQueryResponse();
+        denied.setStatus(org.saiku.service.olap.ai.AiQueryResponse.Status.PERMISSION_DENIED);
+        denied.setField("ai.policy");
+        denied.setAvailable(java.util.List.of(e.getRequired().displayName()));
+        denied.setError(e.getMessage()
+                + " Set " + org.saiku.service.olap.ai.AiPolicy.PROP + "="
+                + e.getRequired().displayName() + " (or higher) to permit it.");
+        ObjectNode result = wrapToolResult(MAPPER.valueToTree(denied));
+        result.put("isError", true);
+        return result;
     }
 
     /* ----------------------------- tool dispatch ---------------------------- */
@@ -214,7 +241,7 @@ public class McpResource {
                 String hierarchy = optionalString(args, "hierarchy");
                 String level = requiredString(args, "level");
                 String q = optionalString(args, "q");
-                int limit = optionalInt(args, "limit", 20);
+                int limit = Math.min(optionalInt(args, "limit", 20), SEARCH_MEMBERS_MAX);
                 // Same array-wrap as list_cubes — AiQueryResource returns a
                 // List<SimpleCubeElement>; MCP structuredContent must be an
                 // object so the host's validator accepts it.
@@ -239,7 +266,7 @@ public class McpResource {
                 // behaviour; per-cell position is the dashboard UI path, saiku#930).
                 return unwrap(aiQueryResource.drillthrough(queryId, maxrows, firstRowset, null, returns));
             }
-                // -------- Ossie tools --------
+            // -------- Ossie tools --------
             case "list_ossie_models": {
                 requireOssie();
                 // AiOssieResource.listModels returns a List<Map>; wrap for MCP structuredContent.
@@ -333,6 +360,14 @@ public class McpResource {
         // doesn't know about it (it's a query-string param on the REST API).
         ObjectNode copy = args.isObject() ? ((ObjectNode) args).deepCopy() : MAPPER.createObjectNode();
         copy.remove("format");
+        // saiku#2325: omitted -> default; 0/negative/huge -> server maximum. "No cap" is never
+        // reachable from an MCP caller (an agent can be steered into sending limit:0).
+        if (!copy.hasNonNull("limit")) {
+            copy.put("limit", RUN_QUERY_DEFAULT_LIMIT);
+        } else {
+            int requested = copy.get("limit").asInt(0);
+            copy.put("limit", requested <= 0 ? RUN_QUERY_MAX_LIMIT : Math.min(requested, RUN_QUERY_MAX_LIMIT));
+        }
         try {
             return MAPPER.treeToValue(copy, AiQueryRequest.class);
         } catch (JsonProcessingException e) {
@@ -350,6 +385,15 @@ public class McpResource {
             + "\"description\":\"The cube id from list_cubes: connection/catalog/schema/cubeName.\"}},"
             + "\"additionalProperties\":false}";
 
+    /** Server-enforced ceiling for {@code search_members}; the schema advertises the same value. */
+    static final int SEARCH_MEMBERS_MAX = OlapAiCubeMetadataService.MAX_SEARCH_LIMIT;
+
+    /** Row limit applied to {@code run_query} / {@code preview_query} when the caller omits one. */
+    static final int RUN_QUERY_DEFAULT_LIMIT = 100;
+
+    /** Maximum row limit for {@code run_query} / {@code preview_query}; 0 and larger values resolve to it. */
+    static final int RUN_QUERY_MAX_LIMIT = AiSchemaConverter.AI_QUERY_LIMIT_MAX;
+
     private static final String SEARCH_MEMBERS_SCHEMA = "{\"type\":\"object\","
             + "\"required\":[\"cube\",\"dimension\",\"level\"],"
             + "\"properties\":{"
@@ -360,7 +404,7 @@ public class McpResource {
             + "\"level\":{\"type\":\"string\"},"
             + "\"q\":{\"type\":\"string\","
             + "\"description\":\"Optional substring filter. Omit to list all members on the level up to limit.\"},"
-            + "\"limit\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":500,\"default\":20}"
+            + "\"limit\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":" + SEARCH_MEMBERS_MAX + ",\"default\":20}"
             + "},\"additionalProperties\":false}";
 
     private static final String RUN_QUERY_SCHEMA = "{\"type\":\"object\",\"required\":[\"cube\",\"measures\"],"
@@ -374,7 +418,10 @@ public class McpResource {
             + "\"columns\":{\"type\":\"array\"},"
             + "\"filters\":{\"type\":\"array\"},"
             + "\"order\":{\"type\":\"array\"},"
-            + "\"limit\":{\"type\":\"integer\"},"
+            + "\"limit\":{\"type\":\"integer\",\"default\":" + RUN_QUERY_DEFAULT_LIMIT + ","
+            + "\"description\":\"Max rows. Defaults to " + RUN_QUERY_DEFAULT_LIMIT
+            + " when omitted; values above " + RUN_QUERY_MAX_LIMIT + " (and 0) are clamped to " + RUN_QUERY_MAX_LIMIT
+            + ".\"},"
             + "\"visualTotals\":{\"type\":\"boolean\"},"
             + "\"nonEmpty\":{\"type\":\"boolean\"},"
             + "\"format\":{\"type\":\"string\",\"enum\":[\"records\",\"matrix\"],"
@@ -385,7 +432,8 @@ public class McpResource {
             + "\"properties\":{"
             + "\"cube\":{},\"measures\":{\"type\":\"array\"},\"rows\":{\"type\":\"array\"},"
             + "\"columns\":{\"type\":\"array\"},\"filters\":{\"type\":\"array\"},"
-            + "\"order\":{\"type\":\"array\"},\"limit\":{\"type\":\"integer\"},"
+            + "\"order\":{\"type\":\"array\"},\"limit\":{\"type\":\"integer\",\"default\":" + RUN_QUERY_DEFAULT_LIMIT
+            + "},"
             + "\"visualTotals\":{\"type\":\"boolean\"},\"nonEmpty\":{\"type\":\"boolean\"}"
             + "},\"additionalProperties\":true}";
 

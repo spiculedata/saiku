@@ -1,0 +1,51 @@
+<!doctype html>
+<!--
+  Saiku dashboard plugin frame bootstrap (saiku#2440). See pluginBridge.ts (PLUGIN_FRAME_PATH).
+
+  Loaded by the in-app plugin tile as <iframe sandbox="allow-scripts" src=".../plugin-frame.html">.
+  Being a network-loaded document it does NOT inherit the SPA shell's enforced CSP (an srcdoc
+  frame would, and the shell's script-src blocks inline plugin code). The launcher serves this file
+  with its own policy (SecurityHeadersFilter.PLUGIN_FRAME_CSP: sandbox allow-scripts,
+  default-src 'none', script-src 'unsafe-inline', connect-src 'none', frame-ancestors ...); the
+  meta below repeats the fetch directives for any server that does not.
+
+  It holds no plugin code and fetches nothing. It waits for ONE message from its parent window,
+  sent from this document's own (Saiku) origin, carrying the plugin document the host built from
+  the admin registry, and writes that document into itself. Opened top-level or framed by another
+  origin it does nothing.
+-->
+<html>
+	<head>
+		<meta
+			http-equiv="Content-Security-Policy"
+			content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'"
+		/>
+		<meta charset="utf-8" />
+		<title>Saiku plugin</title>
+		<script>
+			(function () {
+				'use strict';
+				var parentWin = window.parent;
+				// Only ever runs framed: a top-level open (window.open, direct navigation) does nothing.
+				if (!parentWin || parentWin === window) return;
+				// The sandbox makes this document's origin opaque, so use the URL's origin: the Saiku
+				// origin that served this file and that the host page must share.
+				var selfOrigin = new URL(window.location.href).origin;
+				var loaded = false;
+				window.addEventListener('message', function (ev) {
+					if (loaded || ev.source !== parentWin || ev.origin !== selfOrigin) return;
+					var d = ev.data;
+					if (!d || d.type !== 'saiku-plugin-load' || typeof d.html !== 'string') return;
+					loaded = true;
+					// Replaces this document's content but keeps the document, so the response policy
+					// (sandbox + CSP) stays in force for the plugin. Also drops this listener.
+					document.open();
+					document.write(d.html);
+					document.close();
+				});
+				parentWin.postMessage({ type: 'saiku-plugin-frame-boot' }, selfOrigin);
+			})();
+		</script>
+	</head>
+	<body></body>
+</html>

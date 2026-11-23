@@ -46,6 +46,11 @@ public class SaikuJerseyApplication extends ResourceConfig {
         // saiku#903: ai.policy violations -> typed 403 PERMISSION_DENIED envelope
         // (specific mapper wins over the catch-all Throwable mapper below).
         register(org.saiku.web.rest.exception.AiPolicyViolationMapper.class);
+        // saiku#1438: SCIM protocol errors (RFC 7644 §3.12) must reach the wire as a typed
+        // {schemas, status, scimType, detail} body — an IdP branches on scimType to tell a
+        // uniqueness conflict from a hard rejection. Registered before the catch-all
+        // Throwable mapper below, which would otherwise pass through a bodyless Response.
+        register(org.saiku.web.scim.ScimExceptionMapper.class);
         // saiku#1165 (audit-3): global catch-all mapper. Supersedes the
         // saiku#865 GenericFailureExceptionMapper — JAX-RS allows only one
         // ExceptionMapper<Throwable>, so this single mapper carries the whole

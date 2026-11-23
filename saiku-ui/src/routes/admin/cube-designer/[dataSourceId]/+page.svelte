@@ -34,6 +34,7 @@
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+	// svelte-ignore state_referenced_locally — route params don't change while the page is mounted
 	const dataSourceId = data.dataSourceId;
 
 	// Store keyed on the datasource; provide the OSS backend to the designer subtree.
@@ -275,7 +276,8 @@
 		</h1>
 		<!-- Segmented mode tabs — one outer border, siblings share edges; active
          tab is an inset red ring + glow (matches saiku-cloud's CanvasHeader). -->
-		<nav
+		<!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role — a div wrapping the tab buttons is the correct ARIA tablist container -->
+		<div
 			class="flex items-stretch overflow-hidden rounded border border-border bg-background"
 			role="tablist"
 			aria-label="Designer mode"
@@ -297,7 +299,7 @@
 					<span>{label}</span>
 				</button>
 			{/each}
-		</nav>
+		</div>
 		<div class="ml-auto flex items-center gap-2">
 			<!-- Schema name.  Visible and editable up front because it becomes the catalog
 			     name users see in Studio — leaving it to an export-time default is how every

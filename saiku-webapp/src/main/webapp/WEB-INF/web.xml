@@ -50,10 +50,6 @@
         <param-name>earthquakes.password</param-name>
         <param-value></param-value>
     </context-param>
-    <context-param>
-        <param-name>db.tcpServer</param-name>
-        <param-value>-tcpAllowOthers</param-value>
-    </context-param>
 
     <context-param>
      <param-name>contextConfigLocation</param-name>
@@ -66,6 +62,12 @@
 		     wires a FileSessionDataStore (saiku-home/sessions/) so sessions
 		     also survive across server restarts. -->
 		<session-timeout>10080</session-timeout>
+		<!-- saiku#2348: the session cookie is never readable from script. Operators
+		     should also add <secure>true</secure> behind TLS and set the container's
+		     SameSite policy (Tomcat CookieProcessor sameSiteCookies="lax"). -->
+		<cookie-config>
+			<http-only>true</http-only>
+		</cookie-config>
 	</session-config>
 
     <!-- saiku#1029: demo email gate. Declared BEFORE the Spring Security
@@ -201,6 +203,11 @@
 
     <listener>
         <listener-class>org.springframework.web.context.request.RequestContextListener</listener-class>
+    </listener>
+
+    <!-- saiku#2341: drop the Saiku session entry (and zero its pass-through credential) when an HTTP session ends. -->
+    <listener>
+        <listener-class>org.saiku.web.service.SessionSecretCleanupListener</listener-class>
     </listener>
 
 
@@ -409,6 +416,18 @@
     <servlet-mapping>
         <servlet-name>branding</servlet-name>
         <url-pattern>/ui/branding/*</url-pattern>
+    </servlet-mapping>
+
+    <!-- The launcher ships no JSP engine, so Jetty's default *.jsp mapping answers every JSP URL
+         with a 500 ("JSP support not configured"). Every JSP has been removed from the WAR; this
+         mapping redirects the legacy /index.jsp landing URL to the SPA and 404s the rest. -->
+    <servlet>
+        <servlet-name>legacyJsp</servlet-name>
+        <servlet-class>org.saiku.web.servlet.LegacyJspServlet</servlet-class>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>legacyJsp</servlet-name>
+        <url-pattern>*.jsp</url-pattern>
     </servlet-mapping>
 
     <!-- SvelteKit SPA fallback: any /ui/* request that the default

@@ -12,6 +12,7 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 import org.saiku.service.mail.MailConfig;
 import org.saiku.service.mail.MailConfigResolver;
@@ -49,9 +50,19 @@ public class MailConfigResourceTestSendTest {
     /** Nothing configured. */
     private static final MailConfig CONFIG_EMPTY = new MailConfig(null, 587, null, null, null, true, false, null);
 
+    @Before
+    public void allowFixtureSmtpHost() {
+        // saiku#1918 (17b): the test-send endpoint re-checks the SMTP host immediately before it
+        // dials, so a config written by an older build can't be used as a probe. The fixture host
+        // is named in the allowlist so the check is satisfied without a live DNS lookup — an
+        // allowlisted host short-circuits before resolution, keeping this suite hermetic.
+        System.setProperty("saiku.mail.smtp.allowedHosts", SMTP_HOST);
+    }
+
     @After
     public void clearAuth() {
         SecurityContextHolder.clearContext();
+        System.clearProperty("saiku.mail.smtp.allowedHosts");
     }
 
     // -------------------------------------------------------------------- auth seeding

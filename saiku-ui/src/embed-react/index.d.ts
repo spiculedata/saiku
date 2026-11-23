@@ -8,8 +8,12 @@
 
 import type * as React from 'react';
 
-/** Which flavour of saved resource the embed loads. */
-export type SaikuEmbedKind = 'query' | 'dashboard' | 'ai';
+/**
+ * Which flavour of saved resource the embed loads. `creator` is Creator Mode
+ * (saiku#1435): the visitor builds their OWN query / dashboard against the cube
+ * the token pins, in their own tenant folder.
+ */
+export type SaikuEmbedKind = 'query' | 'dashboard' | 'ai' | 'app' | 'creator';
 
 /** Render mode for `kind="query"` embeds. */
 export type SaikuEmbedRender = 'table' | 'matrix' | 'chart' | 'kpi';
@@ -68,8 +72,22 @@ export interface SaikuEmbedProps {
 	 * - `kind="dashboard"`: repository path to a dashboard
 	 *   (`homes/admin/exec.saikudash`).
 	 * - `kind="ai"`: cube ref (`connection/catalog/schema/cubeName`).
+	 * - `kind="app"`: App Builder document path (`…/portal.saikuapp`).
+	 * - `kind="creator"`: cube ref — same spelling as `kind="ai"`; also
+	 *   accepted on the `cube` prop.
+	 *
+	 * Optional at the type level only because `kind="creator"` names its
+	 * resource on `cube` instead; every read kind still needs it.
 	 */
-	path: string;
+	path?: string;
+
+	/**
+	 * Cube reference (`connection/catalog/schema/cubeName`) for
+	 * `kind="creator"` (saiku#1435). An alias for `path`, because a creator
+	 * embed names a cube, not a repository file. When both are set, `cube`
+	 * wins.
+	 */
+	cube?: string;
 
 	/** Defaults to `"query"`. */
 	kind?: SaikuEmbedKind;
@@ -164,10 +182,16 @@ export interface MintEmbedTokenOptions {
 	server: string;
 	/** Value for the `Authorization` header (`Basic …` or `Bearer …`). */
 	authorization: string;
-	/** `"query"` | `"dashboard"` | `"ai"`. */
-	resourceKind: SaikuEmbedKind;
-	/** Path (for query/dashboard) or cube ref (for ai). */
+	/** `"query"` | `"dashboard"` | `"ai"` | `"app"` | `"authoring"`. */
+	resourceKind: SaikuEmbedKind | 'authoring';
+	/** Path (for query/dashboard/app) or cube ref (for ai/authoring). */
 	resourcePath: string;
+	/**
+	 * saiku#1435 — REQUIRED for `resourceKind: "authoring"`. The tenant whose
+	 * folder the token's bearer may create objects in. The server derives the
+	 * folder from it; a bad value fails the mint rather than widening a scope.
+	 */
+	tenantId?: string;
 	/** Optional token lifetime; server default is 72h. */
 	ttlHours?: number;
 	/** Optional human label the admin UI shows next to the token. */
@@ -224,6 +248,7 @@ export type SaikuEmbedElementAttributes = React.HTMLAttributes<HTMLElement> & {
 	space?: string;
 	filter?: string;
 	theme?: SaikuEmbedTheme;
+	cube?: string;
 };
 
 /**

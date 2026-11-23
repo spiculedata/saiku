@@ -35,6 +35,12 @@ public class DataSource {
     /** Path to the Ossie YAML file. Only meaningful when {@link #type} is {@code "OSSIE"}. */
     private String ossieYaml;
 
+    /**
+     * Optional HTTP(S) URL template for cell-intersection links. Used when the cube has no
+     * {@code saiku.cellLink.url} annotation. One SDS typically backs one cube.
+     */
+    private String cellLinkUrl;
+
     public DataSource(SaikuDatasource datasource) {
         this.type = datasource.getType().toString();
         this.name = datasource.getName();
@@ -66,6 +72,9 @@ public class DataSource {
         }
         if (datasource.getProperties().containsKey("ossieYaml")) {
             this.ossieYaml = datasource.getProperties().getProperty("ossieYaml");
+        }
+        if (datasource.getProperties().containsKey("cellLinkUrl")) {
+            this.cellLinkUrl = datasource.getProperties().getProperty("cellLinkUrl");
         }
     }
 
@@ -228,5 +237,14 @@ public class DataSource {
 
     public void setOssieYaml(String ossieYaml) {
         this.ossieYaml = ossieYaml;
+    }
+
+    @XmlElement
+    public String getCellLinkUrl() {
+        return cellLinkUrl;
+    }
+
+    public void setCellLinkUrl(String cellLinkUrl) {
+        this.cellLinkUrl = cellLinkUrl;
     }
 }

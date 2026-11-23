@@ -21,7 +21,8 @@ import org.saiku.service.schema.generate.model.DbTable;
  * <ul>
  *   <li><b>FACT</b> — {@code foreignKeys.size() >= 2} AND {@code rowCountEstimate != null &&
  *       rowCountEstimate >= 1000}. A {@code null} row count is treated as "unknown" and
- *       disqualifies the table from fact status.
+ *       disqualifies the table from fact status. <b>Exception:</b> a model holding exactly one
+ *       table is always classified FACT regardless of FK count or row count — see below.
  *   <li><b>DIMENSION</b> — not a fact, but referenced by at least one fact table's FK.
  *   <li><b>ORPHAN</b> — everything else.
  * </ul>
@@ -30,6 +31,14 @@ import org.saiku.service.schema.generate.model.DbTable;
  * prefer {@code FACT} in that case — the FK-out + row-count heuristic is the stronger signal
  * (a reference-from-fact just says "some fact has a column pointing here", which is cheap;
  * having many outgoing FKs and many rows is the actual shape of a fact).
+ *
+ * <p>Lone-table special case (saiku#1117): the FK/row-count heuristic assumes a real relational
+ * schema with dimension tables to reference. A flat source with no FK metadata at all — the
+ * shape every CSV/Parquet upload takes, since a spreadsheet has no foreign keys — has exactly
+ * one table and would otherwise always land ORPHAN and get silently dropped, leaving the
+ * quickstart pipeline with zero cubes no matter how much data was uploaded. When a table has no
+ * peers to be a dimension of, FACT is the only classification that produces a usable cube, so a
+ * one-table model skips the FK/row-count gate entirely.
  */
 public class TableClassifier {
 
@@ -41,10 +50,11 @@ public class TableClassifier {
      * iteration order and contains exactly one entry per table.
      */
     public Map<DbTable, TableClassification> classify(DbModel model) {
-        // Pass 1: identify facts.
+        // Pass 1: identify facts. A lone table has nothing else it could be — see class doc.
+        boolean lone = model.tables().size() == 1;
         Set<DbTable> facts = new LinkedHashSet<>();
         for (DbTable t : model.tables()) {
-            if (isFact(t)) {
+            if (lone || isFact(t)) {
                 facts.add(t);
             }
         }
@@ -62,7 +72,8 @@ public class TableClassifier {
         Map<DbTable, TableClassification> out = new LinkedHashMap<>();
         for (DbTable t : model.tables()) {
             if (facts.contains(t)) {
-                out.put(t, new TableClassification(TableClassification.Kind.FACT, factReason(t)));
+                String reason = lone ? "only table in the model" : factReason(t);
+                out.put(t, new TableClassification(TableClassification.Kind.FACT, reason));
             } else if (referencedByFact.containsKey(t.name())) {
                 String factName = referencedByFact.get(t.name());
                 out.put(

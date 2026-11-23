@@ -65,7 +65,9 @@ public class SchedulerResource {
     /**
      * Per-admin rate limit for the fire-now endpoint. A manual run submits to the same worker pool as
      * the ticker, so an unbounded frequency is an abuse/DoS vector even behind the admin gate — cap it
-     * low (default 10/min). Mirrors {@code MailConfigResource}'s test-send limiter.
+     * low (default 10/min). Mirrors {@code MailConfigResource}'s test-send limiter. Production
+     * injects the {@code jobRunNowRateLimiter} SINGLETON (saiku#1913) — a per-request limiter
+     * never trips.
      */
     private AiRateLimiter runNowRateLimiter =
             new AiRateLimiter(Integer.getInteger("saiku.jobs.run.ratelimit.maxPerMinute", 10), 60_000L);

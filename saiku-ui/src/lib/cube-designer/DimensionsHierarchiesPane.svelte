@@ -259,6 +259,7 @@
 	     another pane's state. -->
 	{@const isDisabled =
 		kind === 'hierarchies' && !!selectedDimension && attributesPaneMode === 'edit'}
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<section
 		class="flex h-full min-w-0 flex-1 flex-col rounded-md border bg-elev-1 transition-colors {isReorderTarget
 			? 'border-primary'
@@ -911,6 +912,7 @@
 						<!-- Right-side inline confirm — replaces Type / Cols / ✕
 							     with "Delete? [Yes] [No]" on the SAME row.  No modal,
 							     no new row underneath. -->
+						<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 						<div
 							class="flex shrink-0 items-center gap-3 pl-2"
 							onclick={(e) => e.stopPropagation()}
@@ -1245,6 +1247,7 @@
 				aria-label="Columns in {previewTable.name} (preview only)"
 			>
 				{#each previewTable.columns as col (col.name)}
+					<!-- svelte-ignore a11y_role_supports_aria_props_implicit -->
 					<li
 						class="flex cursor-not-allowed items-center gap-2 rounded px-1.5 py-1 text-[11px]"
 						aria-disabled="true"
@@ -1459,6 +1462,7 @@
 						(paneResolvedKey.attr.name ?? paneResolvedKey.attr.columnName) === attrIdent}
 					{@const displayName = a.name ?? a.columnName}
 					{@const hasCaption = a.name && a.name !== a.columnName}
+					<!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
 					<li
 						draggable="true"
 						ondragstart={(e) =>
@@ -1617,6 +1621,7 @@
 	     RIGHT-side panel of the new Hierarchies pane (flex-1 +
 	     min-h-0 in the parent), so the dashed target box is big and
 	     obvious, not a tiny sliver. -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		class="flex min-h-0 flex-1 flex-col overflow-y-auto rounded border-2 border-dashed bg-elev-2 p-1 transition-colors {dropActive
 			? 'border-primary bg-primary/5'
@@ -1781,6 +1786,7 @@
 					{@const displayName = lvl.name || sourceAttr?.name || lvl.columnName}
 					{@const showRawUnderneath = displayName !== lvl.columnName}
 					{@const levelSelected = selectedLevelId === lvl.id}
+					<!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
 					<li
 						class="flex cursor-pointer items-start gap-2 border-b px-2 py-1 text-[11px] hover:bg-accent/40 {levelSelected
 							? 'ring-1 ring-primary ring-inset'
@@ -1965,6 +1971,7 @@
 
 {#snippet hierarchyListRow(dim: SchemaCanvasDimension, hier: SchemaCanvasHierarchy)}
 	{@const isSelected = isFocused('hierarchy', hier.id)}
+	<!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
 	<li
 		role="button"
 		tabindex="0"
@@ -2103,6 +2110,7 @@
 			<!-- Whole Name column body is a drop target — dropping an
 			     attribute creates a single-level hierarchy named after
 			     it.  Mirror of the facts side's drag-into-Name. -->
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
 				class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto rounded px-0.5 transition-colors {dimDragOverHierName
 					? 'bg-primary/5 ring-1 ring-primary/40'

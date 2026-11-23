@@ -31,8 +31,15 @@ import javax.crypto.spec.SecretKeySpec;
  *       ({@link MessageDigest#isEqual}).</li>
  *   <li><b>Eternal tokens</b> — {@code exp} is REQUIRED (a token with no expiry
  *       is rejected, fail-closed) and checked with a small clock-skew leeway.</li>
- *   <li><b>Audience confusion</b> — when an expected audience is configured the
- *       token's {@code aud} must match it.</li>
+ *   <li><b>Audience confusion</b> — the {@code aud} claim is REQUIRED (RFC 7519
+ *       §4.1.3 lists it as the correct way to scope a token to one relying party).
+ *       Without it a token minted for a different relying party that shares the
+ *       HMAC secret is accepted here. When {@code expectedAudience} is
+ *       configured the value must match it as well.</li>
+ *   <li><b>Issuer confusion</b> — saiku#1920: the {@code iss} claim is
+ *       REQUIRED for the same reason (an engine-wide shared secret otherwise lets
+ *       any relying party mint tokens this verifier will honour). When
+ *       {@code expectedIssuer} is configured the value must match it.</li>
  * </ul>
  *
  * <p>Every rejection throws {@link EmbedJwtException}; the caller collapses all
@@ -74,13 +81,17 @@ public final class EmbedJwt {
      *
      * @param compact the {@code header.payload.signature} token
      * @param secret the shared HS256 secret (UTF-8); must be non-empty
-     * @param expectedAudience required {@code aud} value, or null/blank to skip the aud check
+     * @param expectedAudience required {@code aud} VALUE, or null/blank when the
+     *     deployment does not pin one — the {@code aud} CLAIM is still required
+     * @param expectedIssuer required {@code iss} VALUE, or null/blank when the
+     *     deployment does not pin one — the {@code iss} CLAIM is still required
      * @param nowMillis current time (injectable for tests)
      * @return the verified payload claims
      * @throws EmbedJwtException on ANY validation failure (bad shape, wrong alg,
-     *     bad signature, expired, not-yet-valid, wrong audience)
+     *     bad signature, expired, not-yet-valid, missing/mismatched aud or iss)
      */
-    public static JsonNode verify(String compact, byte[] secret, String expectedAudience, long nowMillis)
+    public static JsonNode verify(
+            String compact, byte[] secret, String expectedAudience, String expectedIssuer, long nowMillis)
             throws EmbedJwtException {
         if (compact == null || compact.isBlank()) {
             throw new EmbedJwtException("empty token");
@@ -139,8 +150,31 @@ public final class EmbedJwt {
             if (!audienceMatches(payload.get("aud"), expectedAudience)) {
                 throw new EmbedJwtException("audience mismatch");
             }
+        } else if (payload.get("aud") == null || payload.get("aud").isNull()) {
+            // saiku#1920: an unscoped token is a token any relying party sharing the secret
+            // can mint. Require the claim even when this deployment pins no expected value.
+            throw new EmbedJwtException("missing aud (unscoped tokens rejected)");
+        }
+        // saiku#1920: same reasoning for iss — presence is mandatory, equality is enforced
+        // when the deployment names an expected issuer.
+        String iss = textClaim(payload.get("iss"));
+        if (iss == null) {
+            throw new EmbedJwtException("missing iss (unscoped tokens rejected)");
+        }
+        if (expectedIssuer != null && !expectedIssuer.isBlank() && !expectedIssuer.equals(iss)) {
+            throw new EmbedJwtException("issuer mismatch");
         }
         return payload;
+    }
+
+    /** A non-blank textual claim, or null. A non-string (array/object/number) claim
+     *  is treated as absent so a non-conforming mint can't slip past the presence check. */
+    private static String textClaim(JsonNode n) {
+        if (n == null || !n.isTextual()) {
+            return null;
+        }
+        String s = n.asText();
+        return (s == null || s.isBlank()) ? null : s;
     }
 
     /** {@code aud} may be a string or an array of strings (RFC 7519). */

@@ -132,10 +132,15 @@ public class AiSchema {
         /** saiku#902: PII marker. {@code true} when the schema author tagged
          *  {@code saiku.semantic.pii=true} on the level. Drives the
          *  agent-facing /ai/schema projection (see {@link AiSchema#toAgentView()})
-         *  and drillthrough {@code returns=} refusal. The internal in-memory
-         *  AiSchema keeps captions + sample members + uniqueName intact so
-         *  MDX construction still works; redaction happens at the JSON
-         *  boundary so the validator can still match agent-supplied names. */
+         *  and the drillthrough {@code returns=} refusal.
+         *
+         *  <p>saiku#1918 widened this from "projected out of the schema response" to
+         *  <b>refused</b>: a PII level is not queryable on any axis ({@code measures[]} /
+         *  {@code rows[]} / {@code columns[]} / {@code filters[]}), its members are not
+         *  searchable, and its sample members are no longer even fetched. The in-memory
+         *  AiSchema keeps the level's {@code name} and {@code uniqueName} — the agent has to be
+         *  able to see that the column EXISTS so it picks a parent level instead — but the
+         *  personal data behind it is no longer loaded, searched, or rendered. */
         public boolean pii;
 
         /** Transient build-time signal: the sample-member fetch returned at least

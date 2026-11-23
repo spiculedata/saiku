@@ -1,5 +1,7 @@
 import {
 	cancelQuery,
+	drillDown as drillDownApi,
+	drillUp as drillUpApi,
 	executeQuery,
 	executeQueryAsync,
 	newQuery,
@@ -7,6 +9,7 @@ import {
 	type QueryResult,
 	type ThinHierarchy,
 	type ThinMeasure,
+	type ThinNamedSet,
 	type ThinQuery
 } from '$lib/api/query';
 import type { SaikuCube } from '$lib/api/discover';
@@ -557,6 +560,30 @@ class QueryStore {
 		this.markDirty();
 	}
 
+	/** Add or replace a named set on the query model, matched by name (case-sensitive,
+	 *  same key the backend `ThinNamedSet` DTO uses). Mirrors the calculated-measure
+	 *  upsert pattern in DimensionList's onCalculatedSave — replace-by-name rather than
+	 *  append, so re-saving an edited set doesn't leave a stale duplicate entry. Named
+	 *  sets ride along in queryModel.namedSets and are submitted with the rest of the
+	 *  query on every run (saiku#826) — no separate REST call. */
+	upsertNamedSet(set: ThinNamedSet): void {
+		if (!this.current?.queryModel) return;
+		this.captureForUndo();
+		const model = this.current.queryModel;
+		const next = (model.namedSets ?? []).filter((s) => s.name !== set.name);
+		next.push(set);
+		model.namedSets = next;
+		this.markDirty();
+	}
+
+	removeNamedSet(name: string): void {
+		if (!this.current?.queryModel) return;
+		this.captureForUndo();
+		const model = this.current.queryModel;
+		model.namedSets = (model.namedSets ?? []).filter((s) => s.name !== name);
+		this.markDirty();
+	}
+
 	/** Where measures are projected onto the cellset:
 	 *   axis ∈ {COLUMNS, ROWS}  — which axis the measure column group sits on
 	 *   location ∈ {TOP, BOTTOM} — first or last in that axis's ordering
@@ -774,6 +801,33 @@ class QueryStore {
 			}
 		}
 		this.abortController?.abort();
+	}
+
+	/**
+	 * Hierarchy-aware drill down (saiku#776): expand a single row, injecting its member's
+	 * children as nested rows beneath it. `rowIndex` is the row's position on the last
+	 * executed result's ROWS axis. Adopts the server's updated queryModel into `current` so
+	 * a later edit (which re-POSTs the full model via {@link run}) doesn't silently undo the
+	 * drill. Throws on failure — callers show it inline (there's no full-query error state to
+	 * fall back on for a single-row action).
+	 */
+	async drillDown(rowIndex: number): Promise<void> {
+		if (!this.current) return;
+		const r = await drillDownApi(this.current.name, rowIndex);
+		this.result = r;
+		if (r.query?.queryModel) {
+			this.current = { ...this.current, queryModel: r.query.queryModel };
+		}
+	}
+
+	/** Collapse a row previously expanded via {@link drillDown}. */
+	async drillUp(rowIndex: number): Promise<void> {
+		if (!this.current) return;
+		const r = await drillUpApi(this.current.name, rowIndex);
+		this.result = r;
+		if (r.query?.queryModel) {
+			this.current = { ...this.current, queryModel: r.query.queryModel };
+		}
 	}
 }
 

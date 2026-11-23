@@ -15,7 +15,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import dev.hegel.HegelTest;
 import dev.hegel.TestCase;
 import java.util.List;
+import org.saiku.olap.util.QueryGuardrails;
 import org.saiku.service.olap.DrillthroughMdxBuilder;
+import org.saiku.service.util.exception.SaikuQueryRejectedException;
 
 /**
  * Property-based tests for {@link DrillthroughMdxBuilder#build}, which composes the
@@ -126,9 +128,13 @@ class DrillthroughMdxBuilderPropertyTest {
         assertEquals(Math.min(maxrows, firstRowset), capOf(mdx), "wrong Mondrian cap: " + mdx);
     }
 
-    /** With no positive limit, the statement is uncapped — and carries neither keyword. */
+    /**
+     * saiku#1914: with no positive limit, the server ceiling replaces the absent cap — there
+     * is no longer a bare {@code DRILLTHROUGH} branch. A client that asks for "everything" (<=0)
+     * gets at most {@link QueryGuardrails#DEFAULT_MAX_ROWS} rows.
+     */
     @HegelTest
-    void noPositiveLimitYieldsABareDrillthrough(TestCase tc) {
+    void noPositiveLimitAppliesServerCeiling(TestCase tc) {
         String select = tc.draw(sampledFrom(SELECTS), "select");
         int maxrows = tc.draw(integers().min(-5).max(0), "maxrows");
         // sampledFrom rejects null elements, so the absent case is drawn as a flag.
@@ -139,7 +145,8 @@ class DrillthroughMdxBuilderPropertyTest {
 
         String mdx = DrillthroughMdxBuilder.build(select, maxrows, firstRowset, null, isMondrian);
 
-        assertEquals("DRILLTHROUGH " + select, mdx);
+        int expectedCap = QueryGuardrails.clampMaxRows(maxrows);
+        assertEquals("DRILLTHROUGH MAXROWS " + expectedCap + " " + select, mdx);
     }
 
     /** RETURN is appended exactly when a non-blank returns clause is supplied. */
@@ -185,4 +192,65 @@ class DrillthroughMdxBuilderPropertyTest {
                 DrillthroughMdxBuilder.build(select, maxrows, firstRowset, returns, isMondrian),
                 DrillthroughMdxBuilder.build(select, maxrows, firstRowset, returns, isMondrian));
     }
+
+    /**
+     * saiku#2420 — THE raw-statement invariant: whatever the clamp is handed, it either emits a
+     * statement whose leading cap sits in {@code [1, maxRows()]}, or refuses with the typed
+     * rejection. It never hands back a drillthrough carrying an out-of-range or absent bound.
+     */
+    @HegelTest
+    void capRawNeverEmitsAnUnboundedDrillthrough(TestCase tc) {
+        String mdx = tc.draw(sampledFrom(RAW_CORPUS), "raw-mdx");
+        int requested = tc.draw(integers().min(-5).max(5000), "requested");
+
+        String out;
+        try {
+            out = DrillthroughMdxBuilder.capRawDrillthrough(mdx, requested);
+        } catch (SaikuQueryRejectedException e) {
+            tc.note("refused: " + mdx);
+            return; // fail-closed rejection is an acceptable outcome
+        }
+        if (out == mdx) {
+            // Returned unchanged is only legitimate for a provably-non-drillthrough,
+            // comment-free statement (see the builder's contract).
+            assertTrue(
+                    !mdx.contains("/*") && !mdx.contains("--") && !mdx.contains("//"),
+                    "commented statement must never pass through unchanged: " + mdx);
+            return;
+        }
+        java.util.regex.Matcher m =
+                java.util.regex.Pattern.compile("^DRILLTHROUGH MAXROWS (\\d+)").matcher(out);
+        assertTrue(m.find(), "emitted statement must lead with a MAXROWS bound: " + out);
+        long bound = Long.parseLong(m.group(1));
+        assertTrue(
+                bound >= 1 && bound <= QueryGuardrails.maxRows(),
+                "bound " + bound + " outside [1, " + QueryGuardrails.maxRows() + "]: " + out);
+        if (requested > 0) {
+            assertTrue(
+                    bound <= Math.min(requested, QueryGuardrails.maxRows()),
+                    "bound " + bound + " exceeds the requested cap " + requested + ": " + out);
+        }
+    }
+
+    /** The corpus the cap property runs over: every shape saiku#1914/#2327/#2420 shipped. */
+    private static final List<String> RAW_CORPUS = List.of(
+            "DRILLTHROUGH SELECT FROM [Sales]",
+            "DRILLTHROUGH MAXROWS 5 SELECT FROM [Sales]",
+            "DRILLTHROUGH MAXROWS 999999999 SELECT FROM [Sales]",
+            "DRILLTHROUGH MAXROWS 0 SELECT FROM [Sales]",
+            "DRILLTHROUGH MAXROWS -1 SELECT FROM [Sales]",
+            "DRILLTHROUGH MAXROWS banana SELECT FROM [Sales]",
+            "DRILLTHROUGH FIRST_ROWSET 4 SELECT FROM [Sales]",
+            "DRILLTHROUGH FIRST_ROWSET 500000000 SELECT FROM [Sales]",
+            "/*a*/DRILLTHROUGH MAXROWS 999999999 SELECT FROM [Sales]",
+            "--x\nDRILLTHROUGH MAXROWS 3 SELECT FROM [Sales]",
+            "//y\r\n DRILLTHROUGH SELECT FROM [Sales]",
+            "DRILLTHROUGH /*c*/ MAXROWS 7 SELECT FROM [Sales]",
+            "DRILLTHROUGH MAXROWS /*c*/ 7 SELECT FROM [Sales]",
+            "DRILLTHROUGH MAXROWS /*c*/ SELECT FROM [Sales]",
+            "/* never closed DRILLTHROUGH SELECT FROM [Sales]",
+            "-- never ends DRILLTHROUGH SELECT FROM [Sales]",
+            "DRILLTHROUGH",
+            "SELECT {[Measures].[Unit Sales]} ON COLUMNS FROM [Sales]",
+            "/*c*/ SELECT FROM [Sales]");
 }

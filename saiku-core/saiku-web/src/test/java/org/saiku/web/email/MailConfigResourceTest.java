@@ -31,6 +31,7 @@ public class MailConfigResourceTest {
 
     private Path home;
     private String savedHome;
+    private String savedAllowedHosts;
     private StubUserService users;
     private MailConfigStore store;
 
@@ -39,6 +40,12 @@ public class MailConfigResourceTest {
         home = Files.createTempDirectory("saiku-mailcfg-it-");
         savedHome = System.getProperty("saiku.home");
         System.setProperty("saiku.home", home.toString());
+        // saiku#1918 (17b): the save path now runs the SMTP host through the same resolve-and-range
+        // gate the webhook validator uses. Naming the fixture host in the allowlist keeps this
+        // suite hermetic — an allowlisted host is cleared before any DNS happens — instead of
+        // making a unit test depend on what example.com resolves to on the day it runs.
+        savedAllowedHosts = System.getProperty("saiku.mail.smtp.allowedHosts");
+        System.setProperty("saiku.mail.smtp.allowedHosts", "smtp.example.com");
         users = new StubUserService();
         store = new MailConfigStore(home);
     }
@@ -49,6 +56,11 @@ public class MailConfigResourceTest {
             System.clearProperty("saiku.home");
         } else {
             System.setProperty("saiku.home", savedHome);
+        }
+        if (savedAllowedHosts == null) {
+            System.clearProperty("saiku.mail.smtp.allowedHosts");
+        } else {
+            System.setProperty("saiku.mail.smtp.allowedHosts", savedAllowedHosts);
         }
     }
 
@@ -153,13 +165,13 @@ public class MailConfigResourceTest {
     }
 
     @Test
-    public void save_stripsCrlfFromHost_noHeaderInjection() {
+    public void save_crlfInHost_isRefused_andNothingIsStored() {
         MailConfigRequest b = req(SECRET);
         b.setHost("smtp.example.com\r\nInjected: x");
         Response resp = resource().save(b);
-        assertEquals(200, resp.getStatus());
-        assertFalse(store.read().orElseThrow().getHost().contains("\r"));
-        assertFalse(store.read().orElseThrow().getHost().contains("\n"));
+        // An injection attempt is refused outright, never rewritten into another hostname.
+        assertEquals(400, resp.getStatus());
+        assertFalse(store.exists());
     }
 
     /* ------------------------------ stubs ------------------------------ */

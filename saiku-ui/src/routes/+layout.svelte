@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { Button, buttonVariants } from '$lib/components/ui';
-	import { base } from '$app/paths';
+	import { basePath } from '$lib/paths';
 	import { page } from '$app/state';
 	import { session } from '$lib/stores/session.svelte';
 	import { theme } from '$lib/stores/theme.svelte';
@@ -10,7 +10,17 @@
 	import { presentation } from '$lib/stores/presentation.svelte';
 	import ToastStack from '$lib/components/ToastStack.svelte';
 	import UpgradeBanner from '$lib/components/UpgradeBanner.svelte';
-	import { LogOut, Shield, Table2, LayoutDashboard, AppWindow, UserRound } from '@lucide/svelte';
+	import {
+		LogOut,
+		Shield,
+		Table2,
+		LayoutDashboard,
+		AppWindow,
+		FileText,
+		UserRound,
+		Braces,
+		Database
+	} from '@lucide/svelte';
 	import SessionExpiredBanner from '$lib/components/SessionExpiredBanner.svelte';
 	import { i18n } from '$lib/stores/i18n.svelte';
 	import { installAuthInterceptor, onAuthFailure } from '$lib/api/http';
@@ -27,6 +37,7 @@
 	// those keyframes by name.
 	import '@concepttocloud/saiku-design-system/motion.css';
 	import '$lib/styles/app.css';
+	const base = basePath();
 
 	let { children } = $props();
 
@@ -63,6 +74,35 @@
 			icon: AppWindow,
 			active: page.url.pathname.startsWith(`${base}/apps`)
 		},
+		{
+			href: `${base}/notebooks`,
+			label: i18n.t('topbar.notebooks', 'Notebooks'),
+			icon: FileText,
+			active: page.url.pathname.startsWith(`${base}/notebooks`)
+		},
+		// saiku#1106: MDX workbench — promoted out of the toolbar's MDXModal
+		// into its own route. Always present, same posture as Dashboards/Apps
+		// (no role gate — any authenticated user who can already open the MDX
+		// modal from the workspace toolbar can reach this).
+		{
+			href: `${base}/workbench`,
+			label: i18n.t('topbar.workbench', 'MDX Workbench'),
+			icon: Braces,
+			active: page.url.pathname.startsWith(`${base}/workbench`)
+		},
+		// saiku#1107: SQL workbench — same permission-not-navigation-state posture as Admin.
+		// hasRole() treats ROLE_ADMIN as a superset, so admins see this without being granted
+		// ROLE_SQL_EXEC explicitly.
+		...(session.hasRole('ROLE_SQL_EXEC')
+			? [
+					{
+						href: `${base}/sql-workbench`,
+						label: i18n.t('topbar.sqlWorkbench', 'SQL Workbench'),
+						icon: Database,
+						active: page.url.pathname.startsWith(`${base}/sql-workbench`)
+					}
+				]
+			: []),
 		...(session.isAdmin
 			? [
 					{
@@ -76,8 +116,12 @@
 	]);
 
 	// #941 share viewer: the public /share route renders a dashboard for an
-	// account-free guest — no app chrome (topbar / upgrade banner), no session.
-	const isShare = $derived(page.url.pathname.startsWith(`${base}/share`));
+	// account-free guest — no app chrome (topbar / upgrade banner), no
+	// session. #1108 adds the notebook counterpart at /notebooks/share.
+	const isShare = $derived(
+		page.url.pathname.startsWith(`${base}/share`) ||
+			page.url.pathname.startsWith(`${base}/notebooks/share`)
+	);
 
 	// Chrome-hide: `?chrome=none` renders a page full-bleed with no Saiku topbar
 	// (or upgrade banner) — for embedding an App Builder app in an iframe / kiosk

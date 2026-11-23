@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Smoke-test Spring config mirroring the saiku#2322 policy-guard wiring from
+  saiku-webapp/WEB-INF/saiku-beans.xml: the aiPolicyGuard singleton plus the
+  AI resources that consume it (aiQueryResource since saiku#903, aiOssieResource
+  since saiku#2322). Keep these bean definitions in lockstep with saiku-beans.xml.
+  The resources are declared WITHOUT scope here (no request context in a unit
+  test) — what is under test is which guard instance each resource receives.
+-->
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+       http://www.springframework.org/schema/beans/spring-beans.xsd">
+
+    <!-- The production constructor resolves SAIKU_AI_POLICY / ai.policy (default
+         schema-only) and fails fast on an invalid value — exactly the bean
+         saiku-beans.xml defines. -->
+    <bean id="aiPolicyGuard" class="org.saiku.service.olap.ai.AiPolicyGuard"/>
+
+    <bean id="aiQueryResource" class="org.saiku.web.rest.resources.AiQueryResource">
+        <property name="aiPolicyGuard" ref="aiPolicyGuard"/>
+    </bean>
+
+    <bean id="aiOssieResource" class="org.saiku.web.rest.resources.AiOssieResource">
+        <property name="aiPolicyGuard" ref="aiPolicyGuard"/>
+    </bean>
+
+</beans>

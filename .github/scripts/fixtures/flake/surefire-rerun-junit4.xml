@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Real Surefire 3.5.2 output, JUnit 4 via the vintage engine, rerunFailingTestsCount=1; trimmed. -->
+<testsuite name="demo.LegacyTest" tests="1" errors="0" skipped="0" failures="0">
+  <testcase name="legacyFlake" classname="demo.LegacyTest" time="0.0">
+    <flakyFailure message="first attempt fails" type="java.lang.AssertionError">
+      <stackTrace><![CDATA[java.lang.AssertionError: first attempt fails
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.assertTrue(Assert.java:42)
+	at demo.LegacyTest.legacyFlake(LegacyTest.java:8)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+]]></stackTrace>
+    </flakyFailure>
+  </testcase>
+</testsuite>

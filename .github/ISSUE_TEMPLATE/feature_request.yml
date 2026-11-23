@@ -1,0 +1,61 @@
+name: Feature request
+description: Suggest an improvement or new capability for Saiku.
+labels: ["Type: Enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what gets in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How you'd like it to work. Mockups or example queries welcome.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Acceptance criteria
+      description: >-
+        How we will know this is done, one checkbox per observable outcome. A maintainer needs this
+        before the issue can be labelled issue-approved (the only label that lets an agent pick it
+        up); the issue-gate workflow removes the label if it is missing. Optional for reporters: a
+        maintainer can fill it in.
+      placeholder: |
+        - [ ] The new behaviour is visible in ...
+        - [ ] Existing behaviour ... is unchanged
+        - [ ] Tests and docs cover it
+  - type: textarea
+    id: acceptance_tests
+    attributes:
+      label: Acceptance tests
+      description: >-
+        The checks that prove this is done, one line each, phrased as observable behaviour (a request
+        and its answer, or a page and what it shows). A PR that closes this issue ships them as
+        acceptance/<issue>/spec.json (see acceptance/README.md and docs/acceptance-specs.md); a
+        docs-only or tests-only change takes the acceptance-waived label instead. Optional for
+        contributors: a maintainer can fill it in.
+      placeholder: |
+        - POST /rest/saiku/api/... with ... returns ...
+        - The workspace shows ... after ...
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds you use now, or other approaches you thought about.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Area
+      options:
+        - Saiku UI
+        - Query / OLAP engine
+        - AI Query API / agents
+        - Datasources & schemas
+        - Admin / security
+        - Deployment / packaging
+        - Other

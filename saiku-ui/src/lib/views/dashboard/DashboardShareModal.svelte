@@ -4,7 +4,7 @@
 	 * read-only link (POST /share/mint), shows the copyable /ui/share#<token> URL
 	 * (token in the fragment), and lists / revokes this dashboard's active links.
 	 */
-	import { base } from '$app/paths';
+	import { basePath } from '$lib/paths';
 	import { Button } from '$lib/components/ui';
 	import Modal from '$lib/components/Modal.svelte';
 	import { Copy, Check, Trash2 } from '@lucide/svelte';
@@ -15,6 +15,7 @@
 		type ShareTokenInfo
 	} from '$lib/api/dashboards';
 	import { buildShareUrl } from '$lib/dashboard/shareUrl';
+	const base = basePath();
 
 	interface Props {
 		dashboardPath: string;

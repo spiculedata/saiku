@@ -26,6 +26,7 @@ import org.saiku.olap.dto.resultset.AbstractBaseCell;
 import org.saiku.olap.dto.resultset.CellDataSet;
 import org.saiku.olap.dto.resultset.DataCell;
 import org.saiku.olap.dto.resultset.MemberCell;
+import org.saiku.olap.util.QueryGuardrails;
 import org.saiku.service.olap.drillthrough.DrillThroughResult;
 import org.saiku.service.olap.totals.TotalNode;
 import org.saiku.service.util.export.ResultSetHelper;
@@ -39,7 +40,8 @@ public class RestUtil {
     private static final Logger log = LoggerFactory.getLogger(RestUtil.class);
 
     public static QueryResult convert(ResultSet rs) throws Exception {
-        return convert(rs, 0);
+        // saiku#2327: never buffer more than the server-side row ceiling by default.
+        return convert(rs, QueryGuardrails.maxRows());
     }
 
     private static QueryResult convert(ResultSet rs, int limit) throws Exception {

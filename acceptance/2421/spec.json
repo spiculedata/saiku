@@ -1,0 +1,29 @@
+{
+  "issue": 2421,
+  "title": "design-system.yml: the privileged publish job keeps ${{ out of its run scripts, pins setup-node at v7.1.0, and refuses any tarball that is not exactly one @concepttocloud/saiku-design-system package matching the build's version",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "the publish job of .github/workflows/design-system.yml (the only job holding id-token: write)",
+      "then": "no run: script in that job contains the ${{ expression syntax — build output reaches them through env, never interpolated into the script text"
+    },
+    {
+      "id": "C2",
+      "given": "a tarball downloaded from the unprivileged build job into pkg/",
+      "then": "a credential-free gate step runs before Publish: exactly one *.tgz, its own package/package.json naming @concepttocloud/saiku-design-system at a strict-semver version equal to the build's reported version; Publish then publishes exactly that verified tarball, not the pkg/*.tgz glob"
+    },
+    {
+      "id": "C3",
+      "given": "the publish job's setup-node step",
+      "then": "it is pinned at the v7.1.0 commit SHA (949feb2413d6458794dcd2491c4babbbce0c15c1), the same pin the build job and the rest of the repository use since #2399"
+    },
+    {
+      "id": "C4",
+      "given": "the build job's npm pack step",
+      "then": "it creates the pack destination first (mkdir -p \"$RUNNER_TEMP/pack\") before npm pack, so a clean checkout cannot fail with ENOENT (the regression #2369 fixed)"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}

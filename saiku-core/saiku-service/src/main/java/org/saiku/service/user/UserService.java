@@ -8,7 +8,9 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import org.saiku.database.JdbcUserDAO;
 import org.saiku.database.dto.SaikuUser;
 import org.saiku.service.ISessionService;
@@ -127,6 +129,89 @@ public class UserService implements IUserManager, Serializable {
         return false;
     }
 
+    /** saiku#2432: the rows matching {@code username} case-insensitively, via the DAO's keyed query. */
+    protected List<SaikuUser> usersNamed(String username) {
+        List<SaikuUser> rows = new ArrayList<>();
+        for (Object row : uDAO.findByUsername(username)) {
+            rows.add((SaikuUser) row);
+        }
+        return rows;
+    }
+
+    /**
+     * saiku#2345: the managed-store view of {@code username}: whether a row exists, whether it is
+     * enabled, and its roles. The web layer uses it to refuse login and requests for an account that
+     * SCIM or the admin console deactivated, and to drop admin authority that was removed there.
+     *
+     * <p>saiku#2431: a row the store <b>found</b> is always reported as managed, whatever its role
+     * column contains. The role set is parsed tolerantly (duplicates de-duplicated, null/blank
+     * entries skipped) because {@code ROLE_USER,ROLE_USER} is the <i>normal</i> shape of a
+     * console/SCIM-created row — {@link JdbcUserDAO#insert} always prepends {@code ROLE_USER} and
+     * both creation surfaces send it too. A strict parse threw on exactly that row and the catch
+     * turned a found-but-unparseable account into {@link AccountStatus#UNMANAGED}, i.e. its
+     * {@code enabled} flag was silently discarded.
+     *
+     * <p>Fail-open ({@link AccountStatus#UNMANAGED}) for an unknown/blank username — the
+     * authenticator has already vouched for the account — and, deliberately, when the store itself
+     * cannot be read: failing closed would turn a store outage into a login outage for every
+     * account, including those the authenticator alone would serve. The failure is logged at ERROR
+     * with the exception (it used to be dropped, so the outage looked like "user not managed") and
+     * is cache-visible for the usual ~2s lookup window; monitor {@code org.saiku.service.user} for
+     * it. (Contrast {@link #isEnabled(String)}, which gates background jobs and fails closed.)
+     */
+    public AccountStatus accountStatus(String username) {
+        if (username == null || username.isBlank()) {
+            return AccountStatus.UNMANAGED;
+        }
+        List<SaikuUser> users;
+        try {
+            users = usersNamed(username);
+        } catch (Exception e) {
+            // saiku#2431: a store read failure is an operational event, not a quiet "no row".
+            // Fail open per the documented trade-off above, but say so loudly.
+            log.error(
+                    "Could not read the managed account store — leaving the authenticator's answer for '{}' "
+                            + "(fail-open, saiku#2431)",
+                    username,
+                    e);
+            return AccountStatus.UNMANAGED;
+        }
+        // saiku#2432: rows may differ only by case; if ANY match is disabled the account is denied, and
+        // the roles are the union so no variant's admin role is dropped by a sibling row.
+        boolean found = false;
+        boolean enabled = true;
+        Set<String> roles = new LinkedHashSet<>();
+        for (SaikuUser u : users) {
+            if (u != null && Usernames.sameUser(username, u.getUsername())) {
+                // The row was found: its enabled flag must never be discarded because the role
+                // column is odd (saiku#2431).
+                found = true;
+                enabled = enabled && u.isEnabled();
+                roles.addAll(tolerantRoles(u.getRoles()));
+            }
+        }
+        return found ? new AccountStatus(true, enabled, roles) : AccountStatus.UNMANAGED;
+    }
+
+    /**
+     * saiku#2431 — a role set that never throws: duplicates de-duplicated, null/blank entries
+     * dropped, values trimmed. The legacy {@code Set.of(...)} threw {@code IllegalArgumentException}
+     * on a duplicate and NPE on a null — discarding the {@code enabled} flag of a row the store
+     * had found.
+     */
+    private static Set<String> tolerantRoles(String[] roles) {
+        if (roles == null || roles.length == 0) {
+            return Set.of();
+        }
+        Set<String> out = new LinkedHashSet<>(roles.length);
+        for (String role : roles) {
+            if (role != null && !role.isBlank()) {
+                out.add(role.trim());
+            }
+        }
+        return out;
+    }
+
     public String[] getRoles(SaikuUser user) {
         return uDAO.getRoles(user);
     }
@@ -145,6 +230,75 @@ public class UserService implements IUserManager, Serializable {
         uDAO.deleteUser(username);
 
         iDatasourceManager.deleteFolder("homes/" + u.getUsername());
+    }
+
+    /**
+     * saiku#1438 — case-insensitive directory lookup, the one read the SCIM surface needs to
+     * resolve a {@code userName} the IdP may spell with any casing onto the single canonical
+     * Saiku account (see {@link Usernames}). Returns {@code null} when no account matches, so
+     * callers distinguish "absent" from "disabled" — the whole point of the SCIM {@code active}
+     * round-trip. Fail-closed on lookup error: an unreadable directory is not a wildcard match.
+     */
+    public SaikuUser findByUsername(String username) {
+        if (username == null || username.isBlank()) {
+            return null;
+        }
+        try {
+            for (SaikuUser u : getUsers()) {
+                if (u != null && Usernames.sameUser(username, u.getUsername())) {
+                    return u;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Could not resolve user '{}' in the user directory", username, e);
+        }
+        return null;
+    }
+
+    /**
+     * saiku#1438 — enable/disable an account. The flag is written on its own (see
+     * {@link JdbcUserDAO#updateUserEnabled}) because the full-row update path hard-codes
+     * {@code enabled = TRUE}; going through it would make deactivation impossible.
+     */
+    public void setEnabled(SaikuUser user, boolean enabled) {
+        if (user == null) {
+            return;
+        }
+        uDAO.updateUserEnabled(user.getId(), enabled);
+        user.setEnabled(enabled);
+    }
+
+    /**
+     * saiku#1438 — replace a user's role set without touching the rest of the row.
+     *
+     * <p>{@link #updateUser(SaikuUser, boolean)} would re-write username/email AND force
+     * {@code enabled = TRUE}, so a role change would silently reactivate a deactivated account.
+     * {@link JdbcUserDAO#updateRoles} only replaces {@code USER_ROLES} rows (delete-all +
+     * re-insert), which is what SCIM group membership needs. The caller owns the final role list,
+     * including the mandatory {@code ROLE_USER}.
+     */
+    public void replaceRoles(SaikuUser user, String[] roles) {
+        if (user == null) {
+            return;
+        }
+        user.setRoles(roles);
+        uDAO.updateRoles(user);
+    }
+
+    /**
+     * saiku#1438 — write a user's display attributes and email address without touching username
+     * or the enabled flag.
+     *
+     * <p>{@link #updateUser(SaikuUser, boolean)} cannot serve this: its SQL hard-codes
+     * {@code enabled = TRUE}, so a SCIM profile sync would silently reactivate a deactivated
+     * account. This writes exactly the two column groups SCIM owns.
+     */
+    public void updateProfile(SaikuUser user) {
+        if (user == null) {
+            return;
+        }
+        uDAO.updateUserProfile(user);
+        uDAO.updateUserEmail(user.getId(), user.getEmail());
     }
 
     public SaikuUser updateUser(SaikuUser u, boolean updatepassword) {

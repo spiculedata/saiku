@@ -1,0 +1,77 @@
+name: dependabot-automerge
+
+# Merges low-risk Dependabot PRs once `ci` has passed on them: single-package semver-patch
+# updates (maven, npm) and GitHub Actions non-major/digest updates. Groups, majors, minors, docker
+# and any PR touching more than dependency manifests/lockfiles or workflow `uses:` lines are left
+# for a human. Eligibility lives in .github/scripts/dependabot-automerge.mjs (unit-tested).
+#
+# Safety: this runs from the base branch with a write token, so it never checks out or runs PR
+# code; the script is fetched from the default branch through the API. PR text reaches the shell
+# only through env vars. To disable it, delete this file. It does not change repo settings, branch
+# protection or the merge queue: `gh pr merge` enqueues the PR and the queue re-runs `ci`.
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+
+permissions: {}
+
+concurrency:
+  group: dependabot-automerge-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  automerge:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.actor.login == 'dependabot[bot]' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Decide eligibility
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+          RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          echo "eligible=false" >> "$GITHUB_OUTPUT"
+          if [ -z "$PR_NUMBER" ]; then echo "No pull request on this run."; exit 0; fi
+          gh api "repos/$GH_REPO/pulls/$PR_NUMBER" > pr.json
+          author=$(jq -r '.user.login' pr.json)
+          state=$(jq -r '.state' pr.json)
+          draft=$(jq -r '.draft' pr.json)
+          head_sha=$(jq -r '.head.sha' pr.json)
+          if [ "$author" != "dependabot[bot]" ] || [ "$state" != "open" ] || [ "$draft" != "false" ]; then
+            echo "Not an open, non-draft Dependabot PR."; exit 0
+          fi
+          if [ "$head_sha" != "$RUN_HEAD_SHA" ]; then
+            echo "PR head moved since ci ran; waiting for the next run."; exit 0
+          fi
+          gh api "repos/$GH_REPO/contents/.github/scripts/dependabot-automerge.mjs?ref=$DEFAULT_BRANCH" \
+            -H "Accept: application/vnd.github.raw" > dependabot-automerge.mjs
+          gh api --paginate "repos/$GH_REPO/pulls/$PR_NUMBER/files?per_page=100" | jq -s 'add' > files.json
+          PR_TITLE=$(jq -r '.title' pr.json) \
+          PR_LABELS=$(jq -r '[.labels[].name] | join(",")' pr.json) \
+          PR_FILES_FILE=files.json \
+            node dependabot-automerge.mjs
+      - name: Label and merge
+        if: steps.decide.outputs.eligible == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+          RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          gh label create automerge --color 0E8A16 --description "Merged by the dependabot-automerge workflow" 2>/dev/null || true
+          gh pr edit "$PR_NUMBER" --add-label automerge
+          gh pr merge "$PR_NUMBER" --match-head-commit "$RUN_HEAD_SHA"

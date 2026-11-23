@@ -79,6 +79,27 @@ export interface NumberFormatOptions {
 	thousands?: boolean;
 	/** Collapse large magnitudes to k / M / B / T. */
 	abbreviate?: boolean;
+	/** saiku#1779: render as a percentage — the stored value is a fraction, so
+	 *  it is multiplied by 100 and suffixed with "%" (1.284 → "128%"), matching
+	 *  the measure's own `formatString`. An explicit `suffix` replaces the "%". */
+	percent?: boolean;
+}
+
+/** saiku#1779: per-AXIS number format. A dual-axis chart carries two different
+ *  measures — by definition different magnitudes, usually different units — so
+ *  the single chart-level {@link ChartOptions.numberFormat} is wrong for one of
+ *  them (a fraction-valued "Sell Through %" on the right axis rendered `0 … 2`
+ *  with no `%` anywhere). Each entry overrides the chart-level format for that
+ *  side; an absent/empty side inherits it, so legacy charts (undefined) are
+ *  unchanged. Keyed by side, not by series, because that is what the axis can
+ *  actually render differently. */
+export interface AxisNumberFormatOptions {
+	/** Format for the LEFT value axis. Absent = inherit `numberFormat`; present
+	 *  (even empty) = this axis owns its own text, so `{}` renders raw values. */
+	left?: NumberFormatOptions;
+	/** Format for the RIGHT value axis (dual-axis charts only). Same absent =
+	 *  inherit / present = override rule as {@link left}. */
+	right?: NumberFormatOptions;
 }
 
 /** issue #1079: a single reference / annotation line drawn across a cartesian
@@ -185,6 +206,11 @@ export interface ChartOptions {
 	/** issue #1082: optional number-formatting for VALUE text (axis labels,
 	 *  tooltip values, data labels). Undefined/empty = raw values as today. */
 	numberFormat?: NumberFormatOptions;
+	/** saiku#1779: optional per-side override of {@link numberFormat} for the two
+	 *  value axes of a dual-axis chart. Each side falls back to `numberFormat`
+	 *  when its entry is absent/empty; undefined = no overrides at all (every
+	 *  axis renders as it did before). */
+	axisNumberFormat?: AxisNumberFormatOptions;
 	/** issue #1081: named categorical palette id (see NAMED_PALETTES in
 	 *  chartTheme.ts — "default", "vibrant", "cool", "warm", "earth"). Optional;
 	 *  legacy charts predating #1081 omit it and fall back to the theme default

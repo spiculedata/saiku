@@ -24,6 +24,7 @@ import org.saiku.service.mail.MailException;
 import org.saiku.service.mail.MailMessage;
 import org.saiku.service.mail.MailSender;
 import org.saiku.service.mail.MailSenderFactory;
+import org.saiku.service.mail.SmtpHostValidator;
 import org.saiku.service.user.UserService;
 import org.saiku.web.security.ratelimit.AiRateLimiter;
 import org.slf4j.Logger;
@@ -51,6 +52,12 @@ import org.springframework.security.core.context.SecurityContextHolder;
  *       save is refused (409) so a UI write can't shadow a deploy, and the view flags it read-only.
  *   <li>Inputs are CRLF-stripped (header-injection defence) and addresses RFC-validated, reusing the
  *       same discipline as {@link EmailMessageAssembler}.
+ *   <li>SSRF gate on the SMTP host (saiku#1918, CWE-918): the host must be a bare hostname or IP that
+ *       resolves outside every internal range, on a real SMTP port — the same resolve-and-range rule
+ *       {@code WebhookUrlValidator} applies to alert webhooks, plus a port allowlist. Applied on
+ *       save AND re-checked immediately before the test-send dial, because /test is the endpoint
+ *       that actually opens the socket. Ops-managed (env) relays are trusted as-is; the wizard is
+ *       read-only for them.
  * </ul>
  */
 @Path("/saiku/admin/mail-config")
@@ -67,7 +74,8 @@ public class MailConfigResource {
      * Per-admin rate limit for the test-send endpoint (saiku#943, P0-C). A test send reaches an
      * external SMTP transport, so an unbounded frequency is a probe/abuse vector even behind the
      * admin gate — cap it low (default 5/min). Mirrors {@code EmailResource#emailRateLimiter}: a
-     * direct {@code new} field + setter, keyed by the authenticated principal.
+     * direct {@code new} field + setter, keyed by the authenticated principal. Production injects
+     * the {@code mailTestSendRateLimiter} SINGLETON (saiku#1913) — a per-request limiter never trips.
      */
     private AiRateLimiter testSendRateLimiter =
             new AiRateLimiter(Integer.getInteger("saiku.mail.test.ratelimit.maxPerMinute", 5), 60_000L);
@@ -131,6 +139,12 @@ public class MailConfigResource {
                     .build();
         }
 
+        // CR/LF in the host is an injection attempt, not a typo: refuse it outright rather than
+        // rewriting it into a different hostname and saving that. Other fields are still stripped.
+        if (containsCrlf(body.getHost())) {
+            log.warn("Refused SMTP host containing CR/LF on save");
+            return badRequest(SMTP_HOST_REJECTED);
+        }
         String host = stripCrlf(body.getHost());
         String username = stripCrlf(body.getUsername());
         String from = validatedAddressOrNull(body.getFrom(), "from");
@@ -138,17 +152,35 @@ public class MailConfigResource {
         if (from == INVALID || selfTo == INVALID) {
             return badRequest("invalid email address");
         }
+        // saiku#1918 (17b, CWE-918): refuse a host that can't be an SMTP relay BEFORE it is
+        // persisted. Without this the wizard is a general-purpose internal TCP probe: a tenant-admin
+        // saves host:port, hits /test, and reads the outcome — refused / timed out / banner — which
+        // maps the engine's own network (control-plane DB, cloud metadata, a neighbour tenant)
+        // from the outside. The gate is the same resolve-and-range rule the webhook validator uses
+        // (org.saiku.service.mail.SmtpHostValidator), plus an SMTP port allowlist.
+        // A blank host is not a rejection: it clears the setting, which is how an admin turns SMTP
+        // off. Only a host that was supplied AND fails the gate is a 400.
+        if (host == null) {
+            // Turning SMTP off: drop the whole stored config, encrypted password included.
+            MailConfigView cleared = mailConfigStore.clear();
+            log.info("Admin {} cleared the mail configuration", currentUser());
+            return Response.ok(cleared).build();
+        }
+        SmtpHostValidator.ValidatedHost validated = validateSmtpHost(host, body.getPort());
+        if (validated == null) {
+            return badRequest(SMTP_HOST_REJECTED);
+        }
 
         MailConfigView view = mailConfigStore.save(
-                host,
-                body.getPort(),
+                validated.host(),
+                validated.port(),
                 username,
                 body.getPassword(), // plaintext in; encrypted at rest by the store; never returned
                 from,
                 body.isStartTls(),
                 body.isSsl(),
                 selfTo);
-        log.info("Admin {} updated mail configuration (host set={})", currentUser(), host != null);
+        log.info("Admin {} updated mail configuration", currentUser());
         // Returns the redacted view — never the password.
         return Response.ok(view).build();
     }
@@ -202,6 +234,16 @@ public class MailConfigResource {
                     .entity(Map.of("error", "email not configured"))
                     .build();
         }
+        // saiku#1918 (17b): re-validate immediately before the dial, not just at save time. A
+        // deployment can predate the save-time gate (a config written by an older build, or seeded
+        // straight into the encrypted store), and /test is the endpoint that actually opens the
+        // socket — so this is the last place the host can be refused before the probe happens.
+        // An ops-managed (env-supplied) relay is trusted as-is: ops chose it, the wizard never
+        // wrote it, and the whole point of env-wins is that the deploy, not the tenant, owns it.
+        if (!mailConfigResolver.managedByOps() && validateSmtpHost(cfg.host(), cfg.port()) == null) {
+            log.warn("Admin {} test-send refused: stored SMTP host is not an allowed relay", currentUser());
+            return badRequest(SMTP_HOST_REJECTED);
+        }
         // Fail-closed: the recipient comes ONLY from the admin-configured selfTo. No selfTo -> refuse.
         if (!cfg.selfSendConfigured()) {
             return Response.status(Response.Status.SERVICE_UNAVAILABLE)
@@ -247,8 +289,37 @@ public class MailConfigResource {
             "<p>This is a test email from Saiku confirming your SMTP settings are working.</p>"
                     + "<p>If you received this, outgoing email is configured correctly.</p>";
 
+    /**
+     * saiku#1918 (17b): the single client-facing message for a refused SMTP host. Deliberately
+     * uniform — it does not say WHICH check failed (range? port? syntax? unresolvable?), because
+     * that distinction is exactly the oracle a scanner wants. The detail goes to the server log,
+     * where the operator configuring mail can read it.
+     */
+    private static final String SMTP_HOST_REJECTED = "smtp host/port is not an allowed mail relay";
+
     /** Sentinel distinguishing "validation failed" from "no value supplied" (null). */
     private static final String INVALID = new String("__INVALID__");
+
+    /**
+     * saiku#1918 (17b): run the SSRF gate over a candidate host/port.
+     *
+     * @return the normalised, cleared host/port, or {@code null} when the pair is refused. A blank
+     *     host means "leave SMTP unconfigured" and passes through as {@code null} so the store keeps
+     *     clearing the field; a non-blank host that fails the gate is a 400.
+     */
+    private static SmtpHostValidator.ValidatedHost validateSmtpHost(String host, int port) {
+        if (host == null || host.isBlank()) {
+            return null;
+        }
+        try {
+            return SmtpHostValidator.validate(host, port);
+        } catch (IllegalArgumentException e) {
+            // The reason stays server-side. Echoing "resolves to a non-routable address" back to a
+            // tenant-admin turns the endpoint into a subnet oracle, which is the whole problem.
+            log.warn("Refused SMTP host '{}' on port {}: {}", host, port, e.getMessage());
+            return null;
+        }
+    }
 
     private boolean isAdmin() {
         return userService != null && userService.isAdmin();
@@ -272,6 +343,10 @@ public class MailConfigResource {
         return Response.status(Response.Status.BAD_REQUEST)
                 .entity(Map.of("error", msg))
                 .build();
+    }
+
+    private static boolean containsCrlf(String s) {
+        return s != null && (s.indexOf('\r') >= 0 || s.indexOf('\n') >= 0);
     }
 
     /** Strip CR/LF so a config value can't smuggle SMTP/log header injection (mirrors EmailMessageAssembler). */

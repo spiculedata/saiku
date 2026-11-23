@@ -96,6 +96,38 @@ public class SaikuMondrianHelper {
         return false;
     }
 
+    /**
+     * Parse {@code mdx} with Mondrian's REAL parser and, when it is a DRILLTHROUGH statement,
+     * return the {@code MAXROWS} bound the grammar produced (saiku#2420). Mondrian reads a
+     * missing or non-positive bound as UNLIMITED, so callers bounding raw drillthroughs must
+     * require a result in {@code [1, ceiling]} — a null return means "cannot verify" and must
+     * fail closed, never execute.
+     *
+     * @return the parsed bound, or {@code null} when {@code con} is not a Mondrian connection,
+     *     the statement does not parse, or it parses to something other than a drillthrough
+     */
+    public static Integer drillThroughMaxRowCount(OlapConnection con, String mdx) {
+        if (!isMondrianConnection(con)) {
+            return null;
+        }
+        RolapConnection rcon = getMondrianConnection(con);
+        if (rcon == null) {
+            return null;
+        }
+        try {
+            QueryPart qp = rcon.parseStatement(mdx);
+            if (qp instanceof DrillThrough) {
+                return ((DrillThrough) qp).getMaxRowCount();
+            }
+            log.debug(
+                    "parseStatement returned {} for a drillthrough cap verification",
+                    qp == null ? "null" : qp.getClass().getSimpleName());
+        } catch (Exception | Error e) {
+            log.debug("drillthrough cap verification parse failed", e);
+        }
+        return null;
+    }
+
     public static void setRoles(OlapConnection con, String[] roleNames) throws Exception {
         RolapConnection rcon = getMondrianConnection(con);
         if (roleNames == null) {

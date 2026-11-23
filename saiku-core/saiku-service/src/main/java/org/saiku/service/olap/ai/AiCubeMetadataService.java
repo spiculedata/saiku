@@ -30,4 +30,14 @@ public interface AiCubeMetadataService {
     default java.util.List<PiiScanner.Match> getPiiSuggestions(AiCubeRef ref) {
         return java.util.Collections.emptyList();
     }
+
+    /**
+     * saiku#2326 — drop the cached {@link AiSchema} (and PII suggestion)
+     * entries scoped to the named connection. Called from
+     * {@code AbstractConnectionManager.refreshConnection} so a schema reload,
+     * datasource save or role/grant change cannot leave stale role-scoped
+     * snapshots behind. Default no-op so stub / test doubles that only
+     * implement getSchema() compile unchanged.
+     */
+    default void invalidateSchemaCache(String connectionName) {}
 }

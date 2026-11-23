@@ -1,0 +1,9 @@
+2026-10-04T12:00:00.0370000Z ##[group]Run ./scripts/check-licence-headers.sh
+2026-10-04T12:00:00.0740000Z [36;1m./scripts/check-licence-headers.sh[0m
+2026-10-04T12:00:00.1110000Z shell: /usr/bin/bash -e {0}
+2026-10-04T12:00:00.1480000Z ##[endgroup]
+2026-10-04T12:00:00.1850000Z ERROR: 1 Java file(s) have no licence header:
+2026-10-04T12:00:00.2220000Z   saiku-core/saiku-olap-util/src/main/java/zz/NoHeader.java
+2026-10-04T12:00:00.2590000Z 
+2026-10-04T12:00:00.2960000Z Run ./scripts/check-licence-headers.sh --fix to stamp them.
+2026-10-04T12:00:00.3330000Z ##[error]Process completed with exit code 1.

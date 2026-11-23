@@ -1,0 +1,5 @@
+{
+	"version": 1,
+	"comment": "Quarantined tests: still executed by CI, but a failure no longer blocks the gate. One entry per test id as `classname#testName` (Surefire: Java class + method; vitest: `file path#suite > test name`; Playwright: `spec file#suite > test title`). An entry is only honoured while it has an owner, a reason and an expiresAt in the future; expired or malformed entries block again. Ported from spiculedata/saiku-cloud; see docs/ci-flakes.md.",
+	"entries": []
+}

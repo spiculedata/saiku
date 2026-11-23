@@ -12,7 +12,7 @@
  */
 
 import { goto } from '$app/navigation';
-import { base } from '$app/paths';
+import { basePath } from '$lib/paths';
 import { buildAiDashboard } from '$lib/api/aiDashboard';
 import type { AiCubeRef } from '$lib/api/aiAsk';
 import { assembleDashboard } from '$lib/dashboard/aiDashboardAssembler';
@@ -127,7 +127,7 @@ class AiDashboardBuildStore {
 		const dashboard = assembleDashboard(spec, cube);
 		const savePath = suggestedDashboardPath(spec.title);
 		dashboardStore.beginReview(dashboard, savePath);
-		await goto(`${base}/dashboards/${savePath}`);
+		await goto(`${basePath()}/dashboards/${savePath}`);
 		// Dismiss after navigation completes so there is no blank-workspace flash
 		// between hiding the overlay and the editor mounting.
 		this.finish();

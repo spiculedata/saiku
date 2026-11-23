@@ -14,7 +14,7 @@
  */
 
 import * as echarts from 'echarts';
-import { base } from '$app/paths';
+import { basePath } from '$lib/paths';
 
 const registered = new Set<string>();
 const inflight = new Map<string, Promise<void>>();
@@ -33,7 +33,7 @@ export async function ensureGeoMap(name = 'world'): Promise<void> {
 	const existing = inflight.get(name);
 	if (existing) return existing;
 	const p = (async () => {
-		const res = await fetch(`${base}/geo/${name}.json`, {
+		const res = await fetch(`${basePath()}/geo/${name}.json`, {
 			headers: { Accept: 'application/json' }
 		});
 		if (!res.ok) throw new Error(`geo map "${name}" HTTP ${res.status}`);

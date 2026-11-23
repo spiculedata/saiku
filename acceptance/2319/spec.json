@@ -1,0 +1,34 @@
+{
+  "issue": 2319,
+  "title": "Ossie values-search and shelf filter literals are not injectable on backslash-escaping warehouses (MySQL/MariaDB)",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "an authenticated caller sends a hostile q to GET /ai/ossie/values/search",
+      "then": "the search term is never inlined into SQL: buildValuesSearchSql emits a bind placeholder (LIKE ?) and runValuesSearch executes a PreparedStatement with the pattern bound as a parameter"
+    },
+    {
+      "id": "C2",
+      "given": "a shelf filter value contains a backslash and the warehouse JDBC URL is a MySQL/MariaDB (or any unknown, backslash-escaping) dialect",
+      "then": "OssieShelfSqlTranslator refuses it with IllegalArgumentException instead of folding it into a quote-doubled literal that Calcite re-emits to the warehouse verbatim"
+    },
+    {
+      "id": "C3",
+      "given": "the warehouse is a known standard-conforming dialect (PostgreSQL, DuckDB/Quack, H2, SQL Server, Oracle)",
+      "then": "backslash filter values keep working unchanged"
+    },
+    {
+      "id": "C4",
+      "given": "OssieQueryService executes or previews a shelf query",
+      "then": "it passes the connection's warehouse JDBC URL to the translator so the dialect decision is made per connection"
+    },
+    {
+      "id": "C5",
+      "given": "regression tests",
+      "then": "tests ship for the bound values-search against a live Calcite/H2 schema with hostile input, the dialect classifier, and the translator backslash guard"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}

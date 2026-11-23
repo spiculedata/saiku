@@ -1,0 +1,9 @@
+{
+  "_": "Per-module JaCoCo line-coverage floors (percent), saiku#2011. CI fails if any module drops below its floor — see scripts/check-coverage.sh. Floors are the measured coverage rounded down when the gate landed; they are ratchets, so raise one when a module's coverage rises. saiku-sql is not gated yet: its tests don't exercise its own classes (0% at baseline). Companion to .github/test-floors.json, which floors test counts.",
+  "modules": {
+    "saiku-core/saiku-service": 59,
+    "saiku-core/saiku-web": 50,
+    "saiku-core/saiku-semantic": 96,
+    "saiku-launcher": 53
+  }
+}

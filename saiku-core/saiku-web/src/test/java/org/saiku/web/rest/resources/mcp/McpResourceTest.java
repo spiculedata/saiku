@@ -234,6 +234,25 @@ public class McpResourceTest {
         assertEquals(0, shortTtl.size());
     }
 
+    /* ----------------------- error echo (saiku#1920) ---------------------- */
+
+    @Test
+    public void internalErrorDoesNotEchoExceptionMessage() throws Exception {
+        String sid = initSession();
+        stubAi.listCubesFailure = new IllegalStateException("jdbc:postgresql://warehouse:5432/dw?password=hunter2");
+
+        ObjectNode params = MAPPER.createObjectNode();
+        params.put("name", "list_cubes");
+        params.set("arguments", MAPPER.createObjectNode());
+        Response resp = resource.handle(rpc("tools/call", 2, params), sid);
+        JsonNode body = MAPPER.valueToTree(resp.getEntity());
+
+        String message = body.path("error").path("message").asText();
+        assertFalse("must not echo the exception text: " + message, message.contains("jdbc:"));
+        assertFalse("must not echo the exception text: " + message, message.contains("hunter2"));
+        assertTrue("must carry a log correlation ref: " + message, message.contains("ref="));
+    }
+
     /* ------------------------------ helpers ------------------------------ */
 
     private String initSession() {
@@ -250,6 +269,95 @@ public class McpResourceTest {
         req.put("id", id);
         if (params != null) req.set("params", params);
         return req;
+    }
+
+    /* ----------------- saiku#2325: server-side limit bounds ---------------- */
+
+    private void callTool(String name, ObjectNode arguments) throws Exception {
+        String sid = initSession();
+        ObjectNode params = MAPPER.createObjectNode();
+        params.put("name", name);
+        params.set("arguments", arguments);
+        resource.handle(rpc("tools/call", 50, params), sid);
+    }
+
+    private static ObjectNode searchArgs() {
+        ObjectNode args = MAPPER.createObjectNode();
+        args.put("cube", "c/c/c/c");
+        args.put("dimension", "Customers");
+        args.put("level", "Name");
+        return args;
+    }
+
+    private static ObjectNode runQueryArgs() {
+        ObjectNode args = MAPPER.createObjectNode();
+        args.put("cube", "c/c/c/c");
+        args.set(
+                "measures",
+                MAPPER.createArrayNode().add(MAPPER.createObjectNode().put("name", "Unit Sales")));
+        return args;
+    }
+
+    @Test
+    public void searchMembersLimitIsClampedToSchemaMaximum() throws Exception {
+        callTool("search_members", searchArgs().put("limit", 2_000_000_000));
+        assertEquals(Integer.valueOf(McpResource.SEARCH_MEMBERS_MAX), stubAi.searchLimit.get());
+        assertEquals(500, McpResource.SEARCH_MEMBERS_MAX);
+    }
+
+    @Test
+    public void searchMembersWithinMaximumIsHonoured() throws Exception {
+        callTool("search_members", searchArgs().put("limit", 7));
+        assertEquals(Integer.valueOf(7), stubAi.searchLimit.get());
+    }
+
+    @Test
+    public void searchMembersSchemaMaximumMatchesServerClamp() throws Exception {
+        String sid = initSession();
+        Response list = resource.handle(rpc("tools/list", 2, MAPPER.createObjectNode()), sid);
+        JsonNode tools = MAPPER.valueToTree(list.getEntity()).path("result").path("tools");
+        for (JsonNode tool : tools) {
+            if ("search_members".equals(tool.path("name").asText())) {
+                assertEquals(
+                        McpResource.SEARCH_MEMBERS_MAX,
+                        tool.path("inputSchema")
+                                .path("properties")
+                                .path("limit")
+                                .path("maximum")
+                                .asInt());
+            }
+        }
+    }
+
+    @Test
+    public void runQueryWithoutLimitDefaultsTo100() throws Exception {
+        callTool("run_query", runQueryArgs());
+        assertEquals(100, stubAi.executeRequest.get().getLimit());
+        assertEquals(100, McpResource.RUN_QUERY_DEFAULT_LIMIT);
+    }
+
+    @Test
+    public void runQueryExplicitLimitIsHonoured() throws Exception {
+        callTool("run_query", runQueryArgs().put("limit", 250));
+        assertEquals(250, stubAi.executeRequest.get().getLimit());
+    }
+
+    @Test
+    public void runQueryZeroLimitResolvesToServerMaximum() throws Exception {
+        callTool("run_query", runQueryArgs().put("limit", 0));
+        assertEquals(10_000, stubAi.executeRequest.get().getLimit());
+    }
+
+    @Test
+    public void runQueryNegativeLimitResolvesToServerMaximum() throws Exception {
+        callTool("run_query", runQueryArgs().put("limit", -3));
+        assertEquals(10_000, stubAi.executeRequest.get().getLimit());
+    }
+
+    @Test
+    public void runQueryHugeLimitIsClampedToServerMaximum() throws Exception {
+        callTool("run_query", runQueryArgs().put("limit", 2_000_000_000));
+        assertEquals(10_000, stubAi.executeRequest.get().getLimit());
     }
 
     /** Minimal stub — captures arguments and returns canned responses. */
@@ -290,6 +398,36 @@ public class McpResourceTest {
     private String openSession() throws Exception {
         Response init = resource.handle(rpc("initialize", 1, MAPPER.createObjectNode()), null);
         return init.getHeaderString(SESSION_HEADER);
+    }
+
+    /** saiku#2322: a policy denial on the Ossie tools must surface as an isError tool result
+     *  carrying the PERMISSION_DENIED envelope — not the generic -32603 "Internal error" branch
+     *  (see also #1920's exception-echo concern), and not a successful empty result. */
+    @Test
+    public void runOssieQueryUnderSchemaOnlyReturnsPermissionDeniedToolError() throws Exception {
+        org.saiku.web.rest.resources.AiOssieResource guarded = new org.saiku.web.rest.resources.AiOssieResource();
+        guarded.setAiPolicyGuard(
+                new org.saiku.service.olap.ai.AiPolicyGuard(org.saiku.service.olap.ai.AiPolicy.SCHEMA_ONLY));
+        resource.setAiOssieResource(guarded);
+        String sid = openSession();
+
+        ObjectNode args = MAPPER.createObjectNode();
+        args.put("connection", "Flights");
+        args.putArray("rows").addObject().put("dataset", "flight").put("field", "carrier_id");
+        args.putArray("values").addObject().put("metric", "flight_count");
+        Response resp = resource.handle(rpc("tools/call", 4, callParams("run_ossie_query", args)), sid);
+        JsonNode body = MAPPER.valueToTree(resp.getEntity());
+
+        assertEquals("a policy denial is a tool-level result, not an RPC error", 200, resp.getStatus());
+        assertNull("no JSON-RPC error envelope", body.get("error"));
+        JsonNode result = body.path("result");
+        assertTrue(result.path("isError").asBoolean());
+        JsonNode structured = result.path("structuredContent");
+        assertEquals("PERMISSION_DENIED", structured.path("status").asText());
+        assertEquals("ai.policy", structured.path("field").asText());
+        // run_ossie_query is the aggregate surface — schema-only must be told to raise to
+        // 'aggregated' (row-detail's raw rows would say 'full').
+        assertEquals("aggregated", structured.path("available").get(0).asText());
     }
 
     private ObjectNode callParams(String tool, ObjectNode args) {
@@ -347,13 +485,26 @@ public class McpResourceTest {
 
     private static final class StubAiQueryResource extends AiQueryResource {
         Response cubesResponse = Response.ok(List.of()).build();
+        RuntimeException listCubesFailure;
         Response executeResponse = Response.ok(new AiQueryResponse()).build();
         final AtomicReference<AiQueryRequest> executeRequest = new AtomicReference<>();
         final AtomicReference<String> executeFormat = new AtomicReference<>();
 
+        final AtomicReference<Integer> searchLimit = new AtomicReference<>();
+
         @Override
         public Response listCubes() {
+            if (listCubesFailure != null) {
+                throw listCubesFailure;
+            }
             return cubesResponse;
+        }
+
+        @Override
+        public Response searchMembers(
+                String cubeId, String dimension, String hierarchy, String level, String q, int limit) {
+            searchLimit.set(limit);
+            return Response.ok(List.of()).build();
         }
 
         @Override

@@ -1,0 +1,113 @@
+name: Tier Classifier
+
+# Advisory change classification (saiku#2127, ACMM criterion acmm:tier-classifier).
+# Labels each PR risk/high, risk/medium or risk/low from the paths it changes.
+# The tier definitions and path rules are documented in docs/risk-tiers.md; keep
+# TIER_RULES below and that document in sync.
+#
+# Advisory only: it adds a label. It never fails the PR and nothing gates on it.
+#
+# pull_request_target is used so fork PRs get a token that can write a label. It is
+# safe here because this job NEVER checks out or executes PR code: it only lists the
+# changed file NAMES through the REST API. Do not add a checkout step, and do not
+# interpolate PR-controlled strings (title, branch, file names) into a shell.
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  pull-requests: write
+
+concurrency:
+  group: tier-classifier-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  classify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Classify and label
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const TIERS = ['high', 'medium', 'low'];
+            const LABEL_PREFIX = 'risk/';
+            const LABEL_COLOURS = { high: 'b60205', medium: 'fbca04', low: '0e8a16' };
+
+            // First match wins, evaluated in order. A file that matches nothing is medium.
+            const TIER_RULES = [
+              // Tests, stories and docs carry no runtime risk of their own.
+              { tier: 'low', re: /(^|\/)src\/test\// },
+              { tier: 'low', re: /\.(test|spec|stories)\.(ts|js|svelte|mjs)$/ },
+              { tier: 'low', re: /^saiku-ui\/(e2e|bombadil)\// },
+              // Security docs and agent permissions are policy, so treat them as high.
+              { tier: 'high', re: /^(SECURITY\.md|docs\/security\/|\.claude\/settings\.json$)/ },
+              // Agent guidance changes how every later change is made.
+              { tier: 'medium', re: /^(AGENTS\.md|CLAUDE\.md|\.claude\/|\.github\/(prompts\/|copilot-instructions\.md))/ },
+              { tier: 'low', re: /^docs\// },
+              { tier: 'low', re: /\.md$/ },
+              // High: security, auth, secrets, AI egress, shared design system, release and CI.
+              { tier: 'high', re: /^saiku-core\/saiku-web\/src\/main\/java\/org\/saiku\/web\/(security|demo)\// },
+              { tier: 'high', re: /^saiku-core\/saiku-web\/src\/main\/java\/org\/saiku\/web\/rest\/(SaikuJaxrsSecurityContextFilter|objects\/JdbcUrlValidator)/ },
+              { tier: 'high', re: /^saiku-core\/saiku-web\/src\/main\/java\/org\/saiku\/web\/servlet\/SecurityHeadersFilter/ },
+              { tier: 'high', re: /^saiku-core\/saiku-service\/src\/main\/java\/org\/saiku\/(security|datasources\/connection\/encrypt)\// },
+              { tier: 'high', re: /^saiku-core\/saiku-service\/src\/main\/java\/org\/saiku\/service\/olap\/ai\/(AiPolicy|AiDataKind|KAnonymity|ThinQueryFilterMerge)/ },
+              { tier: 'high', re: /^saiku-core\/saiku-olap-util\/.*SaikuMondrianHelper/ },
+              { tier: 'high', re: /^saiku-webapp\/src\/main\/webapp\/WEB-INF\/(applicationContext-spring-security|web\.xml)/ },
+              { tier: 'high', re: /^saiku-ui\/design-system\// },
+              { tier: 'high', re: /^saiku-ui\/src\/lib\/(design-system|components\/ui)\// },
+              { tier: 'high', re: /^\.github\/(workflows\/|dependabot\.yml|test-floors\.json)/ },
+              { tier: 'high', re: /^(docker\/|dist\/|saiku-bom\/)/ },
+              { tier: 'high', re: /(^|\/)pom\.xml$/ },
+              // Everything else that ships (service, web, launcher, UI, seeds, scripts) falls
+              // through to medium.
+            ];
+
+            const classify = (path) => {
+              const rule = TIER_RULES.find((r) => r.re.test(path));
+              return rule ? rule.tier : 'medium';
+            };
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner,
+              repo,
+              pull_number: issue_number,
+              per_page: 100,
+            });
+
+            const tiersSeen = new Set(files.map((f) => classify(f.filename)));
+            const tier = TIERS.find((t) => tiersSeen.has(t)) ?? 'low';
+            const label = LABEL_PREFIX + tier;
+            core.info(`${files.length} changed files -> ${label}`);
+
+            // Drop a stale tier label from an earlier push, keep every other label.
+            const current = context.payload.pull_request.labels.map((l) => l.name);
+            for (const t of TIERS) {
+              const name = LABEL_PREFIX + t;
+              if (name !== label && current.includes(name)) {
+                await github.rest.issues.removeLabel({ owner, repo, issue_number, name });
+              }
+            }
+
+            // Create the label on first use so it has a colour, then apply it.
+            try {
+              await github.rest.issues.createLabel({
+                owner,
+                repo,
+                name: label,
+                color: LABEL_COLOURS[tier],
+                description: `Change risk tier: ${tier} (see docs/risk-tiers.md)`,
+              });
+            } catch (error) {
+              if (error.status !== 422) throw error; // 422 = label already exists
+            }
+            await github.rest.issues.addLabels({ owner, repo, issue_number, labels: [label] });
+
+            await core.summary
+              .addHeading(`Risk tier: ${tier}`, 3)
+              .addRaw('Advisory only; see docs/risk-tiers.md for how tiers are assigned.')
+              .write();

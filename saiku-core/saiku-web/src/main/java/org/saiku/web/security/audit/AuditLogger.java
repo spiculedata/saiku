@@ -12,6 +12,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import org.saiku.web.security.ratelimit.ClientIpResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -51,8 +52,45 @@ public final class AuditLogger {
         emit("access_denied", req, username, null, extra);
     }
 
+    /** saiku#2432: a request refused because the managed store disabled the account. */
+    public static void accountRefused(HttpServletRequest req, String username) {
+        emit("account_refused", req, username, "account_disabled");
+    }
+
+    /** saiku#2432: a request continued with admin authority removed because the managed store dropped the role. */
+    public static void accountDemoted(HttpServletRequest req, String username) {
+        emit("account_demoted", req, username, "admin_role_removed");
+    }
+
     public static void rateLimitTriggered(HttpServletRequest req, String username) {
         emit("rate_limit_triggered", req, username, null);
+    }
+
+    /**
+     * saiku#1438 — one line per SCIM call. The acceptance criteria require the token label, the IdP
+     * the token is labelled for, and the operation type on <em>every</em> call, so all three are
+     * always emitted (as {@code null}-cleaned fields) rather than folded into the reason.
+     *
+     * <p>The bearer itself is never part of the line — {@code tokenLabel} is the operator-chosen
+     * name ("Okta production") and {@code tokenId} is the truncated SHA-256 handle, which is not a
+     * usable credential.
+     */
+    public static void scim(
+            HttpServletRequest req,
+            String tokenLabel,
+            String tokenId,
+            String idp,
+            String operation,
+            String outcome,
+            int status) {
+        Map<String, Object> extra = new LinkedHashMap<>();
+        extra.put("scim_token_label", tokenLabel == null ? "" : tokenLabel);
+        extra.put("scim_token_id", tokenId == null ? "" : truncate(tokenId, 12));
+        extra.put("scim_idp", idp == null ? "" : idp);
+        extra.put("scim_operation", operation == null ? "" : operation);
+        extra.put("scim_outcome", outcome == null ? "" : outcome);
+        extra.put("scim_status", status);
+        emit("scim_call", req, null, null, extra);
     }
 
     private static void emit(String event, HttpServletRequest req, String username, String reason) {
@@ -83,17 +121,9 @@ public final class AuditLogger {
     }
 
     private static String clientIp(HttpServletRequest req) {
-        // Audit IP mirrors rate-limiter choice: only honour X-Forwarded-For when
-        // explicitly trusted. Default to remote-addr so forged headers don't
-        // appear in the audit trail.
-        if (Boolean.parseBoolean(System.getProperty("saiku.auth.trustForwardedFor", "false"))) {
-            String fwd = req.getHeader("X-Forwarded-For");
-            if (fwd != null && !fwd.isEmpty()) {
-                int comma = fwd.indexOf(',');
-                return (comma > 0 ? fwd.substring(0, comma) : fwd).trim();
-            }
-        }
-        return req.getRemoteAddr();
+        // Same resolver as the login rate limiter (saiku#2427), so the audit trail and the
+        // lockout agree on who the client is and forged headers are never trusted by default.
+        return ClientIpResolver.resolve(req);
     }
 
     private static String truncate(String s, int max) {

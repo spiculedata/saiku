@@ -1,5 +1,9 @@
 # MCP native endpoint — migration notes (issue #878)
 
+> OAuth 2.0 bearer-token passthrough auth for this endpoint (issue #879) is documented separately in
+> [`mcp-oauth-resource-server.md`](./mcp-oauth-resource-server.md); it's an alternative to the HTTP
+> Basic auth described below, not a replacement — both coexist.
+
 The streamable-http MCP server is no longer a standalone `saiku-mcp` JAR
 in front of `saiku-launcher` via mcp-proxy. It now lives **inside
 saiku-webapp** at `/rest/saiku/api/mcp`, behind the same Spring Security

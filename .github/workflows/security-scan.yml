@@ -1,0 +1,129 @@
+# saiku#1920 — dependency + secret scanning that SECURITY.md actually describes.
+#
+# The document used to claim "Snyk on every push", "OWASP Dependency-Check on
+# release builds" and "commit hooks reject common credential patterns" while
+# none of those existed. Rather than delete the claims we made them true, and
+# corrected the document for the parts that are still opt-in.
+#
+# Two independent jobs, both running on the cheap `pull_request`/push lane and
+# both pinned to commit SHAs:
+#
+#   dependency-review — GitHub's own advisory diff. Reads the OSV/GitHub
+#     advisory database through the API, so there is no NVD API key and no
+#     multi-minute NVD download on every push. Fails a PR that ADDS a
+#     dependency with a known vulnerability, which is the moment a reviewer
+#     can actually do something about it.
+#
+#   gitleaks — scans the full history of the branch for committed secrets.
+#     `fetch-depth: 0` is load-bearing: gitleaks only finds a secret in commits
+#     it can see, and a shallow clone hides anything older than the depth.
+#
+# OWASP Dependency-Check (`mvn -P security verify`) is deliberately NOT here:
+# it downloads the full NVD feed and takes ~10 minutes, which is the wrong
+# trade on every push. It stays the opt-in release gate documented in
+# SECURITY.md, and release-prep.yml is where an operator runs it.
+
+name: security-scan
+
+on:
+  push:
+    branches: [development, "phase-*"]
+  pull_request:
+  schedule:
+    # Weekly, so a newly-published advisory against a dependency already merged
+    # still surfaces. 04:17 UTC Monday.
+    - cron: "17 4 * * 1"
+
+concurrency:
+  group: security-scan-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-review:
+    name: dependency review
+    # Advisory diffing only makes sense against a base — the first push to a
+    # brand-new branch has no meaningful merge base, and the scheduled run
+    # compares a ref against itself (always empty, hence a no-op success).
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write # required to annotate the PR with the findings
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure
+
+  npm-audit:
+    name: npm audit (saiku-ui, production deps)
+    # Unlike dependency-review (which diffs a PR), this reads the lockfile as it is, so an advisory
+    # published against an already-merged dependency surfaces on the weekly schedule (saiku#2337).
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+      - name: Audit saiku-ui production dependencies
+        working-directory: saiku-ui
+        run: npm audit --omit=dev --audit-level=high
+
+  osv-scan:
+    name: osv-scanner (Java and npm lockfiles)
+    # The OWASP dependency-check lane is opt-in and slow (see header); osv-scanner reads the
+    # poms and lockfiles against the OSV database in seconds, so it can run weekly.
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install osv-scanner
+        env:
+          OSV_SCANNER_VERSION: "2.7.1"
+          OSV_SCANNER_SHA256: "fb7dab19a8bd9bbe5c3189f09d4b7ee1820c9553a23bac202648a56efd2f6ee8"
+        run: |
+          set -euo pipefail
+          curl -sSfL -o osv-scanner \
+            "https://github.com/google/osv-scanner/releases/download/v${OSV_SCANNER_VERSION}/osv-scanner_linux_amd64"
+          echo "${OSV_SCANNER_SHA256}  osv-scanner" | sha256sum -c -
+          sudo install -m 0755 osv-scanner /usr/local/bin/osv-scanner
+      - name: Scan dependency manifests for known advisories
+        run: osv-scanner scan source --recursive .
+
+  gitleaks:
+    name: gitleaks (committed secrets)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history — gitleaks can only find a secret in commits it can see.
+          fetch-depth: 0
+      # The gitleaks CLI is MIT-licensed and free for organisations. The gitleaks-action
+      # wrapper is not: it needs a GITLEAKS_LICENSE secret on any org repo, and failed every
+      # run without one. Same scanner, same full-history scan; the release tarball is pinned
+      # by version and verified against its published sha256 before it runs.
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: "8.30.1"
+          GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+        run: |
+          set -euo pipefail
+          curl -sSfL -o gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+      # --redact: never print a detected secret into the job log. The baseline holds the findings
+      # that already existed when the scanner was fixed (mostly doc examples and test fixtures), so
+      # the job fails only on a NEW leak instead of on history nobody can rewrite.
+      - name: Scan history for committed secrets
+        run: gitleaks git --redact --no-banner --exit-code 1 --log-opts="--all" --baseline-path .gitleaks-baseline.json

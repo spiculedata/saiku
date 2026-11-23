@@ -1,0 +1,29 @@
+{
+  "issue": 2442,
+  "title": "SqlCaptureProbe: tests pin the dropped-probe release, the registrar seam's default scope, and overlapping Mondrian-scoped probes; ownsCurrentEvent catches Throwable",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "a test opens a probe, drops it without close(), and forces GC in a bounded loop",
+      "then": "activeProbeCount() returns to its baseline, the configured logger level is restored, and no saiku-sql-capture appender remains — pinning that the cleaner releases a dropped probe (saiku#2442 C1)"
+    },
+    {
+      "id": "C2",
+      "given": "the package-private open(int, registrar) seam is used to open a probe",
+      "then": "a test pins that the seam's default scope still claims the opening thread alone: a statement logged on another thread is not captured through it (saiku#2442 C2)"
+    },
+    {
+      "id": "C3",
+      "given": "two overlapping probes are opened with MondrianStatementScope for different statements",
+      "then": "a test logs under each statement's Locus on a worker thread and checks each probe keeps only its own statement's SQL (saiku#2442 C3)"
+    },
+    {
+      "id": "C4",
+      "given": "a Scope whose owns() throws an Error",
+      "then": "ownsCurrentEvent() catches Throwable, so an Error from a scope is treated as not-mine instead of flooding the log with a stack trace per event while the probe is open (the issue's nit), and the per-module test-count floor is raised to cover the new tests"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}

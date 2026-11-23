@@ -1,0 +1,103 @@
+name: Bug report
+description: Something in Saiku is broken or behaving unexpectedly.
+labels: ["Type: Bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. Exact reproduction steps get bugs fixed much faster.
+
+        **Security issue?** Don't file it here — follow [SECURITY.md](https://github.com/spiculedata/saiku/blob/development/SECURITY.md) instead.
+  - type: input
+    id: version
+    attributes:
+      label: Saiku version
+      description: Shown under Admin → About, or in the launcher JAR name (`saiku-<version>.jar`).
+      placeholder: "4.9.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: distribution
+    attributes:
+      label: How are you running Saiku?
+      options:
+        - Launcher JAR (java -jar saiku-<version>.jar serve)
+        - Docker image (ghcr.io/spiculedata/saiku)
+        - WAR in my own servlet container
+        - Built from source
+        - Other (describe below)
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Output of `java -version`, OS, browser and version (if a UI issue), and the database behind the affected datasource.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: A sequence of steps anyone can repeat. Include the cube/schema and query if relevant (FoodMart is ideal).
+      placeholder: |
+        1. Open ...
+        2. Drag ...
+        3. Click ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: What happened instead. Screenshots help a lot.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Acceptance criteria
+      description: >-
+        How we will know this is fixed, one checkbox per observable outcome. A maintainer needs this
+        before the issue can be labelled issue-approved (the only label that lets an agent pick it
+        up); the issue-gate workflow removes the label if it is missing. Optional for reporters: a
+        maintainer can fill it in.
+      placeholder: |
+        - [ ] The steps above no longer produce the error
+        - [ ] A regression test covers the failing case
+  - type: textarea
+    id: acceptance_tests
+    attributes:
+      label: Acceptance tests
+      description: >-
+        The check that proves this bug is fixed, written against the expected behaviour above and
+        phrased so it fails today and passes after the fix (a request and what it must answer, or a
+        page and what it must show). A PR that closes this issue ships it as
+        acceptance/<issue>/spec.json (see acceptance/README.md and docs/acceptance-specs.md); a
+        docs-only or tests-only fix takes the acceptance-waived label instead. Optional for
+        reporters: a maintainer can fill it in.
+      placeholder: |
+        - GET /rest/saiku/api/... must answer 200 with ...
+        - Why today's code fails it (the wrong status, the missing field, the stack trace)
+  - type: input
+    id: regressed_by
+    attributes:
+      label: Regressed by PR
+      description: >-
+        Optional. If you know this worked before and which merged pull request broke it, give its
+        number (e.g. #2100). It feeds the escaped-defect metric on the quality dashboard
+        (docs/quality.md); leave it empty if you do not know.
+      placeholder: "#2100"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Server log excerpt (`saiku-home/logs/`) and/or browser console errors. Redact credentials.
+      render: text

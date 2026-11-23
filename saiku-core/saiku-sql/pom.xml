@@ -6,7 +6,7 @@
     <parent>
         <groupId>org.saikuanalytics</groupId>
         <artifactId>saiku-core</artifactId>
-        <version>4.8.0</version>
+        <version>4.9.0</version>
     </parent>
 
     <artifactId>saiku-sql</artifactId>
@@ -129,7 +129,7 @@
                      locally (matches saiku-service) so Calcite 1.42 and our
                      Java 21 features compile cleanly. Don't 'fix' the root
                      pom — other modules deliberately stay on the old surface. -->
-                <version>3.13.0</version>
+                <version>3.16.0</version>
                 <configuration>
                     <release>${maven.compiler.release}</release>
                     <encoding>UTF-8</encoding>

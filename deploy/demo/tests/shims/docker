@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# Fake `docker` for tests/run.sh. All state lives under $FAKE (see run.sh).
+# Implements only the subcommands saiku-demo-deploy.sh uses.
+set -u
+: "${FAKE:?FAKE must point at the fake docker state dir}"
+printf '%s\n' "docker $*" >>"$FAKE/calls.log"
+san() { echo "${1//[\/:@]/_}"; }
+resolve() { # tag or id -> id
+  if [[ "$1" == sha256:* ]]; then echo "$1"; return 0; fi
+  [[ -f "$FAKE/tags/$(san "$1")" ]] && cat "$FAKE/tags/$(san "$1")"
+}
+cdir() { echo "$FAKE/containers/$1"; }
+
+cmd="$1"; shift
+case "$cmd" in
+  pull)
+    ref="${*: -1}"
+    [[ -f "$FAKE/pull_fail" ]] && { echo "pull failed" >&2; exit 1; }
+    [[ -f "$FAKE/registry/$(san "$ref")" ]] || exit 1
+    mkdir -p "$FAKE/tags"
+    cp "$FAKE/registry/$(san "$ref")" "$FAKE/tags/$(san "$ref")"
+    cat "$FAKE/tags/$(san "$ref")"
+    ;;
+  image)
+    sub="$1"; shift
+    case "$sub" in
+      inspect)
+        fmt=""; [[ "$1" == "--format" ]] && { fmt="$2"; shift 2; }
+        id="$(resolve "$1")" || exit 1
+        [[ -n "$id" ]] || exit 1
+        if [[ "$fmt" == *Labels* ]]; then
+          [[ -f "$FAKE/labels/$(san "$id")" ]] && cat "$FAKE/labels/$(san "$id")" || echo ""
+        else
+          echo "$id"
+        fi
+        ;;
+      ls) cat "$FAKE/imagelist" 2>/dev/null || true ;;
+      *) exit 1 ;;
+    esac
+    ;;
+  container)
+    [[ "$1" == inspect ]] || exit 1; shift
+    fmt=""; [[ "$1" == "--format" ]] && { fmt="$2"; shift 2; }
+    d="$(cdir "$1")"; [[ -d "$d" ]] || exit 1
+    case "$fmt" in
+      *Image*) cat "$d/image" ;;
+      *Running*) cat "$d/running" ;;
+      *) echo "{}" ;;
+    esac
+    ;;
+  run)
+    name=""; port_spec=""; tmpfs=""; vol=""; image=""
+    args=("$@")
+    i=0
+    while ((i < ${#args[@]})); do
+      a="${args[$i]}"
+      case "$a" in
+        --name) name="${args[$((i+1))]}"; i=$((i+2)) ;;
+        -p) port_spec="${args[$((i+1))]}"; i=$((i+2)) ;;
+        -v) vol="${args[$((i+1))]}"; i=$((i+2)) ;;
+        --tmpfs) tmpfs="${args[$((i+1))]}"; i=$((i+2)) ;;
+        --memory|--restart|-e|--env-file) i=$((i+2)) ;;
+        -d) i=$((i+1)) ;;
+        *) image="$a"; i=$((i+1)) ;;
+      esac
+    done
+    d="$(cdir "$name")"
+    [[ -d "$d" ]] && { echo "name in use" >&2; exit 125; }
+    id="$(resolve "$image")" || exit 125
+    mkdir -p "$d"
+    echo "$id" >"$d/image"; echo true >"$d/running"
+    echo "$vol" >"$d/vol"; echo "$tmpfs" >"$d/tmpfs"; echo "$port_spec" >"$d/port_spec"
+    echo "$*" >"$d/run_args"
+    hostport="$(echo "$port_spec" | cut -d: -f2)"
+    echo "${hostport:-49153}" >"$d/port"
+    list="bad_real"; [[ "$name" == *-candidate ]] && list="bad_cand"
+    mode=ok
+    if [[ -f "$FAKE/$list" ]]; then
+      while IFS="=" read -r bid bmode; do [[ "$bid" == "$id" ]] && mode="$bmode"; done <"$FAKE/$list"
+    fi
+    echo "$mode" >"$d/mode"
+    echo "fakecontainerid-$name"
+    ;;
+  port)
+    d="$(cdir "$1")"; [[ -f "$d/port" ]] || exit 1
+    echo "127.0.0.1:$(cat "$d/port")"; echo "[::]:$(cat "$d/port")"
+    ;;
+  logs) echo "fake log line from $*" ;;
+  stop) d="$(cdir "${*: -1}")"; [[ -d "$d" ]] && echo false >"$d/running" ;;
+  start) d="$(cdir "$1")"; [[ -d "$d" ]] || exit 1; echo true >"$d/running" ;;
+  rename) [[ -d "$(cdir "$1")" ]] || exit 1; [[ -d "$(cdir "$2")" ]] && exit 1; mv "$(cdir "$1")" "$(cdir "$2")" ;;
+  rm) rm -rf "$(cdir "${*: -1}")" ;;
+  tag)
+    id="$(resolve "$1")" || exit 1
+    mkdir -p "$FAKE/tags"; echo "$id" >"$FAKE/tags/$(san "$2")" ;;
+  rmi)
+    for c in "$FAKE"/containers/*; do [[ -f "$c/image" && "$(cat "$c/image")" == "$1" ]] && exit 1; done
+    grep -vxF "$1" "$FAKE/imagelist" >"$FAKE/imagelist.new" || true
+    mv "$FAKE/imagelist.new" "$FAKE/imagelist"
+    echo "Untagged: $1" ;;
+  *) echo "fake docker: unsupported: $cmd" >&2; exit 99 ;;
+esac

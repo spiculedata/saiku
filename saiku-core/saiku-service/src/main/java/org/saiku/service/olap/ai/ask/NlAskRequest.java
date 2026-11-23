@@ -6,6 +6,7 @@ package org.saiku.service.olap.ai.ask;
 
 import java.util.List;
 import java.util.Objects;
+import org.saiku.service.mcp.outbound.McpOutboundToolDescriptor;
 import org.saiku.service.olap.ai.AiCubeRef;
 
 /**
@@ -34,6 +35,11 @@ import org.saiku.service.olap.ai.AiCubeRef;
  *       insight or sensibly route view changes.
  *   <li>{@code toolTranscript} — prior tool steps in a server-side agentic loop; empty for a
  *       single-shot ask.
+ *   <li>{@code mcpTools} — admin-enabled outbound MCP tools (saiku#1425) the provider should
+ *       advertise alongside the built-in emit_* tools, flattened with a {@code mcp__<server>__}
+ *       prefixed name. Empty when outbound MCP isn't configured, or for call sites (the classic
+ *       single-shot {@code ask}) that have no execute-and-continue loop to dispatch a tool call
+ *       through — only {@link AiAskService#askChained} populates this.
  * </ul>
  *
  * <p>Implementations MUST NOT mutate any field; the record is intentionally immutable.
@@ -49,7 +55,8 @@ public record NlAskRequest(
         String currentQueryJson,
         String skillsFragment,
         String spaceSystemPrompt,
-        List<ToolTurn> toolTranscript) {
+        List<ToolTurn> toolTranscript,
+        List<McpOutboundToolDescriptor> mcpTools) {
 
     /**
      * Optional override for the tool the LLM is allowed to call. Default (null/{@code AUTO}) leaves
@@ -85,6 +92,35 @@ public record NlAskRequest(
         history = history == null ? List.of() : List.copyOf(history);
         if (forceTool == null) forceTool = ForceTool.AUTO;
         toolTranscript = toolTranscript == null ? List.of() : List.copyOf(toolTranscript);
+        mcpTools = mcpTools == null ? List.of() : List.copyOf(mcpTools);
+    }
+
+    /** Pre-mcpTools ctor — kept for callers that don't have an outbound MCP catalogue. */
+    public NlAskRequest(
+            AiCubeRef cubeRef,
+            String question,
+            String cubeSchemaJson,
+            String requestJsonSchema,
+            List<NlAskMessage> history,
+            String cellsetDigest,
+            ForceTool forceTool,
+            String currentQueryJson,
+            String skillsFragment,
+            String spaceSystemPrompt,
+            List<ToolTurn> toolTranscript) {
+        this(
+                cubeRef,
+                question,
+                cubeSchemaJson,
+                requestJsonSchema,
+                history,
+                cellsetDigest,
+                forceTool,
+                currentQueryJson,
+                skillsFragment,
+                spaceSystemPrompt,
+                toolTranscript,
+                List.of());
     }
 
     /** Pre-space ctor — kept for callers that don't scope by AgentSpace. */
@@ -109,6 +145,7 @@ public record NlAskRequest(
                 currentQueryJson,
                 skillsFragment,
                 null,
+                List.of(),
                 List.of());
     }
 
@@ -196,6 +233,7 @@ public record NlAskRequest(
                 currentQueryJson,
                 skillsFragment,
                 spaceSystemPrompt,
-                transcript);
+                transcript,
+                mcpTools);
     }
 }

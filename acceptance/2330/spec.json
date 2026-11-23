@@ -1,0 +1,14 @@
+{
+  "issue": 2330,
+  "title": "GET /ai/schema/{cubeId}/pii-suggestions is admin-only: a non-admin caller is refused before the schema cache is warmed or the PII scanner findings are read",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "AiQueryResource.getPiiSuggestions is called by a caller without ROLE_ADMIN",
+      "then": "it carries @RolesAllowed(\"ROLE_ADMIN\") and refuses with 403 before it calls getSchema or getPiiSuggestions"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}

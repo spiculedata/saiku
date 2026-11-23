@@ -44,6 +44,24 @@ function buildFixture(): ArrayBuffer {
 		JSON.stringify({
 			rowHeaderColCount: 1,
 			columnHeaderRows: [['Unit Sales', 'Store Sales']],
+			columnHeaderMembers: [
+				[
+					{
+						caption: 'Unit Sales',
+						uniqueName: '[Measures].[Unit Sales]',
+						dimension: 'Measures',
+						hierarchy: '[Measures]',
+						level: '[Measures].[MeasuresLevel]'
+					},
+					{
+						caption: 'Store Sales',
+						uniqueName: '[Measures].[Store Sales]',
+						dimension: 'Measures',
+						hierarchy: '[Measures]',
+						level: '[Measures].[MeasuresLevel]'
+					}
+				]
+			],
 			runtimeMs: 42,
 			width: 3,
 			height: 2,
@@ -80,7 +98,15 @@ describe('parseArrowExecute', () => {
 		const header = result.cellset[0];
 		expect(header.length).toBe(3);
 		expect(header[0].type).toBe('ROW_HEADER_HEADER');
-		expect(header[1]).toMatchObject({ type: 'COLUMN_HEADER', value: 'Unit Sales' });
+		expect(header[1]).toMatchObject({
+			type: 'COLUMN_HEADER',
+			value: 'Unit Sales',
+			properties: {
+				dimension: 'Measures',
+				uniquename: '[Measures].[Unit Sales]',
+				hierarchy: '[Measures]'
+			}
+		});
 		expect(header[2]).toMatchObject({ type: 'COLUMN_HEADER', value: 'Store Sales' });
 
 		// First data row

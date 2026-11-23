@@ -340,6 +340,7 @@
 	{/if}
 {/snippet}
 
+<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions — tabindex=-1 is for programmatic focus only -->
 <div
 	bind:this={canvasRegionEl}
 	class="relative flex-1"

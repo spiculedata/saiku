@@ -143,7 +143,7 @@
 		</FormField>
 		<fieldset class="field">
 			<legend class="field__label">Roles</legend>
-			{#each ['ROLE_USER', 'ROLE_ADMIN'] as r}
+			{#each ['ROLE_USER', 'ROLE_ADMIN', 'ROLE_SQL_EXEC'] as r}
 				<label class="flex items-center gap-2 px-0 py-1">
 					<input
 						type="checkbox"

@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-RnSQGL+v+lNeSlTKvbC9ioGEgWTjOEpXLon9BDEincU='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' https:; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>AQVIRA — Real-World Rx Intelligence</title>
 <style>
   /* ============================================================
@@ -378,7 +379,9 @@ const $=s=>document.querySelector(s);
 const el=h=>{const t=document.createElement('template'); t.innerHTML=h.trim(); return t.content.firstChild;};
 const usd=n=>{ const s=n<0?'-':''; n=Math.abs(n); return s+(n>=1e6? '$'+(n/1e6).toFixed(1)+'M' : n>=1e3? '$'+(n/1e3).toFixed(0)+'k' : '$'+Math.round(n)); };
 const num=n=> n>=1e6? (n/1e6).toFixed(1)+'M' : n>=1e3? (n/1e3).toFixed(0)+'k' : ''+Math.round(n);
-const esc=s=>s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+// saiku#1908: every caption from the live API must go through esc() before it
+// reaches innerHTML — a warehouse member name is attacker-controllable data.
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 /* ===================== real cube figures (baked fallback; refreshed live) ===================== */
 // Pulled from Pharma Rx (250k Rx, ~$85.4M net). Used when the API isn't reachable.
@@ -440,7 +443,7 @@ function renderTABars(){
       const nowPct=(w.whatif/max)*100, up=w.whatif>=t.net;
       const g = up ? 'linear-gradient(90deg,#12c2c9,#3d5afe)' : 'linear-gradient(90deg,#e0455e,#e8873c)';
       return `<div class="barrow" style="opacity:${dim?0.32:1}">
-        <div class="nm" title="${t.name}">${t.name}</div>
+        <div class="nm" title="${esc(t.name)}">${esc(t.name)}</div>
         <div class="ghost">
           <div class="now" style="width:${nowPct}%; background:${g}"></div>
           <div class="tick" style="left:${actPct}%"></div>
@@ -448,13 +451,13 @@ function renderTABars(){
         <div class="v"><b>${usd(t.net)}</b> → <span class="wf">${usd(w.whatif)}</span></div></div>`;
     }
     return `<div class="barrow" style="opacity:${dim?0.32:1}; transition:opacity .3s">
-      <div class="nm" title="${t.name}">${t.name}</div>
+      <div class="nm" title="${esc(t.name)}">${esc(t.name)}</div>
       <div class="track"><div class="fill" style="background:${BAR_PAL[i%BAR_PAL.length]}" data-w="${actPct}"></div></div>
       <div class="v"><b>${usd(t.net)}</b> · ${num(t.rx)} Rx · ${sh.toFixed(0)}%</div></div>`;
   }).join('');
   requestAnimationFrame(()=>document.querySelectorAll('#mainChart .fill').forEach(f=>f.style.width=f.dataset.w+'%'));
 }
-function seedWfAreas(){ const s=$('#wfArea'); if(s) s.innerHTML=TA.map(t=>`<option value="${t.name}">${t.name}</option>`).join(''); }
+function seedWfAreas(){ const s=$('#wfArea'); if(s) s.innerHTML=TA.map(t=>`<option value="${esc(t.name)}">${esc(t.name)}</option>`).join(''); }
 async function applyWhatIf(){
   const area=$('#wfArea').value, val=parseFloat($('#wfVal').value);
   if(!area || !val){ $('#wfNote').textContent='enter a $ value'; return; }
@@ -480,7 +483,7 @@ function resetWhatIf(){ WHATIF=null; $('#wfNote').textContent=''; $('#wfNote').c
 function renderCustomBars(data){
   const max=Math.max(...data.map(d=>d.value))||1, total=data.reduce((a,d)=>a+d.value,0);
   $('#mainChart').innerHTML=data.map((d,i)=>{ const pct=(d.value/max)*100, sh=total?d.value/total*100:0;
-    return `<div class="barrow"><div class="nm" title="${d.name}">${d.name}</div>
+    return `<div class="barrow"><div class="nm" title="${esc(d.name)}">${esc(d.name)}</div>
       <div class="track"><div class="fill" style="background:${BAR_PAL[i%BAR_PAL.length]}" data-w="${pct}"></div></div>
       <div class="v"><b>${usd(d.value)}</b> · ${sh.toFixed(0)}%</div></div>`; }).join('');
   requestAnimationFrame(()=>document.querySelectorAll('#mainChart .fill').forEach(f=>f.style.width=f.dataset.w+'%'));
@@ -491,7 +494,7 @@ function renderPayer(){
   const max=Math.max(...src.map(p=>p.net)), total=src.reduce((a,p)=>a+p.net,0);
   const pal=['linear-gradient(90deg,#171a4a,#3d5afe)','linear-gradient(90deg,#3d5afe,#6d7dff)','linear-gradient(90deg,#12c2c9,#3d5afe)','linear-gradient(90deg,#7a5cff,#6d7dff)','linear-gradient(90deg,#e8873c,#eaa564)'];
   $('#payerChart').innerHTML=src.map((p,i)=>{ const pct=(p.net/max)*100, sh=total?p.net/total*100:0;
-    return `<div class="barrow"><div class="nm">${p.name}</div><div class="track"><div class="fill" style="background:${pal[i%pal.length]}" data-w="${pct}"></div></div>
+    return `<div class="barrow"><div class="nm">${esc(p.name)}</div><div class="track"><div class="fill" style="background:${pal[i%pal.length]}" data-w="${pct}"></div></div>
       <div class="v"><b>${usd(p.net)}</b> · ${sh.toFixed(0)}%</div></div>`; }).join('');
   requestAnimationFrame(()=>document.querySelectorAll('#payerChart .fill').forEach(f=>f.style.width=f.dataset.w+'%'));
 }
@@ -555,9 +558,24 @@ function renderInsights(){
 }
 
 /* ===================== live cube (session + /ai/query) ===================== */
-async function ensureSession(){
-  if(sessionReady) return;
-  try{ await fetch((CFG.base||'')+'/rest/saiku/session/',{method:'POST',credentials:'include',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'username=admin&password=admin'}); sessionReady=true; }catch{}
+/* saiku#1908: the default-credential login fires ONLY when the target server
+   itself reports demo mode (GET /rest/saiku/info/capabilities → demoMode:true).
+   On any other deployment the page never POSTs admin/admin: live calls ride the
+   visitor's own session if they have one, otherwise the baked figures stay. */
+let sessionPromise=null;
+function ensureSession(){
+  if(sessionReady) return Promise.resolve();
+  return sessionPromise || (sessionPromise=(async()=>{
+    try{
+      const base=CFG.base||'';
+      const info=await fetch(base+'/rest/saiku/info/capabilities',{credentials:'include',headers:{'Accept':'application/json'}});
+      const caps=info.ok? await info.json() : null;
+      if(!caps || caps.demoMode!==true){ sessionReady=true; return; }
+      await fetch(base+'/rest/saiku/session/',{method:'POST',credentials:'include',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'username=admin&password=admin'});
+      sessionReady=true;
+    }catch{}
+    finally{ sessionPromise=null; }
+  })());
 }
 function csrf(h){ const m=document.cookie.match(/XSRF-TOKEN=([^;]+)/); if(m) h['X-XSRF-TOKEN']=decodeURIComponent(m[1]); return h; }
 async function aiQuery(body){
@@ -588,7 +606,7 @@ async function refreshFromCube(){
       TA=ta.data.map(r=>({name:r['Therapeutic Class'], net:cellNum(r['Net Revenue']), rx:cellNum(r['Rx Count'])})).filter(t=>t.net).sort((a,b)=>b.net-a.net);
       // repopulate the portfolio picker from live areas
       const sel=$('#taSel'); const cur=sel.value;
-      sel.innerHTML='<option value="all">All therapeutic areas</option>'+TA.map(t=>`<option value="${t.name}">${t.name}</option>`).join('');
+      sel.innerHTML='<option value="all">All therapeutic areas</option>'+TA.map(t=>`<option value="${esc(t.name)}">${esc(t.name)}</option>`).join('');
       sel.value=cur;
       seedWfAreas();
     }

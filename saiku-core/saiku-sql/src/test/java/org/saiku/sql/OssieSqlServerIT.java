@@ -6,18 +6,21 @@ package org.saiku.sql;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Properties;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.saiku.sql.server.OssieSqlServer;
+import org.saiku.sql.server.SqlServerCredentials;
 
 /**
  * End-to-end: start the {@link OssieSqlServer} bound to an ephemeral port, connect via the
@@ -109,6 +112,52 @@ public class OssieSqlServerIT {
             assertEquals("West", rs.getString(1));
             assertEquals(25.00, rs.getBigDecimal(2).doubleValue(), 0.001);
         }
+    }
+
+    @Test
+    public void basicAuthAcceptsCorrectCredentialsAndRejectsOthers() throws Exception {
+        try (OssieSqlServer secured = new OssieSqlServer(
+                "127.0.0.1",
+                0,
+                new SqlServerCredentials("bi", "s3cret, with comma"),
+                ossieYaml,
+                "SALES",
+                "jdbc:h2:mem:sqlserverit;DB_CLOSE_DELAY=-1;MODE=PostgreSQL",
+                "sa",
+                "")) {
+            try (Connection remote = openAvaticaClient(secured, "bi", "s3cret, with comma");
+                    Statement s = remote.createStatement();
+                    ResultSet rs = s.executeQuery("SELECT COUNT(*) FROM SALES.CUSTOMERS")) {
+                assertTrue(rs.next());
+                assertEquals(4, rs.getInt(1));
+            }
+            try (Connection remote = openAvaticaClient(secured, "bi", "wrong");
+                    Statement s = remote.createStatement()) {
+                s.executeQuery("SELECT COUNT(*) FROM SALES.CUSTOMERS");
+                fail("wrong password must not reach the warehouse");
+            } catch (SQLException | RuntimeException expected) {
+                // Avatica surfaces the HTTP 401 as an exception
+            }
+            try (Connection remote = openAvaticaClient(secured, null, null);
+                    Statement s = remote.createStatement()) {
+                s.executeQuery("SELECT COUNT(*) FROM SALES.CUSTOMERS");
+                fail("anonymous client must not reach the warehouse");
+            } catch (SQLException | RuntimeException expected) {
+                // Avatica surfaces the HTTP 401 as an exception
+            }
+        }
+    }
+
+    private Connection openAvaticaClient(OssieSqlServer target, String user, String password) throws Exception {
+        Class.forName("org.apache.calcite.avatica.remote.Driver");
+        Properties p = new Properties();
+        p.setProperty("serialization", "protobuf");
+        if (user != null) {
+            p.setProperty("authentication", "BASIC");
+            p.setProperty("avatica_user", user);
+            p.setProperty("avatica_password", password);
+        }
+        return DriverManager.getConnection("jdbc:avatica:remote:url=" + target.getUrl(), p);
     }
 
     private Connection openAvaticaClient() throws Exception {

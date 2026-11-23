@@ -1,0 +1,40 @@
+# saiku#1920 — who must review what.
+#
+# GitHub requests a review from these owners when a PR touches a matching path.
+# It does NOT block anyone from pushing or from self-reviewing: the branch
+# protection rules on `development` are what enforce "one maintainer approval",
+# and CODEOWNERS sits underneath them as a routing layer. If a listed owner is
+# inactive, GitHub falls back to the repository's default reviewers, so this
+# never wedges a PR.
+#
+# The paths below are the ones where a mistake is a security incident rather
+# than a bad UI state: the auth filters and the token stores that decide who may
+# read what, the launcher that decides what the process is allowed to bind and
+# dial, and the CI definition itself (a workflow edit is self-review, so it
+# wants a second pair of eyes by construction).
+
+# Default owner for everything not matched below.
+* @spiculedata/maintainers
+
+# --- CI / release / supply chain -------------------------------------------
+# A workflow edit can exfiltrate secrets or ship a tampered artefact, and it is
+# the one file class a contributor can always change in their own PR.
+.github/ @spiculedata/maintainers
+
+# --- Web security surface --------------------------------------------------
+# Filters, token stores and the security packages: anything that grants a
+# request an identity.
+saiku-core/saiku-web/src/main/java/org/saiku/web/security/ @spiculedata/maintainers
+saiku-core/saiku-web/src/main/java/org/saiku/web/embed/ @spiculedata/maintainers
+saiku-core/saiku-web/src/main/java/org/saiku/web/share/ @spiculedata/maintainers
+saiku-core/saiku-web/src/main/webapp/WEB-INF/saiku-beans.xml @spiculedata/maintainers
+saiku-core/saiku-web/src/main/java/org/saiku/web/rest/SaikuJaxrsSecurityContextFilter.java @spiculedata/maintainers
+saiku-core/saiku-service/src/main/java/org/saiku/service/user/ @spiculedata/maintainers
+
+# --- Launcher ---------------------------------------------------------------
+# Startup posture: default-admin refusal, bind address, which optional outbound
+# integrations (telemetry, analytics) may dial.
+saiku-launcher/ @spiculedata/maintainers
+
+# --- Policy docs -----------------------------------------------------------
+SECURITY.md @spiculedata/maintainers

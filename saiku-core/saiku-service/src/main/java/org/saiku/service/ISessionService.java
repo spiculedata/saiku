@@ -31,4 +31,15 @@ public interface ISessionService {
     Map<String, Object> getAllSessionObjects();
 
     void clearSessions(HttpServletRequest req, String username, String password) throws Exception;
+
+    /**
+     * The current user's login password, for datasources with {@code security.type=passthrough} only
+     * (saiku#2341). It is deliberately not part of {@link #getSession()} / {@link #getAllSessionObjects()}.
+     * The array is the live copy and is zeroed when the session ends: callers must not retain it.
+     *
+     * @return the credential, or {@code null} when none is held
+     */
+    default char[] passthroughCredential() {
+        return null;
+    }
 }

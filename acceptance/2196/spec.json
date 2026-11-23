@@ -1,0 +1,19 @@
+{
+  "issue": 2196,
+  "title": "Saiku UI unit and mocked-browser coverage can be compared by source line",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "the Saiku UI coverage commands and mocked-browser fixture",
+      "then": "unit and browser reports use source paths and record the suite, revision, command, and timestamp"
+    },
+    {
+      "id": "C2",
+      "given": "unit and browser LCOV reports from the same revision",
+      "then": "the comparison command records each source line's hits from both suites and the documentation explains how to reproduce it"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}

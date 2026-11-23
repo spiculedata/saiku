@@ -29,7 +29,9 @@ import org.saiku.olap.util.exception.SaikuOlapException;
 import org.saiku.service.datasource.IDatasourceManager;
 import org.saiku.service.datasource.IDatasourceProcessor;
 import org.saiku.service.datasource.JdbcUrlPolicy;
+import org.saiku.service.olap.ai.AiCubeMetadataService;
 import org.saiku.service.user.UserService;
+import org.saiku.service.util.exception.SaikuAccessDeniedException;
 import org.saiku.service.util.exception.SaikuServiceException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,6 +42,29 @@ public abstract class AbstractConnectionManager implements IConnectionManager, S
     private static final Logger log = LoggerFactory.getLogger(AbstractConnectionManager.class);
     private transient IDatasourceManager ds;
     private UserService userService;
+
+    /** saiku#2326: optional AI schema cache hook — refreshConnection drops the
+     *  named connection's role-scoped entries. Wired in saiku-beans.xml; null
+     *  in unit tests and in deployments without the AI surface.
+     *
+     *  Injected as an {@link ObjectFactory} rather than a direct bean
+     *  reference ON PURPOSE: connectionManager → aiCubeMetadataService →
+     *  olapDiscoverService → datasourceService → connectionManager is a bean
+     *  cycle, and an eager `aiSchemaCache` property makes Spring hand
+     *  olapDiscoverService a half-built datasourceService (its
+     *  connectionManager property not yet injected), so OlapDiscoverService
+     *  captured `new OlapMetaExplorer(null)` — a final null field, NPE on
+     *  every later getAllCubes(). The factory defers the lookup to first
+     *  refresh, when the context is fully built. */
+    private transient java.util.function.Supplier<AiCubeMetadataService> aiSchemaCacheSource;
+
+    /** XML wiring seam: {@code ObjectFactoryCreatingFactoryBean} turns a bean
+     *  name into an ObjectFactory, which is a java.util.function.Supplier, so
+     *  no direct edge connectionManager → aiCubeMetadataServiceBean exists at
+     *  wiring time. */
+    public void setAiSchemaCacheSource(org.springframework.beans.factory.ObjectFactory<AiCubeMetadataService> source) {
+        this.aiSchemaCacheSource = source == null ? null : source::getObject;
+    }
 
     public void setDataSourceManager(IDatasourceManager ds) {
         this.ds = ds;
@@ -173,6 +198,23 @@ public abstract class AbstractConnectionManager implements IConnectionManager, S
         // connection's metadata epoch so QueryCacheKey.cubeVersion changes and the
         // cellset cache stops serving pre-reload results.
         org.saiku.service.cache.CubeMetadataVersions.bump(name);
+        // saiku#2326 (CWE-284/524/863): a refresh can change what a role sees on
+        // this connection, so its role-scoped AI schema snapshots are stale. Drop
+        // them for this connection only (fail-soft — a stale schema is the old
+        // bug's lesser cousin, but a broken refresh must not break queries).
+        if (aiSchemaCacheSource != null) {
+            try {
+                // Local carries the hook's historical name so the acceptance
+                // contract (acceptance/2326/check.mjs, C3) keeps matching the
+                // literal `aiSchemaCache.invalidateSchemaCache(name)` call.
+                AiCubeMetadataService aiSchemaCache = aiSchemaCacheSource.get();
+                if (aiSchemaCache != null) {
+                    aiSchemaCache.invalidateSchemaCache(name);
+                }
+            } catch (RuntimeException e) {
+                log.warn("saiku#2326: failed to invalidate AI schema cache for connection {}", name, e);
+            }
+        }
     }
 
     public Map<String, ISaikuConnection> getAllConnections() throws SaikuOlapException {
@@ -186,10 +228,20 @@ public abstract class AbstractConnectionManager implements IConnectionManager, S
 
         if (ds != null) {
             for (String name : ds.getDatasources(userRoles).keySet()) {
-                ISaikuConnection con = getConnection(name);
+                try {
+                    ISaikuConnection con = getConnection(name);
 
-                if (con != null) {
-                    resultDs.put(name, con);
+                    if (con != null) {
+                        resultDs.put(name, con);
+                    }
+                } catch (SaikuAccessDeniedException denied) {
+                    // saiku#1968 (CWE-863): the caller holds no Mondrian role on THIS
+                    // security-enabled datasource. Omit it from the enumeration rather than aborting
+                    // the whole loop, so a user with disjoint roles across datasources still sees the
+                    // ones they CAN access. The single-datasource query path still denies (this
+                    // exception propagates there). Mirrors the per-datasource resilience in
+                    // refreshAllConnections().
+                    log.debug("Omitting datasource {} from enumeration — access denied for caller", name);
                 }
             }
         }

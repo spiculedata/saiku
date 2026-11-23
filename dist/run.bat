@@ -30,5 +30,15 @@ if defined OTEL_EXPORTER_OTLP_ENDPOINT (
     )
 )
 
-java %JAVA_OPTS% -jar "%JAR%" serve --home "%SCRIPT_DIR%saiku-home" %*
+rem JVM safety defaults (saiku#1914, CWE-400): match the image's
+rem JAVA_TOOL_OPTIONS in the Dockerfile so a bare-metal / dist run gets the same
+rem OOM behaviour the container does.
+rem   -XX:+ExitOnOutOfMemoryError  fail fast on OOM instead of limping on a corrupt heap
+rem   -XX:MaxRAMPercentage=75      size the heap from the machine's RAM
+rem   -XX:-UseBASE64Intrinsics     interim mitigation for CVE-2026-114938 (HotSpot
+rem                                x86-64 Base64 decode intrinsic); not needed on a
+rem                                patched JRE (see README.md)
+rem These flags are fixed: JAVA_OPTS is reset above, so to change them, edit
+rem this script.
+java -XX:+ExitOnOutOfMemoryError -XX:MaxRAMPercentage=75 -XX:-UseBASE64Intrinsics %JAVA_OPTS% -jar "%JAR%" serve --home "%SCRIPT_DIR%saiku-home" %*
 endlocal
