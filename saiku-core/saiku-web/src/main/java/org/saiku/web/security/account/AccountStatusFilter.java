@@ -11,6 +11,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import org.saiku.web.security.audit.AuditLogger;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -50,6 +51,7 @@ public class AccountStatusFilter extends OncePerRequestFilter {
         }
         Authentication effective = policy.evaluate(auth);
         if (effective == null) {
+            AuditLogger.accountRefused(req, auth.getName());
             hooks.onDisabled(req);
             SecurityContextHolder.clearContext();
             resp.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
@@ -59,6 +61,7 @@ public class AccountStatusFilter extends OncePerRequestFilter {
         }
         if (effective != auth) {
             SecurityContextHolder.getContext().setAuthentication(effective);
+            AuditLogger.accountDemoted(req, auth.getName());
             hooks.onDemoted(effective);
         }
         chain.doFilter(req, resp);
