@@ -5,6 +5,11 @@ All notable changes to Saiku are documented here. This project follows
 
 ## Unreleased
 
+## 4.9.0 — 2026-11-23
+
+Also published: `@concepttocloud/saiku-embed` and `@concepttocloud/saiku-embed-react`
+3.21.0, and `@concepttocloud/saiku-design-system` 2.3.0.
+
 ### Changed
 
 - **CSP follow-ups (saiku#2430, after #1917).** (1) The SPA shell's policy is
