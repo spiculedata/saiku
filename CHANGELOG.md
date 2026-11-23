@@ -5,6 +5,20 @@ All notable changes to Saiku are documented here. This project follows
 
 ## Unreleased
 
+## 4.9.1 — 2026-11-23
+
+Re-cut of 4.9.0 with the same code, plus a release-pipeline fix. The v4.9.0
+tag's release run published the Docker image (`ghcr.io/spiculedata/saiku:4.9.0`)
+and the npm embed packages (3.21.0), but it failed before creating the GitHub
+release and the GitHub Packages module jars. Use 4.9.1 for the JAR, the dist zip,
+the SBOMs and provenance; the 4.9.0 notes below apply to it.
+
+### Fixed
+
+- **Release pipeline:** `deploy-packages` no longer builds `saiku-webapp`
+  without the UI bundle, and `design-system.yml` passes its tarball to
+  `npm publish` as a path rather than GitHub shorthand (#2515).
+
 ## 4.9.0 — 2026-11-23
 
 Also published: `@concepttocloud/saiku-embed` and `@concepttocloud/saiku-embed-react`
