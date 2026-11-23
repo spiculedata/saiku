@@ -95,4 +95,25 @@ public class RequestPathsTest {
         assertEquals("/", path(""));
         assertEquals("/", path("/"));
     }
+
+    @Test
+    public void pathWithinApplication_nonRootContext_stripsEncodedSpellingOfTheContext() {
+        MockHttpServletRequest r = req("/%73aiku/rest/saiku/x");
+        r.setContextPath("/saiku");
+        assertEquals("/rest/saiku/x", RequestPaths.pathWithinApplication(r));
+    }
+
+    @Test
+    public void pathWithinApplication_nonRootContext_contextRootIsSlash() {
+        MockHttpServletRequest r = req("/saiku");
+        r.setContextPath("/saiku");
+        assertEquals("/", RequestPaths.pathWithinApplication(r));
+    }
+
+    @Test
+    public void pathWithinApplication_nonRootContext_doesNotStripAPrefixOfAnotherSegment() {
+        MockHttpServletRequest r = req("/saikux/rest/saiku/x");
+        r.setContextPath("/saiku");
+        assertNull("outside the context fails closed", RequestPaths.pathWithinApplication(r));
+    }
 }

@@ -69,7 +69,9 @@ public class ScimAuthFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest req, HttpServletResponse resp, FilterChain chain)
             throws ServletException, IOException {
         String path = RequestPaths.pathWithinApplication(req);
-        if (!isScimPath(path)) {
+        // A null path (could not be normalised, #2342) is treated as ours: this filter is the
+        // authentication boundary of a permitAll chain, so it must demand a bearer, not pass.
+        if (path != null && !isScimPath(path)) {
             chain.doFilter(req, resp);
             return;
         }
