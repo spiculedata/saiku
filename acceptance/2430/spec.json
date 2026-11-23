@@ -1,0 +1,14 @@
+{
+  "issue": 2430,
+  "title": "CSP follow-ups to #1917: the shipped launcher path is tested, form-action is set, the default report-only header no longer flags the shipped bootstrap, and non-SPA HTML carries an enforced script-src",
+  "kind": "ui",
+  "criteria": [
+    { "id": "C1", "given": "saiku-ui/e2e", "then": "a live spec loads /ui/ and a deep link from the launcher (meta policy, SpaFallbackFilter) and fails on enforced violations only (securitypolicyviolation disposition 'enforce')" },
+    { "id": "C2", "given": "saiku-ui/kit.config.js", "then": "the SPA policy carries form-action 'self' (it does not fall back to default-src)" },
+    { "id": "C3", "given": "SecurityHeadersFilter", "then": "it ships no default Content-Security-Policy-Report-Only policy (the shell's enforced meta policy replaces it, so the SvelteKit bootstrap is no longer reported on every page load)" },
+    { "id": "C4", "given": "SecurityHeadersFilter", "then": "responses outside the SPA shell (/ui/**) and the hash-pinned demo pages get an enforced script-src 'self' header by default" },
+    { "id": "C5", "given": "CHANGELOG.md", "then": "a release note covers the build-time policy and how to handle http: image tiles and CDN fonts" }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 30
+}

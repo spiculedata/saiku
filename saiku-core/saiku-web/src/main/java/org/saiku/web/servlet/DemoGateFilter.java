@@ -30,7 +30,7 @@ import org.springframework.web.context.support.WebApplicationContextUtils;
  * {@code /rest/*}, so it runs first and stays independent of Spring Security.
  *
  * <p>When the gate is enabled (demo mode + WorkOS configured), any
- * {@code /rest/saiku/**} request that isn't on the allowlist must carry a valid
+ * {@code /rest/**} request (except SCIM, which has its own bearer) that isn't on the allowlist must carry a valid
  * {@code saiku_demo_verified} cookie, else it gets a {@code 401
  * {"requiresEmailGate": true}}. The allowlist is the info endpoint (so the SPA
  * can discover the gate) and the gate endpoints themselves. The login endpoint
@@ -43,7 +43,8 @@ import org.springframework.web.context.support.WebApplicationContextUtils;
 public class DemoGateFilter implements Filter {
 
     private static final Logger log = LoggerFactory.getLogger(DemoGateFilter.class);
-    private static final String SAIKU_PREFIX = "/rest/saiku/";
+    private static final String REST_ROOT = "/rest";
+    private static final String REST_PREFIX = "/rest/";
 
     private FilterConfig filterConfig;
     private volatile DemoGate gate; // resolved lazily from the Spring context
@@ -100,8 +101,8 @@ public class DemoGateFilter implements Filter {
      */
     static boolean requiresVerification(String path) {
         if (path == null) return true;
-        if (!path.startsWith(SAIKU_PREFIX)) return false;
-        return !isAllowlisted(path);
+        if (!path.equals(REST_ROOT) && !path.startsWith(REST_PREFIX)) return false;
+        return !isAllowlisted(path) && !isScimPath(path);
     }
 
     /** Paths reachable before the gate is cleared. Package-visible for tests. */
@@ -109,6 +110,11 @@ public class DemoGateFilter implements Filter {
         if (path.equals("/rest/saiku/info") || path.startsWith("/rest/saiku/info/")) return true;
         if (path.equals("/rest/saiku/demo/gate") || path.startsWith("/rest/saiku/demo/gate/")) return true;
         return false;
+    }
+
+    /** SCIM carries its own bearer ({@code ScimAuthFilter}); an IdP cannot hold the demo cookie. */
+    private static boolean isScimPath(String path) {
+        return org.saiku.web.security.scim.ScimAuthFilter.isScimPath(path);
     }
 
     private static boolean hasValidCookie(HttpServletRequest req, DemoGateCookie cookieVerifier) {

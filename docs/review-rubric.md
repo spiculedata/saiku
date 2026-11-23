@@ -11,7 +11,7 @@ substantive ones). This document says **what** to look for so that human and
 agent reviewers reach for the same things.
 
 Mechanical review already happens in CI. `.github/workflows/claude-code-review.yml`
-runs an automated reviewer on every non-bot PR, and `ci.yml` runs `mvn verify`
+runs an automated reviewer on every non-bot same-repository PR (fork PRs are skipped), and `ci.yml` runs `mvn verify`
 (Spotless + unit/IT suites + test floors) and, for UI paths, `npm run check` +
 vitest. **A green CI run discharges the mechanical axes of this rubric.** Reviewers
 should spend their attention on the axes no linter can judge.
@@ -170,7 +170,7 @@ convention findings are already documented there. The most-violated, in order:
 
 ## Working with the automated reviewer
 
-`.github/workflows/claude-code-review.yml` posts findings on every non-bot PR. It
+`.github/workflows/claude-code-review.yml` posts findings on every non-bot same-repository PR (fork PRs are skipped). It
 is a strong first pass and it does not read `AGENTS.md` reliably, so:
 
 - Triage its findings rather than treating them as authoritative. Confirm each

@@ -42,7 +42,20 @@ public class DemoGateFilterTest {
     @Test
     public void nonSaikuPathsAreNotGated() {
         assertFalse(DemoGateFilter.requiresVerification("/ui/index.html"));
-        assertFalse(DemoGateFilter.requiresVerification("/rest/other/thing"));
+    }
+
+    @Test
+    public void otherRestPathsAreGatedByDefault() {
+        assertTrue(DemoGateFilter.requiresVerification("/rest/other/thing"));
+        assertTrue(DemoGateFilter.requiresVerification("/rest"));
+        assertTrue(DemoGateFilter.requiresVerification("/rest/"));
+        assertTrue(DemoGateFilter.requiresVerification("/rest/saikuX/session"));
+    }
+
+    @Test
+    public void scimSurfaceKeepsItsOwnBearerAuth() {
+        assertFalse(DemoGateFilter.requiresVerification("/rest/scim/v2/Users"));
+        assertTrue(DemoGateFilter.requiresVerification("/rest/scim/v22/Users"));
     }
 
     @Test

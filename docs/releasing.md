@@ -53,8 +53,37 @@ release for an existing tag on `main` (the repair path) still works.
 
 Maintainer settings that are not in git (repository admin): add a **tag ruleset**
 named `release tags` targeting `refs/tags/v*` with *Restrict creations*, *Restrict
-updates* and *Restrict deletions*, bypass limited to the Repository admin role; and
-put the publishing jobs behind a `release` environment with required reviewers.
+updates* and *Restrict deletions*, bypass limited to the Repository admin role.
+
+### Approval gate: the `release` environment (saiku#2333)
+
+Every job that publishes or holds a publishing credential declares
+`environment: release`: `deploy-packages`, `docker`, `release`, `npm-embed-publish` and
+`docs-changelog`. The build-only jobs (`guard`, `jar`, `npm-embed-build`) do not, so the
+builds run unattended and a maintainer approves once they are ready. **A release now
+pauses at "Review pending deployments"** (Actions run page) until a required reviewer
+approves. `deploy-packages` and `docker` wait together and are approved in one dialog;
+`release`, `npm-embed-publish` and `docs-changelog` then pause as they become ready.
+Approve only after checking the tag is the intended commit on `main`.
+
+Because the environment is restricted to `v*` tags, a manual `workflow_dispatch` of
+`release.yml` must select the `vX.Y.Z` **tag** as the ref (not a branch), or the
+publishing jobs are rejected.
+
+One-time setup (repository admin, Settings -> Environments):
+
+1. **New environment** `release`: tick *Required reviewers* (add the maintainers; tick
+   *Prevent self-review* if more than one maintainer can approve). Under *Deployment
+   branches and tags* choose *Selected branches and tags*, add a **tag** rule `v*`
+   (and no branch rules).
+2. Confirm the `npm-publish` environment exists (used by `design-system.yml`) with the
+   same reviewers.
+3. Move `NPM_TOKEN` and `DOCS_SITE_PAT` from repository secrets into environment
+   secrets: `NPM_TOKEN` into `release` (rotate it first on npmjs.com and store the new
+   value), `DOCS_SITE_PAT` into `release`. Then delete the repository-level copies.
+   Environment secrets override repository secrets of the same name, and repository
+   secrets stay readable by jobs without an environment, so the workflow works before
+   and after the move; only the move itself removes the credential from unapproved jobs.
 
 ## Credential scoping: no write token during a build (saiku#1993)
 
