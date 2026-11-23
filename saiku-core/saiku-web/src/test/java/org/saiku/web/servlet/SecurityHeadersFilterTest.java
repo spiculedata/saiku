@@ -21,9 +21,8 @@ import org.springframework.mock.web.MockHttpServletResponse;
  * Unit tests for {@link SecurityHeadersFilter}'s CSP / frame-protection policy.
  *
  * <p>Since saiku#1917 frame protection defaults ON ({@code frame-ancestors 'self'} +
- * {@code X-Frame-Options: SAMEORIGIN}) and the documented policy ships as
- * {@code Content-Security-Policy-Report-Only}, so the SPA is neither clickjackable
- * nor unconstrained. The cross-origin {@code ?embed=1} iframe feature is reached
+ * {@code X-Frame-Options: SAMEORIGIN}); since saiku#2430 non-SPA responses also enforce
+ * {@code script-src 'self'} and there is no default report-only policy. The cross-origin {@code ?embed=1} iframe feature is reached
  * with an allow-list property (or {@code off} to fully opt out).
  */
 public class SecurityHeadersFilterTest {
@@ -103,19 +102,15 @@ public class SecurityHeadersFilterTest {
     }
 
     @Test
-    public void cspReportOnlyShipsTheDocumentedPolicyByDefault() {
+    public void noReportOnlyPolicyIsShippedByDefault() throws Exception {
+        // saiku#2430: a default report-only policy reported the inline SvelteKit bootstrap
+        // on every page load; the shell's enforced <meta> policy replaces it.
         String prev = System.getProperty(RO_PROP);
         try {
             System.clearProperty(RO_PROP);
-            String ro = SecurityHeadersFilter.cspReportOnly();
-            assertEquals(SecurityHeadersFilter.DEFAULT_CSP, ro);
-            // The directives that matter for the reported XSS findings.
-            assertTrue(ro.contains("script-src 'self'"));
-            assertTrue(ro.contains("object-src 'none'"));
-            assertTrue(ro.contains("base-uri 'self'"));
-            // Still permissive enough for the SPA's own machinery.
-            assertTrue("monaco uses blob: workers", ro.contains("worker-src 'self' blob:"));
-            assertTrue("sveltekit injects style tags", ro.contains("style-src 'self' 'unsafe-inline'"));
+            assertNull(SecurityHeadersFilter.cspReportOnly());
+            assertNull(serve("", "/ui/").getHeader("Content-Security-Policy-Report-Only"));
+            assertNull(serve("", "/rest/saiku/info").getHeader("Content-Security-Policy-Report-Only"));
         } finally {
             restore(RO_PROP, prev);
         }
@@ -130,12 +125,74 @@ public class SecurityHeadersFilterTest {
             System.setProperty(RO_PROP, "off");
             assertNull("operator may silence the report-only header", SecurityHeadersFilter.cspReportOnly());
             System.setProperty(RO_PROP, "  ");
-            assertEquals(
-                    "blank is unset, so the default policy applies",
-                    SecurityHeadersFilter.DEFAULT_CSP,
-                    SecurityHeadersFilter.cspReportOnly());
+            assertNull("blank is unset", SecurityHeadersFilter.cspReportOnly());
         } finally {
             restore(RO_PROP, prev);
+        }
+    }
+
+    @Test
+    public void nonSpaResponsesEnforceScriptSrcByDefault() throws Exception {
+        String prev = System.getProperty("saiku.security.csp");
+        try {
+            System.clearProperty("saiku.security.csp");
+            for (String uri : new String[] {"/rest/saiku/info", "/login.html", "/some/error", "/uix/index.html"}) {
+                Map<String, String> d = directives(serve("", uri).getHeader("Content-Security-Policy"));
+                assertEquals(uri, "'self'", d.get("script-src"));
+                assertEquals(uri, "'none'", d.get("object-src"));
+                assertEquals(uri, "'self'", d.get("base-uri"));
+                assertEquals(uri, "'self'", d.get("frame-ancestors"));
+            }
+            assertEquals(
+                    "/saiku context path",
+                    "'self'",
+                    directives(serve("/saiku", "/saiku/rest/saiku/info").getHeader("Content-Security-Policy"))
+                            .get("script-src"));
+        } finally {
+            restore("saiku.security.csp", prev);
+        }
+    }
+
+    @Test
+    public void spaShellAndDemoPagesGetNoHeaderScriptSrc() throws Exception {
+        // Their inline bootstrap is pinned by hash in a <meta> policy; a header script-src
+        // would intersect with it and block the bootstrap.
+        String prev = System.getProperty("saiku.security.csp");
+        try {
+            System.clearProperty("saiku.security.csp");
+            for (String uri : new String[] {
+                "/",
+                "/ui",
+                "/ui/",
+                "/ui/index.html",
+                "/ui/dashboards/homes/admin/a.saikudash",
+                "/ui/%64ashboards/x",
+                "/aqvira-demo/index.html",
+                "/embed-demo/"
+            }) {
+                assertEquals(uri, "frame-ancestors 'self'", serve("", uri).getHeader("Content-Security-Policy"));
+            }
+            assertEquals(
+                    "frame-ancestors 'self'",
+                    serve("/saiku", "/saiku/ui/index.html").getHeader("Content-Security-Policy"));
+        } finally {
+            restore("saiku.security.csp", prev);
+        }
+    }
+
+    @Test
+    public void operatorCspStillWinsOnEveryResponse() throws Exception {
+        String prev = System.getProperty("saiku.security.csp");
+        try {
+            System.setProperty("saiku.security.csp", "default-src 'self'");
+            assertEquals(
+                    "default-src 'self'; frame-ancestors 'self'",
+                    serve("", "/rest/saiku/info").getHeader("Content-Security-Policy"));
+            assertEquals(
+                    "default-src 'self'; frame-ancestors 'self'",
+                    serve("", "/ui/").getHeader("Content-Security-Policy"));
+        } finally {
+            restore("saiku.security.csp", prev);
         }
     }
 

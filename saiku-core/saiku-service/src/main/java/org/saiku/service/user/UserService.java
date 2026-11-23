@@ -129,6 +129,15 @@ public class UserService implements IUserManager, Serializable {
         return false;
     }
 
+    /** saiku#2432: the rows matching {@code username} case-insensitively, via the DAO's keyed query. */
+    protected List<SaikuUser> usersNamed(String username) {
+        List<SaikuUser> rows = new ArrayList<>();
+        for (Object row : uDAO.findByUsername(username)) {
+            rows.add((SaikuUser) row);
+        }
+        return rows;
+    }
+
     /**
      * saiku#2345: the managed-store view of {@code username}: whether a row exists, whether it is
      * enabled, and its roles. The web layer uses it to refuse login and requests for an account that
@@ -156,7 +165,7 @@ public class UserService implements IUserManager, Serializable {
         }
         List<SaikuUser> users;
         try {
-            users = getUsers();
+            users = usersNamed(username);
         } catch (Exception e) {
             // saiku#2431: a store read failure is an operational event, not a quiet "no row".
             // Fail open per the documented trade-off above, but say so loudly.
@@ -167,14 +176,21 @@ public class UserService implements IUserManager, Serializable {
                     e);
             return AccountStatus.UNMANAGED;
         }
+        // saiku#2432: rows may differ only by case; if ANY match is disabled the account is denied, and
+        // the roles are the union so no variant's admin role is dropped by a sibling row.
+        boolean found = false;
+        boolean enabled = true;
+        Set<String> roles = new LinkedHashSet<>();
         for (SaikuUser u : users) {
             if (u != null && Usernames.sameUser(username, u.getUsername())) {
                 // The row was found: its enabled flag must never be discarded because the role
                 // column is odd (saiku#2431).
-                return new AccountStatus(true, u.isEnabled(), tolerantRoles(u.getRoles()));
+                found = true;
+                enabled = enabled && u.isEnabled();
+                roles.addAll(tolerantRoles(u.getRoles()));
             }
         }
-        return AccountStatus.UNMANAGED;
+        return found ? new AccountStatus(true, enabled, roles) : AccountStatus.UNMANAGED;
     }
 
     /**
