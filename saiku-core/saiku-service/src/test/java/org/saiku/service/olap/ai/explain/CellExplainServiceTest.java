@@ -193,6 +193,106 @@ public class CellExplainServiceTest {
         assertFalse("the borrowed, shared connection must stay open: " + closed, closed.contains("connection"));
     }
 
+    /* ---- saiku#2328 / saiku#2423: another user's concurrent SQL is never the caller's ---- */
+
+    /** A bare Mondrian statement: only its id matters to the Locus scope. */
+    private static final class TestMondrianStatement extends mondrian.server.StatementImpl {
+        @Override
+        public void close() {}
+
+        @Override
+        public mondrian.rolap.RolapConnection getMondrianConnection() {
+            return null;
+        }
+    }
+
+    private static final String CALLERS_SQL = "select 'callers_cell' from SALES";
+    private static final org.slf4j.Logger MONDRIAN_SQL = org.slf4j.LoggerFactory.getLogger("mondrian.sql");
+
+    /** Run {@code body} on a new thread with {@code statement}'s Mondrian Locus pushed, and wait. */
+    private static Thread underLocus(mondrian.server.StatementImpl statement, Runnable body) {
+        return new Thread(() -> {
+            mondrian.server.Locus locus =
+                    new mondrian.server.Locus(new mondrian.server.Execution(statement, 0), "test", "explain");
+            mondrian.server.Locus.push(locus);
+            try {
+                body.run();
+            } finally {
+                mondrian.server.Locus.pop(locus);
+            }
+        });
+    }
+
+    /**
+     * While the caller's cell query runs, other users' queries log much longer SQL on Mondrian's
+     * loggers from their own worker threads, and one thread logs with no Mondrian execution at
+     * all. The caller's statement logs on a worker too (as Mondrian's shepherd and segment-load
+     * pools do). Only the caller's statement may come back, and it is the longest one in the
+     * window only if the strangers' were dropped, so a leak shows as the wrong text.
+     */
+    @Test
+    public void explain_underConcurrentForeignQueries_returnsOnlyCallersSql() throws Exception {
+        TestMondrianStatement callers = new TestMondrianStatement();
+        java.util.concurrent.atomic.AtomicBoolean stop = new java.util.concurrent.atomic.AtomicBoolean();
+        java.util.concurrent.atomic.AtomicInteger foreignLogged = new java.util.concurrent.atomic.AtomicInteger();
+        String foreignSql = "select 'another_users_filter_value', 'role_predicate' from SECRET_TABLE"
+                + " where tenant in ('a','b','c') and region = 'Italy'";
+        Runnable logForeign = () -> {
+            while (!stop.get()) {
+                MONDRIAN_SQL.debug("99: executing sql [" + foreignSql + "]");
+                foreignLogged.incrementAndGet();
+                Thread.onSpinWait();
+            }
+        };
+        List<Thread> strangers = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            strangers.add(underLocus(new TestMondrianStatement(), logForeign));
+        }
+        strangers.add(new Thread(logForeign));
+
+        OlapStatement statement = (OlapStatement) Proxy.newProxyInstance(
+                OlapStatement.class.getClassLoader(), new Class<?>[] {OlapStatement.class}, (proxy, method, args) -> {
+                    switch (method.getName()) {
+                        case "unwrap":
+                            return callers;
+                        case "executeOlapQuery":
+                            // The strangers must be logging INSIDE the window, not before it.
+                            int seen = foreignLogged.get();
+                            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+                            while (foreignLogged.get() < seen + 200 && System.nanoTime() < deadline) {
+                                Thread.onSpinWait();
+                            }
+                            assertTrue(
+                                    "foreign queries never overlapped the window", foreignLogged.get() >= seen + 200);
+                            Thread worker = underLocus(
+                                    callers, () -> MONDRIAN_SQL.debug("1: executing sql [" + CALLERS_SQL + "]"));
+                            worker.start();
+                            worker.join();
+                            return stubCellSet();
+                        default:
+                            return defaultValue(method.getReturnType());
+                    }
+                });
+        OlapConnection connection = (OlapConnection) Proxy.newProxyInstance(
+                OlapConnection.class.getClassLoader(),
+                new Class<?>[] {OlapConnection.class},
+                (proxy, method, args) ->
+                        "createStatement".equals(method.getName()) ? statement : defaultValue(method.getReturnType()));
+        CellExplainService service = service(context(stubCellSet()));
+        service.setOlapDiscoverService(discoverServiceLending(connection));
+
+        strangers.forEach(Thread::start);
+        try {
+            CellExplainResult result = service.explain(request("q1", 0, 0));
+            assertEquals(CALLERS_SQL, result.getSql());
+        } finally {
+            stop.set(true);
+            for (Thread t : strangers) {
+                t.join();
+            }
+        }
+    }
+
     /* ---- saiku#2192: the explained cell names its own measure ---- */
 
     /**

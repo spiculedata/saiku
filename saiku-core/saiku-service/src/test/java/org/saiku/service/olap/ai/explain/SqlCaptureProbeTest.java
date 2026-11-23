@@ -807,4 +807,84 @@ public class SqlCaptureProbeTest {
             probe.close();
         }
     }
+
+    // ----------------------------------------------- saiku#2423: existing appenders are fenced
+
+    /** Records every message it is given, standing in for a file or console appender. */
+    private static final class RecordingAppender extends org.apache.logging.log4j.core.appender.AbstractAppender {
+        final List<String> messages = Collections.synchronizedList(new java.util.ArrayList<>());
+
+        RecordingAppender(String name) {
+            super(name, null, null, true, org.apache.logging.log4j.core.config.Property.EMPTY_ARRAY);
+        }
+
+        @Override
+        public void append(org.apache.logging.log4j.core.LogEvent event) {
+            messages.add(event.getMessage().getFormattedMessage());
+        }
+    }
+
+    /**
+     * Opening a probe lowers the shared Mondrian loggers to DEBUG, which must not make another
+     * execution's SQL appear in the appenders that were already attached (file, console): they keep
+     * seeing exactly what the configured WARN level let through, before, during and after.
+     */
+    @Test
+    public void existingAppendersDoNotSeeDebugSqlWhileAProbeIsOpen() throws Exception {
+        configureSqlLoggerAtWarn();
+        RecordingAppender onSqlLogger = new RecordingAppender("test-on-sql-logger");
+        RecordingAppender onRoot = new RecordingAppender("test-on-root");
+        onSqlLogger.start();
+        onRoot.start();
+        configuration().getLoggerConfig("mondrian.sql").addAppender(onSqlLogger, null, null);
+        configuration().getRootLogger().addAppender(onRoot, null, null);
+        context().updateLoggers();
+        try {
+            SqlCaptureProbe probe = SqlCaptureProbe.open();
+            try {
+                MONDRIAN_SQL.debug("1: executing sql [select 'own_statement' from MINE]");
+                Thread stranger = new Thread(() -> {
+                    MONDRIAN_SQL.debug("2: executing sql [select 'strangers_filter' from THEIRS]");
+                    MONDRIAN_SQL.warn("a real warning the configuration always logged");
+                });
+                stranger.start();
+                stranger.join();
+                assertEquals(List.of("select 'own_statement' from MINE"), probe.statements());
+            } finally {
+                probe.close();
+            }
+            for (RecordingAppender appender : List.of(onSqlLogger, onRoot)) {
+                assertEquals(
+                        appender.getName(),
+                        List.of("a real warning the configuration always logged"),
+                        appender.messages);
+            }
+            MONDRIAN_SQL.debug("3: executing sql [select 'after_close' from T]");
+            assertEquals(1, onSqlLogger.messages.size());
+        } finally {
+            configuration().getLoggerConfig("mondrian.sql").removeAppender(onSqlLogger.getName());
+            configuration().getRootLogger().removeAppender(onRoot.getName());
+            removeSqlLoggerConfig();
+        }
+    }
+
+    /** The fence is a filter the probe adds, so it must be gone, not just inert, after the last close. */
+    @Test
+    public void theFenceIsRemovedFromExistingAppendersOnClose() {
+        configureSqlLoggerAtWarn();
+        RecordingAppender existing = new RecordingAppender("test-fence-removal");
+        existing.start();
+        configuration().getLoggerConfig("mondrian.sql").addAppender(existing, null, null);
+        context().updateLoggers();
+        try {
+            assertFalse(existing.hasFilter());
+            SqlCaptureProbe probe = SqlCaptureProbe.open();
+            assertTrue(existing.hasFilter());
+            probe.close();
+            assertFalse(existing.hasFilter());
+        } finally {
+            configuration().getLoggerConfig("mondrian.sql").removeAppender(existing.getName());
+            removeSqlLoggerConfig();
+        }
+    }
 }
