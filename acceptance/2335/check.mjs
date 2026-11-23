@@ -47,7 +47,8 @@ assert.ok(target, 'C2: npm publish needs a target');
 const tarballPath = target[1] ?? target[2];
 if (target[1] === '$TARBALL') {
   assert.match(signer, /^ {8}id: tarball$/m, 'C2: the tarball gate has a step ID');
-  assert.match(signer, /^ {10}tarballs=\(pkg\/\*\.tgz\)$/m, 'C2: the gate starts from tarball files');
+  // ./ prefix is required: npm reads a bare `pkg/<name>.tgz` as GitHub owner/repo shorthand (v4.9.0 release).
+  assert.match(signer, /^ {10}tarballs=\(\.\/pkg\/\*\.tgz\)$/m, 'C2: the gate starts from ./pkg tarball files');
   assert.match(signer, /^ {10}tgz="\$\{tarballs\[0\]\}"$/m, 'C2: the gate selects a tarball path');
   assert.match(signer, /^ {10}echo "path=\$tgz" >> "\$GITHUB_OUTPUT"$/m, 'C2: the gate exports that path');
   assert.match(signer, /^ {10}TARBALL: \$\{\{ steps\.tarball\.outputs\.path \}\}$/m, 'C2: Publish receives the gate output');
