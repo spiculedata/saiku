@@ -127,7 +127,7 @@ Every file under `.github/workflows/`.
 | `tier-classifier.yml` | `pull_request_target` | advisory `risk/high|medium|low` label | [risk-tiers.md](risk-tiers.md) |
 | `labeler.yml` | `pull_request_target` | advisory path labels (`area/*`) from `.github/labeler.yml` | none |
 | `claude-code-review.yml` | PR opened / synchronised / ready / reopened | automated review comments | none |
-| `claude.yml` | issue and PR comments, reviews, issues opened (assigning does not trigger it) | Claude Code on request; never runs on fork PRs; tool allow-list (no `git push`, no `.github/` edits) | none |
+| `claude.yml` | issue and PR comments, reviews, issues opened (assigning does not trigger it) | Claude Code on request, in interactive (tag) mode (no `prompt:` input); never runs on fork PRs; narrow tool allow-list, `git push` and `.github/` edits denied. Pushes still go through the action's own push wrapper (a tag-mode default the deny does not match) | none |
 | `auto-review.yml` | `apply-review` label added | applies review comments as one commit on the PR branch | none |
 | `issue-gate.yml` | `issue-approved` label added to an issue | removes the label and comments if the issue has no acceptance criteria | [AGENTS.md](../AGENTS.md#queues-and-labels) |
 | `dependabot-automerge.yml` | `ci` completed on a Dependabot PR | merges single-package patch (maven, npm) and Actions non-major/digest bumps | [Dependabot](#dependabot) |

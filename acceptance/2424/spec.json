@@ -1,0 +1,37 @@
+{
+  "issue": 2424,
+  "title": "Pre-auth filters fail closed on a non-normalisable path; demo gate gates /rest/* by default; context path stripped in decoded form",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "ShareTokenAuthFilter",
+      "then": "guards the null path from RequestPaths before calling startsWith, and a test covers it"
+    },
+    {
+      "id": "C2",
+      "given": "ScimAuthFilter",
+      "then": "treats a null path as a SCIM path (demands a bearer), and a test covers it"
+    },
+    {
+      "id": "C3",
+      "given": "DemoGateFilter",
+      "then": "gates everything under /rest/ except the info and gate allowlist and the SCIM surface"
+    },
+    {
+      "id": "C4",
+      "given": "RequestPaths",
+      "then": "strips the context path in decoded form (so an encoded spelling of a non-root context is stripped) and fails closed when the path is outside the context, with a test"
+    },
+    {
+      "id": "C5",
+      "given": "TokenPrincipals",
+      "then": "documents the TOKEN_PRINCIPAL marker as mandatory for any new token filter"
+    }
+  ],
+  "command": [
+    "node",
+    "check.mjs"
+  ],
+  "timeoutSeconds": 60
+}

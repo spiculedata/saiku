@@ -1,0 +1,39 @@
+{
+  "issue": 2417,
+  "title": "model-diff: PR-tracked files under target/ cannot replace the base-built validator, and the trusted base must be development or main",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "the step that runs the validator (java -cp)",
+      "then": "the classpath contains only the base-built tool copied outside the checkout (under RUNNER_TEMP), never saiku-core/saiku-service/target or target/classpath.txt in the checkout"
+    },
+    {
+      "id": "C2",
+      "given": "the workflow trigger",
+      "then": "it has a branches filter limited to development and main, and the base SHA is verified to be an ancestor of origin/development or origin/main before credentials are written"
+    },
+    {
+      "id": "C3",
+      "given": "the base SHA and the setup steps",
+      "then": "BASE_SHA is bound to pull_request.base.sha (never the head SHA) and no Maven cache is restored (no cache: maven)"
+    },
+    {
+      "id": "C4",
+      "given": "any single step",
+      "then": "no mvn command runs after the PR head is checked out again, and settings.xml is removed before that checkout"
+    },
+    {
+      "id": "C5",
+      "given": "a pull request that changes the diff tool or the workflow itself",
+      "then": "the report says the change was not exercised instead of reporting that no semantic model changed"
+    },
+    {
+      "id": "C6",
+      "given": "the repository tree",
+      "then": "no file is tracked under a target/ directory"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}
