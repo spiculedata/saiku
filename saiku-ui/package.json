@@ -65,7 +65,7 @@
 		"happy-dom": "^21.0.4",
 		"jsdom": "^31.0.1",
 		"prettier": "^3.10.1",
-		"prettier-plugin-svelte": "^4.2.0",
+		"prettier-plugin-svelte": "~4.1.1",
 		"prettier-plugin-tailwindcss": "^0.8.1",
 		"storybook": "^10.6.1",
 		"svelte": "^5.58.0",
