@@ -346,9 +346,10 @@ jobs:
         # war) opt out via maven-deploy-plugin <skip>true</skip> in
         # their own poms — they ride to the GitHub Releases page only.
         #
-        # `mvn deploy` from the reactor root walks every module in
-        # <modules>; the two opt-outs above keep GH Packages free of
-        # multi-hundred-meg blobs.
+        # Those modules are also excluded from the reactor here (`-pl '!…'`):
+        # with the npm goals off there is no saiku-ui/dist, so saiku-webapp's
+        # war-exploded step fails (v4.9.0's first run of this job), and the
+        # launcher needs that war. saiku-proptest publishes nothing.
         #
         # Every untrusted-lifecycle switch is explicit (saiku#1993):
         #   -Dmaven.test.skip=true  no test compile, no surefire/failsafe
@@ -360,7 +361,8 @@ jobs:
         #                            scripts from the npm tree.
         run: |
           mvn -B -ntp -DskipTests -Dmaven.test.skip=true \
-              -Dskip.npm=true -Dskip.installnodenpm=true deploy
+              -Dskip.npm=true -Dskip.installnodenpm=true \
+              -pl '!saiku-webapp,!saiku-launcher,!saiku-proptest' deploy
 
   docker:
     name: Build & push Docker image
