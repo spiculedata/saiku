@@ -11,6 +11,9 @@ name: model-diff
 
 on:
   pull_request:
+    # Only PRs based on a protected branch: for any other base, `base.sha` is a branch the author
+    # controls, so building "the trusted base" with the credential on disk would run their pom.
+    branches: [development, main]
     paths:
       - "**/*.xml"
       - "**/*.yaml"
@@ -44,7 +47,8 @@ jobs:
         with:
           distribution: temurin
           java-version: "22"
-          cache: maven
+          # No `cache: maven`: the cache key is computed from the PR's poms, so a restore would
+          # put PR-influenced content into ~/.m2 before the trusted build.
 
       # Never run a PR-controlled Maven build while a package credential is present: build the
       # validator from the trusted base commit, then return to the PR content (saiku#2305).
@@ -53,6 +57,13 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
+          # Defence in depth behind the `branches:` filter: the commit built with the credential
+          # must be on a protected branch, not merely the tip of whatever the PR targets.
+          if ! git merge-base --is-ancestor "$BASE_SHA" origin/development \
+            && ! git merge-base --is-ancestor "$BASE_SHA" origin/main; then
+            echo "::error::base commit $BASE_SHA is not on origin/development or origin/main"
+            exit 1
+          fi
           git rev-parse HEAD > "$RUNNER_TEMP/model-diff-pr-head"
           git checkout --detach "$BASE_SHA"
 
@@ -82,29 +93,38 @@ jobs:
       - name: Build saiku-service
         run: mvn -B -ntp -q -pl saiku-core/saiku-service -am -DskipTests -Dmaven.test.skip=true install
 
-      - name: Resolve classpath and return to PR content
+      # The validator is copied OUT of the checkout: `git checkout` of the PR head overwrites
+      # git-ignored files with tracked ones, so anything left under target/ could be replaced by
+      # files the PR tracks (saiku#2417). The classpath file holds absolute paths only.
+      - name: Resolve classpath, stash the base-built tool and return to PR content
         run: |
           set -euo pipefail
+          tool="$RUNNER_TEMP/model-diff-tool"
+          rm -rf "$tool"
+          mkdir -p "$tool"
+          cp -R saiku-core/saiku-service/target/classes "$tool/classes"
           mvn -B -ntp -q -pl saiku-core/saiku-service dependency:build-classpath \
-            -Dmdep.outputFile="$PWD/target/classpath.txt"
+            -Dmdep.outputFile="$tool/classpath.txt"
           rm -f ~/.m2/settings.xml
           git checkout --detach "$(cat "$RUNNER_TEMP/model-diff-pr-head")"
 
       - name: Collect the repository content
         run: |
           set -euo pipefail
-          mkdir -p target/repository
+          repo="$RUNNER_TEMP/model-diff-repository"
+          rm -rf "$repo"
+          mkdir -p "$repo"
           # Everything under a repository/ directory in the tree: saved queries, dashboards, apps.
           # (git ls-files keeps this deterministic and skips build output.)
           while IFS= read -r file; do
             case "$file" in
               */repository/*|repository/*)
-                mkdir -p "target/repository/$(dirname "${file#*repository/}")"
-                cp "$file" "target/repository/${file#*repository/}"
+                mkdir -p "$repo/$(dirname "${file#*repository/}")"
+                cp "$file" "$repo/${file#*repository/}"
                 ;;
             esac
           done < <(git ls-files)
-          echo "repository files: $(find target/repository -type f | wc -l)"
+          echo "repository files: $(find "$repo" -type f | wc -l)"
 
       - name: Run the validator
         id: validator
@@ -115,7 +135,8 @@ jobs:
           BASE="origin/${BASE_REF}"
           git fetch --no-tags origin "${BASE_REF}:refs/remotes/origin/${BASE_REF}" || true
           MODEL="org.saiku.service.schema.diff.ModelDiffTool"
-          CP="saiku-core/saiku-service/target/classes:$(cat target/classpath.txt)"
+          TOOL="$RUNNER_TEMP/model-diff-tool"
+          CP="$TOOL/classes:$(cat "$TOOL/classpath.txt")"
 
           status=0
           report=""
@@ -135,7 +156,7 @@ jobs:
             out=$(java -cp "$CP" "$MODEL" \
               --from-git "$BASE" --from-git HEAD \
               --before "$model" --after "$model" \
-              --repository target/repository --no-fail-on-broken 2>&1) || rc=$?
+              --repository "$RUNNER_TEMP/model-diff-repository" --no-fail-on-broken 2>&1) || rc=$?
             if [ "$rc" -eq 2 ]; then
               echo "::notice::$model is not a semantic model — skipped."
               continue
@@ -146,6 +167,12 @@ jobs:
               status="$rc"
             fi
           done < <(git diff --name-only --diff-filter=ACMR "origin/${BASE_REF}...HEAD" -- '*.xml' '*.yaml' '*.yml')
+          # The validator that ran is the base branch's build, so a change to the tool (or to this
+          # workflow) is not exercised by this run; say so rather than implying a clean result.
+          if [ -n "$(git diff --name-only "origin/${BASE_REF}...HEAD" -- \
+            saiku-core/saiku-service/src/main/java/org/saiku/service/schema/diff/ .github/workflows/model-diff.yml)" ]; then
+            report="${report}**Not exercised:** this pull request changes the model diff tool or its workflow; this report was produced by the base branch's tool, so those changes were not run."$'\n\n'
+          fi
           if [ -z "$report" ]; then
             report="No semantic model changed in this pull request, so there was nothing to diff."
           fi

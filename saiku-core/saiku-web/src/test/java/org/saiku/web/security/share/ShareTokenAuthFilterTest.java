@@ -221,4 +221,32 @@ public class ShareTokenAuthFilterTest {
             assertNotNull("the resource must see the pinned guest identity", capturedAuth);
         }
     }
+
+    @Test
+    public void nonNormalisablePath_continuesTheChainWithoutAGuestOrException() throws Exception {
+        ShareToken t = store.create("/homes/admin/exec.saikudash", "admin", List.of("ROLE_ADMIN"), 60_000L, null);
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/rest/saiku/share/view/%00x");
+        req.addHeader(ShareTokenAuthFilter.TOKEN_HEADER, t.token);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        TrackingChain chain = new TrackingChain();
+
+        filter.doFilter(req, resp, chain);
+
+        assertTrue(chain.called);
+        assertNull(SecurityContextHolder.getContext().getAuthentication());
+    }
+
+    @Test
+    public void encodedViewPrefix_isStillRecognised() throws Exception {
+        MockHttpServletRequest req =
+                new MockHttpServletRequest("GET", "/%72est/saiku/share/view/homes/admin/exec.saikudash");
+        req.addHeader(ShareTokenAuthFilter.TOKEN_HEADER, "not-a-token");
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        TrackingChain chain = new TrackingChain();
+
+        filter.doFilter(req, resp, chain);
+
+        assertEquals(401, resp.getStatus());
+        assertFalse(chain.called);
+    }
 }
