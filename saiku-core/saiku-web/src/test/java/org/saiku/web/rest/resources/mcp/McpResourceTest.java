@@ -439,7 +439,9 @@ public class McpResourceTest {
         // self-correction contract — a 400 comes back as a TOOL RESULT with
         // isError:true carrying field/available, never a bare -32602.
         assertEquals("a 400 is a 200 tool error, not an RPC error", 200, resp.getStatus());
-        assertTrue("isError marks the tool failure", body.path("result").path("isError").asBoolean(false));
+        assertTrue(
+                "isError marks the tool failure",
+                body.path("result").path("isError").asBoolean(false));
         assertEquals(
                 "the VALIDATION_ERROR envelope reaches the agent",
                 "validation failed",
@@ -473,7 +475,9 @@ public class McpResourceTest {
         // saiku#2540 (second review): per the spec table a 404 (unknown queryId)
         // is a TOOL RESULT the agent can act on, not a -32603 RPC error.
         assertEquals("a 404 is a 200 tool error", 200, resp.getStatus());
-        assertTrue("isError marks the tool failure", body.path("result").path("isError").asBoolean(false));
+        assertTrue(
+                "isError marks the tool failure",
+                body.path("result").path("isError").asBoolean(false));
         assertEquals(
                 "unknown queryId",
                 body.path("result").path("structuredContent").path("error").asText());
