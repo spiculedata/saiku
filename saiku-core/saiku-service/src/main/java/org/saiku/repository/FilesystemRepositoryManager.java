@@ -918,15 +918,28 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
         return null;
     }
 
-    public void deleteFile(String datasourcePath) {
+    /**
+     * saiku#2533: this used to ignore {@link File#delete()}'s result entirely, so an admin
+     * deleting a datasource got a silent no-op whenever the resolved path was wrong (or the
+     * OS refused). Return the actual outcome; the datasource manager turns a false into a
+     * typed error instead of a 200 OK.
+     */
+    @Override
+    public boolean deleteFile(String datasourcePath) {
         File n;
         try {
             n = getFolder(fixPath(datasourcePath));
-            n.delete();
-
         } catch (RepositoryException e) {
             log.error("Could not remove file " + datasourcePath, e);
+            return false;
         }
+        boolean deleted = n.delete();
+        if (!deleted) {
+            // saiku#1933 (CWE-117): log the resolved path, not the raw caller input, and keep
+            // it a debug-level detail out of any surfaced message.
+            log.error("Could not remove file {}", n.getPath());
+        }
+        return deleted;
     }
 
     private AclEntry getAclObj(String path) {

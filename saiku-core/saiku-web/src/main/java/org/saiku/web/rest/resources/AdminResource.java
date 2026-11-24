@@ -255,12 +255,28 @@ public class AdminResource {
             return Response.status(Response.Status.FORBIDDEN).build();
         }
 
-        datasourceService.removeDatasource(id);
-
-        return Response.ok()
-                .type("application/json")
-                .entity(datasourceService.getDatasources(userService.getCurrentUserRoles()))
-                .build();
+        try {
+            // saiku#2533: the delete used to answer 200 regardless of what actually happened.
+            // An id that matches nothing answers 404; a descriptor that could not be removed
+            // (RepositoryDatasourceManager raises SaikuServiceException) answers 5xx with a
+            // typed message, never a success.
+            if (!datasourceService.removeDatasource(id)) {
+                return Response.status(Response.Status.NOT_FOUND)
+                        .entity("Datasource not found")
+                        .type("text/plain")
+                        .build();
+            }
+            return Response.ok()
+                    .type("application/json")
+                    .entity(datasourceService.getDatasources(userService.getCurrentUserRoles()))
+                    .build();
+        } catch (SaikuServiceException e) {
+            log.error(this.getClass().getName(), e);
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(e.getLocalizedMessage())
+                    .type("text/plain")
+                    .build();
+        }
     }
 
     /**

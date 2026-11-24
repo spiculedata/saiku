@@ -39,6 +39,7 @@ import org.saiku.repository.PathNotFoundException;
 import org.saiku.repository.RepositoryException;
 import org.saiku.service.importer.JujuSource;
 import org.saiku.service.user.UserService;
+import org.saiku.service.util.exception.SaikuServiceException;
 import org.saiku.service.util.security.MondrianRolePolicy;
 import org.saiku.service.util.security.authentication.PasswordProvider;
 import org.slf4j.Logger;
@@ -436,6 +437,12 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
         return dsources;
     }
 
+    /**
+     * saiku#2533: the id used to be matched with {@code data.getId().equals(...)}, which
+     * NPEs on a descriptor that carries no id. Compare the other way round — the id comes
+     * off the request path and is never null.
+     */
+    @Override
     public boolean removeDatasource(String datasourceId) {
         List<DataSource> ds = null;
         try {
@@ -446,13 +453,36 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
 
         if (ds != null) {
             for (DataSource data : ds) {
-                if (data.getId().equals(datasourceId)) {
-                    datasourcesForCurrentWorkspace().remove(data.getName());
-                    String path = data.getPath();
-                    if (!datadir.equals("${CLASSPATH_REPO_PATH_UNPARSED}")) {
-                        path = path.replaceFirst(datadir, "");
+                if (datasourceId.equals(data.getId())) {
+                    // saiku#2533: the loader hands out the descriptor's REAL path — the same
+                    // absolute path getAllDataSources read the file from. The old code stripped
+                    // the configured datadir off it and let deleteFile re-resolve the remainder
+                    // against the workspace root, which produced <datadir>/unknown/unknown/...
+                    // and a silent no-op. Pass the path through untouched so it is resolved
+                    // exactly the way the load resolved it. Delete FIRST, so a failure leaves
+                    // both the file and the cache untouched (fail closed).
+                    if (!irm.deleteFile(data.getPath())) {
+                        // saiku#1933 (CWE-117): the message deliberately carries no path — this
+                        // reaches a REST response body and log lines.
+                        throw new SaikuServiceException("Could not delete the datasource descriptor file");
                     }
-                    irm.deleteFile(path);
+
+                    // saiku#2533: the cache is keyed two ways at different times. A lazy load
+                    // (loadDatasourcesFor) keys entries by the name getAllDataSources reports;
+                    // addDatasource caches the just-saved descriptor under the DECORATED
+                    // <workspace>_<name> key until the next reload. Remove both spellings, or
+                    // the datasource stays listed (and usable) after a 200-OK delete.
+                    Map<String, SaikuDatasource> cache = datasourcesForCurrentWorkspace();
+                    cache.remove(data.getName());
+                    cache.remove(decoratedName(data.getName()));
+
+                    // saiku#2533: the connection manager may still hold a live connection for
+                    // the deleted datasource (credentials stay usable otherwise). Eviction is
+                    // best-effort: implementations without a pool simply do nothing (default
+                    // no-op), and a failure to close is logged by the implementation.
+                    if (connectionManager != null) {
+                        connectionManager.removeConnection(decoratedName(data.getName()));
+                    }
                     return true;
                 }
             }
