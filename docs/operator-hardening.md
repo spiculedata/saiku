@@ -158,6 +158,16 @@ Notes on the semantics, because they matter when you tune them:
   VPN, a per-request source NAT — got a brand-new bucket and could run the
   per-minute allowance several times over. Unauthenticated traffic still buckets
   by IP, which is the only identity it has.
+- **Embed AI guests do not touch the token owner's allowance** (saiku#2529,
+  review of PR #2556). An AI embed calls the ask endpoint under the token
+  owner's identity, so a naive keying would let one anonymous viewer of the
+  widget (or a script on the embedding page) exhaust the owner's per-minute
+  bucket and daily AI budget. The embed view resource stamps an embed-specific
+  bucket on the request (`embed:token:<sha256 of the token>`, or
+  `embed:grant:<sub|ip>` for a public-grant) and the limiter and budget use it
+  first, so guests share the embed's own per-minute and daily bucket and the
+  owner's interactive use is unaffected. The instance-level ceiling still
+  bounds every guest together with all other callers.
 - **A caller whose identity can't be derived is allowed through** (fail-open on
   a wiring gap, matching the existing rate limiter) but still consumes the
   shared instance token budget, so "unattributable" never means "free".

@@ -28,7 +28,31 @@ import org.springframework.security.core.context.SecurityContextHolder;
  */
 public final class AiRequestPrincipal {
 
+    /**
+     * saiku#2529 (review of PR #2556): request attribute {@link org.saiku.web.rest.resources.embed.EmbedViewResource}
+     * stamps before delegating an embed AI guest into the AI resources. Inside those resources the
+     * caller looks like the token OWNER (the embed path runs under {@code runAs(owner)}), so without
+     * this stamp every guest's call keyed and charged on the owner's identity — one anonymous viewer
+     * of an AI embed could exhaust the owner's per-minute bucket and daily allowance. The stamped
+     * value ("embed:token:…" / "embed:grant:…") is used FIRST for the limiter key and the budget
+     * principal, so guests share the embed's own bucket and cannot touch the owner's.
+     */
+    public static final String EMBED_BUCKET_ATTRIBUTE = "saiku.embed.ai.bucket";
+
     private AiRequestPrincipal() {}
+
+    /**
+     * The embed AI bucket stamped on the current request, or {@code null} when the call is not an
+     * embed AI guest call. See {@link #EMBED_BUCKET_ATTRIBUTE}.
+     */
+    public static String currentEmbedBucket() {
+        jakarta.servlet.http.HttpServletRequest req = currentRequest();
+        if (req == null) {
+            return null;
+        }
+        Object v = req.getAttribute(EMBED_BUCKET_ATTRIBUTE);
+        return v instanceof String s && !s.isBlank() ? s : null;
+    }
 
     /**
      * The authenticated caller's name, or {@code null} when the request carries no real identity.

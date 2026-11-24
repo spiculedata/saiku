@@ -150,6 +150,55 @@ public class AiCostBudgetWiringTest {
         }
     }
 
+    /**
+     * saiku#2529 (review of PR #2556): an embed AI guest runs under the token OWNER's identity
+     * (the embed path calls ask() inside runAs(owner)), but must NOT consume the owner's
+     * allowance. With the embed bucket stamped on the request, exhausting the embed bucket
+     * (all its daily calls or tokens spent) leaves the owner's interactive /ai/ask untouched.
+     */
+    @Test
+    public void embedGuestExhaustionDoesNotBindTheTokenOwner() {
+        try (ClassPathXmlApplicationContext ctx = context()) {
+            String owner = "embed-owner-" + ++unique;
+            String embedBucket = "embed:token:" + String.format("%064x", 0xA1B2C3L);
+            AiCostBudget budget = ctx.getBean("aiCostBudget", AiCostBudget.class);
+
+            // The owner's interactive use first: two calls pass, the third is over HER budget.
+            SecurityContextHolder.getContext().setAuthentication(new TestingAuthenticationToken(owner, "pw"));
+            AiQueryResource resource = ctx.getBean("aiQueryResource", AiQueryResource.class);
+            assertEquals(503, resource.ask(request(owner)).getStatus());
+            assertEquals(503, resource.ask(request(owner)).getStatus());
+
+            // Now an embed guest of the same owner: the request carries the embed bucket stamp,
+            // so the budget keys on "embed:token:…", not on the owner's name. Two guest calls pass.
+            bindEmbedBucket(embedBucket);
+            assertEquals(503, resource.ask(request("guest question")).getStatus());
+            assertEquals(503, resource.ask(request("guest question")).getStatus());
+            assertEquals("the guest's third ask is over the EMBED's budget", 429,
+                    resource.ask(request("guest question")).getStatus());
+            assertEquals(
+                    "the embed exhaustion is charged to the embed bucket, not the owner",
+                    3,
+                    budget.callsMadeBy(embedBucket));
+
+            // And the owner — same address, own identity (no embed stamp on the thread) — is
+            // NOT bound by the guests' spend.
+            org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();
+            SecurityContextHolder.getContext().setAuthentication(new TestingAuthenticationToken(owner, "pw"));
+            assertEquals("owner's third ask is refused only by her own usage, not the guests'", 429,
+                    resource.ask(request(owner)).getStatus());
+            assertEquals(
+                    "the guests' calls were NOT charged to the owner's name",
+                    2,
+                    budget.callsMadeBy(owner));
+
+            // Conversely a guest whose embed bucket is fresh passes even though the owner is spent.
+            bindEmbedBucket("embed:token:" + String.format("%064x", 0xDEADL));
+            assertEquals("a different embed has its own budget", 503,
+                    resource.ask(request("guest question")).getStatus());
+        }
+    }
+
     /** The chain-concurrency cap lives on the shared singleton, so it bounds the whole instance. */
     @Test
     public void chainConcurrencyCapIsSharedAcrossRequestBoundaries() {
@@ -177,6 +226,26 @@ public class AiCostBudgetWiringTest {
         body.setQuestion(question);
         body.setCube(new AiCubeRef("foodmart", "FoodMart", "FoodMart", "Sales"));
         return body;
+    }
+
+    /** Bind a request whose only feature is the embed AI bucket stamp (plus remote addr). */
+    private static void bindEmbedBucket(String bucket) {
+        String attr = AiRequestPrincipal.EMBED_BUCKET_ATTRIBUTE;
+        jakarta.servlet.http.HttpServletRequest req =
+                (jakarta.servlet.http.HttpServletRequest) java.lang.reflect.Proxy.newProxyInstance(
+                        AiCostBudgetWiringTest.class.getClassLoader(),
+                        new Class<?>[] {jakarta.servlet.http.HttpServletRequest.class},
+                        (proxy, method, args) -> {
+                            if ("getAttribute".equals(method.getName()) && attr.equals(args[0])) {
+                                return bucket;
+                            }
+                            if ("getRemoteAddr".equals(method.getName())) {
+                                return "10.0.7.2529";
+                            }
+                            return null;
+                        });
+        org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(
+                new org.springframework.web.context.request.ServletRequestAttributes(req));
     }
 
     /** Bind a request attribute with only {@code getRemoteAddr} populated — no authenticated user. */

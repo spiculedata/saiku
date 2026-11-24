@@ -4218,6 +4218,14 @@ public class AiQueryResource {
      * the only identity it has.
      */
     private String askRateKey() {
+        // saiku#2529 (review of PR #2556): an embed AI guest is limited to the EMBED's own
+        // bucket, never the token owner's — the embed path runs under runAs(owner), so the
+        // security context names the owner, and without this the owner's per-minute
+        // allowance could be exhausted by any viewer of the widget.
+        String embed = org.saiku.web.security.ratelimit.AiRequestPrincipal.currentEmbedBucket();
+        if (embed != null) {
+            return embed;
+        }
         // saiku#2529: the principal comes from the Spring Security context FIRST — the request's
         // getRemoteUser() can be null on the unwrapped container request, which used to send every
         // authenticated caller behind one address to the shared IP bucket.
@@ -4244,6 +4252,13 @@ public class AiQueryResource {
      * — and a null principal is fail-open — even though the caller was fully authenticated.
      */
     private String askBudgetPrincipal() {
+        // saiku#2529 (review of PR #2556): embed guests are charged to the embed's own bucket
+        // ("embed:token:…" / "embed:grant:…") so viewers of a shared AI embed cannot exhaust
+        // the token owner's personal daily allowance. The instance ceiling still bounds them.
+        String embed = org.saiku.web.security.ratelimit.AiRequestPrincipal.currentEmbedBucket();
+        if (embed != null) {
+            return embed;
+        }
         return org.saiku.web.security.ratelimit.AiRequestPrincipal.currentName();
     }
 
