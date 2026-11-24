@@ -45,8 +45,8 @@ Plus the long-tail:
 | `POST /saiku/api/ai/forecast` | Run a time-series query, then project `horizon` future points with prediction intervals. Returns the typed records response (observed data untouched) plus a `forecast` block keyed by measure (saiku#908). |
 | `POST /saiku/api/ai/describe-query` | Tier-1 (schema-only): suggest a short title + one-line description for a query's structure — measures, rows, columns, slicer. Never executes the query; no data values leave the box (saiku#909). |
 
-All routes require an authenticated session (form login at `POST /login`
-on the launcher; same auth as the regular UI).
+All routes require an authenticated session (login at `POST /rest/saiku/session`,
+same auth as the regular UI).
 
 ---
 
