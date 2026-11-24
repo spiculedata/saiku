@@ -972,6 +972,12 @@
              which is request-scoped) — no scoped-proxy needed. -->
         <property name="aiOssieResource" ref="aiOssieResource"/>
         <property name="sessionStore" ref="mcpSessionStore"/>
+        <!-- saiku#2540: MCP tools/calls invoke the AI resources in-process, so
+             the /ai/ AiAuditFilter never sees them — the resource writes its
+             own audit entries (one per tools/call, allowed / denied / failed),
+             stamping the active policy tier off the shared guard. -->
+        <property name="auditLog" ref="aiAuditLog"/>
+        <property name="aiPolicyGuard" ref="aiPolicyGuard"/>
     </bean>
 
     <!-- ====================================================================
