@@ -90,7 +90,7 @@ const shellTest = read('saiku-ui/src/lib/views/app/appShell.test.ts');
 if (!shellTest.includes('body::before')) {
   fail('S3: the vitest for the shell helpers does not cover the issue breakout payload');
 }
-if (!/not\.toContain\(.{0,40}body::before/.test(shellTest)) {
+if (!/outOfScope\.push/.test(shellTest) || !/toEqual\(\[\]\)/.test(shellTest)) {
   fail('S3: the shell vitest does not assert the skin stylesheet has no out-of-scope rule');
 }
 const apiTest = read('saiku-ui/src/lib/api/apps.test.ts');

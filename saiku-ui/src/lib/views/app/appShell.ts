@@ -35,9 +35,27 @@ export function appScopeId(app: SaikuApp): string {
 	return app.id || 'preview';
 }
 
+/** Escape {@code value} for use inside the quoted attribute value of a CSS
+ *  attribute selector — the string-escape equivalent of {@code CSS.escape}
+ *  for this context (saiku#2545). A `"` in the value can no longer close the
+ *  selector, a `\\` no longer escapes, and a raw newline (invalid inside a
+ *  CSS string) becomes a hex escape, so the skin / customCss scope built by
+ *  {@link rootSelectorFor} cannot be broken out of regardless of what the
+ *  stored document contains. The characters a valid app id may carry
+ *  (`[A-Za-z0-9_-]`, see {@link isValidAppId}) are untouched, so selectors for
+ *  real apps are byte-identical to the previous raw form. */
+export function escapeSelectorValue(value: string): string {
+	return value
+		.replace(/\\/g, '\\\\')
+		.replace(/"/g, '\\"')
+		.replace(/\n/g, '\\a ')
+		.replace(/\r/g, '\\d ')
+		.replace(/\0/g, '\\fffd ');
+}
+
 /** The attribute-selector every author custom-CSS rule is scoped beneath. */
 export function rootSelectorFor(app: SaikuApp): string {
-	return `[data-saiku-app="${appScopeId(app)}"]`;
+	return `[data-saiku-app="${escapeSelectorValue(appScopeId(app))}"]`;
 }
 
 /** Compute the SAFE, scoped custom CSS string for an app. Always routes the

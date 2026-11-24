@@ -5,7 +5,9 @@
  */
 
 import { describe, test, expect } from 'vitest';
+import * as csstree from 'css-tree';
 import { emptyApp, type SaikuApp } from '$lib/api/apps';
+import { appSkinCss } from '$lib/views/app/appSkin';
 import {
 	styleVarsToString,
 	themeVarsStyle,
@@ -58,6 +60,57 @@ describe('appScopeId / rootSelectorFor', () => {
 
 	test('durable id is used verbatim', () => {
 		expect(rootSelectorFor(app({ id: 'sales' }))).toBe('[data-saiku-app="sales"]');
+	});
+});
+
+// saiku#2545: the id is interpolated into the attribute selector, so a `"]{}`
+// in it could close the selector and inject rules the sanitiser never sees.
+describe('rootSelectorFor cannot be escaped (saiku#2545)', () => {
+	/** The issue's breakout payload — a full-viewport overlay plus an https:
+	 *  beacon, all through the closed selector. */
+	const PAYLOAD_ID =
+		'x"]{} body::before{content:\'injected\'} html{background-image:url(https://attacker.example/beacon)!important} [x="';
+
+	test('rootSelectorFor escapes its input instead of closing the selector', () => {
+		const selector = rootSelectorFor(app({ id: PAYLOAD_ID }));
+		// The value stays a single quoted string: both embedded quotes are
+		// backslash-escaped, so the injected `]{} body::before…` tail is inert
+		// attribute-value text rather than a selector boundary.
+		expect(selector.startsWith('[data-saiku-app="')).toBe(true);
+		expect(selector.endsWith('"]')).toBe(true);
+		expect(selector.match(/\\"/g)).toHaveLength(2);
+	});
+
+	test('the skin stylesheet for a hostile id contains no rule outside the app scope', () => {
+		const scope = rootSelectorFor(app({ id: PAYLOAD_ID }));
+		const css = appSkinCss(scope);
+		const ast = csstree.parse(css);
+		const outOfScope: string[] = [];
+		csstree.walk(ast, {
+			visit: 'Rule',
+			enter(rule) {
+				const prelude = csstree.generate(rule.prelude);
+				if (!prelude.includes(scope)) outOfScope.push(prelude);
+			}
+		});
+		expect(outOfScope).toEqual([]);
+	});
+
+	test('scopedCustomCss for a hostile id also stays inside the scope', () => {
+		const out = scopedCustomCss(
+			app({ id: PAYLOAD_ID, theme: { mode: 'light', customCss: 'body { background: red }' } })
+		);
+		const ast = csstree.parse(out);
+		const scope = rootSelectorFor(app({ id: PAYLOAD_ID }));
+		const outOfScope: string[] = [];
+		csstree.walk(ast, {
+			visit: 'Rule',
+			enter(rule) {
+				const prelude = csstree.generate(rule.prelude);
+				if (!prelude.includes(scope)) outOfScope.push(prelude);
+			}
+		});
+		expect(outOfScope).toEqual([]);
 	});
 });
 

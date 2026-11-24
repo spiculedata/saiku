@@ -179,6 +179,50 @@ public class AppResourceTest {
         assertEquals(400, r.getStatus());
     }
 
+    /** saiku#2545: the id is interpolated into the UI's CSS attribute selector
+     *  `[data-saiku-app="${id}"]`, so an id that closes the selector could
+     *  inject rules the custom-CSS sanitiser never sees. The save must refuse
+     *  it with the typed 400. The stored JSON carries the issue's id
+     *  (`x"]{} body::before{content:'injected'} [x="`), quote-escaped as JSON
+     *  requires. */
+    @Test
+    public void save_hostileIdReturnsTyped400() {
+        String doc = "{\"id\":\"x\\\"]{} body::before{content:'injected'} [x=\\\"\","
+                + "\"name\":\"css\",\"pages\":[]}";
+        Response r = resource.save("/apps/css.saikuapp", doc);
+        assertEquals(400, r.getStatus());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) r.getEntity();
+        assertEquals("VALIDATION_ERROR", body.get("status"));
+        assertEquals("id", body.get("field"));
+        // The hostile document must never reach the storage layer.
+        assertNull(stubDs.savedPath);
+    }
+
+    @Test
+    public void save_idOutsideAllowedCharactersReturns400() {
+        // ids that never satisfy ^[A-Za-z0-9_-]{1,64}$
+        for (String id : new String[] {"a b", "a/b", "a{}b", "a:b", "x".repeat(65)}) {
+            Response r = resource.save("/apps/x.saikuapp", "{\"id\":\"" + id + "\",\"name\":\"n\"}");
+            assertEquals("400 for id " + id, 400, r.getStatus());
+        }
+    }
+
+    /** Generated ids (letters, digits, _ and -) and the empty preview sentinel
+     *  stay legal — existing apps must load unchanged (saiku#2545). */
+    @Test
+    public void save_generatedIdIsAccepted() {
+        Response r = resource.save("/apps/x.saikuapp", SAMPLE_APP);
+        assertEquals(200, r.getStatus());
+        assertEquals("/apps/x.saikuapp", stubDs.savedPath);
+        Response r2 = resource.save("/apps/y.saikuapp", "{}\n");
+        assertEquals(200, r2.getStatus());
+        Response r3 = resource.save("/apps/z.saikuapp", "{\"id\":" + "\"\",\"name\":\"n\"}");
+        assertEquals(200, r3.getStatus());
+        Response r4 = resource.save("/apps/w.saikuapp", "{\"id\":null,\"name\":\"n\"}");
+        assertEquals(200, r4.getStatus());
+    }
+
     @Test
     public void load_missingReturns404() {
         Response r = resource.load("/apps/nonexistent.saikuapp");
