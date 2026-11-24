@@ -126,7 +126,9 @@ public class AiSchemaConverter {
         // Multiple SET clauses share a single WITH keyword. Duplicate
         // names are caught here so the agent gets a clean 400 instead of
         // Mondrian's opaque "name already defined" error.
-        validateNamedSets(req);
+        // saiku#2541: named-set expressions are validated (structure,
+        // references, PII) before they are concatenated into the WITH clause.
+        validateNamedSets(req, schema);
         if (req.getNamedSets() != null && !req.getNamedSets().isEmpty()) {
             mdx.append("WITH");
             for (AiNamedSet ns : req.getNamedSets()) {
@@ -1380,12 +1382,22 @@ public class AiSchemaConverter {
     /** saiku#775: validate the named-sets shape before MDX emission.
      *  Catches missing fields and duplicate names up-front so the agent
      *  gets a clean 400 instead of Mondrian's "name already defined" or
-     *  syntax-error surface. Expression bodies are passed to Mondrian
-     *  unmodified — the trust model matches calculated-member formulas. */
-    private static void validateNamedSets(AiQueryRequest req) {
+     *  syntax-error surface.
+     *
+     *  <p>saiku#2541: the {@code expression} is no longer trusted with
+     *  statement-level MDX. It is concatenated into {@code WITH SET ... AS
+     *  (...)} verbatim, so an expression that closes the set could append
+     *  its own calculated {@code MEMBER} (and the PII gate never looked at
+     *  named sets). {@link #validateNamedSetExpression} now refuses
+     *  statement keywords, comments and unbalanced delimiters, resolves
+     *  every dimension/measure reference against the schema, and applies
+     *  the same PII refusal a PII level would get on {@code rows} —
+     *  before anything reaches Mondrian. */
+    private static void validateNamedSets(AiQueryRequest req, AiSchema schema) {
         List<AiNamedSet> sets = req.getNamedSets();
         if (sets == null || sets.isEmpty()) return;
         java.util.Set<String> seen = new java.util.LinkedHashSet<>();
+        java.util.Set<String> earlier = new java.util.HashSet<>();
         for (int i = 0; i < sets.size(); i++) {
             AiNamedSet ns = sets.get(i);
             if (ns == null) {
@@ -1409,7 +1421,295 @@ public class AiSchemaConverter {
                         "Duplicate named-set name '" + n + "'. Each entry in namedSets[] must use a unique name.",
                         null);
             }
+            validateNamedSetExpression(n, e, "namedSets[" + i + "].expression", earlier, schema);
+            earlier.add(AiSchema.key(n));
         }
+    }
+
+    /** saiku#2541: MDX keywords a set expression may never contain. A set
+     *  expression is a set, not a statement: it can never declare a member
+     *  ({@code MEMBER}), open or join another query ({@code SELECT},
+     *  {@code WITH}, {@code FROM}, {@code WHERE}), or define anything
+     *  ({@code CREATE}, {@code DROP}, {@code SET}, {@code DIMENSION}).
+     *  Matching is whole-word and case-insensitive, OUTSIDE bracketed
+     *  identifiers and string literals — so {@code .CurrentMember},
+     *  {@code .Members} and {@code [Measures].[X]} are untouched. */
+    private static final java.util.Set<String> NAMED_SET_BANNED_KEYWORDS = new java.util.HashSet<>(
+            java.util.Arrays.asList("MEMBER", "SET", "SELECT", "WITH", "FROM", "WHERE", "CREATE", "DROP", "DIMENSION"));
+
+    /** saiku#2541: validate one named-set expression before it is
+     *  concatenated into {@code WITH SET [name] AS (...)}. Three passes:
+     *
+     *  <ol>
+     *    <li><b>Structural.</b> A token walk (skipping bracketed identifiers
+     *        and quoted string literals) refuses MDX comments ({@code --},
+     *        {@code /*}, {@code //}), statement keywords, semicolons, and
+     *        unbalanced parentheses or braces. The issue's injection closes
+     *        the set with a leading {@code )}) and appends a {@code MEMBER}
+     *        — both trips fire.</li>
+     *    <li><b>Reference.</b> Every dot-joined bracket chain must resolve:
+     *        the leading identifier is a known dimension (canonical or
+     *        alias), the {@code [Measures]} hierarchy, or an earlier named
+     *        set in the same request (single-identifier reference).
+     *        Unresolved references get the converter's usual teaching
+     *        message instead of a Mondrian syntax error.</li>
+     *    <li><b>PII.</b> A chain that resolves to a PII-annotated level or
+     *        measure is refused exactly like the same level on {@code rows}
+     *        (saiku#1918 contract extended to named sets — the PII gate
+     *        previously never looked at them).</li>
+     *  </ol> */
+    private static void validateNamedSetExpression(
+            String name, String expression, String fieldPath, java.util.Set<String> earlierSetNames, AiSchema schema) {
+        int parenDepth = 0;
+        int braceDepth = 0;
+        List<List<String>> chains = new ArrayList<>();
+        List<String> current = null;
+        boolean chainContinues = false;
+        String gap = ""; // significant chars since the previous identifier — the chain joiner
+        StringBuilder word = new StringBuilder();
+        int len = expression.length();
+        for (int i = 0; i < len; i++) {
+            char c = expression.charAt(i);
+            // Flush any pending keyword buffer FIRST: a keyword must be
+            // detected no matter which punctuation follows it — even the
+            // '[' of a bracketed identifier ({}MEMBER[Measures] ... must
+            // not dilute into a harmless-looking word).
+            if (!(Character.isLetterOrDigit(c) || c == '_')) {
+                checkNamedSetWord(name, word, fieldPath);
+            }
+            if (c == '[') {
+                int close = findBracketIdentifierEnd(expression, i);
+                if (close < 0) {
+                    throw namedSetError(
+                            fieldPath,
+                            "Named set '" + name
+                                    + "' has an unterminated '[' — bracketed identifiers must close with ']'.");
+                }
+                String id = expression.substring(i + 1, close);
+                String g = gap.trim();
+                if (current != null && chainContinues && g.equals(".")) {
+                    current.add(id); // dot-joined: [A].[B] — same chain
+                } else if (g.equals(".&") || g.equals("&")) {
+                    // .&[key] — a member KEY fragment of the last identifier,
+                    // not a name reference. Finish the chain without it.
+                    // Consecutive key fragments (.&[USA].&[WA], compound
+                    // keys) keep the chain closed without starting a new one.
+                    if (current != null && !current.isEmpty()) chains.add(current);
+                    current = null;
+                    chainContinues = false;
+                } else {
+                    if (current != null && !current.isEmpty()) chains.add(current);
+                    current = new ArrayList<>();
+                    current.add(id);
+                    chainContinues = true;
+                }
+                gap = "";
+                i = close;
+                continue;
+            }
+            if (c == '\"' || c == '\'') {
+                // String literal: everything until the matching quote is
+                // data. Doubled quote is the MDX escape.
+                int j = i + 1;
+                while (j < len) {
+                    if (expression.charAt(j) == c) {
+                        if (j + 1 < len && expression.charAt(j + 1) == c) {
+                            j += 2;
+                            continue;
+                        }
+                        break;
+                    }
+                    j++;
+                }
+                if (j >= len) {
+                    throw namedSetError(
+                            fieldPath,
+                            "Named set '" + name + "' has an unterminated string literal — quotes must balance.");
+                }
+                gap += "\""; // a string is never a chain joiner
+                i = j;
+                continue;
+            }
+            if (c == '-') {
+                if (i + 1 < len && expression.charAt(i + 1) == '-') {
+                    throw namedSetError(
+                            fieldPath,
+                            "Named set '" + name
+                                    + "' contains an MDX comment (--). Comments are not allowed in expressions.");
+                }
+            } else if (c == '/') {
+                if (i + 1 < len && (expression.charAt(i + 1) == '*' || expression.charAt(i + 1) == '/')) {
+                    throw namedSetError(
+                            fieldPath,
+                            "Named set '" + name
+                                    + "' contains an MDX comment (/* or //). Comments are not allowed in expressions.");
+                }
+            } else if (c == ';') {
+                throw namedSetError(
+                        fieldPath,
+                        "Named set '" + name
+                                + "' contains a ';' — a set expression is a single MDX set, not a statement.");
+            } else if (c == '(') {
+                parenDepth++;
+            } else if (c == ')') {
+                parenDepth--;
+                if (parenDepth < 0) {
+                    throw namedSetError(
+                            fieldPath,
+                            "Named set '" + name
+                                    + "' has unbalanced parentheses — a ')' closes the set boundary before the "
+                                    + "expression itself ends, which can inject MDX.");
+                }
+            } else if (c == '{') {
+                braceDepth++;
+            } else if (c == '}') {
+                braceDepth--;
+                if (braceDepth < 0) {
+                    throw namedSetError(
+                            fieldPath,
+                            "Named set '" + name
+                                    + "' has unbalanced braces — a '}' closes the set boundary before the "
+                                    + "expression itself ends, which can inject MDX.");
+                }
+            } else if (Character.isLetterOrDigit(c) || c == '_') {
+                word.append(c);
+            }
+            if (c != ' ' && c != '\t' && c != '\r' && c != '\n') gap += c;
+        }
+        checkNamedSetWord(name, word, fieldPath);
+        if (current != null && !current.isEmpty()) chains.add(current);
+        if (parenDepth != 0 || braceDepth != 0) {
+            throw namedSetError(
+                    fieldPath,
+                    "Named set '" + name
+                            + "' has unbalanced delimiters — the expression must leave parentheses and braces "
+                            + "exactly where it found them (balanced () and {}). "
+                            + "An expression that closes the set early can append its own MEMBER definitions.");
+        }
+        resolveNamedSetReferences(name, chains, fieldPath, earlierSetNames, schema);
+    }
+
+    /** saiku#2541: whole-word keyword check for the token walk above. */
+    private static void checkNamedSetWord(String name, StringBuilder word, String fieldPath) {
+        if (word.length() == 0) return;
+        String w = word.toString();
+        word.setLength(0);
+        if (NAMED_SET_BANNED_KEYWORDS.contains(w.toUpperCase(java.util.Locale.ROOT))) {
+            throw namedSetError(
+                    fieldPath,
+                    "Named set '" + name
+                            + "' contains the MDX keyword " + w.toUpperCase(java.util.Locale.ROOT)
+                            + " — a set expression is a set over members of the typed fields, not a statement. "
+                            + "Select members with rows/columns/filters instead.");
+        }
+    }
+
+    /** Index of the ']' closing the bracketed identifier that opens at
+     *  {@code open}, honouring Mondrian's ]] escape, or -1 when unterminated. */
+    private static int findBracketIdentifierEnd(String expression, int open) {
+        int i = open + 1;
+        int len = expression.length();
+        while (i < len) {
+            if (expression.charAt(i) == ']') {
+                if (i + 1 < len && expression.charAt(i + 1) == ']') {
+                    i += 2;
+                    continue;
+                }
+                return i;
+            }
+            i++;
+        }
+        return -1;
+    }
+
+    /** saiku#2541: resolve the bracket chains a named-set expression
+     *  references. Leading identifiers must be known dimensions (canonical
+     *  or display alias), the {@code [Measures]} hierarchy, or an earlier
+     *  named set of the same request; deeper segments resolve for the PII
+     *  check and are otherwise left alone (they can be members or keys). */
+    private static void resolveNamedSetReferences(
+            String name,
+            List<List<String>> chains,
+            String fieldPath,
+            java.util.Set<String> earlierSetNames,
+            AiSchema schema) {
+        for (List<String> chain : chains) {
+            String first = chain.get(0);
+            if (AiSchema.key(first).equals("measures")) {
+                if (chain.size() >= 2) {
+                    AiSchema.Measure m = lookupMeasureOrNull(chain.get(1), schema);
+                    if (m != null && m.pii) {
+                        throw piiRefusal(fieldPath, "Measure '" + m.name + "'");
+                    }
+                }
+                continue;
+            }
+            AiSchema.Dimension d = lookupDimensionOrNull(first, schema);
+            if (d == null) {
+                // A single bare identifier may be a named set defined earlier
+                // in the same request (TopCount([First], 5, ...)). Anything
+                // else is a typo'd or injected reference — teach, don't guess.
+                if (chain.size() >= 2 || !earlierSetNames.contains(AiSchema.key(first))) {
+                    throw namedSetError(
+                            fieldPath,
+                            "Named set '" + name
+                                    + "' references unknown dimension or set '" + first
+                                    + "'. Every reference must resolve "
+                                    + "against the cube's dimensions (canonical or display name), the [Measures] "
+                                    + "hierarchy, or a named set defined earlier in the same request.");
+                }
+                continue;
+            }
+            if (chain.size() < 2) continue; // bare dimension reference — nothing more to check
+            AiSchema.Hierarchy h = d.hierarchies.get(AiSchema.key(chain.get(1)));
+            if (h == null) {
+                String t = d.hierarchyAliases.get(AiSchema.key(chain.get(1)));
+                if (t != null) h = d.hierarchies.get(t);
+            }
+            if (h != null) {
+                if (chain.size() >= 3) {
+                    AiSchema.Level l = h.levels.get(AiSchema.key(chain.get(2)));
+                    if (l == null) {
+                        String t = h.levelAliases.get(AiSchema.key(chain.get(2)));
+                        if (t != null) l = h.levels.get(t);
+                    }
+                    if (l != null && l.pii) {
+                        throw piiRefusal(fieldPath, "Level '" + l.name + "'");
+                    }
+                }
+            } else {
+                // Second segment is not a hierarchy: level shorthand
+                // ([Time].[Year]) or a member. Check level shorthand for PII.
+                for (AiSchema.Hierarchy h2 : d.hierarchies.values()) {
+                    AiSchema.Level l = h2.levels.get(AiSchema.key(chain.get(1)));
+                    if (l == null) {
+                        String t = h2.levelAliases.get(AiSchema.key(chain.get(1)));
+                        if (t != null) l = h2.levels.get(t);
+                    }
+                    if (l != null && l.pii) {
+                        throw piiRefusal(fieldPath, "Level '" + l.name + "'");
+                    }
+                }
+            }
+        }
+    }
+
+    /** Canonical-or-alias dimension lookup that returns {@code null} instead of
+     *  throwing, so the named-set pass never pre-empts the ordinary
+     *  "Unknown dimension" self-correction error with a wrong field pointer. */
+    private static AiSchema.Dimension lookupDimensionOrNull(String name, AiSchema schema) {
+        if (name == null || name.isEmpty()) return null;
+        String k = AiSchema.key(name);
+        AiSchema.Dimension d = schema.dimensions.get(k);
+        if (d == null) {
+            String aliasTarget = schema.dimensionAliases.get(k);
+            if (aliasTarget != null) d = schema.dimensions.get(aliasTarget);
+        }
+        return d;
+    }
+
+    private static AiValidationException namedSetError(String field, String message) {
+        return new AiValidationException(field, message, null);
     }
 
     /** Wrap a named-set name in brackets if the caller didn't already.
@@ -1567,8 +1867,9 @@ public class AiSchemaConverter {
         return new AiPiiException(
                 field,
                 what + " is annotated PII (saiku.semantic.pii=true) and cannot be queried over the AI "
-                        + "surface. PII columns are refused on measures, rows, columns, filters and order alike — "
-                        + "query an aggregate measure or a non-PII level over the same dimension instead.",
+                        + "surface. PII columns are refused on measures, rows, columns, filters, order and "
+                        + "named-set expressions alike — query an aggregate measure or a non-PII level over "
+                        + "the same dimension instead.",
                 null);
     }
 

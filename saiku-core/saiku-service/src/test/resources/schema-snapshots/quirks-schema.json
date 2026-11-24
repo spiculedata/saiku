@@ -455,6 +455,25 @@
         },
         "type" : "array"
       },
+      "namedSets" : {
+        "description" : "Optional named sets, emitted ahead of the SELECT as WITH SET [name] AS (expression). Reference a set in rows/columns/filters by its name. The expression is an MDX set expression and is validated server-side: no statement keywords (MEMBER, SELECT, WITH, FROM, WHERE, CREATE, DROP), no MDX comments (--, /*, //), balanced parentheses and braces, and every [Dimension] reference must resolve against the cube (or an earlier named set in the same request). Expressions referencing PII-annotated levels or measures are refused like the same level on rows.",
+        "items" : {
+          "description" : "A named set for the WITH SET clause.",
+          "properties" : {
+            "expression" : {
+              "description" : "MDX set expression, e.g. {[Product].[Products].[Product Family].Members} or Head([Product].[Products].Members, 5). Validated — see the array description.",
+              "type" : "string"
+            },
+            "name" : {
+              "description" : "Set name. Unique within the request; referenced later as [name].",
+              "type" : "string"
+            }
+          },
+          "required" : [ "name", "expression" ],
+          "type" : "object"
+        },
+        "type" : "array"
+      },
       "nonEmpty" : {
         "default" : true,
         "description" : "If true (default), strip rows/columns whose every cell is empty.",

@@ -63,6 +63,18 @@ public final class AiRequestJsonSchema {
                         false,
                         "If true, wrap the rows axis in VISUALTOTALS so parent totals reflect only the visible members."));
         properties.put("nonEmpty", boolField(true, "If true (default), strip rows/columns whose every cell is empty."));
+        properties.put(
+                "namedSets",
+                arrayOf(
+                        namedSet(),
+                        "Optional named sets, emitted ahead of the SELECT as WITH SET [name] AS (expression). "
+                                + "Reference a set in rows/columns/filters by its name. The expression is an MDX "
+                                + "set expression and is validated server-side: no statement keywords (MEMBER, "
+                                + "SELECT, WITH, FROM, WHERE, CREATE, DROP), no MDX comments (--, /*, //), "
+                                + "balanced parentheses and braces, and every [Dimension] reference must resolve "
+                                + "against the cube (or an earlier named set in the same request). Expressions "
+                                + "referencing PII-annotated levels or measures are refused like the same level "
+                                + "on rows."));
         root.put("properties", properties);
 
         Map<String, Object> exampleRoot = new LinkedHashMap<>();
@@ -101,6 +113,18 @@ public final class AiRequestJsonSchema {
         props.put("name", stringField("Measure name (canonical or display)."));
         Map<String, Object> o = obj("Measure on the COLUMNS axis.", props);
         o.put("required", List.of("name"));
+        return o;
+    }
+
+    private static Map<String, Object> namedSet() {
+        Map<String, Object> props = new LinkedHashMap<>();
+        props.put("name", stringField("Set name. Unique within the request; referenced later as [name]."));
+        props.put(
+                "expression",
+                stringField("MDX set expression, e.g. {[Product].[Products].[Product Family].Members} or "
+                        + "Head([Product].[Products].Members, 5). Validated — see the array description."));
+        Map<String, Object> o = obj("A named set for the WITH SET clause.", props);
+        o.put("required", List.of("name", "expression"));
         return o;
     }
 
