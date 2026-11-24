@@ -11,8 +11,14 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.File;
+import java.io.IOException;
 import java.util.Properties;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 import org.saiku.datasources.datasource.SaikuDatasource;
 
 /**
@@ -23,12 +29,39 @@ import org.saiku.datasources.datasource.SaikuDatasource;
  */
 public class DataSourceMapperOssieTest {
 
+    @Rule
+    public TemporaryFolder tmp = new TemporaryFolder();
+
+    private File modelDir;
+    private String previousExtraRoots;
+
+    @Before
+    public void allowTestModelDirectory() throws IOException {
+        // saiku#2534: ossieYaml must sit inside a permitted model root; tests point the
+        // operator extra-roots property at a scratch directory.
+        modelDir = tmp.newFolder("semantic-models");
+        previousExtraRoots = System.getProperty("saiku.ossie.model.allowedRoots");
+        System.setProperty("saiku.ossie.model.allowedRoots", modelDir.getAbsolutePath());
+    }
+
+    @After
+    public void restoreExtraRoots() {
+        if (previousExtraRoots == null) {
+            System.clearProperty("saiku.ossie.model.allowedRoots");
+        } else {
+            System.setProperty("saiku.ossie.model.allowedRoots", previousExtraRoots);
+        }
+    }
+
     private final ObjectMapper json = new ObjectMapper();
 
     @Test
     public void jsonPostBuildsOssieDatasource() throws Exception {
-        String body = "{" + "\"connectionname\":\"SALES\"," + "\"connectiontype\":\"OSSIE\","
-                + "\"ossieYaml\":\"/tmp/pharma.ossie.yaml\","
+        String yamlPath = new File(modelDir, "pharma.ossie.yaml").getAbsolutePath();
+        String body = "{"
+                + "\"connectionname\":\"SALES\","
+                + "\"connectiontype\":\"OSSIE\","
+                + "\"ossieYaml\":\"" + yamlPath + "\","
                 + "\"jdbcurl\":\"jdbc:postgresql://localhost:5432/warehouse\","
                 + "\"schema\":\"SALES\","
                 + "\"username\":\"admin\","
@@ -39,12 +72,34 @@ public class DataSourceMapperOssieTest {
         assertEquals("SALES", ds.getName());
         assertEquals(SaikuDatasource.Type.OSSIE, ds.getType());
         Properties p = ds.getProperties();
-        assertEquals("/tmp/pharma.ossie.yaml", p.getProperty("ossieYaml"));
+        assertEquals(yamlPath, p.getProperty("ossieYaml"));
         assertEquals("jdbc:postgresql://localhost:5432/warehouse", p.getProperty("location"));
         assertEquals("SALES", p.getProperty("schema"));
         assertEquals("admin", p.getProperty("username"));
         assertEquals("secret", p.getProperty("password"));
         assertNotNull("mapper must assign a UUID when id is absent", p.getProperty("id"));
+    }
+
+    /**
+     * saiku#2534: the mapper is where a POSTed model path is confined — an outside path must
+     * be refused with the same IllegalArgumentException the resource maps to a typed 400.
+     */
+    @Test
+    public void ossieYamlOutsideModelRootsRejected() throws Exception {
+        String body = "{"
+                + "\"connectionname\":\"PROBE\","
+                + "\"connectiontype\":\"OSSIE\","
+                + "\"ossieYaml\":\"/etc/hostname\","
+                + "\"schema\":\"X\"}";
+        DataSourceMapper mapped = json.readValue(body, DataSourceMapper.class);
+        try {
+            mapped.toSaikuDataSource();
+            fail("expected the model path to be refused");
+        } catch (IllegalArgumentException e) {
+            assertTrue(
+                    "message should name the refused path — got: " + e.getMessage(),
+                    e.getMessage().contains("/etc/hostname"));
+        }
     }
 
     @Test
@@ -90,8 +145,9 @@ public class DataSourceMapperOssieTest {
         // JdbcUrlValidator rejects H2 INIT/RUNSCRIPT/ALIAS URLs. The Ossie branch must run
         // the same guard on its warehouse URL — else an admin-typed URL could smuggle in an
         // RCE payload.
+        String yamlPath = new File(modelDir, "bad.ossie.yaml").getAbsolutePath();
         String body = "{" + "\"connectionname\":\"BAD\"," + "\"connectiontype\":\"OSSIE\","
-                + "\"ossieYaml\":\"/tmp/bad.yaml\","
+                + "\"ossieYaml\":\"" + yamlPath + "\","
                 + "\"jdbcurl\":\"jdbc:h2:mem:x;INIT=CREATE ALIAS shell AS $$...$$\""
                 + "}";
         DataSourceMapper mapped = json.readValue(body, DataSourceMapper.class);
@@ -106,8 +162,9 @@ public class DataSourceMapperOssieTest {
 
     @Test
     public void ossieRoundTripsEqualityFieldByField() throws Exception {
+        String yamlPath = new File(modelDir, "round.ossie.yaml").getAbsolutePath();
         Properties p = new Properties();
-        p.setProperty("ossieYaml", "/data/round.yaml");
+        p.setProperty("ossieYaml", yamlPath);
         p.setProperty("location", "jdbc:h2:mem:round");
         p.setProperty("schema", "SEM");
         p.setProperty("username", "u");
@@ -123,7 +180,7 @@ public class DataSourceMapperOssieTest {
         SaikuDatasource redirected = roundTripped.toSaikuDataSource();
         assertEquals(seed.getName(), redirected.getName());
         assertEquals(seed.getType(), redirected.getType());
-        assertEquals("/data/round.yaml", redirected.getProperties().getProperty("ossieYaml"));
+        assertEquals(yamlPath, redirected.getProperties().getProperty("ossieYaml"));
         assertEquals("jdbc:h2:mem:round", redirected.getProperties().getProperty("location"));
         assertEquals("SEM", redirected.getProperties().getProperty("schema"));
         assertEquals("u", redirected.getProperties().getProperty("username"));

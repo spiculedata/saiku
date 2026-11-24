@@ -7,6 +7,8 @@ package org.saiku.web.security.oauth;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -19,12 +21,18 @@ import org.springframework.security.oauth2.jwt.Jwt;
  *
  * <p>The configured {@link OAuthResourceServerProperties#getRoleClaim()} names the claim carrying the
  * caller's groups/roles — a plain claim ({@code "groups"}, {@code "roles"}) or a dotted path into a
- * nested object ({@code "realm_access.roles"}, Keycloak's default shape). Each claim value is passed
- * through {@link OAuthResourceServerProperties#getRoleMapping()}; an unmapped value is used verbatim
- * (the issue's stated default), then normalised to the {@code ROLE_}-prefixed Spring Security
- * convention the in-memory {@code users.properties} provider already uses.
+ * nested object ({@code "realm_access.roles"}, Keycloak's default shape). Each claim value is looked
+ * up in {@link OAuthResourceServerProperties#getRoleMapping()} and only a MAPPED value becomes an
+ * authority (normalised to the {@code ROLE_}-prefixed Spring Security convention the in-memory
+ * {@code users.properties} provider already uses).
+ *
+ * <p>saiku#2543: an UNMAPPED claim value grants nothing. The old verbatim passthrough let a token
+ * whose roles claim contained {@code ADMIN} mint {@code ROLE_ADMIN} on any issuer the operator
+ * configured — roles are now granted exclusively through the operator's explicit mapping table.
  */
 public final class OAuthRoleMapper {
+
+    private static final Logger log = LoggerFactory.getLogger(OAuthRoleMapper.class);
 
     private final OAuthResourceServerProperties properties;
 
@@ -39,7 +47,15 @@ public final class OAuthRoleMapper {
             if (claimValue == null || claimValue.isBlank()) {
                 continue;
             }
-            String mapped = properties.getRoleMapping().getOrDefault(claimValue, claimValue);
+            // saiku#2543: only an explicitly mapped claim value is granted. An unmapped value —
+            // including one that already reads ROLE_ADMIN — grants no authority at all.
+            String mapped = properties.getRoleMapping().get(claimValue);
+            if (mapped == null || mapped.isBlank()) {
+                log.debug(
+                        "OAuth role claim value '{}' is not mapped via saiku.oauth.roleMapping — granting no authority",
+                        claimValue);
+                continue;
+            }
             authorities.add(new SimpleGrantedAuthority(toRoleAuthority(mapped)));
         }
         return authorities;
