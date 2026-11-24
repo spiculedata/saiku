@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.saiku.olap.dto.SaikuConnection;
 import org.saiku.service.olap.OlapDiscoverService;
 import org.saiku.service.olap.ai.AiCubeRef;
@@ -27,9 +28,11 @@ import org.saiku.service.olap.ai.AiSchema;
 import org.saiku.service.olap.ai.OlapAiCubeMetadataService;
 import org.saiku.service.ossie.OssieDiscoverService;
 import org.saiku.service.ossie.OssieModelDto;
+import org.saiku.service.ossie.OssieRoleContext;
 import org.saiku.service.ossie.ai.OssieAiQueryRequest;
 import org.saiku.web.rest.resources.AiOssieResource;
 import org.saiku.web.rest.resources.AiQueryResource;
+import org.saiku.web.rest.util.SessionRoles;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -206,8 +209,16 @@ public class SaikuGraphQlFetchers {
             if (ossieDiscoverService == null) {
                 throw new IllegalStateException("Ossie surface is not configured");
             }
+            // saiku#2526 — same posture as REST GET /ai/ossie/schema: the model is schema
+            // metadata (never blocks, recorded for the AI policy audit), and it is returned
+            // through the caller's role filter so a hidden field and its physical column name
+            // are not handed out here either.
+            if (aiPolicyGuard != null) {
+                aiPolicyGuard.assertCanSend(AiDataKind.SCHEMA_METADATA);
+            }
             String connection = env.getArgument("connection");
             OssieModelDto dto = ossieDiscoverService.getModel(connection);
+            dto = OssieRoleContext.filterHidden(dto, Set.copyOf(SessionRoles.currentRoles()));
             return mapper.convertValue(dto, Map.class);
         };
     }
