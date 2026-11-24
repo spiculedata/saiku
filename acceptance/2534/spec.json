@@ -21,7 +21,10 @@
       "criterion": "C2",
       "request": {
         "method": "GET",
-        "path": "/rest/saiku/admin/ossie/schema/TPCDS"
+        "path": "/rest/saiku/admin/ossie/schema/TPCDS",
+        "headers": {
+          "Accept": "text/plain"
+        }
       },
       "expect": {
         "status": 200
@@ -32,7 +35,10 @@
       "criterion": "C2",
       "request": {
         "method": "GET",
-        "path": "/rest/saiku/admin/ossie/schema/Flights"
+        "path": "/rest/saiku/admin/ossie/schema/Flights",
+        "headers": {
+          "Accept": "text/plain"
+        }
       },
       "expect": {
         "status": 200
