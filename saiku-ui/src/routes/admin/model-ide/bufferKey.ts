@@ -11,6 +11,16 @@ export type MondrianSelection = { kind: 'mondrian'; schema: { name: string } };
 export type OssieSelection = { kind: 'ossie'; datasource: { name: string } };
 export type IdeSelection = MondrianSelection | OssieSelection;
 
+/** Buffer/baseline key of a Mondrian schema. */
+export function mondrianKey(name: string): string {
+	return `xml:${name}`;
+}
+
+/** Buffer/baseline key of an Ossie model. */
+export function ossieKey(name: string): string {
+	return `ossie:${name}`;
+}
+
 export function bufferKeyFor(sel: IdeSelection): string {
-	return sel.kind === 'mondrian' ? `xml:${sel.schema.name}` : `ossie:${sel.datasource.name}`;
+	return sel.kind === 'mondrian' ? mondrianKey(sel.schema.name) : ossieKey(sel.datasource.name);
 }

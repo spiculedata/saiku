@@ -40,7 +40,8 @@
 	import { lintOssieYaml } from '$lib/monaco/ossie-yaml-lint';
 	import type { OssieCatalogue } from '$lib/monaco/ossie-yaml-completions';
 	import { diffCubeNames, type CubeDiff } from './cubeDiff';
-	import { bufferKeyFor } from './bufferKey';
+	import { bufferKeyFor, mondrianKey, ossieKey } from './bufferKey';
+	import { catalogueFor, isStillSelected } from './ossieCatalogue';
 	import { FileCode, Plus } from '@lucide/svelte';
 
 	const NEW_SCHEMA_TEMPLATE = `<Schema name="NewSchema">\n  <Cube name="NewCube">\n    <Table name="table_name"/>\n    <Dimension name="Dimension1" foreignKey="fk_column">\n      <Hierarchy hasAll="true" primaryKey="pk_column">\n        <Level name="Level1" column="column_name" uniqueMembers="true"/>\n      </Hierarchy>\n    </Dimension>\n    <Measure name="Measure1" column="amount_column" aggregator="sum"/>\n  </Cube>\n</Schema>\n`;
@@ -164,7 +165,7 @@
 			loadAll()
 		]);
 		registerMondrianXmlLanguage(() => catalogue);
-		registerOssieYamlLanguage(() => ossieCatalogue);
+		registerOssieYamlLanguage(() => catalogueFor(selected, ossieCatalogueDs, ossieCatalogue));
 		monacoLanguageReady = true;
 
 		const openParam = page.url.searchParams.get('open');
@@ -225,6 +226,9 @@
 		try {
 			if (!session?.username) return null;
 			const model = await fetchOssieModel(session.username, datasourceName);
+			// A late response for a datasource that is no longer open must not overwrite the
+			// open file's catalogue (PR #2490 review).
+			if (!isStillSelected(selected, datasourceName)) return model;
 			ossieCatalogue.datasets = model.datasets.map((d) => d.name);
 			ossieCatalogue.datasetFields = Object.fromEntries(
 				model.datasets.map((d) => [d.name, d.fields.map((f) => f.name)])
@@ -235,7 +239,7 @@
 		} catch {
 			// Failed fetch: stale entries from another datasource would surface as
 			// foreign completions and a bogus save diff — clear rather than keep them.
-			clearOssieCatalogue();
+			if (isStillSelected(selected, datasourceName)) clearOssieCatalogue();
 			return null;
 		}
 	}
@@ -243,12 +247,12 @@
 	async function selectSchema(s: AdminSchema): Promise<void> {
 		selected = { kind: 'mondrian', schema: s };
 		afterSelect(`?open=${encodeURIComponent(s.name)}`);
-		if (buffers[`xml:${s.name}`] !== undefined) return; // already open this session
+		if (buffers[mondrianKey(s.name)] !== undefined) return; // already open this session
 		loadingFile = true;
 		try {
 			const content = await adminSchemas.getContent(s.name);
-			buffers[`xml:${s.name}`] = content;
-			baselines[`xml:${s.name}`] = content;
+			buffers[mondrianKey(s.name)] = content;
+			baselines[mondrianKey(s.name)] = content;
 			void prefetchCubeDetail(content);
 		} catch (e) {
 			saveMsg = { tone: 'error', text: e instanceof Error ? e.message : 'Failed to load schema.' };
@@ -261,17 +265,17 @@
 	async function selectOssie(ds: AdminDatasource): Promise<void> {
 		selected = { kind: 'ossie', datasource: ds };
 		afterSelect(`?open=${encodeURIComponent(`ossie:${ds.name}`)}`);
-		if (buffers[`ossie:${ds.name}`] !== undefined) return; // already open this session
+		// Refresh the completion catalogue on EVERY select, including re-opening a file that
+		// is already open this session — otherwise A → B → A left B's names in A's editor.
+		clearOssieCatalogue();
+		void prefetchOssieModel(ds.name);
+		if (buffers[ossieKey(ds.name)] !== undefined) return; // already open this session
 		loadingFile = true;
 		try {
 			const content = await getOssieSchemaYaml(ds.name);
 			const yaml = content ?? ossieTemplate(ds.name);
-			buffers[`ossie:${ds.name}`] = yaml;
-			if (content !== null) baselines[`ossie:${ds.name}`] = content;
-			// No completion catalogue from a previously opened datasource may leak into
-			// this one while the prefetch is in flight.
-			clearOssieCatalogue();
-			void prefetchOssieModel(ds.name);
+			buffers[ossieKey(ds.name)] = yaml;
+			if (content !== null) baselines[ossieKey(ds.name)] = content;
 		} catch (e) {
 			clearOssieCatalogue();
 			saveMsg = { tone: 'error', text: e instanceof Error ? e.message : 'Failed to load model.' };
@@ -296,7 +300,7 @@
 			return;
 		}
 		const synthetic: AdminSchema = { name, path: `/datasources/${name}.xml`, type: 'MONDRIAN' };
-		buffers[`xml:${name}`] = NEW_SCHEMA_TEMPLATE;
+		buffers[mondrianKey(name)] = NEW_SCHEMA_TEMPLATE;
 		// No baseline: an unset baseline means "never saved", so the conflict check in
 		// save() (which only fires once a baseline exists) is skipped for a brand-new file.
 		selected = { kind: 'mondrian', schema: synthetic };
@@ -367,9 +371,9 @@
 		// Local snapshot: narrowing of the `$state` variable is lost across the awaits below.
 		const schema = selected.schema;
 		const name = schema.name;
-		const xml = buffers[`xml:${name}`] ?? '';
+		const xml = buffers[mondrianKey(name)] ?? '';
 		await adminSchemas.upload(name, xml);
-		baselines[`xml:${name}`] = xml;
+		baselines[mondrianKey(name)] = xml;
 		if (!schemas.some((s) => s.name === name)) {
 			schemas = [...schemas, { name, path: `/datasources/${name}.xml`, type: 'MONDRIAN' }];
 		}
@@ -407,7 +411,7 @@
 		if (selected?.kind !== 'ossie') return;
 		// Local snapshot: narrowing of the `$state` variable is lost across the awaits below.
 		const ds = selected.datasource;
-		const yaml = buffers[`ossie:${ds.name}`] ?? '';
+		const yaml = buffers[ossieKey(ds.name)] ?? '';
 		// Snapshot the live dataset/metric names BEFORE the save so the post-refresh diff
 		// answers "what changed". Only the snapshot fetched for THIS datasource counts —
 		// a catalogue left over from another file (or from a failed prefetch) is not an
@@ -419,7 +423,7 @@
 			catalogueIsForDs && ossieCatalogue.metrics.length > 0 ? [...ossieCatalogue.metrics] : null;
 
 		await saveOssieSchemaYaml(ds.name, yaml);
-		baselines[`ossie:${ds.name}`] = yaml;
+		baselines[ossieKey(ds.name)] = yaml;
 
 		const refreshed = await adminDatasources.refresh(ds.name).catch(() => null);
 		let diffText = '';
@@ -491,8 +495,8 @@
 				<ul class="ide__file-list">
 					{#each schemas as s (s.name)}
 						{@const dirty =
-							buffers[`xml:${s.name}`] !== undefined &&
-							buffers[`xml:${s.name}`] !== baselines[`xml:${s.name}`]}
+							buffers[mondrianKey(s.name)] !== undefined &&
+							buffers[mondrianKey(s.name)] !== baselines[mondrianKey(s.name)]}
 						<li>
 							<button
 								type="button"
@@ -512,8 +516,8 @@
 				<ul class="ide__file-list">
 					{#each ossieDatasources as ds (ds.name)}
 						{@const dirty =
-							buffers[`ossie:${ds.name}`] !== undefined &&
-							buffers[`ossie:${ds.name}`] !== baselines[`ossie:${ds.name}`]}
+							buffers[ossieKey(ds.name)] !== undefined &&
+							buffers[ossieKey(ds.name)] !== baselines[ossieKey(ds.name)]}
 						<li>
 							<button
 								type="button"
