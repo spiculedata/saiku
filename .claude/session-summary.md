@@ -75,6 +75,12 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-11-24 — fix/2533-admin-datasource-delete — PR #2567 acceptance authentication rework
+**Was doing:** changed the datasource-delete acceptance spec to HTTP Basic after the session-authenticated CI run received 403 from every admin endpoint; local spec validation and acceptance tooling tests pass.
+**Now:** check PR #2567 CI for the live acceptance result and Maven build, then address any remaining failure on the same branch.
+**Watch out:** the local environment has no Java or Maven installation, so the live launcher check needs CI.
+**Refs:** #2533, PR #2567, acceptance/2533/spec.json
+
 ## 2026-11-12 — fix/2322-ossie-ai-policy-gate — PR #2355 formatting rework
 **Was doing:** fixed the async role test fixture's Spotless violation; local Spotless and licence checks pass, but focused Maven tests stop during dependency resolution with GitHub Packages 401.
 **Now:** use the latest PR #2355 CI result to verify the full build and focused tests; no local edits remain after the rework push.

@@ -2,7 +2,7 @@
   "issue": 2533,
   "title": "Deleting a datasource in the admin API actually removes it: it disappears from the admin list, immediately and after a discover refresh",
   "kind": "api",
-  "auth": "session",
+  "auth": "basic",
   "criteria": [
     {
       "id": "C1",
