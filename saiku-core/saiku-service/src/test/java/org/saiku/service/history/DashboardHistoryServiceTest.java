@@ -20,6 +20,7 @@ import org.junit.Test;
 import org.saiku.repository.IRepositoryObject;
 import org.saiku.repository.RepositoryFileObject;
 import org.saiku.service.datasource.DatasourceService;
+import org.saiku.service.util.DashboardSidecars;
 
 /**
  * Unit coverage for {@link DashboardHistoryService} (issue #947): archive →
@@ -109,6 +110,35 @@ public class DashboardHistoryServiceTest {
         assertEquals(1, svc.list(DASH).size());
         svc.purge(DASH);
         assertEquals("purged history is empty", 0, svc.list(DASH).size());
+    }
+
+    /** saiku#2550d (review): purge must also remove the LEGACY history sidecar,
+     *  or a deleted dashboard's pre-upgrade versions pass to the next dashboard
+     *  flattening to the same name (and deleted-after-upgrade entries come back
+     *  when a dashboard is recreated at the same path). */
+    @Test
+    public void purge_removes_the_legacy_file_so_a_recreated_dashboard_starts_clean() {
+        String legacy = DashboardSidecars.legacyPath(DashboardHistoryService.KIND, DASH);
+        ds.internal.put(legacy, "{\"dashboard\":\"{\\\"v\\\":1}\",\"author\":\"admin\",\"ts\":1}\n");
+        svc.purge(DASH);
+        assertNull("legacy file removed with the dashboard", ds.internal.get(legacy));
+        assertEquals(0, svc.list(DASH).size());
+    }
+
+    /** homes/a_b/x and homes/a/b/x flatten to one legacy name: the file goes
+     *  only when the deleted dashboard is its sole flattened owner. */
+    @Test
+    public void purge_keeps_an_ambiguous_legacy_file_while_another_dashboard_shares_the_flattened_name() {
+        String ab = "homes/a_b/x.saikudash";
+        String abx = "homes/a/b/x.saikudash";
+        ds.dashboards.clear();
+        ds.dashboards.add(ab);
+        ds.dashboards.add(abx);
+        String legacy = DashboardSidecars.legacyPath(DashboardHistoryService.KIND, ab);
+        ds.internal.put(legacy, "{\"dashboard\":\"{}\",\"author\":\"admin\",\"ts\":1}\n");
+
+        svc.purge(ab);
+        assertNotNull("ambiguous legacy file kept while another dashboard shares the flattened name", ds.internal.get(legacy));
     }
 
     @Test

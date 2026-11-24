@@ -7,6 +7,7 @@ package org.saiku.service.comments;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
@@ -18,6 +19,7 @@ import org.junit.Before;
 import org.junit.Test;
 import org.saiku.repository.IRepositoryObject;
 import org.saiku.repository.RepositoryFileObject;
+import org.saiku.service.util.DashboardSidecars;
 import org.saiku.service.datasource.DatasourceService;
 
 /**
@@ -112,6 +114,57 @@ public class CommentServiceTest {
         assertEquals(1, svc.list(DASH, "t1").size());
         svc.purge(DASH);
         assertEquals("purged thread is empty", 0, svc.list(DASH, "t1").size());
+    }
+
+    /** saiku#2550d (review): purge must also remove the LEGACY sidecar — a deleted
+     *  dashboard's pre-upgrade comments must not pass to the next dashboard that
+     *  flattens to the same name, and a delete-then-recreate at the same path must
+     *  not resurrect deleted comments. */
+    @Test
+    public void purge_removes_the_legacy_file_so_a_recreated_dashboard_starts_clean() {
+        String legacy = DashboardSidecars.legacyPath(CommentService.KIND, DASH);
+        ds.internal.put(legacy, "{\"id\":\"old\",\"body\":\"pre-upgrade\",\"tile\":\"t1\",\"author\":\"admin\",\"created\":0,\"mentions\":[]}\n");
+        svc.purge(DASH);
+        assertNull("legacy file removed with the dashboard", ds.internal.get(legacy));
+        assertEquals(0, svc.list(DASH, "t1").size());
+    }
+
+    /** Deleting homes/a_b/x must remove the legacy file even though user a's
+     *  homes/a/b/x flattens to the SAME name — but only once a_b/x is the sole
+     *  flattened owner; while both exist the file is ambiguous and stays. */
+    @Test
+    public void purge_deletes_the_legacy_file_for_a_b_x_only_when_it_is_the_sole_flattened_owner() {
+        String ab = "homes/a_b/x.saikudash";
+        String abx = "homes/a/b/x.saikudash";
+        ds.dashboards.clear();
+        ds.dashboards.add(ab);
+        String legacy = DashboardSidecars.legacyPath(CommentService.KIND, ab);
+        ds.internal.put(legacy, "{\"id\":\"old\",\"body\":\"pre-upgrade\",\"tile\":\"t1\",\"author\":\"admin\",\"created\":0,\"mentions\":[]}\n");
+
+        // Only a_b exists: the file is unambiguous and goes with its dashboard.
+        svc.purge(ab);
+        assertNull("legacy file removed when no other dashboard flattens to the name", ds.internal.get(legacy));
+
+        // User a recreates the collision path; it must read nothing.
+        ds.dashboards.clear();
+        ds.dashboards.add(abx);
+        assertEquals("a/b/x must not inherit a_b/x's pre-upgrade comments", 0, svc.list(abx, "t1").size());
+    }
+
+    /** While both colliding dashboards exist, deleting ONE of them keeps the
+     *  ambiguous legacy file for operator recovery. */
+    @Test
+    public void purge_keeps_an_ambiguous_legacy_file_when_another_dashboard_still_shares_the_flattened_name() {
+        String ab = "homes/a_b/x.saikudash";
+        String abx = "homes/a/b/x.saikudash";
+        ds.dashboards.clear();
+        ds.dashboards.add(ab);
+        ds.dashboards.add(abx);
+        String legacy = DashboardSidecars.legacyPath(CommentService.KIND, ab);
+        ds.internal.put(legacy, "{\"id\":\"old\",\"body\":\"pre-upgrade\",\"tile\":\"t1\",\"author\":\"admin\",\"created\":0,\"mentions\":[]}\n");
+
+        svc.purge(ab);
+        assertNotNull("ambiguous legacy file kept while another dashboard shares the flattened name", ds.internal.get(legacy));
     }
 
     @Test

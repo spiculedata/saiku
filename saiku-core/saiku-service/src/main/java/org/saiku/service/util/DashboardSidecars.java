@@ -68,9 +68,43 @@ public final class DashboardSidecars {
         datasourceService.saveInternalFile(path(kind, dashboardPath), content, null);
     }
 
-    /** Delete only this dashboard's unambiguous v2 sidecar. */
+    /**
+     * Delete this dashboard's sidecar data when the dashboard itself is deleted:
+     * the v2 file always, and the legacy file too when no remaining dashboard
+     * flattens to the same legacy name (saiku#2550d review). Deleting a dashboard
+     * used to leave the legacy file behind permanently, and the read fallback
+     * would then hand its pre-upgrade comments/history to the NEXT dashboard
+     * whose path flattens to the same name. If another existing dashboard still
+     * shares the flattened name the file is ambiguous and is kept for operator
+     * recovery — deleting it could destroy another dashboard's pre-upgrade data.
+     */
     public static void purge(DatasourceService datasourceService, String kind, String dashboardPath) {
         datasourceService.removeInternalFile(path(kind, dashboardPath));
+        if (legacyFileOwnedByAnotherDashboard(datasourceService, kind, dashboardPath)) {
+            log.warn(
+                    "Ambiguous legacy sidecar {} kept on purge; another dashboard shares the flattened name",
+                    legacyPath(kind, dashboardPath));
+            return;
+        }
+        datasourceService.removeInternalFile(legacyPath(kind, dashboardPath));
+    }
+
+    /** True when some OTHER existing dashboard flattens to this dashboard's legacy
+     *  name (or when the enumeration is unavailable — fail closed and keep the
+     *  file). The dashboard being purged is already deleted from the repository,
+     *  so every remaining match is another dashboard. */
+    private static boolean legacyFileOwnedByAnotherDashboard(
+            DatasourceService datasourceService, String kind, String dashboardPath) {
+        List<IRepositoryObject> dashboards;
+        try {
+            dashboards = datasourceService.getFiles(List.of("saikudash"), "admin", List.of("ROLE_ADMIN"));
+        } catch (RuntimeException e) {
+            log.warn("Cannot enumerate dashboards for legacy sidecar purge", e);
+            return true;
+        }
+        if (dashboards == null) return true;
+        String flattened = legacyPath(kind, normaliseRepositoryPath(dashboardPath));
+        return countMatchingPaths(dashboards, flattened, null) > 0;
     }
 
     private static boolean soleLegacyOwner(DatasourceService datasourceService, String dashboardPath) {
@@ -99,7 +133,10 @@ public final class DashboardSidecars {
             } else if (object instanceof RepositoryFileObject file) {
                 String path = normaliseRepositoryPath(file.getPath());
                 if (legacyPath("owner", path).equals(flattened)) {
-                    if (!path.equals(requested)) return 2;
+                    // requested == null (purge) counts every match, including a
+                    // self-match: the purged dashboard no longer exists, so any
+                    // remaining match is another dashboard re-adopting the file.
+                    if (requested != null && !path.equals(requested)) return 2;
                     matches++;
                 }
             }
