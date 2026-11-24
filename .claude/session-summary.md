@@ -222,3 +222,8 @@ the tree first.
 **Was doing:** made `SqlCaptureProbe` share one raise/restore of the planner logger levels across overlapping probes (first open records and raises, last close restores), with a cleaner releasing a probe that is never closed. Added overlap tests for both close orders and for a logger that only an ancestor configures.
 **Now:** opening fails closed on any `Throwable` (raise, attach, logger update, cleaner registration), and closing restores in a `finally`. Fault-injection tests cover each path, and reflection tests keep the appender and release action static with no path back to the probe, which the cleaner depends on. A logger whose restore fails is retried at the next cycle with its recorded level.
 **Watch out:** an open PR also edits this class's event filter; this change only touches the level lifecycle and the appender's fields.
+
+## 2026-11-24 — fix/2543-oauth-audience-role-mapping — acceptance proof for PR #2574
+**Was doing:** added `acceptance/2543` to prove the OAuth audience, explicit role mapping, and session-context requirements that the existing PR implements. The command spec passes on the PR head and fails on the current development base; there is no merge conflict.
+**Now:** check CI after the push. Local focused Maven tests stopped before compilation because GitHub Packages returned 401 for private Mondrian and olap4j artifacts.
+**Refs:** #2543, #2574
