@@ -104,7 +104,13 @@ public class RestBodySizeFilter implements Filter {
     static final long MIN_BODY_BYTES = 64L * 1024;
     static final long MAX_BODY_BYTES = 1024L * 1024 * 1024;
     static final long MIN_SESSION_BODY_BYTES = 1024;
-    static final long MAX_SESSION_BODY_BYTES = 16L * 1024 * 1024;
+    /**
+     * saiku#2535 (second review): the login ceiling is 64 KiB, not 16 MiB — the
+     * session cap exists to shrink the PRE-AUTH attack surface, so an operator
+     * raising it by a factor of 256 defeats the route's purpose. {@code docs/
+     * operator-hardening.md} documents the override key with this ceiling.
+     */
+    static final long MAX_SESSION_BODY_BYTES = 64L * 1024;
 
     // --------------------------------------------------------------- routes
 
@@ -119,7 +125,10 @@ public class RestBodySizeFilter implements Filter {
      * upload, admin model diff (two 8 MB sides), email self-send (48 MB JSON)
      * and the SVG chart export (20 MB server-side cap).
      */
-    private static final String[] UPLOAD_PATH_PREFIXES = {
+    /** Package-visible so the drift-guard test can iterate the real array
+     *  (review of PR #2566): a hard-coded copy in the test would let a future
+     *  wrong prefix slide through. */
+    static final String[] UPLOAD_PATH_PREFIXES = {
         "/rest/saiku/api/repository/zipupload",
         "/rest/saiku/api/dashboards/image/upload",
         "/rest/saiku/api/ossie/import",

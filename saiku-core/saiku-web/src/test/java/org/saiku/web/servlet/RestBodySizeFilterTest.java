@@ -93,18 +93,41 @@ public class RestBodySizeFilterTest {
         // the filter's prefix to the resource file and the @Path fragments that
         // concatenate to it (Jersey is mounted at /rest).
         String[][] expectations = {
-            {"/rest/saiku/api/repository/zipupload", "BasicRepositoryResource2.java",
-             "@Path(\"/saiku/api/repository\")", "@Path(\"/zipupload\")"},
-            {"/rest/saiku/api/dashboards/image/upload", "DashboardImageResource.java",
-             "@Path(\"/saiku/api/dashboards/image\")", "@Path(\"/upload\")"},
-            {"/rest/saiku/api/ossie/import", "OssieImportResource.java",
-             "@Path(\"/saiku/api/ossie/import\")"},
-            {"/rest/saiku/admin/quickstart/upload", "QuickstartResource.java",
-             "@Path(\"/saiku/admin/quickstart\")", "@Path(\"/upload\")"},
-            {"/rest/saiku/admin/model/diff", "ModelDiffResource.java",
-             "@Path(\"/saiku/admin/model\")", "@Path(\"/diff\")"},
-            {"/rest/saiku/api/email/self", "EmailResource.java",
-             "@Path(\"/saiku/api/email\")", "@Path(\"/self\")"}
+            new String[] {
+                "/rest/saiku/api/repository/zipupload",
+                "BasicRepositoryResource2.java",
+                "@Path(\"/saiku/api/repository\")",
+                "@Path(\"/zipupload\")"
+            },
+            new String[] {
+                "/rest/saiku/api/dashboards/image/upload",
+                "DashboardImageResource.java",
+                "@Path(\"/saiku/api/dashboards/image\")",
+                "@Path(\"/upload\")"
+            },
+            new String[] {
+                "/rest/saiku/api/ossie/import",
+                "OssieImportResource.java",
+                "@Path(\"/saiku/api/ossie/import\")"
+            },
+            new String[] {
+                "/rest/saiku/admin/quickstart/upload",
+                "QuickstartResource.java",
+                "@Path(\"/saiku/admin/quickstart\")",
+                "@Path(\"/upload\")"
+            },
+            new String[] {
+                "/rest/saiku/admin/model/diff",
+                "ModelDiffResource.java",
+                "@Path(\"/saiku/admin/model\")",
+                "@Path(\"/diff\")"
+            },
+            new String[] {
+                "/rest/saiku/api/email/self",
+                "EmailResource.java",
+                "@Path(\"/saiku/api/email\")",
+                "@Path(\"/self\")"
+            }
         };
         for (String[] expectation : expectations) {
             String source = readMainSource(expectation[1]);
@@ -113,6 +136,18 @@ public class RestBodySizeFilterTest {
                         expectation[1] + " must declare " + expectation[i] + " (route " + expectation[0] + ")",
                         source.contains(expectation[i]));
             }
+        }
+        // saiku#2535 (second review): the guard iterates the filter's REAL
+        // prefix array, so a newly added untested prefix fails the test.
+        for (String prefix : RestBodySizeFilter.UPLOAD_PATH_PREFIXES) {
+            boolean declared = false;
+            for (String[] expectation : expectations) {
+                if (expectation[0].equals(prefix)) {
+                    declared = true;
+                    break;
+                }
+            }
+            assertTrue("UPLOAD_PATH_PREFIXES entry " + prefix + " has no drift-guard expectation", declared);
         }
     }
 
@@ -131,12 +166,24 @@ public class RestBodySizeFilterTest {
     public void encodedSessionSpelling_stillGetsTheSmallCap() {
         // Jetty decodes %73 to 's' for servlet matching; the filter must classify
         // the route from the decoded servlet path, not the raw request URI.
-        MockHttpServletRequest req = new MockHttpServletRequest("POST", "/rest/saiku/session");
-        req.setServletPath("/rest/saiku/session");
-        req.setContextPath("");
+        // saiku#2535 (second review): the mock must carry the Jetty shape — a
+        // percent-encoded requestURI plus the DECODED servlet path — or the test
+        // would also pass with the old getRequestURI() code.
+        MockHttpServletRequest encoded = new MockHttpServletRequest("POST", "/rest/saiku/%73ession");
+        encoded.setContextPath("");
+        encoded.setServletPath("/rest");
+        encoded.setPathInfo("/saiku/session");
         assertEquals(
                 RestBodySizeFilter.DEFAULT_SESSION_MAX_BODY_BYTES,
-                RestBodySizeFilter.capFor(RestBodySizeFilter.pathWithinApp(req), NO_CONFIG));
+                RestBodySizeFilter.capFor(RestBodySizeFilter.pathWithinApp(encoded), NO_CONFIG));
+
+        MockHttpServletRequest pathParam = new MockHttpServletRequest("POST", "/rest/saiku/session;x=y");
+        pathParam.setContextPath("");
+        pathParam.setServletPath("/rest");
+        pathParam.setPathInfo("/saiku/session");
+        assertEquals(
+                RestBodySizeFilter.DEFAULT_SESSION_MAX_BODY_BYTES,
+                RestBodySizeFilter.capFor(RestBodySizeFilter.pathWithinApp(pathParam), NO_CONFIG));
     }
 
     @Test
@@ -169,9 +216,10 @@ public class RestBodySizeFilterTest {
 
     @Test
     public void configuredValue_winsThenClamps() {
-        // A lower value is honoured (session, 1 MiB, under its 16 MiB ceiling).
-        assertEquals(1024L * 1024, RestBodySizeFilter.capFor(SESSION, key -> "1048576"));
-        // Above the ceiling: clamped down.
+        // A lower value is honoured (session, 16 KiB, under its 64 KiB ceiling).
+        assertEquals(16L * 1024, RestBodySizeFilter.capFor(SESSION, key -> "16384"));
+        // Above the session ceiling: clamped down to 64 KiB.
+        assertEquals(RestBodySizeFilter.MAX_SESSION_BODY_BYTES, RestBodySizeFilter.capFor(SESSION, key -> "999999999"));
         assertEquals(RestBodySizeFilter.MAX_BODY_BYTES, RestBodySizeFilter.capFor(NORMAL, key -> "999999999999"));
         // Below the floor: clamped up.
         assertEquals(RestBodySizeFilter.MIN_BODY_BYTES, RestBodySizeFilter.capFor(NORMAL, key -> "10"));

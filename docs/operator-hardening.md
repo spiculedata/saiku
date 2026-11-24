@@ -387,7 +387,7 @@ be disabled by a bad config.
 | Property (env) | Default | Meaning |
 |---|---|---|
 | `saiku.http.maxBodyBytes` (`SAIKU_HTTP_MAX_BODY_BYTES`) | `10485760` (10 MiB) | Ceiling on every `/rest/*` request body. Refused with `413`. Floor 64 KiB, ceiling 1 GiB. |
-| `saiku.http.sessionMaxBodyBytes` (`SAIKU_HTTP_SESSION_MAX_BODY_BYTES`) | `16384` (16 KiB) | Ceiling on the pre-authentication login body (`/rest/saiku/session`). Floor 1 KiB, ceiling 16 MiB. |
+| `saiku.http.sessionMaxBodyBytes` (`SAIKU_HTTP_SESSION_MAX_BODY_BYTES`) | `16384` (16 KiB) | Ceiling on the pre-authentication login body (`/rest/saiku/session`). Floor 1 KiB, ceiling 64 KiB. |
 | `saiku.http.uploadMaxBodyBytes` (`SAIKU_HTTP_UPLOAD_MAX_BODY_BYTES`) | `52428800` (50 MiB) | Ceiling on the documented upload routes — zip upload, dashboard image upload, Ossie vendor-model import, quickstart upload, admin model diff, email self-send and the SVG chart export — matching the Jersey servlet's 50 MB `multipart-config`. Floor 64 KiB, ceiling 1 GiB. |
 | `saiku.repo.maxObjectBytes` | `10485760` (10 MiB) | One repository object written through the save-file path (`POST /saiku/api/repository/resource` answers `413`; the manager backstop refuses larger zip-upload entries and image assets). Floor 64 KiB, ceiling 512 MiB. |
 | `saiku.history.maxEntryBytes` | `4194304` (4 MiB) | One archived dashboard version. An oversized version is **not archived** (logged) and the save itself still succeeds, so the history JSONL file cannot grow without bound. Floor 1 KiB, ceiling 512 MiB. |
