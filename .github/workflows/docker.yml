@@ -133,7 +133,14 @@ jobs:
         with:
           distribution: temurin
           java-version: "22"
-          cache: maven
+          # saiku#2530: a dispatch with `pr` executes PR content ON the
+          # default-branch ref, so its runs read AND save the default-branch
+          # cache scope — and Maven does not re-verify artifacts already in
+          # ~/.m2. PR builds therefore run with no Maven cache at all; normal
+          # runs (push / pull_request / plain dispatch) keep it. This job holds
+          # only `contents: read`, so the gate is accident-prevention, not a
+          # security boundary — the privileged push job restores nothing at all.
+          cache: ${{ needs.target.outputs.pr == '' && 'maven' || '' }}
 
       # Same multi-server settings.xml as ci.yml / release.yml — the
       # build needs to pull mondrian, olap4j, olap4j-xmlaserver, and
@@ -315,8 +322,19 @@ jobs:
           # buildx cache via GitHub's built-in Action cache, so iterative
           # pushes only rebuild the changed layer (mostly the COPY of
           # the freshly-built JARs).
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # saiku#2530: no `cache-from` AT ALL — not even a gated expression. This
+          # job holds `packages: write` + `id-token: write` and publishes and signs
+          # the rolling development image; a PR-targeted dispatch (which executes PR
+          # content ON the default-branch ref) could write layers into the
+          # default-branch BuildKit cache scope, and expression-gating the restore is
+          # not a boundary against malicious PR code (the run can save any key it
+          # likes via the cache API). A privileged job therefore restores nothing.
+          # Pushes are frequent; a cold layer build is the accepted trade.
+          cache-from: ''
+          # saiku#2530: the SAVE side stays PR-gated — a PR build must not write its
+          # layers into the default-branch scope (build-push-action treats '' as no
+          # cache destination).
+          cache-to: ${{ needs.target.outputs.pr == '' && 'type=gha,mode=max' || '' }}
           # saiku#1990 + #1992: the rolling development image is the primary
           # image push on `development`, so it carries the same SBOM + SLSA
           # provenance attestations as the released image. This is where the

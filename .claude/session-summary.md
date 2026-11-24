@@ -75,6 +75,17 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-11-24 — feature/2524-unauth-401-no-session — PR #2560 formatting rework
+**Was doing:** matched the two launcher test files to Spotless's CI diff; the prior CI run passed both affected test classes but failed at formatting.
+**Now:** check PR #2560 CI for the rework commit; local Java and Maven are unavailable in this workspace.
+**Refs:** #2524, PR #2560
+
+## 2026-11-24 — feature/2526-ossie-role-bypass — PR #2552 review rework
+**Was doing:** fixed the unqualified-filter physical-column collision, typed sort/fact validation, and consistent query-door error bodies on the existing PR branch.
+**Now:** check PR #2552 CI after the push; its JDK 22 build must verify Java compilation and tests.
+**Watch out:** local focused Maven tests stop before compilation because private GitHub Packages dependencies return 401; Spotless and acceptance checks pass.
+**Refs:** #2526, PR #2552
+
 ## 2026-11-24 — fix/2544-csv-header-quote-escape — PR #2573 acceptance gate rework
 **Was doing:** added the missing executable acceptance spec for the CSV header quote-escaping fix; the PR branch merges cleanly with development.
 **Now:** check PR #2573 CI on the pushed commit, especially the acceptance convention and red-on-base proof.
@@ -228,6 +239,12 @@ the tree first.
 **Was doing:** made `SqlCaptureProbe` share one raise/restore of the planner logger levels across overlapping probes (first open records and raises, last close restores), with a cleaner releasing a probe that is never closed. Added overlap tests for both close orders and for a logger that only an ancestor configures.
 **Now:** opening fails closed on any `Throwable` (raise, attach, logger update, cleaner registration), and closing restores in a `finally`. Fault-injection tests cover each path, and reflection tests keep the appender and release action static with no path back to the probe, which the cleaner depends on. A logger whose restore fails is retried at the next cycle with its recorded level.
 **Watch out:** an open PR also edits this class's event filter; this change only touches the level lifecycle and the appender's fields.
+
+## 2026-11-24 — feature/2526-ossie-role-bypass — PR #2552 CI rework
+**Was doing:** traced the failing acceptance job to spec #2442, which rejected the new `saiku-service` test floor of 595 solely because its regex accepted floors in the 580s. Updated the spec to parse the floor as a number and require at least 582.
+**Now:** check PR #2552 CI after the push. Acceptance specs #2442 and #2526, all 53 acceptance runner tests, and a lower-floor rejection check passed locally.
+**Watch out:** this workspace has no Java or Maven executable, so the Java build and tests need CI verification.
+**Refs:** #2442, #2526, #2552
 
 ## 2026-11-24 — fix/2543-oauth-audience-role-mapping — acceptance proof for PR #2574
 **Was doing:** added `acceptance/2543` to prove the OAuth audience, explicit role mapping, and session-context requirements that the existing PR implements. The command spec passes on the PR head and fails on the current development base; there is no merge conflict.
