@@ -234,7 +234,7 @@ public class McpResource {
             // audit trail must not do. Map the status to the outcome it really
             // is: 400/422 are the caller's fault, 403 is a denial, 404/5xx are
             // server-side errors. The error token is the bare status; the body
-            // is not echoed into the log or the RPC envelope.
+            // is not echoed into the log.
             String outcome;
             String decision = AiAuditEntry.DECISION_ALLOW;
             if (e.status == 400 || e.status == 422) {
@@ -246,8 +246,21 @@ public class McpResource {
                 outcome = AiAuditEntry.OUTCOME_ERROR;
             }
             auditToolCall(name, targetCube, targetModel, latencyMs(auditStart), outcome, decision, "http_" + e.status);
-            int rpcCode = (e.status == 400 || e.status == 422) ? RPC_INVALID_PARAMS : RPC_INTERNAL_ERROR;
-            return rpcError(idNode, rpcCode, "tool call failed with HTTP " + e.status, sessionId);
+            // saiku#2540 (second review): the VALIDATION_ERROR body IS the agent
+            // self-correction contract (field + available list) — the spec's
+            // error-mapping table says a 400 and a 404 come back as TOOL
+            // RESULTS (with isError:true), not MCP errors; only 401/403 and 5xx
+            // surface as RPC errors. Dropping the body broke every client that
+            // retries a misspelled measure from the 'available' list.
+            boolean toolResult = (e.status == 400 || e.status == 422 || e.status == 404);
+            if (toolResult && e.body != null) {
+                ObjectNode result = wrapToolResult(e.body);
+                result.put("isError", true);
+                return rpcResult(idNode, result, sessionId);
+            }
+            // 401/403 and 5xx stay RPC errors (the spec's "infrastructure failures
+            // are operator concerns" rule).
+            return rpcError(idNode, RPC_INTERNAL_ERROR, "tool call failed with HTTP " + e.status, sessionId);
         } catch (UnknownToolException e) {
             auditToolCall(
                     name,

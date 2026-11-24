@@ -359,10 +359,15 @@ public class McpResourceTest {
         args.put("cube", "foodmart/FoodMart/FoodMart/Sales");
         Response resp = resource.handle(rpc("tools/call", 11, callParams("run_query", args)), sid);
         JsonNode body = MAPPER.valueToTree(resp.getEntity());
+        // saiku#2540 (second review): the VALIDATION_ERROR body is the
+        // self-correction contract — a 400 comes back as a TOOL RESULT with
+        // isError:true carrying field/available, never a bare -32602.
+        assertEquals("a 400 is a 200 tool error, not an RPC error", 200, resp.getStatus());
+        assertTrue("isError marks the tool failure", body.path("result").path("isError").asBoolean(false));
         assertEquals(
-                "the failure surfaces as an RPC error, not a success result",
-                -32602,
-                body.path("error").path("code").asInt());
+                "the VALIDATION_ERROR envelope reaches the agent",
+                "validation failed",
+                body.path("result").path("structuredContent").path("error").asText());
 
         List<AiAuditEntry> entries = auditLog.recent(10, 0, null, null);
         assertEquals(1, entries.size());
@@ -389,7 +394,13 @@ public class McpResourceTest {
         args.put("queryId", "someone-elses-query");
         Response resp = resource.handle(rpc("tools/call", 12, callParams("drillthrough", args)), sid);
         JsonNode body = MAPPER.valueToTree(resp.getEntity());
-        assertEquals(-32603, body.path("error").path("code").asInt());
+        // saiku#2540 (second review): per the spec table a 404 (unknown queryId)
+        // is a TOOL RESULT the agent can act on, not a -32603 RPC error.
+        assertEquals("a 404 is a 200 tool error", 200, resp.getStatus());
+        assertTrue("isError marks the tool failure", body.path("result").path("isError").asBoolean(false));
+        assertEquals(
+                "unknown queryId",
+                body.path("result").path("structuredContent").path("error").asText());
 
         List<AiAuditEntry> entries = auditLog.recent(10, 0, null, null);
         assertEquals(1, entries.size());
@@ -737,7 +748,10 @@ public class McpResourceTest {
             executeFormat.set(format);
             // Defensive copy of the underlying entity to make sure the
             // resource isn't mutating its return value in flight — if it
-            // does, the assertions above catch it.
+            // does, the assertions above catch it. The stub must PRESERVE the
+            // stubbed status: a non-2xx is the whole point of the error-mapping
+            // tests (review of PR #2563 — Response.ok(entity) dropped the 400
+            // and the failure never reached unwrap).
             Response orig = executeResponse;
             assertNotSame(orig, null);
             Object entity = orig.getEntity();
@@ -746,9 +760,9 @@ public class McpResourceTest {
                 AiQueryResponse copy = new AiQueryResponse();
                 copy.setQueryId(src.getQueryId());
                 copy.setStatus(src.getStatus());
-                return Response.ok(copy).build();
+                return Response.status(orig.getStatus()).entity(copy).build();
             }
-            return Response.ok(entity).build();
+            return Response.status(orig.getStatus()).entity(entity).build();
         }
     }
 }
