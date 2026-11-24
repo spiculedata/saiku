@@ -5,6 +5,18 @@ All notable changes to Saiku are documented here. This project follows
 
 ## Unreleased
 
+### Fixed
+
+- **MCP tool calls are recorded in the AI audit log (saiku#2540).**
+  Every `tools/call` now writes one `ai-audit.jsonl` entry carrying the user,
+  tool name, target cube or Ossie model, policy decision and outcome —
+  including `SAIKU_AI_POLICY` denials, which the MCP endpoint returns as 200
+  tool errors the `/ai/` filter could never see. The three admin endpoints
+  that invoke AI machinery in-process (`/saiku/admin/cube-designer/turn`,
+  `/saiku/admin/ai-evals/run`, `/saiku/admin/ossie-generate`) are audited too,
+  and REST AI entries now carry the cube (`/ai/query`, `/ai/schema/{cube}`,
+  `/ai/members/search`, ...) or model (`/ai/ossie/query`,
+  `/ai/ossie/schema/{connection}/{model}`, ...).
 ### Security
 
 - **Credentials redacted from connection error logs (saiku#2547, CWE-532).**
@@ -14,8 +26,8 @@ All notable changes to Saiku are documented here. This project follows
   (`JdbcUser=`/`JdbcPassword=`), and for other datasources the stored warehouse
   password. Anyone who could read `saiku.log` (a log shipper,
   `GET /rest/saiku/admin/log/{logname}`) saw them. A new
-  `ConnectStringRedactor` masks `JdbcPassword=`/`password=` values and URL
-  user-info passwords with `***` — and is applied to the whole logged cause
+  `ConnectStringRedactor` masks password-bearing connect-string fields and URL
+  passwords with `***` — and is applied to the whole logged cause
   chain in the connection managers, to the admin datasource
   create/update/refresh error responses, and to the discover refresh logs.
   The log still names the datasource, the JDBC URL, the login name and the
@@ -36,6 +48,23 @@ All notable changes to Saiku are documented here. This project follows
   an external host. Exported tables that relied on non-`http(s)` image/link
   properties, or on external image hosts, need the operator to allow those
   sources explicitly.
+
+### Fixed
+
+- **The generated Spring `/login` endpoint is gone (saiku#2523).** The main
+  security chain no longer declares `auto-config`, which silently registered
+  Spring's form login: a `GET`/`POST /login` second login path outside the
+  rate limiter, CSRF and the demo email gate (a locked-out account could still
+  sign in there, and the `302` destination was an unlimited password oracle).
+  The one login is `POST /rest/saiku/session`, plus HTTP Basic for stateless
+  clients and XMLA; `GET`/`POST /login` is now answered by the terminal
+  catch-all (`401`, fail-closed, no session).
+- **Login failures count once (saiku#2523).** A wrong password at
+  `POST /rest/saiku/session` was recorded twice — once by the resource and once
+  by `SpringSecurityAuditListener` from the same authentication-failure event —
+  so the lockout tripped after three wrong passwords instead of the documented
+  five. `SessionResource` now marks its requests and is the single recorder for
+  that path; the listener keeps recording the HTTP-Basic / filter-chain path.
 
 ## 4.9.1 — 2026-11-23
 

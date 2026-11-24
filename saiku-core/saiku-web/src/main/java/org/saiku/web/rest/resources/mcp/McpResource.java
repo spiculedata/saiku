@@ -21,6 +21,8 @@ import jakarta.ws.rs.core.Response;
 import org.saiku.service.olap.ai.AiQueryRequest;
 import org.saiku.service.olap.ai.AiSchemaConverter;
 import org.saiku.service.olap.ai.OlapAiCubeMetadataService;
+import org.saiku.service.olap.ai.audit.AiAuditEntry;
+import org.saiku.service.olap.ai.audit.AiAuditLog;
 import org.saiku.web.rest.resources.AiQueryResource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -48,6 +50,12 @@ import org.slf4j.LoggerFactory;
  * <p>The auth chain configured in {@code applicationContext-saiku.xml}
  * rejects unauthenticated requests with 401 before they reach this method,
  * so {@code initialize} requires credentials too — no anonymous handshake.
+ *
+ * <p>saiku#2542: sessions are bound to their creating principal. A session id
+ * presented by a different user (or an unknown/expired one) answers HTTP 404
+ * — the status the streamable-http spec names for an invalid session — rather
+ * than a JSON-RPC error over 200, and a foreign {@code DELETE} cannot destroy
+ * someone else's session.
  */
 @Path("/saiku/api/mcp")
 public class McpResource {
@@ -57,6 +65,13 @@ public class McpResource {
             new ObjectMapper().setSerializationInclusion(JsonInclude.Include.NON_NULL);
     private static final String SERVER_NAME = "saiku";
     private static final String MCP_PROTOCOL_VERSION = "2025-03-26";
+    /**
+     * Protocol versions this server is willing to negotiate (saiku#2542). Anything else —
+     * including an oversized or hostile string — is clamped to {@link #MCP_PROTOCOL_VERSION} in
+     * the response instead of being stored or echoed verbatim.
+     */
+    private static final java.util.Set<String> SUPPORTED_PROTOCOL_VERSIONS = java.util.Set.of(MCP_PROTOCOL_VERSION);
+
     private static final String SESSION_HEADER = "Mcp-Session-Id";
     /** JSON-RPC 2.0 error codes (spec §5.1). */
     private static final int RPC_INVALID_REQUEST = -32600;
@@ -68,6 +83,12 @@ public class McpResource {
     private AiQueryResource aiQueryResource;
     private org.saiku.web.rest.resources.AiOssieResource aiOssieResource;
     private McpSessionStore sessionStore;
+    /** saiku#2540 — MCP tools/calls call the AI resources in-process, so the
+     *  /ai/ AiAuditFilter never sees them; the resource writes its own audit
+     *  entries. Null-safe in tests (no entry is written when unwired). */
+    private AiAuditLog auditLog;
+    /** Supplies the active policy tier recorded on each MCP entry. */
+    private org.saiku.service.olap.ai.AiPolicyGuard aiPolicyGuard;
 
     public void setAiQueryResource(AiQueryResource r) {
         this.aiQueryResource = r;
@@ -79,6 +100,14 @@ public class McpResource {
 
     public void setSessionStore(McpSessionStore s) {
         this.sessionStore = s;
+    }
+
+    public void setAuditLog(AiAuditLog auditLog) {
+        this.auditLog = auditLog;
+    }
+
+    public void setAiPolicyGuard(org.saiku.service.olap.ai.AiPolicyGuard g) {
+        this.aiPolicyGuard = g;
     }
 
     /**
@@ -125,7 +154,15 @@ public class McpResource {
                     return rpcError(idNode, RPC_METHOD_NOT_FOUND, "Method not found: " + method, sessionId);
             }
         } catch (SessionRequiredException e) {
+            // A MISSING session header keeps the structured JSON-RPC error (the client has no id
+            // at all yet). A PRESENT but invalid id is a transport-level 404 — the status the
+            // streamable-http spec names for an invalid Mcp-Session-Id.
             return rpcError(idNode, RPC_INVALID_REQUEST, e.getMessage(), null);
+        } catch (InvalidSessionException e) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity(java.util.Map.of("error", "unknown, expired or foreign session id"))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
         } catch (RuntimeException e) {
             // saiku#1920: the message can carry SQL, JDBC URLs or RLS predicates and an MCP host
             // feeds it to the model. Log it with a ref; return only the ref.
@@ -138,24 +175,30 @@ public class McpResource {
     /**
      * Optional explicit session teardown. Streamable-http hosts MAY send a
      * DELETE with the {@code Mcp-Session-Id} header to drop server state
-     * when the client process exits cleanly. No-op if the id is unknown.
+     * when the client process exits cleanly. Only the session's owner can
+     * drop it (saiku#2542); a foreign or unknown id is answered with the same
+     * silent 204 so a caller learns nothing about which ids exist.
      */
     @DELETE
     public Response deleteSession(@HeaderParam(SESSION_HEADER) String sessionId) {
-        if (sessionId != null && sessionStore != null) sessionStore.drop(sessionId);
+        if (sessionId != null && sessionStore != null) {
+            sessionStore.drop(sessionId, currentPrincipal());
+        }
         return Response.noContent().build();
     }
 
     /* --------------------------- method handlers --------------------------- */
 
     private Response handleInitialize(JsonNode idNode, JsonNode params) {
-        // We ignore the client's protocolVersion negotiation for now — both
-        // sides settle on what the server advertises. The wider MCP spec
-        // permits this; Claude Desktop / mcp-inspector tolerate it.
+        // saiku#2542: negotiate only against the versions this server actually implements.
+        // The client's string is never stored or echoed verbatim, so an arbitrary (or
+        // 300,000-character) protocolVersion cannot be parked per session or bounced back.
         String clientProtocol = params != null ? textOrNull(params.get("protocolVersion")) : null;
-        String negotiated = clientProtocol != null ? clientProtocol : MCP_PROTOCOL_VERSION;
+        String negotiated = clientProtocol != null && SUPPORTED_PROTOCOL_VERSIONS.contains(clientProtocol)
+                ? clientProtocol
+                : MCP_PROTOCOL_VERSION;
 
-        String newSessionId = sessionStore != null ? sessionStore.create(negotiated) : "";
+        String newSessionId = sessionStore != null ? sessionStore.create(negotiated, currentPrincipal()) : "";
         ObjectNode result = MAPPER.createObjectNode();
         result.put("protocolVersion", negotiated);
         ObjectNode capabilities = result.putObject("capabilities");
@@ -169,29 +212,270 @@ public class McpResource {
 
     private Response handleToolsCall(JsonNode idNode, JsonNode params, String sessionId) {
         if (params == null || !params.isObject()) {
+            auditToolCall(
+                    null,
+                    null,
+                    null,
+                    null,
+                    AiAuditEntry.OUTCOME_VALIDATION_ERROR,
+                    AiAuditEntry.DECISION_ALLOW,
+                    "invalid_params");
             return rpcError(
                     idNode, RPC_INVALID_PARAMS, "tools/call requires params.name + params.arguments", sessionId);
         }
         String name = textOrNull(params.get("name"));
         if (name == null) {
+            auditToolCall(
+                    null,
+                    null,
+                    null,
+                    null,
+                    AiAuditEntry.OUTCOME_VALIDATION_ERROR,
+                    AiAuditEntry.DECISION_ALLOW,
+                    "missing_tool_name");
             return rpcError(idNode, RPC_INVALID_PARAMS, "tools/call requires params.name", sessionId);
         }
         JsonNode args = params.get("arguments");
         if (args == null) args = MAPPER.createObjectNode();
+        // saiku#2540: resolve the audit target up front — the raw arguments
+        // are what name the cube / model, and the audit entry must carry it
+        // even when the call fails before dispatch resolves anything.
+        String targetCube = targetCube(name, args);
+        String targetModel = targetModel(name, args);
+        long auditStart = System.nanoTime();
         try {
             JsonNode body = dispatchTool(name, args);
+            auditToolCall(
+                    name,
+                    targetCube,
+                    targetModel,
+                    latencyMs(auditStart),
+                    AiAuditEntry.OUTCOME_SUCCESS,
+                    AiAuditEntry.DECISION_ALLOW,
+                    null);
             return rpcResult(idNode, wrapToolResult(body), sessionId);
+        } catch (ToolHttpError e) {
+            // saiku#2540 (review): most in-process AI failures return a non-2xx
+            // Response instead of throwing — without this branch every one of
+            // them was audited as allow + success, which is exactly what an
+            // audit trail must not do. Map the status to the outcome it really
+            // is: 400/422 are the caller's fault, 403 is a denial, 404/5xx are
+            // server-side errors. The error token is the bare status; the body
+            // is not echoed into the log.
+            String outcome;
+            String decision = AiAuditEntry.DECISION_ALLOW;
+            if (e.status == 400 || e.status == 422) {
+                outcome = AiAuditEntry.OUTCOME_VALIDATION_ERROR;
+            } else if (e.status == 403) {
+                outcome = AiAuditEntry.OUTCOME_DENIED;
+                decision = AiAuditEntry.DECISION_DENY;
+            } else {
+                outcome = AiAuditEntry.OUTCOME_ERROR;
+            }
+            auditToolCall(name, targetCube, targetModel, latencyMs(auditStart), outcome, decision, "http_" + e.status);
+            // saiku#2540 (second review): the VALIDATION_ERROR body IS the agent
+            // self-correction contract (field + available list) — the spec's
+            // error-mapping table says a 400 and a 404 come back as TOOL
+            // RESULTS (with isError:true), not MCP errors; only 401/403 and 5xx
+            // surface as RPC errors. Dropping the body broke every client that
+            // retries a misspelled measure from the 'available' list.
+            boolean toolResult = (e.status == 400 || e.status == 422 || e.status == 404);
+            if (toolResult && e.body != null) {
+                ObjectNode result = wrapToolResult(e.body);
+                result.put("isError", true);
+                return rpcResult(idNode, result, sessionId);
+            }
+            // 401/403 and 5xx stay RPC errors (the spec's "infrastructure failures
+            // are operator concerns" rule).
+            return rpcError(idNode, RPC_INTERNAL_ERROR, "tool call failed with HTTP " + e.status, sessionId);
         } catch (UnknownToolException e) {
+            auditToolCall(
+                    name,
+                    targetCube,
+                    targetModel,
+                    latencyMs(auditStart),
+                    AiAuditEntry.OUTCOME_ERROR,
+                    AiAuditEntry.DECISION_ALLOW,
+                    "unknown_tool");
             return rpcError(idNode, RPC_METHOD_NOT_FOUND, e.getMessage(), sessionId);
         } catch (InvalidArgsException e) {
+            auditToolCall(
+                    name,
+                    targetCube,
+                    targetModel,
+                    latencyMs(auditStart),
+                    AiAuditEntry.OUTCOME_VALIDATION_ERROR,
+                    AiAuditEntry.DECISION_ALLOW,
+                    "invalid_arguments");
             return rpcError(idNode, RPC_INVALID_PARAMS, e.getMessage(), sessionId);
         } catch (org.saiku.service.olap.ai.AiPolicyViolation e) {
             // saiku#2322: an operator's SAIKU_AI_POLICY denial is not an internal error — it is a
             // tool-level failure the host agent must see as such. MCP models this as a tool
             // result with isError:true (not a -32603 RPC error), carrying the same
             // PERMISSION_DENIED envelope the REST endpoints return via AiPolicyViolationMapper.
+            // saiku#2540: and the audit log must say DENY — the 200 tool-error envelope would
+            // read as "allow + success" to any envelope-only auditor.
+            auditToolCall(
+                    name,
+                    targetCube,
+                    targetModel,
+                    latencyMs(auditStart),
+                    AiAuditEntry.OUTCOME_DENIED,
+                    AiAuditEntry.DECISION_DENY,
+                    "policy:" + e.getRequired().displayName());
             return rpcResult(idNode, wrapPolicyDeniedToolResult(e), sessionId);
+        } catch (RuntimeException e) {
+            auditToolCall(
+                    name,
+                    targetCube,
+                    targetModel,
+                    latencyMs(auditStart),
+                    AiAuditEntry.OUTCOME_ERROR,
+                    AiAuditEntry.DECISION_ALLOW,
+                    "internal_error");
+            // saiku#1920: the message can carry SQL, JDBC URLs or RLS predicates and an MCP host
+            // feeds it to the model. Log it with a ref; return only the ref.
+            String ref = java.util.UUID.randomUUID().toString().substring(0, 8);
+            log.error("MCP request handling failed for method=tools/call tool={} [ref={}]", name, ref, e);
+            return rpcError(idNode, RPC_INTERNAL_ERROR, "Internal error (ref=" + ref + ")", sessionId);
         }
+    }
+
+    /** saiku#2540 — write the one audit entry for a tools/call. MCP calls the
+     *  AI resources in-process (direct Java method calls), so the /ai/
+     *  AiAuditFilter never sees them, and a tools/call's tool name and target
+     *  are JSON-RPC data the envelope cannot carry. Mirrors
+     *  {@code EmbedViewResource.audit()}: a direct {@link AiAuditEntry} with
+     *  the same shape a REST entry has — user, tool, target cube/model, policy
+     *  tier, decision, outcome, latency — and never the arguments or result
+     *  content. Exactly one entry per tools/call after session validation,
+     *  written on every tool exit path (allowed, denied or failed). A missing
+     *  or unknown session is rejected at the protocol layer before reaching
+     *  this method. Never throws: an audit failure is logged, not propagated. */
+    void auditToolCall(
+            String tool,
+            String targetCube,
+            String targetModel,
+            Long latencyMs,
+            String outcome,
+            String decision,
+            String errorToken) {
+        if (auditLog == null || !auditLog.isEnabled()) {
+            return;
+        }
+        try {
+            AiAuditEntry e = new AiAuditEntry();
+            e.endpoint = "/saiku/api/mcp";
+            e.tool = tool;
+            e.cube = targetCube;
+            e.model = targetModel;
+            String u = auditUser();
+            e.user = (u == null || u.isBlank()) ? "anonymous" : u;
+            e.outcome = outcome;
+            e.policyDecision = decision;
+            if (aiPolicyGuard != null && aiPolicyGuard.current() != null) {
+                e.policy = aiPolicyGuard.current().displayName();
+            }
+            e.latencyMs = latencyMs;
+            if (!AiAuditEntry.OUTCOME_SUCCESS.equals(e.outcome)) {
+                // Short, leak-safe error token — never the exception message,
+                // which can carry SQL / JDBC URLs / RLS predicates (saiku#1920).
+                e.error = errorToken != null ? errorToken : "error";
+            }
+            auditLog.record(e);
+        } catch (RuntimeException ex) {
+            log.warn("MCP audit entry write failed (tool call still served): {}", ex.toString());
+        }
+    }
+
+    /** Wall-clock latency of the dispatched tool call, in milliseconds. */
+    private static Long latencyMs(long startNanos) {
+        return (System.nanoTime() - startNanos) / 1_000_000L;
+    }
+
+    /** The authenticated caller for the audit entry. Reads the same single
+     *  authoritative identity sources the other resources use — Spring
+     *  Security's context first (the MCP endpoint sits behind its auth chain),
+     *  then the servlet principal. {@code null} falls through to
+     *  "anonymous" in the entry, matching the REST filter's behaviour. */
+    private static String auditUser() {
+        try {
+            org.springframework.security.core.Authentication auth =
+                    org.springframework.security.core.context.SecurityContextHolder.getContext()
+                            .getAuthentication();
+            if (auth != null && auth.getName() != null && !auth.getName().isBlank()) {
+                return auth.getName();
+            }
+        } catch (RuntimeException ignore) {
+            // No Spring context bound (unit tests) — fall through.
+        }
+        try {
+            org.springframework.web.context.request.RequestAttributes attrs =
+                    org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+            if (attrs instanceof org.springframework.web.context.request.ServletRequestAttributes sra) {
+                jakarta.servlet.http.HttpServletRequest req = sra.getRequest();
+                if (req.getUserPrincipal() != null) {
+                    return req.getUserPrincipal().getName();
+                }
+            }
+        } catch (RuntimeException ignore) {
+            // No request bound — fall through.
+        }
+        return null;
+    }
+
+    /** The OLAP cube a tool call targets, for the audit entry — the raw args
+     *  {@code cube} either as the canonical "connection/catalog/schema/cube"
+     *  string or as the structured object joined the same way. Null when the
+     *  tool has no cube target (list_cubes, drillthrough, the Ossie tools). */
+    static String targetCube(String tool, JsonNode args) {
+        if (tool == null || args == null) return null;
+        return switch (tool) {
+            case "describe_cube", "search_members" -> optionalString(args, "cube");
+            case "run_query", "preview_query" -> cubeRefFromArgs(args.get("cube"));
+            default -> null;
+        };
+    }
+
+    /** The Ossie semantic model a tool call targets, for the audit entry —
+     *  "connection/model" when both are named, else whichever is. Null for
+     *  the OLAP tools. */
+    static String targetModel(String tool, JsonNode args) {
+        if (tool == null || args == null) return null;
+        return switch (tool) {
+            case "describe_ossie_model",
+                    "describe_ossie_ontology",
+                    "run_ossie_query",
+                    "preview_ossie_query",
+                    "search_field_values" -> {
+                String connection = optionalString(args, "connection");
+                String model = optionalString(args, "model");
+                yield (connection != null && model != null)
+                        ? connection + "/" + model
+                        : (model != null ? model : connection);
+            }
+            default -> null;
+        };
+    }
+
+    /** Read a tools/call {@code cube} argument as a canonical ref string:
+     *  a textual cube id passes through, the structured
+     *  {@code {connectionName, catalog, schema, cubeName}} object is joined
+     *  with '/' (skipping absent parts), anything else yields null. */
+    private static String cubeRefFromArgs(JsonNode cube) {
+        if (cube == null || cube.isNull()) return null;
+        if (cube.isTextual()) return cube.asText();
+        if (cube.isObject()) {
+            StringBuilder ref = new StringBuilder();
+            for (String part : new String[] {"connectionName", "catalog", "schema", "cubeName"}) {
+                JsonNode v = cube.get(part);
+                if (v == null || v.isNull() || v.asText().isEmpty()) continue;
+                if (ref.length() > 0) ref.append('/');
+                ref.append(v.asText());
+            }
+            return ref.length() > 0 ? ref.toString() : null;
+        }
+        return null;
     }
 
     /** Build the isError CallToolResult for an {@link AiPolicyViolation}: structuredContent is
@@ -347,12 +631,39 @@ public class McpResource {
     /** Read the JAX-RS Response entity as a JsonNode. AiQueryResource
      *  returns either POJOs ({@code AiQueryResponse}, {@code AiSchema}),
      *  collections (cube list), or {@code Map<String,Object>} bodies —
-     *  Jackson handles all three. */
+     *  Jackson handles all three.
+     *
+     *  <p>saiku#2540 (review): a non-2xx Response IS the tool-call failure —
+     *  {@code badRequest} on a missing cube, a foreign drillthrough
+     *  queryId's {@code NOT_FOUND}, any {@code error(...)} 500. It is
+     *  surfaced as a {@link ToolHttpError} so {@code handleToolsCall} can
+     *  audit the real outcome; it is not serialised as a success body.</p> */
     private JsonNode unwrap(Response r) {
+        if (r.getStatus() >= 400) {
+            throw new ToolHttpError(r.getStatus(), entityAsJson(r));
+        }
+        return entityAsJson(r);
+    }
+
+    private JsonNode entityAsJson(Response r) {
         Object entity = r.getEntity();
         if (entity == null) return MAPPER.createObjectNode();
         if (entity instanceof JsonNode jn) return jn;
         return MAPPER.valueToTree(entity);
+    }
+
+    /** saiku#2540 (review) — the failed in-process REST call, carried to
+     *  {@code handleToolsCall} so the audit entry can name the real outcome
+     *  and status. */
+    private static final class ToolHttpError extends RuntimeException {
+        final int status;
+        final JsonNode body;
+
+        ToolHttpError(int status, JsonNode body) {
+            super("tool call returned HTTP " + status);
+            this.status = status;
+            this.body = body;
+        }
     }
 
     private AiQueryRequest toAiQueryRequest(JsonNode args) {
@@ -671,12 +982,33 @@ public class McpResource {
             throw new SessionRequiredException(
                     "Missing " + SESSION_HEADER + " header. Call initialize first to obtain a session id.");
         }
-        McpSessionStore.McpSession s = sessionStore.touch(sessionId);
+        McpSessionStore.McpSession s = sessionStore.touch(sessionId, currentPrincipal());
         if (s == null) {
-            throw new SessionRequiredException(
-                    "Unknown or expired session id. Call initialize to start a new session.");
+            // Unknown, expired, or owned by a different principal (saiku#2542). The message is
+            // deliberately uniform — a foreign principal must not be able to distinguish
+            // "that id exists but is yours" from "no such session".
+            throw new InvalidSessionException("Unknown or expired session id. Call initialize to start a new session.");
         }
         return sessionId;
+    }
+
+    /**
+     * The authenticated caller's name, from the same Spring Security context every other
+     * REST resource reads. Used to bind MCP sessions to their creating principal (saiku#2542).
+     * Never throws — a broken context reads as an absent principal and denies session access.
+     */
+    private static String currentPrincipal() {
+        try {
+            org.springframework.security.core.Authentication auth =
+                    org.springframework.security.core.context.SecurityContextHolder.getContext()
+                            .getAuthentication();
+            if (auth == null || auth.getName() == null) {
+                return null;
+            }
+            return auth.getName();
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     private static String textOrNull(JsonNode n) {
@@ -771,6 +1103,14 @@ public class McpResource {
 
     private static final class SessionRequiredException extends RuntimeException {
         SessionRequiredException(String message) {
+            super(message);
+        }
+    }
+
+    /** A session header was presented but the id is unknown, expired or foreign (saiku#2542) —
+     * answered with a transport-level 404, per the streamable-http spec. */
+    private static final class InvalidSessionException extends RuntimeException {
+        InvalidSessionException(String message) {
             super(message);
         }
     }

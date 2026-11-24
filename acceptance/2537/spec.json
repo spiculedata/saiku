@@ -1,0 +1,29 @@
+{
+  "issue": 2537,
+  "title": "SCIM group names are limited to an operator-defined set of grantable roles, and SCIM cannot deactivate the last enabled admin",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "a SCIM group created or renamed to ROLE_SQL_EXEC, ROLE_TOKEN_PRINCIPAL, ROLE_EMBED_AUTHOR, a guest role (ROLE_EMBED_GUEST / ROLE_SHARE_GUEST), ROLE_ANONYMOUS, ROLE_SCIM, ROLE_ACTUATOR or any role in userService.getAdminRoles()",
+      "then": "ScimService answers 400 invalidValue — the reserved set is computed (admin roles come from getAdminRoles(), never a hard-coded ROLE_ADMIN literal) and is enforced on every displayName entry point (create, PUT replace, PATCH rename)"
+    },
+    {
+      "id": "C2",
+      "given": "the operator sets saiku.scim.grantableRoles (default unset)",
+      "then": "only roles on that allow-list can be granted through SCIM groups; a name outside it answers 400 invalidValue; the reserved roles stay refused even if listed; the default (everything not reserved) is documented in docs/operator-hardening.md and the property is wired in saiku-beans.xml"
+    },
+    {
+      "id": "C3",
+      "given": "the only enabled account holding an admin role (per userService.getAdminRoles())",
+      "then": "SCIM cannot deactivate it — DELETE /Users/{id}, PATCH active:false and PUT with active:false all answer 400; with a second enabled admin present, deactivating one succeeds"
+    },
+    {
+      "id": "C4",
+      "given": "the regression suite for the list and the last-admin rule",
+      "then": "ScimServiceTest covers the reserved set (including ROLE_SQL_EXEC and a case variant), the allow-list behaviour and the last-enabled-admin guard on all three deactivation paths"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}

@@ -1,0 +1,32 @@
+{
+  "issue": 2531,
+  "title": "auto-review.yml applies only collaborator review comments, through a claude.yml-shaped tool list, and cannot approve",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "auto-review.yml collects the PR's reviews and inline review comments",
+      "then": "both gh api collection queries filter on author_association in (OWNER, MEMBER, COLLABORATOR), so comments from users without write access never reach the prompt"
+    },
+    {
+      "id": "C2",
+      "given": "the Claude step of auto-review.yml runs",
+      "then": "the checkout does not persist credentials, the step carries no GH_TOKEN or GITHUB_TOKEN, and --allowed-tools names no bare Read/Edit/Write and no git diff/log/push; edits and reads stay workspace-scoped and the narrowed git set matches claude.yml (status, add, commit), with git push and .github/ edits disallowed"
+    },
+    {
+      "id": "C3",
+      "given": "the auto-review job",
+      "then": "requests pull-requests: read (never write, so it cannot approve) and pushes the review commit from a step of its own after the model run, not through a model-callable git push"
+    },
+    {
+      "id": "C4",
+      "given": ".github/scripts/",
+      "then": "a workflow-shape test pins the collaborator filter and the tool list so the properties are guarded by ci / flake-policy tests"
+    }
+  ],
+  "command": [
+    "node",
+    "check.mjs"
+  ],
+  "timeoutSeconds": 60
+}

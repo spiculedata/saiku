@@ -162,9 +162,10 @@ public class DataSourceResourceTest {
         }
 
         @Override
-        public void removeDatasource(String datasourceId) {
+        public boolean removeDatasource(String datasourceId) {
             removeCount++;
             lastRemovedName = datasourceId;
+            return true;
         }
 
         @Override

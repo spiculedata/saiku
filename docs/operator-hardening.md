@@ -230,8 +230,12 @@ JAVA_OPTS="-Dsaiku.passthrough.retainCredential=false"
 
 ## Login lockout and running behind a reverse proxy (`saiku.auth.trustedProxyHops`)
 
-Failed logins (form login, HTTP Basic, XMLA and the demo email gate share one limiter) are counted in three
-independent budgets inside a 15-minute window, and any one of them blocks further attempts with `429`:
+Failed logins (the REST session login `POST /rest/saiku/session`, HTTP Basic, XMLA and the demo email gate share
+one limiter) are counted in three independent budgets inside a 15-minute window, and any one of them blocks further
+attempts with `429`. Every failure is counted exactly once, wherever the credential check happens (saiku#2523).
+Spring Security's generated `/login` form endpoint no longer exists — the main security chain does not register
+form login, so `GET`/`POST /login` is answered by the terminal catch-all (`401`, no session, no authentication) and
+there is no second login path to bypass the limiter or CSRF with:
 
 | Budget | Limit | Purpose |
 |---|---|---|
@@ -279,7 +283,7 @@ Saiku has two user stores. The bundled authenticator reads `users.properties` (w
 password and roles); the admin console and SCIM write the H2 `USERS` / `USER_ROLES` tables. For an account
 that exists in **both**, the H2 row now wins for revocation:
 
-- `enabled = false` (SCIM `active:false` or `DELETE`, which deactivates) refuses form login and HTTP Basic
+- `enabled = false` (SCIM `active:false` or `DELETE`, which deactivates) refuses the REST session login and HTTP Basic
   (`/rest/**`, `/xmla/**`) with `401`, and ends an existing session on its next request.
 - Removing `ROLE_ADMIN` from the row removes admin authority from that user's next request (the admin
   endpoints answer `403`, `GET /rest/saiku/session` reports `isadmin:false`) without a re-login.
@@ -306,7 +310,7 @@ revocation is not being enforced and the store needs attention.
   authority. Removing any other role (for example `ROLE_SQL_EXEC` or a data role) from the row changes
   nothing for a user whose authenticator still grants it; revoke those in `users.properties` / the
   directory.
-- **Authentication types covered.** Only credential logins (form login and HTTP Basic) are checked. OAuth
+- **Authentication types covered.** Only credential logins (the REST session login and HTTP Basic) are checked. OAuth
   bearer tokens, SSO/pre-authenticated principals and share/embed principals are exempt and governed by
   their own provider.
 - **Re-enabling.** The admin console has no control to re-enable a deactivated row. Re-enable through SCIM
@@ -336,6 +340,46 @@ by itself stop that user logging in. To deprovision, deactivate (SCIM) and remov
 **Renaming** a row has the same effect as deleting it: the old name no longer matches a managed row, so a
 deactivated account that is deleted or renamed can log in again via the authenticator. Revoking login on
 deletion needs a tombstone or a single user store, which is not implemented.
+
+---
+
+## SCIM group roles (`saiku.scim.grantableRoles`)
+
+A SCIM group's `displayName` **is** the role recorded in `USER_ROLES` for each of its members, so the
+identity provider effectively decides which authorities it can hand out. Two rules bound that
+(saiku#2065, saiku#2537, CWE-269):
+
+- **Reserved roles are always refused.** Creating or renaming a group to `ROLE_SCIM`, `ROLE_ACTUATOR`,
+  `ROLE_ANONYMOUS`, `ROLE_SQL_EXEC` (raw SQL through the workbench with the stored warehouse
+  credentials), `ROLE_TOKEN_PRINCIPAL` (unlocks every `/rest/**` rule), `ROLE_EMBED_AUTHOR`,
+  `ROLE_EMBED_GUEST`, `ROLE_SHARE_GUEST`, or to any role configured as an admin role
+  (`userService`'s `adminRoles` list, `ROLE_ADMIN` by default) answers `400 invalidValue` — including
+  case variants. The admin set is read live from the configuration, so a custom admin role is covered
+  without a code change.
+- **The allow-list narrows what is left.** Set `saiku.scim.grantableRoles` to a comma-separated list
+  (e.g. `saiku.scim.grantableRoles=analysts,report_viewers`) and only those names can be granted
+  through SCIM, matched case-insensitively; anything else answers `400`. Listing a reserved role on
+  the allow-list does not rescue it — the reserved check runs first. The allow-list is an
+  <em>allow-list</em>, not a rename map: a rename to a name outside the list is refused.
+  The policy is enforced at every grant site (member add, create-with-groups, PUT/PATCH
+  membership sync), not only on the group's name — so an existing group record whose
+  displayName is reserved or falls off the configured list stops granting its role to new
+  members after the upgrade (its membership writes answer `400 invalidValue`; renaming the
+  group to a grantable name is the fix).
+
+**Default (allow-list unset): every role that is not reserved is grantable.** That is the documented
+behaviour, not an accident — set the property explicitly on an instance whose IdP should only manage a
+fixed set of data roles.
+
+**Last enabled admin.** SCIM cannot deactivate the only enabled account holding an admin role:
+`DELETE /Users/{id}`, `PATCH` with `active:false` and a `PUT` carrying `active:false` all answer `400`
+while a second enabled admin exists nowhere in the directory. Deactivating other accounts — or an
+admin once a second enabled admin exists — is unchanged. This protects the operator's own recovery
+path; the SCIM token itself is scoped to `ROLE_SCIM` and must never be able to lock every
+administrator out.
+
+The SCIM bearer surface currently answers `401` for every call over plain HTTP (saiku#2449), so verify
+changes to this behaviour through unit tests or a fixed build rather than a live IdP probe.
 
 ---
 

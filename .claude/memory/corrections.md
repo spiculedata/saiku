@@ -17,6 +17,24 @@ A promoted entry has the same shape plus `**Status:** promoted`, `**Supersedes:*
 
 ---
 
+## 2026-11-24 — Mondrian errors: redact parsed password values through the next field
+Mondrian's connection error writes parsed values without Saiku's connect-string quoting. Treat `JdbcPassword=` as a raw value ending at the next `; Key=` field boundary; spaces, `;` without a following key, `&`, and quotes can all be part of the password.
+**Why:** stopping at the first whitespace or punctuation leaks the remainder of a supported password.
+**Source:** PR #2594 review of #2547
+
+## 2026-11-24 — SCIM user PUT: validate group grants before any user write
+Check every requested group's role before changing the username, profile, email, or enabled state in a full user replace.
+**Why:** a stale reserved or off-list group otherwise returns 400 after part of the PUT has persisted, leaving the IdP retrying a failed sync against changed data.
+**Source:** PR #2564 review of #2537
+
+## 2026-11-24 — Result-cache identity: test the real datasource decision
+A stubbed identity fragment and source-text assertions did not test whether pass-through
+datasources resolve to distinct caller identities. Add a Java test of the real
+`SecurityAwareConnectionManager.identityKey` path, including datasource classification,
+principal resolution, and unresolved names, when changing cache isolation.
+**Why:** a refactor could restore cross-user cellset sharing while stub-based tests stay green.
+**Source:** PR #2575 review for #2538
+
 ## 2026-11-24 — Ossie filters: resolve semantic names through their dataset and expression
 Checking that an unqualified filter name is visible somewhere in the model is insufficient. Resolve it to one declaring dataset, reject ambiguity, and emit that dataset's mapped column expression.
 **Why:** a bare quoted name can bind to a different table's hidden physical column and disclose values through filter results.

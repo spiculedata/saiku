@@ -49,6 +49,16 @@ public final class TelemetryService {
     private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(5);
     private static final Pattern LATEST = Pattern.compile("\"latest\"\\s*:\\s*\"([^\"]+)\"");
 
+    /**
+     * System property that carries the check's finding from this service (launcher side of the
+     * fat-JAR JVM) to the webapp's {@code /rest/saiku/info/capabilities} (saiku#2579). Set ONLY
+     * when {@code latest} is newer than the running version, so its presence IS the
+     * "newVersionAvailable" answer; cleared when a later check no longer finds one, and never set
+     * when telemetry is opted out or the check hasn't run or failed — the webapp then reports
+     * nothing.
+     */
+    static final String LATEST_VERSION_PROPERTY = "saiku.update.latest";
+
     private final Path home;
     private final String version;
     private final String endpoint;
@@ -143,9 +153,28 @@ public final class TelemetryService {
     }
 
     private void notifyIfNewer(String responseBody) {
+        noteLatest(responseBody, version);
+    }
+
+    /**
+     * Act on one check reply: when it names a release newer than the running version, record it
+     * under {@link #LATEST_VERSION_PROPERTY} (saiku#2579) and announce it on stdout; when it names
+     * one that isn't, clear any stale record from an earlier check in this JVM. A reply without a
+     * parsable "latest" changes nothing — no result is not a result. Package-visible for unit
+     * tests.
+     */
+    static void noteLatest(String responseBody, String runningVersion) {
         Matcher m = LATEST.matcher(responseBody);
-        if (m.find() && isNewer(m.group(1), version)) {
-            System.out.println("A newer Saiku release is available: " + m.group(1) + " (you are on " + version + ").");
+        if (!m.find()) {
+            return;
+        }
+        String latest = m.group(1);
+        if (isNewer(latest, runningVersion)) {
+            System.setProperty(LATEST_VERSION_PROPERTY, latest);
+            System.out.println(
+                    "A newer Saiku release is available: " + latest + " (you are on " + runningVersion + ").");
+        } else {
+            System.clearProperty(LATEST_VERSION_PROPERTY);
         }
     }
 

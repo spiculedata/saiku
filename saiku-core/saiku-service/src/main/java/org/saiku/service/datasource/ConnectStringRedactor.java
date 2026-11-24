@@ -16,6 +16,7 @@
 package org.saiku.service.datasource;
 
 import java.lang.reflect.Constructor;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -36,12 +37,11 @@ import java.util.regex.Pattern;
  * returned:
  *
  * <ul>
- *   <li>{@link #redact(String)} masks the values of credential keys — {@code JdbcPassword=},
- *       {@code Password=} (and {@code passwd} / {@code pwd} spellings), bare or single-quoted with
- *       the doubled-quote escaping {@link JdbcUrlPolicy#quoteMondrianValue(String)} produces — and
- *       the password half of a URL's user-info. Everything else, including {@code JdbcUser=}, the
- *       host, the JDBC scheme and the rest of the message, is left intact so the log still names
- *       the datasource and the root cause (saiku#2547 C3).
+ *   <li>{@link #redact(String)} masks password-bearing connect-string fields through the next
+ *       Mondrian field boundary, even when the raw value contains spaces or delimiters. It also
+ *       masks URL query passwords, URL user-info passwords and Oracle thin URL passwords. Other
+ *       fields, including {@code JdbcUser=}, remain available to identify the datasource and root
+ *       cause (saiku#2547 C3).
  *   <li>{@link #redact(Throwable)} returns a copy of the exception whose whole cause chain (and
  *       every suppressed exception) carries redacted messages but the original stack traces and
  *       types — the deepest constructible match, falling back to a typed wrapper when the concrete
@@ -58,15 +58,19 @@ public final class ConnectStringRedactor {
     private static final String MASK = "***";
 
     /**
-     * A credential key's value in a connect string or URL: {@code JdbcPassword=...},
-     * {@code Password=...}, {@code passwd=...}, {@code pwd=...}. The value is either bare
-     * (up to the next {@code ;} / {@code &} / whitespace, the connect-string and query-string
-     * terminators) or single-quoted with {@code ''} escaping, which is what
-     * {@link JdbcUrlPolicy#quoteMondrianValue(String)} produces for values containing those
-     * terminators.
+     * Password-bearing keys in connect strings and URL query parameters. Mondrian removes Saiku's
+     * quoting before including the connect string in an error, so a raw value may contain spaces,
+     * semicolons, ampersands and quotes. Other password-suffixed JDBC property names also carry
+     * credentials, for example {@code sslpassword} and {@code trustStorePassword}.
      */
-    private static final Pattern SECRET_KEY = Pattern.compile(
-            "(?i)\\b((?:jdbc)?password|passwd|pwd)\\s*=\\s*(?:'((?:''|[^'])*)'|[^;&\\s]*)");
+    private static final Pattern SECRET_KEY =
+            Pattern.compile("(?i)(?<![\\w.])((?:[a-z][\\w.]*)?password|passwd|pwd)\\s*=\\s*");
+
+    /** Mondrian separates fields with a semicolon followed by the next key and equals sign. */
+    private static final Pattern CONNECT_FIELD = Pattern.compile(";\\s*[a-z][\\w.]*\\s*=", Pattern.CASE_INSENSITIVE);
+
+    /** URL query parameters end at a query separator, fragment or whitespace. */
+    private static final Pattern QUERY_END = Pattern.compile("[;&\\s#]");
 
     /**
      * The password half of a URL's user-info: {@code scheme://user:password@host}. Only a
@@ -74,6 +78,10 @@ public final class ConnectStringRedactor {
      */
     private static final Pattern USER_INFO_PASSWORD =
             Pattern.compile("(?i)([a-z][a-z0-9+.-]*://)([^/\\s:]*)?:([^@/\\s]*)@");
+
+    /** Oracle thin URLs use {@code user/password@host} instead of URL user-info. */
+    private static final Pattern ORACLE_THIN_PASSWORD =
+            Pattern.compile("(?i)(jdbc:oracle:thin:[^:/@\\s]+/)[^@\\s]*(@)");
 
     private ConnectStringRedactor() {}
 
@@ -90,8 +98,22 @@ public final class ConnectStringRedactor {
         if (text == null || text.isEmpty()) {
             return text;
         }
-        String masked = SECRET_KEY.matcher(text).replaceAll("$1=" + MASK);
+        StringBuilder maskedKeys = new StringBuilder(text.length());
+        Matcher keys = SECRET_KEY.matcher(text);
+        int cursor = 0;
+        while (keys.find(cursor)) {
+            int valueStart = keys.end();
+            boolean queryParameter =
+                    keys.start() > 0 && (text.charAt(keys.start() - 1) == '?' || text.charAt(keys.start() - 1) == '&');
+            Matcher boundary = (queryParameter ? QUERY_END : CONNECT_FIELD).matcher(text);
+            int valueEnd = boundary.find(valueStart) ? boundary.start() : text.length();
+            maskedKeys.append(text, cursor, valueStart).append(MASK);
+            cursor = valueEnd;
+        }
+        maskedKeys.append(text, cursor, text.length());
+        String masked = maskedKeys.toString();
         masked = USER_INFO_PASSWORD.matcher(masked).replaceAll("$1$2:" + MASK + "@");
+        masked = ORACLE_THIN_PASSWORD.matcher(masked).replaceAll("$1" + MASK + "$2");
         return masked;
     }
 
@@ -140,7 +162,9 @@ public final class ConnectStringRedactor {
         Throwable copy = copyOf(t, redactedMessage, redactedCause);
         if (copy == null) {
             copy = new Redacted(
-                    redactedMessage == null ? t.getClass().getName() : t.getClass().getName() + ": " + redactedMessage,
+                    redactedMessage == null
+                            ? t.getClass().getName()
+                            : t.getClass().getName() + ": " + redactedMessage,
                     redactedCause);
         }
         copy.setStackTrace(t.getStackTrace());

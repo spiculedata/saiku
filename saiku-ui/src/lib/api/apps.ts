@@ -279,11 +279,27 @@ export type SaikuAppInput = Partial<Omit<SaikuApp, 'theme' | 'nav' | 'assistantS
 	pages?: Partial<AppPage>[];
 };
 
+/** The character set an app id may use (saiku#2545): the shell interpolates the
+ *  id into the CSS attribute selector `[data-saiku-app="${id}"]`, so anything
+ *  outside `[A-Za-z0-9_-]{1,64}` could close the selector and inject rules the
+ *  custom-CSS sanitiser never sees. An empty id is the UI's "preview before the
+ *  first save" sentinel and stays legal. */
+export function isValidAppId(id: string): boolean {
+	return id === '' || /^[A-Za-z0-9_-]{1,64}$/.test(id);
+}
+
 /** Fill missing fields with defaults so a raw / partial doc becomes a complete
- *  SaikuApp. Idempotent — normalising an already-normalised app is a no-op. */
+ *  SaikuApp. Idempotent — normalising an already-normalised app is a no-op.
+ *  Throws when the id is outside the allowed set (saiku#2545): the caller —
+ *  the appDoc store's load path — surfaces the error instead of rendering an
+ *  app whose id could break out of the custom-CSS scope. */
 export function normaliseApp(raw: SaikuAppInput): SaikuApp {
+	const id = raw.id ?? '';
+	if (!isValidAppId(id)) {
+		throw new Error('Invalid app id: ids must match ^[A-Za-z0-9_-]{1,64}$');
+	}
 	return {
-		id: raw.id ?? '',
+		id,
 		name: raw.name ?? 'Untitled app',
 		version: raw.version ?? 1,
 		logo: raw.logo ?? null,

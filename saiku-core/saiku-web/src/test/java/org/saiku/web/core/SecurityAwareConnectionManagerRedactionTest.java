@@ -35,6 +35,7 @@ import org.apache.logging.log4j.core.LoggerContext;
 import org.apache.logging.log4j.core.appender.AbstractAppender;
 import org.apache.logging.log4j.core.config.Configuration;
 import org.apache.logging.log4j.core.config.LoggerConfig;
+import org.apache.logging.log4j.core.layout.PatternLayout;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -60,8 +61,8 @@ import org.saiku.datasources.datasource.SaikuDatasource;
 public class SecurityAwareConnectionManagerRedactionTest {
 
     private static final String DS = "foodmart";
-    private static final String SECRET = "the-users-login-password";
     private static final String URL = "jdbc:postgresql://warehouse.example/x";
+    private static final ThreadLocal<String> DRIVER_PASSWORD = new ThreadLocal<>();
 
     private CapturingAppender appender;
 
@@ -72,38 +73,46 @@ public class SecurityAwareConnectionManagerRedactionTest {
 
     @After
     public void releaseLogs() {
+        DRIVER_PASSWORD.remove();
         CapturingAppender.off(appender, SecurityAwareConnectionManager.class.getName());
     }
 
     @Test
     public void failedConnectionLogsNoPasswordValue() {
         TestManager mgr = new TestManager();
+        for (String password : new String[] {
+            "the-users-login-password", "correct horse battery staple", "ab;cd", "a&b", "p'a", "\"dq;x\""
+        }) {
+            DRIVER_PASSWORD.set(password);
+            appender.clear();
 
-        // the real connect() runs, the factory throws, the catch block logs
-        ISaikuConnection con = mgr.fetch(datasource());
+            // The real connect() runs, the factory throws, and the catch block logs.
+            ISaikuConnection con = mgr.fetch(datasource(password));
 
-        assertNull("a failed datasource yields no connection", con);
+            assertNull("a failed datasource yields no connection", con);
 
-        String logged = appender.rendered();
-        assertFalse("the secret must never appear in the log:\n" + logged, logged.contains(SECRET));
-        // saiku#2547 C3: the log still names the datasource and the root cause
-        assertTrue("the log must name the datasource:\n" + logged, logged.contains("Error connecting: " + DS));
-        assertTrue(
-                "the log must carry the root cause:\n" + logged,
-                logged.contains("Error while creating SQL connection"));
-        // non-secret parts of the connect string survive the redaction
-        assertTrue("the jdbc url must survive:\n" + logged, logged.contains(URL));
-        assertTrue("the login name must survive:\n" + logged, logged.contains("JdbcUser=bob"));
-        assertTrue("the masked value must appear:\n" + logged, logged.contains("JdbcPassword=***"));
+            String logged = appender.rendered();
+            assertFalse("the secret must never appear in the log:\n" + logged, logged.contains(password));
+            // saiku#2547 C3: the log still names the datasource and the root cause.
+            assertTrue("the log must name the datasource:\n" + logged, logged.contains("Error connecting: " + DS));
+            assertTrue(
+                    "the log must carry the root cause:\n" + logged,
+                    logged.contains("Error while creating SQL connection"));
+            // Non-secret fields and the suppressed exception survive the formatted stack trace.
+            assertTrue("the jdbc url must survive:\n" + logged, logged.contains(URL));
+            assertTrue("the login name must survive:\n" + logged, logged.contains("JdbcUser=bob"));
+            assertTrue("the masked value must appear:\n" + logged, logged.contains("JdbcPassword=***"));
+            assertTrue("suppressed failures must be rendered:\n" + logged, logged.contains("Suppressed:"));
+        }
     }
 
     /** The datasource under test: stored warehouse credentials, a test driver that fails. */
-    private static SaikuDatasource datasource() {
+    private static SaikuDatasource datasource(String password) {
         Properties props = new Properties();
         props.setProperty(ISaikuConnection.DRIVER_KEY, SecretThrowingDriver.class.getName());
         props.setProperty(ISaikuConnection.URL_KEY, URL);
         props.setProperty(ISaikuConnection.USERNAME_KEY, "bob");
-        props.setProperty(ISaikuConnection.PASSWORD_KEY, SECRET);
+        props.setProperty(ISaikuConnection.PASSWORD_KEY, password);
         props.setProperty(ISaikuConnection.SECURITY_ENABLED_KEY, "false");
         return new SaikuDatasource(DS, SaikuDatasource.Type.OLAP, props);
     }
@@ -132,9 +141,11 @@ public class SecurityAwareConnectionManagerRedactionTest {
         @Override
         public Connection connect(String url, Properties info) throws SQLException {
             if (url.startsWith("jdbc:postgresql://")) {
-                throw new SQLException(
-                        "Error while creating SQL connection: Jdbc=" + url + "; JdbcUser=bob; JdbcPassword="
-                                + SECRET + ";");
+                String password = DRIVER_PASSWORD.get();
+                SQLException error = new SQLException("Error while creating SQL connection: Jdbc=" + url
+                        + "; JdbcUser=bob; JdbcPassword=" + password + "; Catalog=foodmart");
+                error.addSuppressed(new SQLException("suppressed JdbcPassword=" + password));
+                throw error;
             }
             return null;
         }
@@ -172,6 +183,8 @@ public class SecurityAwareConnectionManagerRedactionTest {
 
     /** Captures the log4j2 events of one logger so the tests can assert what was actually logged. */
     private static final class CapturingAppender extends AbstractAppender {
+        private static final PatternLayout LOG_LAYOUT =
+                PatternLayout.newBuilder().withPattern("%m%n%throwable").build();
         private final List<LogEvent> events = new ArrayList<>();
 
         private CapturingAppender() {
@@ -207,19 +220,15 @@ public class SecurityAwareConnectionManagerRedactionTest {
             events.add(event.toImmutable());
         }
 
-        /** The rendered message text plus every message in the logged exception chain. */
+        void clear() {
+            events.clear();
+        }
+
+        /** Render the same message and throwable stack trace that log4j writes to a file. */
         String rendered() {
             StringBuilder out = new StringBuilder();
             for (LogEvent event : events) {
-                out.append(event.getMessage().getFormattedMessage()).append('\n');
-                Throwable thrown = event.getThrown();
-                while (thrown != null) {
-                    out.append(thrown.getClass().getName())
-                            .append(": ")
-                            .append(thrown.getMessage())
-                            .append('\n');
-                    thrown = thrown.getCause() == thrown ? null : thrown.getCause();
-                }
+                out.append(LOG_LAYOUT.toSerializable(event));
             }
             return out.toString();
         }

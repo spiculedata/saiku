@@ -29,9 +29,10 @@ import org.saiku.datasources.connection.ISaikuConnection;
 import org.saiku.datasources.connection.SaikuConnectionFactory;
 import org.saiku.datasources.datasource.SaikuDatasource;
 import org.saiku.olap.util.exception.SaikuOlapException;
-import org.saiku.service.datasource.ConnectStringRedactor;
 import org.saiku.service.ISessionService;
+import org.saiku.service.datasource.ConnectStringRedactor;
 import org.saiku.service.datasource.IDatasourceManager;
+import org.saiku.service.olap.QueryCacheIdentityContext;
 import org.saiku.service.olap.ai.AiVisibilityContext;
 import org.saiku.service.user.UserService;
 import org.saiku.service.util.exception.SaikuAccessDeniedException;
@@ -46,7 +47,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.context.request.RequestContextHolder;
 
 public class SecurityAwareConnectionManager extends AbstractConnectionManager
-        implements AiVisibilityContext, Serializable {
+        implements AiVisibilityContext, QueryCacheIdentityContext, Serializable {
 
     /**
      * serialisation UID
@@ -131,6 +132,11 @@ public class SecurityAwareConnectionManager extends AbstractConnectionManager
 
     @Override
     protected ISaikuConnection getInternalConnection(String name, SaikuDatasource datasource) {
+        // A descriptor may have been removed while a connection with its name remains cached.
+        // Never return that live connection when the datasource lookup no longer succeeds.
+        if (datasource == null) {
+            return null;
+        }
 
         ISaikuConnection con = null;
         if (isDatasourceSecurity(datasource, ISaikuConnection.SECURITY_TYPE_PASSTHROUGH_VALUE)
@@ -183,6 +189,45 @@ public class SecurityAwareConnectionManager extends AbstractConnectionManager
             log.error("Error refreshing connection: " + name, ConnectStringRedactor.redact(e));
         }
         return null;
+    }
+
+    /**
+     * saiku#2533: evict and close every cached connection the deleted datasource still holds.
+     *
+     * <p>The pool can key one datasource's connections two ways (see {@link #resolveConnectionKey}):
+     * the bare name for a security-disabled datasource, or a per-identity composite key
+     * ({@link #connectionCacheKey}) for a security-enabled one. Evict both shapes: the exact bare
+     * name, and every composite entry whose name field matches. The length-prefixed composite key
+     * makes the prefix match unambiguous — {@code 7:foo<NUL-sep>…} can never collide with another
+     * datasource's entry.
+     */
+    @Override
+    public void removeConnection(String name) {
+        if (name == null || connections == null || connections.isEmpty()) {
+            return;
+        }
+        String compositePrefix = connectionCacheKey(name, null);
+        for (Iterator<Map.Entry<String, ISaikuConnection>> it =
+                        connections.entrySet().iterator();
+                it.hasNext(); ) {
+            Map.Entry<String, ISaikuConnection> entry = it.next();
+            String key = entry.getKey();
+            boolean bare = key.equals(name);
+            boolean perIdentity = key.startsWith(compositePrefix) && key.length() > compositePrefix.length();
+            if (!bare && !perIdentity) {
+                continue;
+            }
+            it.remove();
+            ISaikuConnection con = entry.getValue();
+            try {
+                Connection c = con == null ? null : con.getConnection();
+                if (c != null && !c.isClosed()) {
+                    c.close();
+                }
+            } catch (Exception e) {
+                log.error("Error closing connection of deleted datasource {}", name, e);
+            }
+        }
     }
 
     /**
@@ -311,6 +356,42 @@ public class SecurityAwareConnectionManager extends AbstractConnectionManager
         List<String> sorted = new ArrayList<>(roles);
         Collections.sort(sorted);
         return "roles:" + String.join(",", sorted);
+    }
+
+    /**
+     * saiku#2538 (CWE-636) — a stable per-caller fragment for the RESULT caches (the Arrow
+     * cellset cache keyed through {@code QueryCacheKey} and the in-flight
+     * {@code QueryCoalescer}). The result caches were keyed by query + cube version + role
+     * set, which is enough for Mondrian role masking — but on a pass-through datasource every
+     * user connects to the warehouse with their own credentials, so two users with the SAME
+     * Saiku roles can legitimately see different rows while sharing one cache key. This
+     * reuses the saiku#2326 visibility rule:
+     * <ul>
+     *   <li>pass-through: {@code "user:<canonical identity>"} — the caller's own warehouse
+     *       credentials connect, so visibility can differ per user even at the same role
+     *       set;</li>
+     *   <li>FAIL-CLOSED: a datasource that cannot be resolved (unknown or decorated name,
+     *       repository hiccup) also gets the per-identity key — worst case the cache
+     *       fragments, never that a cellset is served across callers;</li>
+     *   <li>everything else (no security, one2one/lookup role masking): {@code ""} — the
+     *       caller's identity does not distinguish results, the role set already in the key
+     *       is the full story, and cache keys (⇒ hit rates) stay byte-identical to the
+     *       pre-#2538 forms.</li>
+     * </ul>
+     */
+    @Override
+    public String identityKey(String connectionName) {
+        SaikuDatasource datasource = lookupDatasource(connectionName);
+        if (datasource == null) {
+            // FAIL-CLOSED (saiku#2538): a datasource we cannot classify must never collapse
+            // onto the shared key — per-identity, so the worst case is a fragmented cache,
+            // never a cellset served across callers.
+            return "user:" + callerIdentity();
+        }
+        if (isDatasourceSecurity(datasource, ISaikuConnection.SECURITY_TYPE_PASSTHROUGH_VALUE)) {
+            return "user:" + callerIdentity();
+        }
+        return "";
     }
 
     /**

@@ -43,7 +43,7 @@ public class ConnectStringRedactorTest {
         String out = ConnectStringRedactor.redact(CONNECT_FAILURE);
 
         assertFalse(out, out.contains(SECRET));
-        assertTrue(out, out.contains("JdbcPassword=***;"));
+        assertTrue(out, out.contains("JdbcPassword=***"));
         // non-secret parts survive so the log still names the datasource and root cause
         assertTrue(out, out.contains("Jdbc=jdbc:postgresql://warehouse.example/x"));
         assertTrue(out, out.contains("JdbcUser=bob"));
@@ -61,11 +61,45 @@ public class ConnectStringRedactorTest {
     }
 
     @Test
+    public void masksRawMondrianPasswordWithSpacesAndDelimiters() {
+        // DefaultDataServicesProvider.appendKeyValue writes the parsed value without quoting.
+        for (String password : new String[] {"correct horse battery staple", "ab;cd", "a&b", "p'a", "\"dq;x\""}) {
+            String message = "Error while creating SQL connection: Jdbc=jdbc:postgresql://warehouse.example/x; "
+                    + "JdbcUser=bob; JdbcPassword=" + password + "; Catalog=foodmart";
+
+            String out = ConnectStringRedactor.redact(message);
+
+            assertFalse(out, out.contains(password));
+            assertTrue(out, out.contains("JdbcUser=bob; JdbcPassword=***; Catalog=foodmart"));
+            assertTrue(out, out.contains("jdbc:postgresql://warehouse.example/x"));
+        }
+    }
+
+    @Test
     public void masksCaseVariantsOfPasswordKeys() {
-        String out = ConnectStringRedactor.redact("PASSWORD=hunter2 Pwd=hunter2 passwd=hunter2&x=1");
+        String out = ConnectStringRedactor.redact("PASSWORD=hunter2; Pwd=hunter2; passwd=hunter2; x=1");
 
         assertFalse(out, out.contains("hunter2"));
-        assertTrue(out, out.contains("PASSWORD=*** Pwd=*** passwd=***&x=1"));
+        assertTrue(out, out.contains("PASSWORD=***; Pwd=***; passwd=***; x=1"));
+    }
+
+    @Test
+    public void masksPasswordSuffixedKeysAndUrlQueryParameters() {
+        String out = ConnectStringRedactor.redact("sslpassword=abc def; trustStorePassword=ghi;jdbcPassword=jkl; "
+                + "Jdbc=jdbc:postgresql://host/x?password=url-secret&sslpassword=other-secret&user=bob");
+
+        for (String secret : new String[] {"abc def", "ghi", "jkl", "url-secret", "other-secret"}) {
+            assertFalse(out, out.contains(secret));
+        }
+        assertTrue(out, out.contains("sslpassword=***; trustStorePassword=***;jdbcPassword=***; "));
+        assertTrue(out, out.contains("?password=***&sslpassword=***&user=bob"));
+    }
+
+    @Test
+    public void masksOracleThinPassword() {
+        assertEquals(
+                "jdbc:oracle:thin:scott/***@//host/svc",
+                ConnectStringRedactor.redact("jdbc:oracle:thin:scott/tiger@//host/svc"));
     }
 
     @Test
@@ -102,8 +136,9 @@ public class ConnectStringRedactorTest {
     public void redactsWholeExceptionChain() {
         IllegalStateException top = new IllegalStateException(
                 "Error connecting: foodmart",
-                new RuntimeException(CONNECT_FAILURE, new java.sql.SQLException(
-                        "jdbc:postgresql://bob:" + SECRET + "@warehouse.example/x")));
+                new RuntimeException(
+                        CONNECT_FAILURE,
+                        new java.sql.SQLException("jdbc:postgresql://bob:" + SECRET + "@warehouse.example/x")));
 
         Throwable out = ConnectStringRedactor.redact(top);
 
@@ -113,7 +148,8 @@ public class ConnectStringRedactorTest {
         assertFalse(out.getMessage(), String.valueOf(out.getMessage()).contains(SECRET));
         assertFalse(out.getCause().getMessage(), out.getCause().getMessage().contains(SECRET));
         assertFalse(
-                out.getCause().getCause().getMessage(), out.getCause().getCause().getMessage().contains(SECRET));
+                out.getCause().getCause().getMessage(),
+                out.getCause().getCause().getMessage().contains(SECRET));
         // the log still names the datasource and the root cause
         assertTrue(out.getMessage(), out.getMessage().contains("Error connecting: foodmart"));
         assertTrue(
@@ -172,8 +208,12 @@ public class ConnectStringRedactorTest {
 
     @Test
     public void handlesNullMessagesAndSelfCause() {
-        RuntimeException self = new RuntimeException();
-        self.initCause(self);
+        RuntimeException self = new RuntimeException() {
+            @Override
+            public synchronized Throwable getCause() {
+                return this;
+            }
+        };
 
         Throwable out = ConnectStringRedactor.redact(new IOException((String) null, self));
         assertNull(out.getMessage());
