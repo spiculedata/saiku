@@ -7,6 +7,20 @@ All notable changes to Saiku are documented here. This project follows
 
 ### Security
 
+- **Credentials redacted from connection error logs (saiku#2547, CWE-532).**
+  When a Mondrian connection failed, the logged exception's message carried the
+  full connect string — for a `security.type=passthrough` datasource that is
+  the signed-in user's login name and **plaintext password**
+  (`JdbcUser=`/`JdbcPassword=`), and for other datasources the stored warehouse
+  password. Anyone who could read `saiku.log` (a log shipper,
+  `GET /rest/saiku/admin/log/{logname}`) saw them. A new
+  `ConnectStringRedactor` masks `JdbcPassword=`/`password=` values and URL
+  user-info passwords with `***` — and is applied to the whole logged cause
+  chain in the connection managers, to the admin datasource
+  create/update/refresh error responses, and to the discover refresh logs.
+  The log still names the datasource, the JDBC URL, the login name and the
+  root cause; only the password values are masked.
+
 - **HTML export hardening (saiku#2528, follow-up to #2199/#2430).** The HTML
   export renderer escaped cell values but concatenated cell *properties* into
   attributes raw. Those properties are query-author-chosen (they come from

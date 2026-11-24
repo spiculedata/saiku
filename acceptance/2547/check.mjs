@@ -106,7 +106,7 @@ const redactionTest = webTest
 if (!redactionTest) {
   fail('S5: no SecurityAwareConnectionManager test captures appender output of a JdbcPassword= failure');
 }
-for (const needle of ['does not contain the secret', 'datasource name', 'root cause']) {
+for (const needle of ['must never appear', 'datasource name', 'root cause']) {
   if (!redactionTest.toLowerCase().includes(needle.toLowerCase())) {
     fail(`S5: the redaction test does not assert the issue's clause (${needle})`);
   }

@@ -34,6 +34,7 @@ import org.saiku.database.dto.SaikuUser;
 import org.saiku.datasources.datasource.SaikuDatasource;
 import org.saiku.log.LogExtractor;
 import org.saiku.repository.RepositoryException;
+import org.saiku.service.datasource.ConnectStringRedactor;
 import org.saiku.service.datasource.DatasourceService;
 import org.saiku.service.datasource.IDatasourceManager;
 import org.saiku.service.importer.JujuSource;
@@ -183,8 +184,9 @@ public class AdminResource {
                     .type("text/plain")
                     .build();
         } catch (Exception e) {
+            // saiku#2547 (CWE-532): the failure can carry the datasource's connect string.
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-                    .entity(e.getLocalizedMessage())
+                    .entity(ConnectStringRedactor.redact(e.getLocalizedMessage()))
                     .type("text/plain")
                     .build();
         }
@@ -212,9 +214,12 @@ public class AdminResource {
                     .type("application/json")
                     .build();
         } catch (Exception e) {
-            log.error(this.getClass().getName(), e);
+            // saiku#2547 (CWE-532): a failed connection's message carries the connect string
+            // (passthrough JdbcPassword= or the stored warehouse password) — redact what is
+            // logged and what the admin response echoes back.
+            log.error(this.getClass().getName(), ConnectStringRedactor.redact(e));
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-                    .entity(e.getLocalizedMessage())
+                    .entity(ConnectStringRedactor.redact(e.getLocalizedMessage()))
                     .type("text/plain")
                     .build();
         }
@@ -247,10 +252,11 @@ public class AdminResource {
                     .type("text/plain")
                     .build();
         } catch (Exception e) {
-            log.error("Error adding data source", e);
+            // saiku#2547 (CWE-532): the failure can carry the datasource's connect string.
+            log.error("Error adding data source", ConnectStringRedactor.redact(e));
             return Response.serverError()
                     .status(Response.Status.INTERNAL_SERVER_ERROR)
-                    .entity(e.getLocalizedMessage())
+                    .entity(ConnectStringRedactor.redact(e.getLocalizedMessage()))
                     .type("text/plain")
                     .build();
         }
