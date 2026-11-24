@@ -63,10 +63,53 @@ test('git push and .github/ edits stay disallowed for the model run, as in claud
   assert.match(args[1], /Write\(\.github\/\*\*\)/);
 });
 
+test('automation accounts and per-login permission checks guard the collection (saiku#2531 rework)', () => {
+  const collect = wf.slice(wf.indexOf('- name: Collect review comments'), wf.indexOf('- name: Record the pre-review head'));
+  // author_association alone is not write access; each distinct login must be
+  // resolved through the collaborators API and only admin/maintain/write kept.
+  assert.match(collect, /collaborators\/\$\{login\}\/permission/, 'each candidate login is resolved through the collaborators API');
+  assert.match(collect, /admin\|maintain\|write/, 'only admin/maintain/write logins are collected');
+  for (const bot of ['spicule-hive-bot', 'github-actions', 'claude', 'dependabot', 'renovate']) {
+    assert.ok(collect.includes(bot), `automation account ${bot} is denylisted`);
+  }
+});
+
+test('the model run cannot read or write .git (config, hooks, fsmonitor) (saiku#2531 rework)', () => {
+  const args = /--disallowed-tools\s+"([^"]*)"/.exec(agent);
+  assert.ok(args, '--disallowed-tools present');
+  for (const t of ['Read(.git/**)', 'Edit(.git/**)', 'Write(.git/**)']) {
+    assert.ok(args[1].includes(t), `--disallowed-tools must contain ${t}`);
+  }
+});
+
+test('the model inputs live in the workspace, not RUNNER_TEMP (saiku#2531 rework)', () => {
+  const collect = wf.slice(wf.indexOf('- name: Collect review comments'), wf.indexOf('- name: Record the pre-review head'));
+  assert.match(collect, /\.auto-review\/review-comments\.md/);
+  assert.match(collect, /\.auto-review\/pr-diff\.patch/);
+  assert.match(collect, /\.git\/info\/exclude/, '.auto-review/ is git-ignored so the review commit never includes it');
+  assert.ok(!collect.includes('RUNNER_TEMP'), 'inputs are not written to RUNNER_TEMP (workspace-scoped Read(**) cannot read it)');
+  assert.match(agent, /\.auto-review\/review-comments\.md/, 'the prompt points at the workspace copy');
+  assert.match(agent, /\.auto-review\/pr-diff\.patch/, 'the prompt points at the workspace copy');
+});
+
+const pushStep = wf.slice(wf.indexOf('- name: Push the review commit'), wf.indexOf('- name: Remove the trigger label'));
+
+test('the push does not trust the workspace git state (saiku#2531 rework)', () => {
+  assert.match(pushStep, /https:\/\/github\.com\/\$\{GH_REPO\}\.git/, 'the push goes to an explicit URL, never the .git/config remote');
+  assert.match(pushStep, /core\.hooksPath=\/dev\/null/, 'hooks are disabled for the push');
+  assert.match(pushStep, /core\.fsmonitor=/, 'fsmonitor is disabled for the push');
+  assert.match(pushStep, /push --no-verify/, '--no-verify set for the push');
+});
+
+test('the push carries at most one commit and never touches .github/ (saiku#2531 rework)', () => {
+  assert.match(pushStep, /rev-list --count "\$BEFORE\.\.HEAD"/, 'the push validates the commit count');
+  assert.match(pushStep, /git diff --name-only "\$BEFORE\.\.HEAD" \| grep -q '\^\\.github\/'/, 'the push rejects commits touching .github/');
+});
+
 test('the push is a separate step after the model run, on the PR head branch only', () => {
   assert.ok(wf.indexOf('anthropics/claude-code-action@') < wf.indexOf('- name: Push the review commit'), 'push follows the Claude step');
-  assert.match(push, /git -c http\.extraheader/, 'the push step authenticates itself; nothing persisted in .git/config');
-  assert.match(push, /push origin "HEAD:\$\{HEAD_REF\}"/, 'the push targets only the PR head branch');
+  assert.match(pushStep, /-c http\.extraheader/, 'the push step authenticates itself; nothing persisted in .git/config');
+  assert.match(pushStep, /"HEAD:\$\{HEAD_REF\}"/, 'the push targets only the PR head branch');
   const allowed = /--allowed-tools\s+"([^"]*)"/.exec(agent);
   assert.ok(allowed && !allowed[1].includes('Bash(git push'), 'the model run has no push tool in --allowed-tools');
 });
