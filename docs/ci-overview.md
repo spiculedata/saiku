@@ -130,7 +130,7 @@ Every file under `.github/workflows/`.
 | `claude.yml` | issue and PR comments, reviews, issues opened (assigning does not trigger it) | Claude Code on request, in interactive (tag) mode (no `prompt:` input); never runs on fork PRs; narrow tool allow-list, `git push` and `.github/` edits denied. Pushes still go through the action's own push wrapper (a tag-mode default the deny does not match) | none |
 | `auto-review.yml` | `apply-review` label added | applies review comments as one commit on the PR branch | none |
 | `issue-gate.yml` | `issue-approved` label added to an issue | removes the label and comments if the issue has no acceptance criteria | [AGENTS.md](../AGENTS.md#queues-and-labels) |
-| `dependabot-automerge.yml` | `ci` completed on a Dependabot PR | merges single-package patch (maven, npm) and Actions non-major/digest bumps | [Dependabot](#dependabot) |
+| `dependabot-automerge.yml` | `ci` completed on a Dependabot PR | merges single-package patch (maven, npm) bumps whose diff proves the version pair; Actions and workflow updates wait for a human | [Dependabot](#dependabot) |
 
 `ci-feedback.yml` also lists `model-diff` and `security-scan`; neither workflow exists on
 `development` yet (see [ci-feedback.md](ci-feedback.md)).
@@ -257,16 +257,25 @@ included. To aim acceptance at a private instance, change those two lines to rep
 ## Dependabot
 
 `.github/dependabot.yml` covers Maven, GitHub Actions, the Dockerfile base image and
-`saiku-ui` npm, weekly. npm updates are grouped (`build-toolchain`, `storybook`, `dev-tooling`,
+`saiku-ui` npm, weekly. Every ecosystem carries a **cooldown** of 7 days (`default-days: 7`): a
+new release is not considered for a version update until a week after it was published, so a
+compromised release has time to be noticed and pulled before Dependabot opens a PR for it
+(#2548). Cooldown delays version updates only — the separate security-update path is never
+delayed. npm updates are grouped (`build-toolchain`, `storybook`, `dev-tooling`,
 `production-minor-patch`), each bounded to minor and patch, so a major arrives as its own PR.
 Dependabot PRs build the image but never push it ([ci-images.md](ci-images.md)).
 
 **Auto-merge.** `dependabot-automerge.yml` runs when `ci` completes successfully on a Dependabot
 PR and merges it with plain `gh pr merge` (which enqueues it in the merge queue, so `ci` re-runs on
 the merge result) only if the PR is open, not a draft, still at the commit `ci` tested, a
-single-package semver-patch bump (Maven, npm) or a GitHub Actions non-major/digest bump, and it
-changes nothing but dependency manifests/lockfiles or workflow `uses:` lines. Groups, majors,
-minors and Docker bumps always wait for a human. The rules are in
+single-package semver-patch bump (Maven, npm), and it changes nothing but dependency
+manifests/lockfiles. GitHub Actions updates are never auto-merged: an action executes inside
+jobs that hold `packages: write`, the package token, the Claude token and release
+`contents: write`, and only `ci` stands between it and `development` (#2548). Maven build
+plugins are likewise left for a human (they execute at build time). Versions are read from the
+diff — every changed manifest must yield a single from→to pair, identical across files — not
+from the title, which a triager can edit. Groups, majors, minors, Docker bumps and anything
+else always wait for a human. The rules are in
 `.github/scripts/dependabot-automerge.mjs` (tested in `dependabot-automerge.test.mjs`); the
 workflow never checks out PR code. It merges the PR with the `automerge` label applied. To
 disable it, delete the workflow file; no repository setting is involved.
