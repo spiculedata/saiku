@@ -84,9 +84,6 @@ public final class OssieShelfSqlTranslator {
     private String translate(
             OssieQueryModel model, OssieModelDto semantic, Set<String> callerRoles, boolean backslashIsData) {
         if (semantic == null) throw new IllegalStateException("Ossie semantic model is required");
-        if (model.getFactDataset() == null || model.getFactDataset().isBlank()) {
-            throw new IllegalArgumentException("OssieQueryModel.factDataset is required");
-        }
         String schema = semantic.getName();
         OssieRoleContext roleContext = OssieRoleContext.resolve(callerRoles, semantic);
         roleContext.assertShelfVisible(model);
@@ -97,7 +94,7 @@ public final class OssieShelfSqlTranslator {
         for (OssieQueryModel.FieldRef f : model.getRows()) datasets.add(f.getDataset());
         for (OssieQueryModel.FieldRef f : model.getColumns()) datasets.add(f.getDataset());
         for (OssieQueryModel.FilterExpr f : model.getFilters()) {
-            if (f.getDataset() != null) datasets.add(f.getDataset());
+            datasets.add(f.getDataset() == null ? roleContext.resolveUnqualifiedField(f.getField()) : f.getDataset());
         }
         for (OssieQueryModel.SortRef s : model.getSorts()) {
             if (s.getDataset() != null) datasets.add(s.getDataset());
@@ -147,7 +144,7 @@ public final class OssieShelfSqlTranslator {
         // --- WHERE ---
         List<String> whereClauses = new ArrayList<>();
         for (OssieQueryModel.FilterExpr f : model.getFilters()) {
-            whereClauses.add(filterToSql(f, semantic, backslashIsData));
+            whereClauses.add(filterToSql(f, semantic, roleContext, backslashIsData));
         }
         // saiku#1393 — row-level security: every referenced dataset's role-matched predicates,
         // ORed together per dataset (each role the caller holds opens its own access window),
@@ -290,15 +287,15 @@ public final class OssieShelfSqlTranslator {
                 "Unknown metric '" + metricName + "' in semantic model '" + semantic.getName() + "'");
     }
 
-    private String filterToSql(OssieQueryModel.FilterExpr f, OssieModelDto semantic, boolean backslashIsData) {
-        String col;
-        if (f.getDataset() != null && !f.getDataset().isBlank()) {
-            String colExpr = lookupFieldExpression(semantic, f.getDataset(), f.getField());
-            String colName = (colExpr != null && !colExpr.isBlank()) ? colExpr : f.getField();
-            col = quoteRef(f.getDataset()) + "." + quoteRef(colName);
-        } else {
-            col = quoteRef(f.getField());
-        }
+    private String filterToSql(
+            OssieQueryModel.FilterExpr f,
+            OssieModelDto semantic,
+            OssieRoleContext roleContext,
+            boolean backslashIsData) {
+        String dataset = f.getDataset() == null ? roleContext.resolveUnqualifiedField(f.getField()) : f.getDataset();
+        String colExpr = lookupFieldExpression(semantic, dataset, f.getField());
+        String colName = (colExpr != null && !colExpr.isBlank()) ? colExpr : f.getField();
+        String col = quoteRef(dataset) + "." + quoteRef(colName);
         String op = f.getOp() == null ? "EQ" : f.getOp().toUpperCase();
         switch (op) {
             case "EQ":

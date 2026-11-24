@@ -98,6 +98,11 @@ public final class OssieRoleContext {
      * by {@code metric}) identifier is resolved here, before any SQL is emitted.
      */
     public void assertShelfVisible(OssieQueryModel model) {
+        String factDataset = model.getFactDataset();
+        if (factDataset == null || factDataset.isBlank() || findDataset(factDataset) == null) {
+            throw new SaikuValidationException(
+                    "Unknown fact dataset '" + factDataset + "' in model '" + modelName() + "'");
+        }
         for (OssieQueryModel.FieldRef f : model.getRows()) {
             assertFieldRef(f.getDataset(), f.getField());
         }
@@ -108,9 +113,7 @@ public final class OssieRoleContext {
             if (f.getDataset() != null) {
                 assertFieldRef(f.getDataset(), f.getField());
             } else {
-                // saiku#2526 — a filter naming no dataset is emitted as a bare quoted column;
-                // resolve it against the whole model instead of letting it through.
-                assertUnqualifiedField(f.getField());
+                resolveUnqualifiedField(f.getField());
             }
         }
         for (OssieQueryModel.SortRef s : model.getSorts()) {
@@ -122,7 +125,7 @@ public final class OssieRoleContext {
             } else if (s.getDataset() != null) {
                 assertFieldRef(s.getDataset(), s.getField());
             } else {
-                assertUnqualifiedField(s.getField());
+                throw new SaikuValidationException("Sort field '" + s.getField() + "' requires a dataset");
             }
         }
         for (OssieQueryModel.MetricRef v : model.getValues()) {
@@ -157,38 +160,38 @@ public final class OssieRoleContext {
     }
 
     /**
-     * Resolve a shelf reference that names NO dataset (unqualified filter / sort). The translator
-     * emits these as a bare quoted column that Calcite resolves against the FROM tables, so an
-     * unresolvable name used to reach the warehouse verbatim (saiku#2526). Fail-closed: the name
-     * must appear in at least one dataset of the model, and must be permitted in EVERY dataset
-     * that declares it — an ambiguous name with a denied branch is refused rather than resolved
-     * against whichever table Calcite happens to pick.
+     * Resolve an unqualified filter to its sole declaring dataset. The translator must use this
+     * dataset and the field's declared expression: a bare SQL column could otherwise resolve to
+     * a different dataset's hidden physical column. Ambiguous semantic names are rejected.
      */
-    private void assertUnqualifiedField(String fieldName) {
+    String resolveUnqualifiedField(String fieldName) {
         if (fieldName == null || fieldName.isBlank()) {
             throw new SaikuValidationException("Shelf entry names no field");
         }
-        boolean known = false;
-        boolean allPermitted = true;
+        OssieModelDto.Dataset matchDataset = null;
+        OssieModelDto.Field matchField = null;
         if (semantic != null) {
             for (OssieModelDto.Dataset ds : semantic.getDatasets()) {
                 for (OssieModelDto.Field f : ds.getFields()) {
                     if (fieldName.equalsIgnoreCase(f.getName())) {
-                        known = true;
-                        if (!permits(f.getAllowRoles(), f.getDenyRoles(), callerRoles)) {
-                            allPermitted = false;
+                        if (matchDataset != null) {
+                            throw new SaikuValidationException(
+                                    "Ambiguous field '" + fieldName + "': specify a dataset");
                         }
+                        matchDataset = ds;
+                        matchField = f;
                     }
                 }
             }
         }
-        if (!known) {
+        if (matchDataset == null) {
             throw new SaikuValidationException("Unknown field '" + fieldName + "' in model '" + modelName() + "'");
         }
-        if (!allPermitted) {
+        if (!permits(matchField.getAllowRoles(), matchField.getDenyRoles(), callerRoles)) {
             throw new SaikuAccessDeniedException(
                     "Access denied: field '" + fieldName + "' is not visible to the caller's roles");
         }
+        return matchDataset.getName();
     }
 
     /**

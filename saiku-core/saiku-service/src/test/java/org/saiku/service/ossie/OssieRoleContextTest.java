@@ -81,8 +81,13 @@ public class OssieRoleContextTest {
 
     @Test
     public void assertShelfVisiblePassesForUnrestrictedShelf() {
-        OssieRoleContext ctx = OssieRoleContext.resolve(Set.of(), new OssieModelDto());
-        ctx.assertShelfVisible(new OssieQueryModel()); // no exception
+        OssieModelDto semantic = new OssieModelDto();
+        OssieModelDto.Dataset ds = new OssieModelDto.Dataset();
+        ds.setName("customers");
+        semantic.getDatasets().add(ds);
+        OssieQueryModel model = new OssieQueryModel();
+        model.setFactDataset("customers");
+        OssieRoleContext.resolve(Set.of(), semantic).assertShelfVisible(model); // no exception
     }
 
     @Test

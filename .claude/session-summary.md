@@ -75,6 +75,12 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-11-24 — feature/2526-ossie-role-bypass — PR #2552 review rework
+**Was doing:** fixed the unqualified-filter physical-column collision, typed sort/fact validation, and consistent query-door error bodies on the existing PR branch.
+**Now:** check PR #2552 CI after the push; its JDK 22 build must verify Java compilation and tests.
+**Watch out:** local focused Maven tests stop before compilation because private GitHub Packages dependencies return 401; Spotless and acceptance checks pass.
+**Refs:** #2526, PR #2552
+
 ## 2026-11-12 — fix/2322-ossie-ai-policy-gate — PR #2355 formatting rework
 **Was doing:** fixed the async role test fixture's Spotless violation; local Spotless and licence checks pass, but focused Maven tests stop during dependency resolution with GitHub Packages 401.
 **Now:** use the latest PR #2355 CI result to verify the full build and focused tests; no local edits remain after the rework push.

@@ -61,7 +61,7 @@ claim('C1', 'SaikuValidationException exists as the typed rejection for unresolv
 claim(
   'C1',
   'assertShelfVisible resolves a filter entry that names no dataset (unqualified field)',
-  /assertUnqualifiedField\(f\.getField\(\)\)/.test(assertShelf),
+  /resolveUnqualifiedField\(f\.getField\(\)\)/.test(assertShelf),
 );
 claim(
   'C1',
@@ -80,7 +80,7 @@ claim(
 );
 
 // ---- C2 ------------------------------------------------------------------
-claim('C2', '/preview-sql maps SaikuValidationException to a typed 400', /catch \(SaikuValidationException/.test(query2));
+claim('C2', '/preview-sql uses the typed query error response', /return queryFailure\(e\)/.test(between(query2, 'public Response previewSql', 'Minimal JSON-string encoder')));
 claim(
   'C2',
   'queryFailure walks the cause chain for SaikuValidationException and answers 400',
@@ -89,7 +89,8 @@ claim(
 claim(
   'C2',
   'the async submit path answers 400 for a typed validation rejection too',
-  between(query2, 'public Response executeAsync', 'Poll async query status').includes('isValidation(e)'),
+  /catch \(SaikuValidationException \| SaikuAccessDeniedException e\)/.test(query2)
+    && between(query2, 'public Response executeAsync', 'Poll async query status').includes('return queryFailure(e)'),
 );
 
 // ---- C3 ------------------------------------------------------------------

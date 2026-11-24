@@ -226,9 +226,9 @@ public class OssieShelfSqlTranslatorTest {
         m.setValues(List.of(metric("revenue")));
         try {
             translator.translate(m, semantic);
-            fail("expected IllegalArgumentException");
-        } catch (IllegalArgumentException e) {
-            assertEquals("OssieQueryModel.factDataset is required", e.getMessage());
+            fail("expected SaikuValidationException");
+        } catch (SaikuValidationException e) {
+            assertTrue(e.getMessage(), e.getMessage().contains("fact dataset"));
         }
     }
 
@@ -655,5 +655,80 @@ public class OssieShelfSqlTranslatorTest {
 
         String sql = translator.translate(m, semantic);
         assertTrue(sql, sql.contains("SELECT \"customers\".\"region\" AS \"customers.region\""));
+    }
+
+    @Test
+    public void unqualifiedFilterUsesDeclaredDatasetAndExpressionDespiteHiddenPhysicalCollision() {
+        OssieModelDto.Field hidden = restrictedField("hidden_email", "ROLE_ADMIN");
+        hidden.setExpression("email");
+        dataset("customers").getFields().add(hidden);
+        OssieModelDto.Field visible = field("email");
+        visible.setExpression("ORDER_EMAIL");
+        dataset("orders").getFields().add(visible);
+
+        OssieQueryModel m = new OssieQueryModel();
+        m.setFactDataset("customers");
+        m.setRows(List.of(fieldRef("customers", "region")));
+        OssieQueryModel.FilterExpr filter = new OssieQueryModel.FilterExpr();
+        filter.setField("email");
+        filter.setOp("EQ");
+        filter.setValue("alice@example.com");
+        m.setFilters(List.of(filter));
+
+        String sql = translator.translate(m, semantic, Set.of("ROLE_USER"));
+        assertTrue(sql, sql.contains("FROM \"customers\", \"orders\""));
+        assertTrue(sql, sql.contains("WHERE \"orders\".\"ORDER_EMAIL\" = 'alice@example.com'"));
+        assertTrue(sql, !sql.contains("WHERE \"email\""));
+    }
+
+    @Test
+    public void ambiguousUnqualifiedFilterIsAValidationError() {
+        dataset("orders").getFields().add(field("region"));
+        OssieQueryModel m = new OssieQueryModel();
+        m.setFactDataset("orders");
+        m.setRows(List.of(fieldRef("customers", "region")));
+        OssieQueryModel.FilterExpr filter = new OssieQueryModel.FilterExpr();
+        filter.setField("region");
+        filter.setOp("EQ");
+        filter.setValue("NA");
+        m.setFilters(List.of(filter));
+
+        try {
+            translator.translate(m, semantic);
+            fail("expected SaikuValidationException");
+        } catch (SaikuValidationException e) {
+            assertTrue(e.getMessage(), e.getMessage().contains("Ambiguous field 'region'"));
+        }
+    }
+
+    @Test
+    public void unqualifiedSortIsAValidationError() {
+        OssieQueryModel m = new OssieQueryModel();
+        m.setFactDataset("orders");
+        m.setRows(List.of(fieldRef("customers", "region")));
+        OssieQueryModel.SortRef sort = new OssieQueryModel.SortRef();
+        sort.setField("region");
+        m.setSorts(List.of(sort));
+
+        try {
+            translator.translate(m, semantic);
+            fail("expected SaikuValidationException");
+        } catch (SaikuValidationException e) {
+            assertTrue(e.getMessage(), e.getMessage().contains("requires a dataset"));
+        }
+    }
+
+    @Test
+    public void unknownFactDatasetIsAValidationError() {
+        OssieQueryModel m = new OssieQueryModel();
+        m.setFactDataset("not_a_dataset");
+        m.setValues(List.of(metric("revenue")));
+
+        try {
+            translator.translate(m, semantic);
+            fail("expected SaikuValidationException");
+        } catch (SaikuValidationException e) {
+            assertTrue(e.getMessage(), e.getMessage().contains("not_a_dataset"));
+        }
     }
 }

@@ -58,6 +58,13 @@ fields:
     read `EMAIL_ADDRESS` instead of `email`; every row, filter — with or
     without `dataset` — sort and metric reference is resolved first).
 
+Unqualified filters resolve to a single dataset's semantic field and use its declared
+column expression. If more than one dataset declares the name, the request gets 400
+and must specify the dataset. Sorts by field must also name a dataset. Unknown fact
+datasets get 400. Because an unknown name gets 400 while a known but denied semantic
+name gets 403, callers can distinguish hidden field names; neither response exposes
+the hidden field's values or physical column name.
+
 Role names are matched **case-sensitively**, exactly like a Spring
 `GrantedAuthority` string (`ROLE_ADMIN` ≠ `role_admin`) — document this
 for operators so they don't get bitten mapping LDAP/SAML groups.

@@ -333,15 +333,15 @@ public class Query2Resource {
         try {
             if (tq == null || !"OSSIE".equalsIgnoreCase(tq.getQueryType())) {
                 return Response.status(Response.Status.BAD_REQUEST)
-                        .entity("{\"error\":\"queryType must be OSSIE\"}")
-                        .type("application/json")
+                        .entity(new QueryResult("queryType must be OSSIE"))
+                        .type(MediaType.APPLICATION_JSON)
                         .build();
             }
             org.saiku.service.ossie.OssieQueryService svc = thinQueryService.getOssieQueryService();
             if (svc == null) {
                 return Response.status(Response.Status.NOT_IMPLEMENTED)
-                        .entity("{\"error\":\"OssieQueryService not wired\"}")
-                        .type("application/json")
+                        .entity(new QueryResult("OssieQueryService not wired"))
+                        .type(MediaType.APPLICATION_JSON)
                         .build();
             }
             String sql = svc.previewSql(tq.getOssieQueryModel());
@@ -349,27 +349,9 @@ public class Query2Resource {
             // text-plain content-type dance.
             String body = "{\"sql\":" + jacksonJsonString(sql) + "}";
             return Response.ok(body).type("application/json").build();
-        } catch (SaikuValidationException e) {
-            // saiku#2526 — an identifier that resolves to no field/metric of the model is the
-            // caller's typo (or an attempt to name a hidden physical column); a typed 400 with
-            // the message, not a 500 and never a raw column emission.
-            return Response.status(Response.Status.BAD_REQUEST)
-                    .entity("{\"error\":" + jacksonJsonString(e.getMessage()) + "}")
-                    .type("application/json")
-                    .build();
-        } catch (SaikuAccessDeniedException e) {
-            // The denial may name a datasource or field; keep the response information-free.
-            return Response.status(Response.Status.FORBIDDEN)
-                    .entity("{\"error\":\"Access denied\"}")
-                    .type("application/json")
-                    .build();
         } catch (Exception e) {
             log.error("Cannot preview Ossie SQL", e);
-            String msg = e.getMessage() == null ? "internal error" : e.getMessage();
-            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-                    .entity("{\"error\":" + jacksonJsonString(msg) + "}")
-                    .type("application/json")
-                    .build();
+            return queryFailure(e);
         }
     }
 
@@ -713,9 +695,7 @@ public class Query2Resource {
     @Path("/execute-async")
     public Response executeAsync(ThinQuery tq) {
         if (asyncQueryService == null) {
-            return Response.serverError()
-                    .entity("AsyncQueryService not configured")
-                    .build();
+            return queryFailure(new IllegalStateException("AsyncQueryService not configured"));
         }
         try {
             // Capture the caller's request attributes so the async worker
@@ -737,8 +717,8 @@ public class Query2Resource {
                 if (ossieValidationService != null) {
                     try {
                         ossieValidationService.previewSql(tq.getOssieQueryModel());
-                    } catch (SaikuValidationException e) {
-                        // Typed unknown-identifier rejection of the shelf translator.
+                    } catch (SaikuValidationException | SaikuAccessDeniedException e) {
+                        // Reject invalid and denied shelves on the request thread.
                         throw e;
                     } catch (RuntimeException ignore) {
                         // Anything else (the model or connection can't even be resolved here,
@@ -757,22 +737,7 @@ public class Query2Resource {
                     .build();
         } catch (Exception e) {
             log.error("Cannot submit async query", e);
-            // saiku#1973 — a denied datasource is a 403 with a generic body, not a 500 that
-            // echoes the root cause message (which names the datasource).
-            if (isAccessDenied(e)) {
-                return accessDenied();
-            }
-            // saiku#2526 — an unknown shelf identifier is the caller's typo: typed 400 on the
-            // async door too, so the same payload doesn't read as a server fault here.
-            if (isValidation(e)) {
-                return Response.status(Status.BAD_REQUEST)
-                        .entity(ExceptionUtils.getRootCauseMessage(e))
-                        .type(MediaType.APPLICATION_JSON)
-                        .build();
-            }
-            return Response.serverError()
-                    .entity(ExceptionUtils.getRootCauseMessage(e))
-                    .build();
+            return queryFailure(e);
         }
     }
 
