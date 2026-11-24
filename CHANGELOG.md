@@ -5,6 +5,24 @@ All notable changes to Saiku are documented here. This project follows
 
 ## Unreleased
 
+### Security
+
+- **REST request-body size caps and storage caps (saiku#2535).** A new servlet-level
+  `RestBodySizeFilter` caps every `/rest/*` request body and answers `413` — a
+  declared-oversized body is refused before a single byte is read, and chunked
+  bodies are counted as they stream, so Jersey endpoints (including the
+  pre-authentication login) no longer read and parse arbitrary bodies before
+  answering. Defaults: 10 MiB for every REST body, 16 KiB for `/rest/saiku/session`,
+  50 MiB for the documented upload routes (zip upload, image upload, Ossie import,
+  quickstart upload, admin model diff, email self-send, SVG chart export) — all
+  tunable via `saiku.http.*` / `SAIKU_HTTP_*` (see `docs/operator-hardening.md`).
+  Stored objects are now capped too: repository objects (`saiku.repo.maxObjectBytes`,
+  10 MiB), dashboard history entries (`saiku.history.maxEntryBytes`, 4 MiB — an
+  oversized version is skipped, the save still succeeds), comment bodies
+  (`saiku.comments.maxBodyBytes`, 8 KiB) and live comments per dashboard
+  (`saiku.comments.maxCount`, 500) — oversized saves answer `413`, oversized or
+  over-count comments are refused.
+
 ## 4.9.1 — 2026-11-23
 
 Re-cut of 4.9.0 with the same code, plus a release-pipeline fix. The v4.9.0

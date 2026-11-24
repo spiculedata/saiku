@@ -39,6 +39,7 @@ import org.saiku.repository.PathNotFoundException;
 import org.saiku.repository.RepositoryException;
 import org.saiku.service.importer.JujuSource;
 import org.saiku.service.user.UserService;
+import org.saiku.service.util.StorageLimits;
 import org.saiku.service.util.security.MondrianRolePolicy;
 import org.saiku.service.util.security.authentication.PasswordProvider;
 import org.slf4j.Logger;
@@ -673,6 +674,21 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
 
     public String saveFile(String path, Object content, String user, List<String> roles) {
         try {
+            // #2535 backstop: the saveResource 413 and the REST body-size filter
+            // bound the HTTP request; this bounds the object itself, so callers
+            // that reach the manager directly (zip upload entries, image assets)
+            // cannot write an unbounded repository object either.
+            long maxBytes = StorageLimits.repoObjectBytes();
+            long contentBytes = content == null ? 0 : content.toString().getBytes(StandardCharsets.UTF_8).length;
+            if (contentBytes > maxBytes) {
+                log.warn(
+                        "Rejected oversized repository object {} ({} bytes > cap {} bytes)",
+                        path,
+                        contentBytes,
+                        maxBytes);
+                return "Save Failed: repository object exceeds the " + maxBytes
+                        + "-byte limit (saiku.repo.maxObjectBytes)";
+            }
             irm.saveFile(content, path, user, "nt:saikufiles", roles);
             return "Save Okay";
         } catch (RepositoryException e) {

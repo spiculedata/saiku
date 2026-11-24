@@ -31,6 +31,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -47,6 +48,7 @@ import org.saiku.repository.IRepositoryObject;
 import org.saiku.service.ISessionService;
 import org.saiku.service.datasource.DatasourceService;
 import org.saiku.service.user.UserService;
+import org.saiku.service.util.StorageLimits;
 import org.saiku.service.util.exception.SaikuServiceException;
 import org.saiku.web.rest.util.SessionRoles;
 import org.slf4j.Logger;
@@ -305,6 +307,18 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
         Response refused = refuseDatasourceDescriptorWrite(file);
         if (refused != null) {
             return refused;
+        }
+        // #2535: per-object storage cap. The REST body-size filter bounds the whole
+        // request; this bounds the object itself (an operator may raise the body cap
+        // for a route without unbounding repository objects).
+        long maxBytes = StorageLimits.repoObjectBytes();
+        long contentBytes = content == null ? 0 : content.getBytes(StandardCharsets.UTF_8).length;
+        if (contentBytes > maxBytes) {
+            log.warn("Rejected oversized repository object {} ({} bytes > cap {} bytes)", file, contentBytes, maxBytes);
+            return Response.status(Response.Status.REQUEST_ENTITY_TOO_LARGE)
+                    .entity("Repository object exceeds the " + maxBytes + "-byte limit (saiku.repo.maxObjectBytes)")
+                    .type("text/plain")
+                    .build();
         }
         String username = sessionService.getAllSessionObjects().get("username").toString();
         // saiku#1752: authoritative SecurityContextHolder read, not the session "roles" map.

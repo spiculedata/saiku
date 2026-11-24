@@ -143,7 +143,9 @@ const csrfCookie = cookieFrom({ headers: { getSetCookie: () => cookies } }, 'XSR
 if (!sessionCookie) fail('C3: login answered 200 but set no JSESSIONID cookie');
 const authHeaders = {
   Cookie: [...cookies].join('; '),
-  ...(csrfCookie ? { 'X-XSRF-TOKEN': decodeURIComponent(csrfCookie.split('=')[1]) } : {})
+  ...(csrfCookie
+    ? { 'X-XSRF-TOKEN': decodeURIComponent(csrfCookie.substring(csrfCookie.indexOf('=') + 1)) }
+    : {})
 };
 
 // ---- C1: a 30 MB repository save answers 413 --------------------------------------------------------
@@ -199,7 +201,7 @@ if (readBack.status !== 200 || !readBackBody.includes('hello #2535')) {
 }
 const del = await send(`/rest/saiku/api/repository/resource?file=${encodeURIComponent(`homes/${user}/2535-spec.txt`)}`, {
   method: 'DELETE',
-  headers: { Cookie: authHeaders.Cookie }
+  headers: { ...authHeaders }
 });
 await del.arrayBuffer();
 if (del.status !== 200) fail(`C3: delete of the spec object answered ${del.status}, expected 200`);
@@ -228,7 +230,7 @@ if (upload.status !== 200) {
 // Clean up the stored image asset (best-effort; the resource writes it as homes/<user>/spec2535.png).
 await send(`/rest/saiku/api/repository/resource?file=${encodeURIComponent(`homes/${user}/spec2535.png`)}`, {
   method: 'DELETE',
-  headers: { Cookie: authHeaders.Cookie }
+  headers: { ...authHeaders }
 }).then((r) => r.arrayBuffer());
 
 console.log('#2535: 30 MB repository save → 413, 5 MB anonymous login body → 413, small requests still work, image upload accepted');
