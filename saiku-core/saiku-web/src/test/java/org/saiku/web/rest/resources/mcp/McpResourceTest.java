@@ -19,6 +19,7 @@ import jakarta.ws.rs.core.Response;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.Before;
 import org.junit.Test;
@@ -333,6 +334,53 @@ public class McpResourceTest {
         assertEquals("short leak-safe token naming the required tier, never the message", "policy:aggregated", e.error);
     }
 
+    /** saiku#2540 (review): a tool call that fails through a non-2xx Response
+     *  (badRequest / NOT_FOUND / 5xx from the in-process AI resource) must NOT
+     *  be audited as allow + success — 400 maps to validation_error. */
+    @Test
+    public void badRequestResponseIsAuditedAsValidationErrorNotSuccess() throws Exception {
+        AiAuditLog auditLog = wireAuditLog();
+        String sid = initSession();
+        stubAi.executeResponse = Response.status(400).entity(Map.of("error", "validation failed")).build();
+
+        ObjectNode args = MAPPER.createObjectNode();
+        args.put("cube", "foodmart/FoodMart/FoodMart/Sales");
+        Response resp = resource.handle(rpc("tools/call", 11, callParams("run_query", args)), sid);
+        JsonNode body = MAPPER.valueToTree(resp.getEntity());
+        assertEquals("the failure surfaces as an RPC error, not a success result", -32602, body.path("error").path("code").asInt());
+
+        List<AiAuditEntry> entries = auditLog.recent(10, 0, null, null);
+        assertEquals(1, entries.size());
+        AiAuditEntry e = entries.get(0);
+        assertEquals("run_query", e.tool);
+        assertEquals("a non-2xx Response is a validation failure, not success", AiAuditEntry.OUTCOME_VALIDATION_ERROR, e.outcome);
+        assertEquals(AiAuditEntry.DECISION_ALLOW, e.policyDecision);
+        assertEquals("http_400", e.error);
+    }
+
+    /** saiku#2540 (review): a 404 — e.g. the owner-scoped drillthrough IDOR
+     *  guard on a foreign queryId — is audited as an error, never as success. */
+    @Test
+    public void notFoundDrillthroughIsAuditedAsErrorNotSuccess() throws Exception {
+        AiAuditLog auditLog = wireAuditLog();
+        String sid = initSession();
+        stubAi.drillthroughResponse = Response.status(404).entity(Map.of("error", "unknown queryId")).build();
+
+        ObjectNode args = MAPPER.createObjectNode();
+        args.put("queryId", "someone-elses-query");
+        Response resp = resource.handle(rpc("tools/call", 12, callParams("drillthrough", args)), sid);
+        JsonNode body = MAPPER.valueToTree(resp.getEntity());
+        assertEquals(-32603, body.path("error").path("code").asInt());
+
+        List<AiAuditEntry> entries = auditLog.recent(10, 0, null, null);
+        assertEquals(1, entries.size());
+        AiAuditEntry e = entries.get(0);
+        assertEquals("drillthrough", e.tool);
+        assertEquals(AiAuditEntry.OUTCOME_ERROR, e.outcome);
+        assertEquals(AiAuditEntry.DECISION_ALLOW, e.policyDecision);
+        assertEquals("http_404", e.error);
+    }
+
     /** saiku#2540: failures are audited too — an unknown tool records the tool
      *  name it was given and an error outcome, still exactly one entry. */
     @Test
@@ -638,6 +686,16 @@ public class McpResourceTest {
         final AtomicReference<String> executeFormat = new AtomicReference<>();
 
         final AtomicReference<Integer> searchLimit = new AtomicReference<>();
+
+        Response drillthroughResponse;
+
+        @Override
+        public Response drillthrough(
+                String queryId, int maxrows, Integer firstRowset, String position, String returns) {
+            return drillthroughResponse == null
+                    ? super.drillthrough(queryId, maxrows, firstRowset, position, returns)
+                    : drillthroughResponse;
+        }
 
         @Override
         public Response listCubes() {

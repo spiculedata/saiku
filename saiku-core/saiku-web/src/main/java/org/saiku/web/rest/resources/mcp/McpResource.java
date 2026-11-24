@@ -227,6 +227,34 @@ public class McpResource {
                     AiAuditEntry.DECISION_ALLOW,
                     null);
             return rpcResult(idNode, wrapToolResult(body), sessionId);
+        } catch (ToolHttpError e) {
+            // saiku#2540 (review): most in-process AI failures return a non-2xx
+            // Response instead of throwing — without this branch every one of
+            // them was audited as allow + success, which is exactly what an
+            // audit trail must not do. Map the status to the outcome it really
+            // is: 400/422 are the caller's fault, 403 is a denial, 404/5xx are
+            // server-side errors. The error token is the bare status; the body
+            // is not echoed into the log or the RPC envelope.
+            String outcome;
+            String decision = AiAuditEntry.DECISION_ALLOW;
+            if (e.status == 400 || e.status == 422) {
+                outcome = AiAuditEntry.OUTCOME_VALIDATION_ERROR;
+            } else if (e.status == 403) {
+                outcome = AiAuditEntry.OUTCOME_DENIED;
+                decision = AiAuditEntry.DECISION_DENY;
+            } else {
+                outcome = AiAuditEntry.OUTCOME_ERROR;
+            }
+            auditToolCall(
+                    name,
+                    targetCube,
+                    targetModel,
+                    latencyMs(auditStart),
+                    outcome,
+                    decision,
+                    "http_" + e.status);
+            int rpcCode = (e.status == 400 || e.status == 422) ? RPC_INVALID_PARAMS : RPC_INTERNAL_ERROR;
+            return rpcError(idNode, rpcCode, "tool call failed with HTTP " + e.status, sessionId);
         } catch (UnknownToolException e) {
             auditToolCall(
                     name,
@@ -569,12 +597,39 @@ public class McpResource {
     /** Read the JAX-RS Response entity as a JsonNode. AiQueryResource
      *  returns either POJOs ({@code AiQueryResponse}, {@code AiSchema}),
      *  collections (cube list), or {@code Map<String,Object>} bodies —
-     *  Jackson handles all three. */
+     *  Jackson handles all three.
+     *
+     *  <p>saiku#2540 (review): a non-2xx Response IS the tool-call failure —
+     *  {@code badRequest} on a missing cube, a foreign drillthrough
+     *  queryId's {@code NOT_FOUND}, any {@code error(...)} 500. It is
+     *  surfaced as a {@link ToolHttpError} so {@code handleToolsCall} can
+     *  audit the real outcome; it is not serialised as a success body.</p> */
     private JsonNode unwrap(Response r) {
+        if (r.getStatus() >= 400) {
+            throw new ToolHttpError(r.getStatus(), entityAsJson(r));
+        }
+        return entityAsJson(r);
+    }
+
+    private JsonNode entityAsJson(Response r) {
         Object entity = r.getEntity();
         if (entity == null) return MAPPER.createObjectNode();
         if (entity instanceof JsonNode jn) return jn;
         return MAPPER.valueToTree(entity);
+    }
+
+    /** saiku#2540 (review) — the failed in-process REST call, carried to
+     *  {@code handleToolsCall} so the audit entry can name the real outcome
+     *  and status. */
+    private static final class ToolHttpError extends RuntimeException {
+        final int status;
+        final JsonNode body;
+
+        ToolHttpError(int status, JsonNode body) {
+            super("tool call returned HTTP " + status);
+            this.status = status;
+            this.body = body;
+        }
     }
 
     private AiQueryRequest toAiQueryRequest(JsonNode args) {
