@@ -15,8 +15,8 @@
     },
     {
       "id": "C3",
-      "given": "docker.yml's push job",
-      "then": "its BuildKit `cache-from` and `cache-to` inputs are expression-gated on needs.target.outputs.pr, so a PR dispatch neither restores nor saves a type=gha cache in the default-branch scope"
+      "given": "docker.yml's push job (packages: write + id-token: write)",
+      "then": "its BuildKit `cache-from` is an explicit empty value — the privileged publishing job restores nothing at all, because expression-gating is accident-prevention, not a boundary against PR code — and its `cache-to` is expression-gated on needs.target.outputs.pr, so a PR dispatch saves nothing in the default-branch scope"
     },
     {
       "id": "C4",

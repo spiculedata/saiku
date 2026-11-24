@@ -117,14 +117,21 @@ poisoned cache entry is code execution in whatever job restores it.
 
 `release.yml` therefore restores no Actions cache at all — no
 `cache: maven`/`cache: npm` on the setup actions, no `cache-from` on the
-image build. Releases are rare; a cold build is the accepted trade. On the
-`docker.yml` side, the PR-dispatch path gets neither restore nor save: the
-build job's `setup-java` cache and the push job's BuildKit
-`cache-from`/`cache-to` are expression-gated on `needs.target.outputs.pr`,
-so a normal run (push, `pull_request`, plain manual dispatch) keeps the
-caches while a PR build runs cacheless. Both rules are pinned by the
-workflow-shape test `.github/scripts/cache-hygiene.test.mjs` (part of the
-`ci / flake-policy tests` node run).
+image build. Releases are rare; a cold build is the accepted trade. The
+same holds for `docker.yml`'s `push` job: it holds `packages: write` +
+`id-token: write` and publishes and signs the rolling `development` image,
+so it restores nothing at all (`cache-from: ''`).
+
+On the `docker.yml` `build` job the setup-java `cache` and the push job's
+BuildKit `cache-to` are expression-gated on `needs.target.outputs.pr`.
+That gating is **accident-prevention, not a security boundary**: the
+PR-dispatch run still executes PR content on the default-branch ref and
+in its cache scope, and malicious PR code could still write the
+`development` cache scope through the job's `ACTIONS_RUNTIME_TOKEN`. A
+publishing job therefore never *restores* — it cannot trust anything it
+could read. All three rules are pinned by the workflow-shape test
+`.github/scripts/cache-hygiene.test.mjs` (part of the `ci /
+flake-policy tests` node run).
 
 ## Dependency sourcing: Chainguard Libraries (saiku#2463)
 

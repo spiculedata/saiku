@@ -67,17 +67,24 @@ assert.match(
   'C2: docker.yml build job cache must be an expression gated on needs.target.outputs.pr',
 );
 
-// C3: docker.yml's push job — cache-from AND cache-to are gated on the PR-dispatch output.
+// C3: docker.yml's push job — cache-from is an explicit EMPTY value (the privileged publish
+// job restores nothing at all: expression gating is accident-prevention, not a boundary) and
+// cache-to stays gated on the PR-dispatch output so a PR dispatch saves nothing either.
 const push = jobsOf(docker).get('push') ?? '';
-for (const key of ['cache-from', 'cache-to']) {
-  const line = push.split('\n').find((l) => l.startsWith(`          ${key}:`));
-  assert.ok(line, `C3: docker.yml push job declares ${key}`);
-  assert.match(
-    line,
-    new RegExp(`${key}:\\s*\\$\\{\\{.*needs\\.target\\.outputs\\.pr.*\\}\\}`),
-    `C3: docker.yml push job ${key} must be an expression gated on needs.target.outputs.pr`,
-  );
-}
+const cacheFromLine = push.split('\n').find((l) => /^\s+cache-from:/.test(l));
+assert.ok(cacheFromLine, 'C3: docker.yml push job declares cache-from');
+assert.match(
+  cacheFromLine,
+  /^\s+cache-from:\s*(?:''|"")\s*$/,
+  'C3: docker.yml push job cache-from must be an explicit empty value — a packages:write/id-token:write job restores nothing at all',
+);
+const cacheToLine = push.split('\n').find((l) => /^\s+cache-to:/.test(l));
+assert.ok(cacheToLine, 'C3: docker.yml push job declares cache-to');
+assert.match(
+  cacheToLine,
+  /cache-to:\s*\$\{\{\s*needs\.target\.outputs\.pr\s*==\s*''/,
+  'C3: docker.yml push job cache-to must be an expression gated on needs.target.outputs.pr',
+);
 
 // C4: a workflow-shape test in .github/scripts/ pins both rules.
 const shapeTest = join(root, '.github', 'scripts', 'cache-hygiene.test.mjs');
@@ -87,4 +94,4 @@ assert.match(shapeText, /release\.yml/, 'C4: the shape test asserts on release.y
 assert.match(shapeText, /docker\.yml/, 'C4: the shape test asserts on docker.yml');
 assert.match(shapeText, /cache/, 'C4: the shape test asserts on cache behaviour');
 
-console.log('release.yml restores no cache; docker.yml gates all cache restore/save on the PR-dispatch output');
+console.log('release.yml restores no cache; docker.yml\'s push job restores nothing at all and saves nothing on the PR path; the build job gates its Maven cache on the PR-dispatch output');

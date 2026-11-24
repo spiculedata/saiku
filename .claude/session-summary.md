@@ -75,11 +75,6 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
-## 2026-11-24 — feature/2530-release-cache-hygiene — release.yml cache restore removed, docker.yml PR-dispatch caches gated
-**Was doing:** shipped saiku#2530: spec-first commit (acceptance/2530, red on base), then release.yml restores no Actions cache (deploy-packages `cache: maven`, docker job `cache-from`, npm-embed-build `cache: npm` all removed), docker.yml gates setup-java `cache` and BuildKit `cache-from`/`cache-to` on `needs.target.outputs.pr`, new shape test `.github/scripts/cache-hygiene.test.mjs`, docs in releasing.md + ci-overview.md.
-**Now:** watch PR CI — the node test glob (419 tests) passes locally; no Maven run needed (workflow/docs-only change, plus the spec).
-**Watch out:** the PR-targeted docker dispatch runs PR content ON the default-branch ref, so any cache it saves lands in the default-branch scope — never re-introduce an ungated `cache:` there.
-**Refs:** #2530, #2333, .github/scripts/cache-hygiene.test.mjs
 ## 2026-11-24 — fix/2544-csv-header-quote-escape — PR #2573 acceptance gate rework
 **Was doing:** added the missing executable acceptance spec for the CSV header quote-escaping fix; the PR branch merges cleanly with development.
 **Now:** check PR #2573 CI on the pushed commit, especially the acceptance convention and red-on-base proof.
