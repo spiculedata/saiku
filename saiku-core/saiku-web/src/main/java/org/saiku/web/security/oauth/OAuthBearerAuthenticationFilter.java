@@ -14,6 +14,7 @@ import org.saiku.web.security.RequestPaths;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
@@ -41,8 +42,12 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * falling through to Basic, which would never understand the header and would 401 with the wrong
  * challenge (or, worse, silently ignore a token the caller believed authenticated the call).
  *
- * <p>Context is cleared in a {@code finally} — never persisted to the {@code HttpSession} — mirroring
- * the stateless-per-request posture Basic already has on this endpoint.
+ * <p>Context handling (saiku#2543): the filter swaps in a FRESH {@link SecurityContext} and restores
+ * the previous one after the chain returns. Setting the JWT authentication into whatever context the
+ * outer {@code SecurityContextPersistenceFilter} already loaded — and merely clearing it afterwards —
+ * would let the persistence filter save the JWT principal back into the caller's HTTP session, where
+ * it would outlive the token's expiry on every {@code /rest/**} path. Restoring the pre-request
+ * context leaves the session's principal exactly as it was.
  */
 public class OAuthBearerAuthenticationFilter extends OncePerRequestFilter {
 
@@ -99,11 +104,18 @@ public class OAuthBearerAuthenticationFilter extends OncePerRequestFilter {
 
         List<GrantedAuthority> authorities = roleMapper.mapAuthorities(jwt);
         JwtAuthenticationToken authentication = new JwtAuthenticationToken(jwt, authorities, jwt.getSubject());
+        // saiku#2543: install the JWT identity in a FRESH context, never in the one the outer
+        // SecurityContextPersistenceFilter loaded from the caller's HTTP session — and restore
+        // that previous context afterwards, so the persistence filter saves the session's own
+        // principal back unchanged and the JWT identity never outlives the request.
+        SecurityContext previous = SecurityContextHolder.getContext();
+        SecurityContext fresh = SecurityContextHolder.createEmptyContext();
+        fresh.setAuthentication(authentication);
+        SecurityContextHolder.setContext(fresh);
         try {
-            SecurityContextHolder.getContext().setAuthentication(authentication);
             chain.doFilter(request, response);
         } finally {
-            SecurityContextHolder.clearContext();
+            SecurityContextHolder.setContext(previous);
         }
     }
 

@@ -3,6 +3,8 @@
 	"topbar.workspace": "Arbeitsbereich",
 	"topbar.admin": "Administration",
 	"topbar.signOut": "Abmelden",
+	"topbar.sponsor": "Unterstützen",
+	"topbar.sponsorTitle": "Saiku ist kostenlos und Open Source. Unterstützen Sie es über GitHub Sponsors",
 	"topbar.fullscreen.enter": "Vollbild starten",
 	"topbar.fullscreen.exit": "Vollbild beenden",
 	"topbar.theme.dark": "dunkel",

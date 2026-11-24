@@ -122,6 +122,10 @@ public class SaikuLauncher implements Callable<Integer> {
             System.out.println("  Workspace : " + base + "ui/");
             System.out.println("  Admin     : " + base + "ui/admin");
             System.out.println("  REST API  : " + base + "rest/saiku/");
+            if (org.saiku.service.util.SponsorLink.enabled()) {
+                // saiku#2577: Saiku is free; one line on how to support it (SAIKU_SPONSOR_LINK=false hides it).
+                System.out.println("  Sponsor   : " + org.saiku.service.util.SponsorLink.URL);
+            }
             printDefaultCredentialWarning();
             server.join();
             return 0;

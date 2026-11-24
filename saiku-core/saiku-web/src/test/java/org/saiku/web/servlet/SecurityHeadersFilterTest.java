@@ -138,10 +138,16 @@ public class SecurityHeadersFilterTest {
             System.clearProperty("saiku.security.csp");
             for (String uri : new String[] {"/rest/saiku/info", "/login.html", "/some/error", "/uix/index.html"}) {
                 Map<String, String> d = directives(serve("", uri).getHeader("Content-Security-Policy"));
+                assertEquals(uri, "'none'", d.get("default-src"));
                 assertEquals(uri, "'self'", d.get("script-src"));
                 assertEquals(uri, "'none'", d.get("object-src"));
                 assertEquals(uri, "'self'", d.get("base-uri"));
                 assertEquals(uri, "'self'", d.get("frame-ancestors"));
+                // saiku#2528: an injected form cannot post credentials off-origin, and a
+                // rendered cell image property cannot leak values to an external host.
+                assertEquals(uri, "'self'", d.get("form-action"));
+                assertEquals(uri, "'self' data:", d.get("img-src"));
+                assertEquals(uri, "'unsafe-inline'", d.get("style-src"));
             }
             assertEquals(
                     "/saiku context path",
@@ -151,6 +157,19 @@ public class SecurityHeadersFilterTest {
         } finally {
             restore("saiku.security.csp", prev);
         }
+    }
+
+    @Test
+    public void nonSpaCspIsSealedAgainstExternalHosts() {
+        // saiku#2528: the export surface renders query-author-chosen properties, so the
+        // default policy must deny what it does not name and must not admit arbitrary hosts.
+        Map<String, String> d = directives(SecurityHeadersFilter.NON_SPA_CSP);
+        assertEquals("'none'", d.get("default-src"));
+        assertEquals("'self'", d.get("form-action"));
+        assertEquals("'self' data:", d.get("img-src"));
+        assertFalse(
+                "img-src must not allow arbitrary hosts",
+                d.get("img-src").contains("*") || d.get("img-src").contains("http:"));
     }
 
     @Test
@@ -379,7 +398,10 @@ public class SecurityHeadersFilterTest {
             MockHttpServletResponse resp = serve("", uri);
             String csp = resp.getHeader("Content-Security-Policy");
             assertFalse(uri + " must keep the shell policy", csp != null && csp.contains("sandbox"));
-            assertFalse(uri + " must not allow inline script", csp != null && csp.contains("unsafe-inline"));
+            // saiku#2528: the non-SPA policy allows inline *styles* (the export page inlines
+            // its stylesheet), so the no-inline-script guarantee is asserted on script-src.
+            String scriptSrc = directives(csp).get("script-src");
+            assertTrue(uri + " must not allow inline script", scriptSrc == null || scriptSrc.equals("'self'"));
         }
     }
 
