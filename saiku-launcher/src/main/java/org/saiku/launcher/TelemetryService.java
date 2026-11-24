@@ -171,8 +171,8 @@ public final class TelemetryService {
         String latest = m.group(1);
         if (isNewer(latest, runningVersion)) {
             System.setProperty(LATEST_VERSION_PROPERTY, latest);
-            System.out.println("A newer Saiku release is available: " + latest + " (you are on "
-                    + runningVersion + ").");
+            System.out.println(
+                    "A newer Saiku release is available: " + latest + " (you are on " + runningVersion + ").");
         } else {
             System.clearProperty(LATEST_VERSION_PROPERTY);
         }

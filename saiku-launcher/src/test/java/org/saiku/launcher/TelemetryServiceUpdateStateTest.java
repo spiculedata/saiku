@@ -42,7 +42,9 @@ public class TelemetryServiceUpdateStateTest {
     public void anUnparsableReplyChangesNothing() {
         System.setProperty(TelemetryService.LATEST_VERSION_PROPERTY, "4.10.0");
         TelemetryService.noteLatest("{\"ok\":true}", "4.9.1");
-        assertEquals("no result is not a result — a stale record must survive", "4.10.0",
+        assertEquals(
+                "no result is not a result — a stale record must survive",
+                "4.10.0",
                 System.getProperty(TelemetryService.LATEST_VERSION_PROPERTY));
 
         System.clearProperty(TelemetryService.LATEST_VERSION_PROPERTY);
