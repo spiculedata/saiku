@@ -120,9 +120,13 @@ public class SessionService implements ISessionService, AccountStatusFilter.Sess
      * @see org.saiku.web.service.ISessionService#login(jakarta.servlet.http.HttpServletRequest, java.lang.String, java.lang.String)
      */
     public Map<String, Object> login(HttpServletRequest req, String username, String password) {
-        HttpSession session = ((HttpServletRequest) req).getSession(true);
-        session.getId();
-
+        // saiku#2524: NO session is created before authentication succeeds. This used to
+        // call req.getSession(true) up front, so every refused login attempt (bad
+        // password, unauthorised user) minted an empty container session that the
+        // launcher then persisted to <saiku-home>/sessions/ for seven days — a
+        // caller-controlled disk/heap filler at the rate-limit floor. The session is
+        // created in the success branch below, after authenticate() has thrown past the
+        // failures and the authorisation predicate has passed.
         if (authenticationManager != null) {
             authenticate(req, username, password);
         }
@@ -139,6 +143,12 @@ public class SessionService implements ISessionService, AccountStatusFilter.Sess
                 // SecurityContext saved during authenticate()) and reissues the
                 // JSESSIONID cookie with the new id. This manual login flow bypasses
                 // Spring Security's SessionAuthenticationStrategy, so we rotate here.
+                // saiku#2524: the container session is created HERE — authentication has
+                // succeeded and the authorisation predicate has passed. (For a real login
+                // authenticate()'s saveContext has already materialised it; for a
+                // manager-less anonymous login this is the first touch.)
+                HttpSession session = ((HttpServletRequest) req).getSession(true);
+                session.getId();
                 try {
                     req.changeSessionId();
                 } catch (IllegalStateException noSession) {
