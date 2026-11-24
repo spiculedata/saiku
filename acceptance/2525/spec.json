@@ -1,0 +1,34 @@
+{
+ "issue": 2525,
+ "title": "The reserved acl.json sidecar is not repository content: no door serves, writes, deletes, moves or lists it, and a move carries the ACL entries beneath the moved node",
+ "kind": "ui",
+ "criteria": [
+  {
+   "id": "C1",
+   "given": "any caller, through any repository door (repository resource, dashboards, apps, notebooks, history, embed-authoring, zip-upload)",
+   "then": "the acl.json sidecar is never served as content and never appears in a listing; only the ACL API answers ACL questions"
+  },
+  {
+   "id": "C2",
+   "given": "a caller without GRANT on the folder",
+   "then": "writing, deleting or moving acl.json as ordinary content is refused through every door; only the ACL API (which needs GRANT) can change who owns or can read a folder or any file in it"
+  },
+  {
+   "id": "C3",
+   "given": "a move of a node that carries ACL entries (a sidecar at or beneath it, or a per-file entry for it in its parent's sidecar)",
+   "then": "the move is refused without GRANT on the source; with GRANT it succeeds and every entry is re-keyed under the new path, so files and subfolders that were PRIVATE or SECURED are still protected as before"
+  },
+  {
+   "id": "C4",
+   "given": "the owner of a folder",
+   "then": "they can still read and re-ACL their own folder, and after a permitted move the ACL lookup at the new path reports the same owner and type"
+  },
+  {
+   "id": "C5",
+   "given": "any repository API response",
+   "then": "it does not contain the server's absolute repository path; in particular the repository tree no longer lists acl.json (whose content is a map of absolute paths)"
+  }
+ ],
+ "command": ["node", "check.mjs"],
+ "timeoutSeconds": 60
+}
