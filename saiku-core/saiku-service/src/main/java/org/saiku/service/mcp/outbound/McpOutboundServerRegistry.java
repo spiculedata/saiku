@@ -26,6 +26,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import org.saiku.datasources.connection.encrypt.CryptoUtil;
+import org.saiku.service.schedule.alert.WebhookUrlValidator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -47,15 +48,29 @@ public final class McpOutboundServerRegistry {
     private static final Logger log = LoggerFactory.getLogger(McpOutboundServerRegistry.class);
 
     private final Path root;
+    private final WebhookUrlValidator.HostResolver resolver;
     private final AtomicReference<Snapshot> snapshot = new AtomicReference<>(Snapshot.empty());
 
     public McpOutboundServerRegistry(Path root) {
+        this(root, McpOutboundServerParser.DNS);
+    }
+
+    /**
+     * Resolver seam (saiku#2542): the parse-time SSRF check resolves host names through this —
+     * tests inject a hermetic resolver, production uses live DNS.
+     */
+    public McpOutboundServerRegistry(Path root, WebhookUrlValidator.HostResolver resolver) {
         this.root = Objects.requireNonNull(root, "root");
+        this.resolver = resolver == null ? McpOutboundServerParser.DNS : resolver;
     }
 
     /** String-arg convenience so Spring XML wiring stays terse. */
     public McpOutboundServerRegistry(String root) {
         this(Path.of(Objects.requireNonNull(root, "root")));
+    }
+
+    public McpOutboundServerRegistry(String root, WebhookUrlValidator.HostResolver resolver) {
+        this(Path.of(Objects.requireNonNull(root, "root")), resolver);
     }
 
     /** Servers discovered on the last scan, ordered by id. */
@@ -196,7 +211,7 @@ public final class McpOutboundServerRegistry {
                 String relPath = root.relativize(p).toString();
                 try {
                     String content = Files.readString(p, StandardCharsets.UTF_8);
-                    servers.add(McpOutboundServerParser.parse(relPath, content));
+                    servers.add(McpOutboundServerParser.parse(relPath, content, resolver));
                 } catch (McpOutboundServerParser.ParseException e) {
                     log.warn("mcp-server {} rejected: {} ({})", relPath, e.getMessage(), e.code());
                     errors.add(new ServerError(relPath, e.code(), e.getMessage()));

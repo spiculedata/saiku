@@ -133,7 +133,7 @@ Every file under `.github/workflows/`.
 | `labeler.yml` | `pull_request_target` | advisory path labels (`area/*`) from `.github/labeler.yml` | none |
 | `claude-code-review.yml` | PR opened / synchronised / ready / reopened | automated review comments | none |
 | `claude.yml` | issue and PR comments, reviews, issues opened (assigning does not trigger it) | Claude Code on request, in interactive (tag) mode (no `prompt:` input); never runs on fork PRs; narrow tool allow-list, `git push` and `.github/` edits denied. Pushes still go through the action's own push wrapper (a tag-mode default the deny does not match) | none |
-| `auto-review.yml` | `apply-review` label added | applies review comments as one commit on the PR branch | none |
+| `auto-review.yml` | `apply-review` label added | applies review comments as one commit on the PR branch; only collaborator comments (OWNER/MEMBER/COLLABORATOR) are collected, the model run holds no checkout token, reads/edits stay workspace-scoped with no git diff/log/push (the push is a separate step), and the job has no `pull-requests: write`, so it cannot approve (saiku#2531) | none |
 | `issue-gate.yml` | `issue-approved` label added to an issue | removes the label and comments if the issue has no acceptance criteria | [AGENTS.md](../AGENTS.md#queues-and-labels) |
 | `dependabot-automerge.yml` | `ci` completed on a Dependabot PR | merges single-package patch (maven, npm) and Actions non-major/digest bumps | [Dependabot](#dependabot) |
 
@@ -246,7 +246,7 @@ included. To aim acceptance at a private instance, change those two lines to rep
 | `acceptance-waived` | human-applied; waives the acceptance spec on a docs-or-tests-only PR |
 | `spec-already-green` | human-applied; excuses a changed spec that legitimately passes on the base build (`acceptance / spec fails on base`) |
 | `preview` | opts any same-repo PR into a preview environment |
-| `apply-review` | maintainer-applied; `auto-review.yml` applies review comments, then removes the label |
+| `apply-review` | maintainer-applied; `auto-review.yml` applies collaborator-authored review comments, then removes the label (saiku#2531: bot and non-collaborator comments are dropped, so relay the actionable parts of an automated review yourself) |
 | `risk/high`, `risk/medium`, `risk/low` | advisory, set by `tier-classifier.yml` |
 | `area/*` | advisory, set by `labeler.yml` |
 | `issue-approved` | maintainer-applied; the only label that admits an issue to agents; `issue-gate.yml` removes it when acceptance criteria are missing |
