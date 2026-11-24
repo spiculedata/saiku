@@ -336,7 +336,11 @@ public class OssieShelfSqlTranslatorFuzzTest {
         OssieQueryModel m = new OssieQueryModel();
         m.setConnection(hostile(rng));
         m.setModel(semantic.getName());
-        m.setFactDataset(hostile(rng));
+        // The fact dataset is also validated before SQL emission. Keep its name hostile, but
+        // select one declared by this semantic model so successful translations remain sampled.
+        m.setFactDataset(semantic.getDatasets()
+                .get(rng.nextInt(semantic.getDatasets().size()))
+                .getName());
 
         // saiku#2526 — rows/columns/sorts reference only identifiers the model declares; the
         // hostile content reaches the emitted SQL through those names (and filter values).
