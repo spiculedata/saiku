@@ -13,10 +13,13 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiFunction;
 import org.saiku.service.util.security.Usernames;
+import org.saiku.web.share.ContentBinding;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -92,16 +95,16 @@ public class EmbedPublicRegistry {
                 log.info("Embed public-grant reads ENABLED ({}=true); no public grants active.", ALLOW_PUBLIC_PROP);
             } else {
                 log.warn(
-                        "Embed public-grant reads ENABLED ({}=true) with {} active grant(s) — those resources are"
-                                + " readable anonymously. Set {}=false to fail closed for multi-tenant.",
+                        "Embed public-grant reads ENABLED ({}=true) with {} active grant(s) — those resources"
+                                + " are readable anonymously. Set {}=false to fail closed for multi-tenant.",
                         ALLOW_PUBLIC_PROP,
                         grants.size(),
                         ALLOW_PUBLIC_PROP);
             }
         } else {
             log.info(
-                    "Embed public-grant reads DISABLED ({}=false) — anonymous embed reads fail closed; existing"
-                            + " embed-public.json grants are ignored.",
+                    "Embed public-grant reads DISABLED ({}=false) — anonymous embed reads fail closed;"
+                            + " existing embed-public.json grants are ignored.",
                     ALLOW_PUBLIC_PROP);
         }
     }
@@ -142,6 +145,17 @@ public class EmbedPublicRegistry {
             List<String> ownerRoles,
             String label,
             String contentSha256) {
+        return grant(resourceKind, resourcePath, grantedBy, ownerRoles, label, contentSha256, null);
+    }
+
+    public synchronized EmbedPublicGrant grant(
+            String resourceKind,
+            String resourcePath,
+            String grantedBy,
+            List<String> ownerRoles,
+            String label,
+            String contentSha256,
+            Map<String, String> referenceSha256) {
         EmbedPublicGrant g = new EmbedPublicGrant();
         g.resourceKind = resourceKind;
         g.resourcePath = resourcePath;
@@ -150,6 +164,7 @@ public class EmbedPublicRegistry {
         g.grantedAt = System.currentTimeMillis();
         g.label = label;
         g.contentSha256 = contentSha256;
+        g.referenceSha256 = referenceSha256 == null ? null : new HashMap<>(referenceSha256);
         grants.put(key(resourceKind, resourcePath), g);
         persist();
         return g;
@@ -168,29 +183,76 @@ public class EmbedPublicRegistry {
         persist();
     }
 
+    public synchronized void bindReferences(String resourceKind, String resourcePath, Map<String, String> hashes) {
+        EmbedPublicGrant g = lookup(resourceKind, resourcePath);
+        if (g != null && g.referenceSha256 == null) {
+            g.referenceSha256 = new HashMap<>(hashes);
+            persist();
+        }
+    }
+
     /** saiku#2536 — repository save hook (called by
      *  {@code SharedContentBindingListener} after every successful
      *  {@code saveFile}). When the writer is the grantor, re-arm the binding
      *  to the freshly written content; when anyone else wrote, poison the
      *  grant. */
     public synchronized void onContentSaved(String resourceKind, String path, String newSha256Hex, String writer) {
-        EmbedPublicGrant g = lookup(resourceKind, path);
-        if (g == null) {
+        onContentSaved(resourceKind, path, newSha256Hex, writer, null, (reference, grant) -> null);
+    }
+
+    public synchronized void onContentSaved(
+            String resourceKind,
+            String path,
+            String newSha256Hex,
+            String writer,
+            String content,
+            BiFunction<String, EmbedPublicGrant, String> readReference) {
+        if (path == null) {
             return;
         }
-        if (Usernames.sameUser(writer, g.grantedBy)) {
-            g.contentSha256 = newSha256Hex;
-            g.contentChangedByOther = false;
+        String normalized = ContentBinding.normalizePath(path);
+        for (EmbedPublicGrant g : grants.values()) {
+            boolean primary = resourceKind.equals(g.resourceKind)
+                    && normalized.equals(ContentBinding.normalizePath(g.resourcePath));
+            boolean referenced = g.referenceSha256 != null && g.referenceSha256.containsKey(normalized);
+            if (!primary && !referenced) {
+                continue;
+            }
+            boolean owner = Usernames.sameUser(writer, g.grantedBy);
+            if (primary && owner) {
+                g.contentSha256 = newSha256Hex;
+                g.contentChangedByOther = false;
+                if (content != null && ("dashboard".equals(g.resourceKind) || "app".equals(g.resourceKind))) {
+                    g.referenceSha256 = ContentBinding.referenceHashes(
+                            g.resourceKind, content, reference -> readReference.apply(reference, g));
+                    if (g.referencesChangedByOther != null) {
+                        g.referencesChangedByOther.retainAll(g.referenceSha256.keySet());
+                    }
+                }
+            } else if (primary) {
+                g.contentChangedByOther = true;
+                log.warn(
+                        "Publicly embedded content {} was written by '{}' but its grant was made by '{}' — the"
+                                + " grant is refused until re-granted (saiku#2536)",
+                        path,
+                        writer,
+                        g.grantedBy);
+            }
+            if (referenced) {
+                if (owner) {
+                    g.referenceSha256 = new HashMap<>(g.referenceSha256);
+                    g.referenceSha256.put(normalized, newSha256Hex);
+                    if (g.referencesChangedByOther != null) {
+                        g.referencesChangedByOther.remove(normalized);
+                    }
+                } else {
+                    if (g.referencesChangedByOther == null) {
+                        g.referencesChangedByOther = new HashSet<>();
+                    }
+                    g.referencesChangedByOther.add(normalized);
+                }
+            }
             persist();
-        } else {
-            g.contentChangedByOther = true;
-            persist();
-            log.warn(
-                    "Publicly embedded content {} was written by '{}' but its grant was made by '{}' — the grant"
-                            + " is refused until re-granted (saiku#2536)",
-                    path,
-                    writer,
-                    g.grantedBy);
         }
     }
 

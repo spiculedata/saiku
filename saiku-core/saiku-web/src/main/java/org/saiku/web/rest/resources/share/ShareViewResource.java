@@ -194,7 +194,8 @@ public class ShareViewResource {
         }
         if (t.contentChangedByOther) {
             log.warn(
-                    "refusing share read of {} — content was written by someone other than the minter (saiku#2536)",
+                    "refusing share read of {} — content was written by someone other than the minter"
+                            + " (saiku#2536)",
                     t.dashboardPath);
             return ContentBinding.conflict();
         }
@@ -209,14 +210,25 @@ public class ShareViewResource {
             return null;
         }
         if (t.contentSha256 == null) {
-            // Legacy unbound record — bind it to the content this read sees.
             shareTokenStore.bindContentSha256(g.token, ContentBinding.sha256Hex(raw));
-            return null;
-        }
-        if (!ContentBinding.matches(t.contentSha256, raw)) {
+        } else if (!ContentBinding.matches(t.contentSha256, raw)) {
             log.warn(
                     "refusing share read of {} — content no longer matches the minted binding (saiku#2536)",
                     t.dashboardPath);
+            return ContentBinding.conflict();
+        }
+        if (t.referenceSha256 == null) {
+            shareTokenStore.bindReferences(
+                    g.token,
+                    ContentBinding.referenceHashes(
+                            "dashboard", raw, path -> datasourceService.getFileData(path, g.ownerUser, g.ownerRoles)));
+            t = shareTokenStore.load(g.token);
+        }
+        if (t.referencesChangedByOther != null && !t.referencesChangedByOther.isEmpty()) {
+            return ContentBinding.conflict();
+        }
+        if (!ContentBinding.referencesMatch(
+                t.referenceSha256, path -> datasourceService.getFileData(path, g.ownerUser, g.ownerRoles))) {
             return ContentBinding.conflict();
         }
         return null;

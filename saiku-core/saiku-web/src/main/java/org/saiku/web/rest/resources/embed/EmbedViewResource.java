@@ -561,7 +561,8 @@ public class EmbedViewResource {
                     // saiku#1911: only overrides on an author-declared target are forwarded; an
                     // override on an undeclared axis is dropped fail-closed (a guest can't re-point the
                     // saved query's axes). A client override colliding with a forced-RLS hierarchy is
-                    // additionally stripped server-side by executeSaved (dropClientFiltersCollidingWithForced).
+                    // additionally stripped server-side by executeSaved
+                    // (dropClientFiltersCollidingWithForced).
                     java.util.List<AiFilterSelection> authorised = authorisedOverrides(filterOverrides, declared);
                     if (!authorised.isEmpty()) {
                         sreq.setFilters(authorised);
@@ -1090,11 +1091,11 @@ public class EmbedViewResource {
      * unreadable — the caller's existing not-found handling applies).
      */
     private Response contentBindingError(EmbedGuestDetails g) {
-        String pinned = null;
-        boolean poisoned = false;
+        EmbedToken token = null;
+        EmbedPublicGrant grant = null;
         if (g.token != null && tokenStore != null) {
-            EmbedToken t = tokenStore.load(g.token);
-            if (t == null) {
+            token = tokenStore.load(g.token);
+            if (token == null) {
                 // Not a store record: the embed-JWT path carries the raw
                 // compact JWT here, so load() never resolves. No server
                 // record exists to bind; the path pin from the JWT target is
@@ -1104,46 +1105,23 @@ public class EmbedViewResource {
                 // filter.) Proceed.
                 return null;
             }
-            poisoned = t.contentChangedByOther;
-            pinned = t.contentSha256;
-            if (pinned == null && !poisoned) {
-                // Legacy unbound token — bind it to the content this read sees.
-                String legacyRaw = readPinnedRaw(g);
-                if (legacyRaw == null) {
-                    return null; // unreadable → the caller's not-found handling applies.
-                }
-                pinned = ContentBinding.sha256Hex(legacyRaw);
-                tokenStore.bindContentSha256(g.token, pinned);
-                return null;
-            }
         } else if (g.token == null && publicRegistry != null) {
             // Public-grant read — the grant is the record.
-            EmbedPublicGrant grant = publicRegistry.lookup(g.resourceKind, g.resourcePath);
+            grant = publicRegistry.lookup(g.resourceKind, g.resourcePath);
             if (grant == null) {
                 // The filter admitted this read via the grant a moment ago; a
                 // concurrent revoke must not let the read complete anyway.
                 return ContentBinding.conflict();
-            }
-            poisoned = grant.contentChangedByOther;
-            pinned = grant.contentSha256;
-            if (pinned == null && !poisoned) {
-                // Legacy unbound grant — bind it to the content this read sees.
-                String legacyRaw = readPinnedRaw(g);
-                if (legacyRaw == null) {
-                    return null; // unreadable → the caller's not-found handling applies.
-                }
-                pinned = ContentBinding.sha256Hex(legacyRaw);
-                publicRegistry.bindContentSha256(g.resourceKind, g.resourcePath, pinned);
-                return null;
             }
         } else {
             // No store for the token and no registry wired — nothing to bind
             // against; the path pin remains the only scope. Proceed.
             return null;
         }
-        if (poisoned) {
+        if (token != null ? token.contentChangedByOther : grant.contentChangedByOther) {
             log.warn(
-                    "refusing embed read of {} — content was written by someone other than the minter (saiku#2536)",
+                    "refusing embed read of {} — content was written by someone other than the minter"
+                            + " (saiku#2536)",
                     g.resourcePath);
             return ContentBinding.conflict();
         }
@@ -1151,11 +1129,44 @@ public class EmbedViewResource {
         if (raw == null) {
             return null; // unreadable → the caller's not-found handling applies.
         }
-        if (!ContentBinding.matches(pinned, raw)) {
+        String pinned = token != null ? token.contentSha256 : grant.contentSha256;
+        if (pinned == null) {
+            if (token != null) {
+                tokenStore.bindContentSha256(g.token, ContentBinding.sha256Hex(raw));
+            } else {
+                publicRegistry.bindContentSha256(g.resourceKind, g.resourcePath, ContentBinding.sha256Hex(raw));
+            }
+        } else if (!ContentBinding.matches(pinned, raw)) {
             log.warn(
                     "refusing embed read of {} — content no longer matches the minted binding (saiku#2536)",
                     g.resourcePath);
             return ContentBinding.conflict();
+        }
+        if ("dashboard".equals(g.resourceKind) || "app".equals(g.resourceKind)) {
+            Map<String, String> references = token != null ? token.referenceSha256 : grant.referenceSha256;
+            if (references == null) {
+                Map<String, String> hashes = ContentBinding.referenceHashes(
+                        g.resourceKind, raw, path -> datasourceService.getFileData(path, g.ownerUser, g.ownerRoles));
+                if (token != null) {
+                    tokenStore.bindReferences(g.token, hashes);
+                    token = tokenStore.load(g.token);
+                    references = token == null ? null : token.referenceSha256;
+                } else {
+                    publicRegistry.bindReferences(g.resourceKind, g.resourcePath, hashes);
+                    grant = publicRegistry.lookup(g.resourceKind, g.resourcePath);
+                    references = grant == null ? null : grant.referenceSha256;
+                }
+            }
+            boolean referencedFilePoisoned = token != null
+                    ? token.referencesChangedByOther != null && !token.referencesChangedByOther.isEmpty()
+                    : grant != null
+                            && grant.referencesChangedByOther != null
+                            && !grant.referencesChangedByOther.isEmpty();
+            if (referencedFilePoisoned
+                    || !ContentBinding.referencesMatch(
+                            references, path -> datasourceService.getFileData(path, g.ownerUser, g.ownerRoles))) {
+                return ContentBinding.conflict();
+            }
         }
         return null;
     }

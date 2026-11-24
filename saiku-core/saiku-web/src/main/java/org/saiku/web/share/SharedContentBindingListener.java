@@ -4,6 +4,7 @@
  */
 package org.saiku.web.share;
 
+import org.saiku.service.datasource.DatasourceService;
 import org.saiku.service.datasource.RepositoryFileListener;
 import org.saiku.web.embed.EmbedPublicRegistry;
 import org.saiku.web.embed.EmbedTokenStore;
@@ -71,22 +72,49 @@ public class SharedContentBindingListener implements RepositoryFileListener {
     }
 
     @Override
-    public void onFileSaved(String path, String content, String writer) {
+    public void onFileSaved(String path, String content, String writer, DatasourceService datasourceService) {
         if (path == null || content == null) {
             // Folder creates carry no content — nothing bound to re-arm.
             return;
         }
         String sha = ContentBinding.sha256Hex(content);
         if (shareTokenStore != null) {
-            shareTokenStore.onContentSaved(path, sha, writer);
+            shareTokenStore.onContentSaved(
+                    path,
+                    sha,
+                    writer,
+                    content,
+                    (reference, token) -> datasourceService == null
+                            ? null
+                            : datasourceService.getFileData(reference, token.createdBy, token.ownerRolesSnapshot));
         }
         if (embedTokenStore != null) {
-            embedTokenStore.onContentSaved(path, sha, writer);
+            embedTokenStore.onContentSaved(
+                    path,
+                    sha,
+                    writer,
+                    content,
+                    (reference, token) -> datasourceService == null
+                            ? null
+                            : datasourceService.getFileData(reference, token.createdBy, token.ownerRolesSnapshot));
         }
         String kind = embedKindFor(path);
         if (kind != null && embedPublicRegistry != null) {
-            embedPublicRegistry.onContentSaved(kind, path, sha, writer);
+            embedPublicRegistry.onContentSaved(
+                    kind,
+                    path,
+                    sha,
+                    writer,
+                    content,
+                    (reference, grant) -> datasourceService == null
+                            ? null
+                            : datasourceService.getFileData(reference, grant.grantedBy, grant.ownerRolesSnapshot));
         }
         log.debug("Share/embed content binding observed save of {} by {} (sha={})", path, writer, sha);
+    }
+
+    /** Convenient direct hook for isolated tests. Production saves pass the datasource service. */
+    public void onFileSaved(String path, String content, String writer) {
+        onFileSaved(path, content, writer, null);
     }
 }

@@ -521,7 +521,8 @@ An embed with none of these set renders exactly as before (ECharts defaults).
 - **Content binding (saiku#2536).** A token (and a public grant) pins WHAT
   was shared, not only its path: Saiku records a SHA-256 of the pinned file
   at mint/grant time, and the guest read is refused with
-  `409 CONTENT_CHANGED` when the file no longer matches, or was written by
+  `409 CONTENT_CHANGED` when the pinned file or a saved query referenced by a
+  dashboard/app tile no longer matches, or was written by
   anyone other than the minter after minting — because guest queries
   execute under the minter's data scope, so a collaborator's tile swap must
   never be executed for them. The minter's own writes re-arm the binding

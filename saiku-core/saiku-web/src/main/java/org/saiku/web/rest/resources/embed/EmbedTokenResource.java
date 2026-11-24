@@ -188,6 +188,7 @@ public class EmbedTokenResource {
                         inspection.cubeIds);
             }
         }
+        ContentBinding.Snapshot binding = mintedContent(kind, path, username, roles);
         EmbedToken t = tokenStore.create(
                 kind,
                 path,
@@ -197,7 +198,8 @@ public class EmbedTokenResource {
                 body.label,
                 redaction,
                 body.tenantId,
-                mintedContentSha256(kind, path, username, roles));
+                binding.contentSha256(),
+                binding.referenceSha256());
         log.info(
                 "embed-token minted token=<redacted:{}> kind={} path={} by={} ttlHours={} redaction={}",
                 t.token.length(),
@@ -356,8 +358,9 @@ public class EmbedTokenResource {
                     .build();
         }
 
+        ContentBinding.Snapshot binding = mintedContent(kind, path, username, roles);
         EmbedPublicGrant g = publicRegistry.grant(
-                kind, path, username, roles, body.label, mintedContentSha256(kind, path, username, roles));
+                kind, path, username, roles, body.label, binding.contentSha256(), binding.referenceSha256());
         log.info("embed-public granted kind={} path={} by={}", kind, path, username);
         return Response.ok(Map.of(
                         "status", "OK",
@@ -425,15 +428,17 @@ public class EmbedTokenResource {
      * no file content to bind; unreadable content binds null (the record
      * behaves like a legacy one: it binds on first use).
      */
-    private String mintedContentSha256(String kind, String path, String username, List<String> roles) {
+    private ContentBinding.Snapshot mintedContent(String kind, String path, String username, List<String> roles) {
         if ("ai".equals(kind) || "authoring".equals(kind)) {
-            return null;
+            return new ContentBinding.Snapshot(null, null);
         }
         try {
-            return ContentBinding.sha256Hex(datasourceService.getFileData(path, username, roles));
+            String raw = datasourceService.getFileData(path, username, roles);
+            return ContentBinding.snapshot(
+                    kind, raw, reference -> datasourceService.getFileData(reference, username, roles));
         } catch (RuntimeException e) {
             log.warn("could not read {} at embed mint — record starts unbound", path, e);
-            return null;
+            return new ContentBinding.Snapshot(null, null);
         }
     }
 

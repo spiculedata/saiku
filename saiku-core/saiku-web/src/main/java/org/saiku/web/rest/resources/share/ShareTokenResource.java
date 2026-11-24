@@ -135,8 +135,15 @@ public class ShareTokenResource {
                     .build();
         }
 
+        ContentBinding.Snapshot binding = mintedContent(path, username, roles);
         ShareToken t = store.create(
-                path, username, roles, ttlHours * 3600_000L, body.label, mintedContentSha256(path, username, roles));
+                path,
+                username,
+                roles,
+                ttlHours * 3600_000L,
+                body.label,
+                binding.contentSha256(),
+                binding.referenceSha256());
         log.info(
                 "share-link minted token=<redacted:{}> dashboard={} by={} ttlHours={}",
                 t.token.length(),
@@ -216,12 +223,16 @@ public class ShareTokenResource {
      * roles. Unreadable content binds null (the record behaves like a legacy
      * token: it binds on first use); the guest read would 404 anyway.
      */
-    private String mintedContentSha256(String path, String username, List<String> roles) {
+    private ContentBinding.Snapshot mintedContent(String path, String username, List<String> roles) {
         try {
-            return ContentBinding.sha256Hex(datasourceService.getFileData(path, username, roles));
+            String raw = datasourceService.getFileData(path, username, roles);
+            return ContentBinding.snapshot(
+                    path.endsWith(".saikudash") ? "dashboard" : "notebook",
+                    raw,
+                    reference -> datasourceService.getFileData(reference, username, roles));
         } catch (RuntimeException e) {
             log.warn("could not read {} at share mint — token starts unbound", path, e);
-            return null;
+            return new ContentBinding.Snapshot(null, null);
         }
     }
 

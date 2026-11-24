@@ -6,6 +6,8 @@ package org.saiku.web.embed;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * A persisted embed-token record — the server-side authority for a
@@ -92,6 +94,12 @@ public class EmbedToken {
      *  ({@code ai}, {@code authoring}) and tokens minted before this
      *  binding existed — the latter bind to current content on first use. */
     public String contentSha256;
+
+    /** Mint-time hashes of saved queries referenced by dashboard/app tiles. */
+    public Map<String, String> referenceSha256;
+
+    /** Referenced files written by someone other than the minter. */
+    public Set<String> referencesChangedByOther;
 
     /** saiku#2536 — set once a user other than the minter has saved the
      *  pinned content since minting. Refuses the guest read even if the

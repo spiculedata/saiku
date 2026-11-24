@@ -10,6 +10,8 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import jakarta.ws.rs.core.Response;
+import java.util.Map;
+import java.util.Set;
 import org.junit.Test;
 
 /** Unit coverage of the saiku#2536 content-binding helper. */
@@ -44,5 +46,28 @@ public class ContentBindingTest {
         Response r = ContentBinding.conflict();
         assertEquals(409, r.getStatus());
         assertEquals(ContentBinding.CONTENT_CHANGED, ((java.util.Map<?, ?>) r.getEntity()).get("status"));
+    }
+
+    @Test
+    public void snapshot_binds_dashboard_and_app_reference_tiles() {
+        String dash = "{\"layout\":{\"tiles\":[{\"query\":{\"kind\":\"reference\",\"path\":\"/F/q.saiku\"}}]}}";
+        String app = "{\"pages\":[{\"grid\":{\"tiles\":[{\"query\":{\"kind\":\"reference\",\"path\":\"/F/q.saiku\"}}]}}]}";
+        for (String kind : Set.of("dashboard", "app")) {
+            String raw = "dashboard".equals(kind) ? dash : app;
+            ContentBinding.Snapshot snapshot = ContentBinding.snapshot(kind, raw, path -> "query-v1");
+            assertEquals(ContentBinding.sha256Hex(raw), snapshot.contentSha256());
+            assertEquals(Map.of("F/q.saiku", ContentBinding.sha256Hex("query-v1")), snapshot.referenceSha256());
+            assertTrue(ContentBinding.referencesMatch(snapshot.referenceSha256(), path -> "query-v1"));
+            assertFalse(ContentBinding.referencesMatch(snapshot.referenceSha256(), path -> "query-v2"));
+        }
+    }
+
+    @Test
+    public void unreadable_reference_cannot_bind_and_path_forms_match() {
+        String dash = "{\"layout\":{\"tiles\":[{\"query\":{\"kind\":\"reference\",\"path\":\"//F//q.saiku\"}}]}}";
+        Map<String, String> hashes = ContentBinding.referenceHashes("dashboard", dash, path -> null);
+        assertEquals(Map.of("F/q.saiku", ""), hashes);
+        assertFalse(ContentBinding.referencesMatch(hashes, path -> ""));
+        assertEquals("F/q.saiku", ContentBinding.normalizePath("//F//q.saiku"));
     }
 }

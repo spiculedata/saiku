@@ -235,8 +235,8 @@ public class DatasourceServiceTest {
         List<String> observed = new ArrayList<>();
         List<String> blows = new ArrayList<>();
         svc.setRepositoryFileListeners(java.util.List.of(
-                (path, content, writer) -> observed.add(path + "/" + content + "/" + writer),
-                (path, content, writer) -> {
+                (path, content, writer, service) -> observed.add(path + "/" + content + "/" + writer),
+                (path, content, writer, service) -> {
                     blows.add(path);
                     throw new RuntimeException("listener boom");
                 }));
@@ -246,6 +246,11 @@ public class DatasourceServiceTest {
         assertEquals(1, blows.size());
         // The second listener threw, yet the file was saved.
         assertEquals("content", manager.savedFiles.get("d.saikudash"));
+
+        manager.failSave = true;
+        assertEquals("Save Failed: repository", svc.saveFile("bad", "d.saikudash", "bob", List.of("R")));
+        assertEquals(1, observed.size()); // a failed save must not re-arm or poison a binding
+        manager.failSave = false;
 
         svc.removeFile("/repo/file.saiku", "tom", List.of("R"));
         assertTrue(manager.removedFiles.contains("/repo/file.saiku"));
@@ -350,6 +355,7 @@ public class DatasourceServiceTest {
         final List<String> removeCalls = new ArrayList<>();
         final Map<String, Object> internalFiles = new HashMap<>();
         final Map<String, Object> savedFiles = new HashMap<>();
+        boolean failSave;
         final Set<String> removedFiles = new HashSet<>();
         final List<String> movedFiles = new ArrayList<>();
         final List<Map<String, String>> addSchemaCalls = new ArrayList<>();
@@ -457,8 +463,11 @@ public class DatasourceServiceTest {
 
         @Override
         public String saveFile(String path, Object content, String user, List<String> roles) {
+            if (failSave) {
+                return "Save Failed: repository";
+            }
             savedFiles.put(path, content);
-            return "ok";
+            return "Save Okay";
         }
 
         @Override

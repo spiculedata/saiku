@@ -6,6 +6,8 @@ package org.saiku.web.embed;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Server-side record marking one saved query / dashboard as publicly
@@ -51,6 +53,12 @@ public class EmbedPublicGrant {
      *  made before this binding existed — those bind to current content on
      *  first use. */
     public String contentSha256;
+
+    /** Grant-time hashes of saved queries referenced by dashboard/app tiles. */
+    public Map<String, String> referenceSha256;
+
+    /** Referenced files written by someone other than the grantor. */
+    public Set<String> referencesChangedByOther;
 
     /** saiku#2536 — set once a user other than the grantor has saved the
      *  granted content since the grant was made. Refuses the public read

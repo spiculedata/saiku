@@ -120,7 +120,7 @@ public class DatasourceService implements Serializable {
         int start = location.toLowerCase().indexOf(referenceText);
         if (start == -1) {
             throw new SaikuDataSourceException(
-                    "Could not find old locale because there is currently no locale defined in the data source");
+                    "Could not find old locale because there is currently no locale defined in the data" + " source");
         } else {
             start += referenceText.length();
             int end = location.indexOf(";", start);
@@ -224,7 +224,9 @@ public class DatasourceService implements Serializable {
 
     public String saveFile(String content, String path, String name, List<String> roles) {
         String resp = datasources.saveFile(path, content, name, roles);
-        notifyFileSaved(path, content, name);
+        if ("Save Okay".equals(resp)) {
+            notifyFileSaved(path, content, name);
+        }
         return resp;
     }
 
@@ -241,7 +243,7 @@ public class DatasourceService implements Serializable {
     private void notifyFileSaved(String path, String content, String writer) {
         for (RepositoryFileListener l : repositoryFileListeners) {
             try {
-                l.onFileSaved(path, content, writer);
+                l.onFileSaved(path, content, writer, this);
             } catch (RuntimeException e) {
                 log.warn("RepositoryFileListener {} failed after saving {} by {}", l, path, writer, e);
             }

@@ -27,6 +27,7 @@ public interface RepositoryFileListener {
      * @param path repository path as handed to {@code saveFile}
      * @param content the exact string persisted (may be null for folder creates)
      * @param writer the authenticated username the save ran as
+     * @param datasourceService repository access for resolving files referenced by the saved content
      */
-    void onFileSaved(String path, String content, String writer);
+    void onFileSaved(String path, String content, String writer, DatasourceService datasourceService);
 }

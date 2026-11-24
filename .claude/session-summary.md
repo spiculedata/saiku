@@ -250,3 +250,8 @@ the tree first.
 **Was doing:** added `acceptance/2543` to prove the OAuth audience, explicit role mapping, and session-context requirements that the existing PR implements. The command spec passes on the PR head and fails on the current development base; there is no merge conflict.
 **Now:** check CI after the push. Local focused Maven tests stopped before compilation because GitHub Packages returned 401 for private Mondrian and olap4j artifacts.
 **Refs:** #2543, #2574
+
+## 2026-11-24 — feature/share-bind-content-2536 — PR #2565 review rework
+**Was doing:** extended share and embed content bindings to saved queries referenced by dashboard and app tiles, including public grants; normalized save paths and limited save notifications to successful writes. Added regression tests for referenced-query rewrites and owner edits.
+**Now:** check PR #2565 CI after the push. The focused Maven test run stopped before compilation because GitHub Packages returned 401 for Mondrian and olap4j; 21 isolated binding/store/listener tests passed locally.
+**Refs:** #2536, #2565

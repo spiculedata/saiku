@@ -17,6 +17,11 @@ A promoted entry has the same shape plus `**Status:** promoted`, `**Supersedes:*
 
 ---
 
+## 2026-11-24 — Shared content: bind saved queries referenced by tiles
+When a shared dashboard or app executes a saved-query reference under the minter's roles, bind that referenced file at mint time and check it before execution. A write by someone else to the referenced file must poison the link even if the parent document is untouched.
+**Why:** a hash of the parent dashboard or app does not detect a collaborator replacing the query at an unchanged reference path.
+**Source:** PR #2565 review of #2536
+
 ## 2026-11-24 — Ossie filters: resolve semantic names through their dataset and expression
 Checking that an unqualified filter name is visible somewhere in the model is insufficient. Resolve it to one declaring dataset, reject ambiguity, and emit that dataset's mapped column expression.
 **Why:** a bare quoted name can bind to a different table's hidden physical column and disclose values through filter results.

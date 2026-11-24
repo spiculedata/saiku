@@ -6,6 +6,8 @@ package org.saiku.web.share;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * A persisted share-token record (issue #941, widened by issue #1108) — the
@@ -61,6 +63,13 @@ public class ShareToken {
      *  content under the minter's roles. Null on tokens minted before this
      *  binding existed — those bind to current content on first use. */
     public String contentSha256;
+
+    /** Mint-time hashes of saved queries referenced by dashboard tiles.
+     *  Null only on records created before reference binding was introduced. */
+    public Map<String, String> referenceSha256;
+
+    /** Referenced files written by someone other than the minter. */
+    public Set<String> referencesChangedByOther;
 
     /** saiku#2536 — set once a user other than the minter has saved the
      *  shared content since minting. Refuses the guest read even if the

@@ -187,9 +187,10 @@ persist with the dashboard.
 - **Share** — mint a read-only **share link** so people can view a dashboard
   without an account, scoped to that dashboard. The link binds the dashboard
   **content**, not just its path (saiku#2536): queries on a shared dashboard
-  run under your roles, so a collaborator's later edit is refused
+  run under your roles, so a collaborator's later edit to the dashboard or a
+  saved query referenced by one of its tiles is refused
   (`409 CONTENT_CHANGED`) rather than executed for the viewer — re-mint the
-  link after anyone else changes the dashboard, while your own edits re-arm
+  link after anyone else changes either file, while your own edits re-arm
   the binding and keep the link working.
 - **Collaborate** — leave **comments** on a tile, and browse the dashboard's
   **version history** to see (and restore) earlier states.

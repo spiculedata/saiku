@@ -14,10 +14,13 @@ import java.nio.file.attribute.PosixFilePermission;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiFunction;
 import java.util.regex.Pattern;
 import org.saiku.service.util.security.Usernames;
 import org.slf4j.Logger;
@@ -93,6 +96,17 @@ public class ShareTokenStore {
             long ttlMillis,
             String label,
             String contentSha256) {
+        return create(dashboardPath, createdBy, ownerRoles, ttlMillis, label, contentSha256, null);
+    }
+
+    public ShareToken create(
+            String dashboardPath,
+            String createdBy,
+            List<String> ownerRoles,
+            long ttlMillis,
+            String label,
+            String contentSha256,
+            Map<String, String> referenceSha256) {
         ShareToken t = new ShareToken();
         t.token = generateId();
         t.dashboardPath = dashboardPath;
@@ -103,6 +117,7 @@ public class ShareTokenStore {
         t.revoked = false;
         t.label = label;
         t.contentSha256 = contentSha256;
+        t.referenceSha256 = referenceSha256 == null ? null : new HashMap<>(referenceSha256);
         persist(t);
         return t;
     }
@@ -120,6 +135,14 @@ public class ShareTokenStore {
         persist(t);
     }
 
+    public void bindReferences(String id, Map<String, String> hashes) {
+        ShareToken t = load(id);
+        if (t != null && t.referenceSha256 == null) {
+            t.referenceSha256 = new HashMap<>(hashes);
+            persist(t);
+        }
+    }
+
     /** saiku#2536 — repository save hook (called by
      *  {@code SharedContentBindingListener} after every successful
      *  {@code saveFile}). When the writer is the minter, re-arm the binding to
@@ -128,20 +151,38 @@ public class ShareTokenStore {
      *  refused until the link is re-minted, even if the bytes are later
      *  restored. */
     public void onContentSaved(String path, String newSha256Hex, String writer) {
+        onContentSaved(path, newSha256Hex, writer, null, (reference, token) -> null);
+    }
+
+    public void onContentSaved(
+            String path,
+            String newSha256Hex,
+            String writer,
+            String content,
+            BiFunction<String, ShareToken, String> readReference) {
         if (path == null) {
             return;
         }
+        String normalized = ContentBinding.normalizePath(path);
         for (ShareToken t : listAll()) {
-            if (!path.equals(t.dashboardPath)) {
+            boolean primary = normalized.equals(ContentBinding.normalizePath(t.dashboardPath));
+            boolean referenced = t.referenceSha256 != null && t.referenceSha256.containsKey(normalized);
+            if (!primary && !referenced) {
                 continue;
             }
-            if (Usernames.sameUser(writer, t.createdBy)) {
+            boolean owner = Usernames.sameUser(writer, t.createdBy);
+            if (primary && owner) {
                 t.contentSha256 = newSha256Hex;
                 t.contentChangedByOther = false;
-                persist(t);
-            } else {
+                if (content != null && t.dashboardPath.endsWith(".saikudash")) {
+                    t.referenceSha256 = ContentBinding.referenceHashes(
+                            "dashboard", content, reference -> readReference.apply(reference, t));
+                    if (t.referencesChangedByOther != null) {
+                        t.referencesChangedByOther.retainAll(t.referenceSha256.keySet());
+                    }
+                }
+            } else if (primary) {
                 t.contentChangedByOther = true;
-                persist(t);
                 log.warn(
                         "Shared content {} was written by '{}' but its share link was minted by '{}' —"
                                 + " the link is refused until re-minted (saiku#2536)",
@@ -149,6 +190,21 @@ public class ShareTokenStore {
                         writer,
                         t.createdBy);
             }
+            if (referenced) {
+                if (owner) {
+                    t.referenceSha256 = new HashMap<>(t.referenceSha256);
+                    t.referenceSha256.put(normalized, newSha256Hex);
+                    if (t.referencesChangedByOther != null) {
+                        t.referencesChangedByOther.remove(normalized);
+                    }
+                } else {
+                    if (t.referencesChangedByOther == null) {
+                        t.referencesChangedByOther = new HashSet<>();
+                    }
+                    t.referencesChangedByOther.add(normalized);
+                }
+            }
+            persist(t);
         }
     }
 

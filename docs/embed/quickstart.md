@@ -135,8 +135,9 @@ saiku-embed {
 
    **Content binding (saiku#2536).** The token also pins the content that
    was minted: Saiku records a SHA-256 of the pinned file at mint time and
-   refuses the embed read with `409 CONTENT_CHANGED` if the file was later
-   written by anyone other than the minter — even if it was edited back —
+   also pins every saved query referenced by a dashboard or app tile. It
+   refuses the embed read with `409 CONTENT_CHANGED` if any bound file was
+   later written by anyone other than the minter — even if it was edited back —
    because guest queries execute under the minter's data scope. Your own
    edits as the minter re-arm the binding, so iterating on a shared query or
    dashboard never breaks the embed. Tokens minted before this binding

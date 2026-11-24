@@ -4,13 +4,19 @@
  */
 package org.saiku.web.share;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
 
 /**
  * The content binding behind saiku#2536: a share link, embed token or public
@@ -34,6 +40,8 @@ import java.util.Map;
  */
 public final class ContentBinding {
 
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
     /** Status string of the 409 a changed/poisoned record produces. */
     public static final String CONTENT_CHANGED = "CONTENT_CHANGED";
 
@@ -53,12 +61,95 @@ public final class ContentBinding {
         }
     }
 
+    public record Snapshot(String contentSha256, Map<String, String> referenceSha256) {}
+
+    public static Snapshot snapshot(String kind, String raw, Function<String, String> readAsOwner) {
+        return new Snapshot(sha256Hex(raw), raw == null ? null : referenceHashes(kind, raw, readAsOwner));
+    }
+
     /** True when {@code pinnedSha256} is bound and matches {@code content}'s hash. */
     public static boolean matches(String pinnedSha256, String content) {
         if (pinnedSha256 == null || content == null) {
             return false;
         }
         return pinnedSha256.equals(sha256Hex(content));
+    }
+
+    /** Repository paths may arrive with or without a leading slash. */
+    public static String normalizePath(String path) {
+        return path == null ? null : path.replaceAll("/+", "/").replaceFirst("^/", "");
+    }
+
+    /** The content executed by a reference tile is a second repository file.
+     *  Bind it alongside the dashboard/app instead of trusting only the parent file. */
+    public static Map<String, String> referenceHashes(String kind, String raw, Function<String, String> readAsOwner) {
+        Map<String, String> hashes = new HashMap<>();
+        for (String path : referencePaths(kind, raw)) {
+            String content;
+            try {
+                content = readAsOwner.apply(path);
+            } catch (RuntimeException e) {
+                content = null;
+            }
+            // An unreadable target can never be used as a binding. Keep its
+            // path with an impossible hash so the guest read fails closed.
+            hashes.put(normalizePath(path), content == null ? "" : sha256Hex(content));
+        }
+        return hashes;
+    }
+
+    public static Set<String> referencePaths(String kind, String raw) {
+        Set<String> paths = new HashSet<>();
+        if (raw == null || (!"dashboard".equals(kind) && !"app".equals(kind))) {
+            return paths;
+        }
+        try {
+            JsonNode root = MAPPER.readTree(raw);
+            if (root == null) {
+                return paths;
+            }
+            if ("dashboard".equals(kind)) {
+                collectReferences(root.path("layout").path("tiles"), paths);
+            } else {
+                for (JsonNode page : root.path("pages")) {
+                    collectReferences(page.path("grid").path("tiles"), paths);
+                }
+            }
+        } catch (Exception ignored) {
+            // The guest parser also rejects malformed parent content.
+        }
+        return paths;
+    }
+
+    private static void collectReferences(JsonNode tiles, Set<String> paths) {
+        if (!tiles.isArray()) {
+            return;
+        }
+        for (JsonNode tile : tiles) {
+            JsonNode query = tile.path("query");
+            JsonNode path = query.path("path");
+            if ("reference".equals(query.path("kind").asText()) && path.isTextual()) {
+                paths.add(path.asText());
+            }
+        }
+    }
+
+    public static boolean referencesMatch(Map<String, String> hashes, Function<String, String> readAsOwner) {
+        if (hashes == null) {
+            return false;
+        }
+        for (Map.Entry<String, String> entry : hashes.entrySet()) {
+            String content;
+            try {
+                content = readAsOwner.apply(entry.getKey());
+            } catch (RuntimeException e) {
+                return false;
+            }
+            if (!matches(entry.getValue(), content)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -72,7 +163,8 @@ public final class ContentBinding {
                         "status",
                         CONTENT_CHANGED,
                         "error",
-                        "The shared content has changed since this link was minted. Ask the owner to share it again."))
+                        "The shared content has changed since this link was minted. Ask the owner to share"
+                                + " it again."))
                 .type(MediaType.APPLICATION_JSON)
                 .build();
     }

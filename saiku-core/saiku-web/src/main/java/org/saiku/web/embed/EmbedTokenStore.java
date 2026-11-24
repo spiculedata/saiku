@@ -14,12 +14,16 @@ import java.nio.file.attribute.PosixFilePermission;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiFunction;
 import java.util.regex.Pattern;
 import org.saiku.service.util.security.Usernames;
+import org.saiku.web.share.ContentBinding;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -153,6 +157,30 @@ public class EmbedTokenStore {
             EmbedToken.RedactionPolicy redactionPolicy,
             String tenantId,
             String contentSha256) {
+        return create(
+                resourceKind,
+                resourcePath,
+                createdBy,
+                ownerRoles,
+                ttlMillis,
+                label,
+                redactionPolicy,
+                tenantId,
+                contentSha256,
+                null);
+    }
+
+    public EmbedToken create(
+            String resourceKind,
+            String resourcePath,
+            String createdBy,
+            List<String> ownerRoles,
+            long ttlMillis,
+            String label,
+            EmbedToken.RedactionPolicy redactionPolicy,
+            String tenantId,
+            String contentSha256,
+            Map<String, String> referenceSha256) {
         if (resourceKind == null || !ALLOWED_KINDS.contains(resourceKind)) {
             // ALLOWED_KINDS.contains(null) throws NPE on Set.of immutables, so
             // null-check first — defends both the API and the runtime.
@@ -180,6 +208,7 @@ public class EmbedTokenStore {
         t.label = label;
         t.tenantId = "authoring".equals(resourceKind) ? tenantId : null;
         t.contentSha256 = contentSha256;
+        t.referenceSha256 = referenceSha256 == null ? null : new HashMap<>(referenceSha256);
         persist(t);
         return t;
     }
@@ -197,6 +226,14 @@ public class EmbedTokenStore {
         persist(t);
     }
 
+    public void bindReferences(String id, Map<String, String> hashes) {
+        EmbedToken t = load(id);
+        if (t != null && t.referenceSha256 == null) {
+            t.referenceSha256 = new HashMap<>(hashes);
+            persist(t);
+        }
+    }
+
     /** saiku#2536 — repository save hook (called by
      *  {@code SharedContentBindingListener} after every successful
      *  {@code saveFile}). Cube-pinned kinds ({@code ai}, {@code authoring})
@@ -204,27 +241,63 @@ public class EmbedTokenStore {
      *  writer is the minter, re-arm the binding to the freshly written
      *  content; when anyone else wrote, poison the record. */
     public void onContentSaved(String path, String newSha256Hex, String writer) {
+        onContentSaved(path, newSha256Hex, writer, null, (reference, token) -> null);
+    }
+
+    public void onContentSaved(
+            String path,
+            String newSha256Hex,
+            String writer,
+            String content,
+            BiFunction<String, EmbedToken, String> readReference) {
         if (path == null) {
             return;
         }
+        String normalized = ContentBinding.normalizePath(path);
         for (EmbedToken t : listAll()) {
-            if ("authoring".equals(t.resourceKind) || "ai".equals(t.resourceKind) || !path.equals(t.resourcePath)) {
+            if ("authoring".equals(t.resourceKind) || "ai".equals(t.resourceKind)) {
                 continue;
             }
-            if (Usernames.sameUser(writer, t.createdBy)) {
+            boolean primary = normalized.equals(ContentBinding.normalizePath(t.resourcePath));
+            boolean referenced = t.referenceSha256 != null && t.referenceSha256.containsKey(normalized);
+            if (!primary && !referenced) {
+                continue;
+            }
+            boolean owner = Usernames.sameUser(writer, t.createdBy);
+            if (primary && owner) {
                 t.contentSha256 = newSha256Hex;
                 t.contentChangedByOther = false;
-                persist(t);
-            } else {
+                if (content != null && ("dashboard".equals(t.resourceKind) || "app".equals(t.resourceKind))) {
+                    t.referenceSha256 = ContentBinding.referenceHashes(
+                            t.resourceKind, content, reference -> readReference.apply(reference, t));
+                    if (t.referencesChangedByOther != null) {
+                        t.referencesChangedByOther.retainAll(t.referenceSha256.keySet());
+                    }
+                }
+            } else if (primary) {
                 t.contentChangedByOther = true;
-                persist(t);
                 log.warn(
-                        "Embedded content {} was written by '{}' but its token was minted by '{}' — the token is"
-                                + " refused until re-minted (saiku#2536)",
+                        "Embedded content {} was written by '{}' but its token was minted by '{}' — the token"
+                                + " is refused until re-minted (saiku#2536)",
                         path,
                         writer,
                         t.createdBy);
             }
+            if (referenced) {
+                if (owner) {
+                    t.referenceSha256 = new HashMap<>(t.referenceSha256);
+                    t.referenceSha256.put(normalized, newSha256Hex);
+                    if (t.referencesChangedByOther != null) {
+                        t.referencesChangedByOther.remove(normalized);
+                    }
+                } else {
+                    if (t.referencesChangedByOther == null) {
+                        t.referencesChangedByOther = new HashSet<>();
+                    }
+                    t.referencesChangedByOther.add(normalized);
+                }
+            }
+            persist(t);
         }
     }
 

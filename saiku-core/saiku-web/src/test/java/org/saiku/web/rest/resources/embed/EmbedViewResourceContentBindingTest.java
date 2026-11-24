@@ -9,6 +9,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 
 import jakarta.ws.rs.core.Response;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
@@ -41,11 +42,14 @@ public class EmbedViewResourceContentBindingTest {
     private static final String QUERY_PATH = "/homes/alice/q.saiku";
     private static final String DASH_PATH = "/homes/alice/d.saikudash";
     private static final String APP_PATH = "/homes/alice/a.saikuapp";
+    private static final String REFERENCE_PATH = "/homes/alice/p.saiku";
     private static final String ORIGINAL_QUERY = "{\"mq\":{\"type\":\"QUERYMODEL\"}}";
     private static final String TAMPERED_QUERY = "{\"mq\":{\"type\":\"MDX\",\"mdx\":\"DRILLTHROUGH ...\"}}";
     private static final String ORIGINAL_DASH =
             "{\"id\":\"d\",\"name\":\"d\",\"layout\":{\"tiles\":[{\"id\":\"t1\",\"query\":{\"kind\":\"reference\",\"path\":\"/homes/alice/p.saiku\"}}]}}";
     private static final String ORIGINAL_APP = "{\"pages\":[{\"id\":\"pg1\",\"grid\":{\"tiles\":[]}}]}";
+    private static final String APP_WITH_REFERENCE =
+            "{\"pages\":[{\"id\":\"pg1\",\"grid\":{\"tiles\":[{\"id\":\"t1\",\"query\":{\"kind\":\"reference\",\"path\":\"/homes/alice/p.saiku\"}}]}}]}";
 
     @Rule
     public TemporaryFolder tmp = new TemporaryFolder();
@@ -184,6 +188,56 @@ public class EmbedViewResourceContentBindingTest {
     }
 
     @Test
+    public void collaborator_rewriting_only_dashboard_reference_is_refused_for_token() {
+        ds.files.put(DASH_PATH, ORIGINAL_DASH);
+        ds.files.put(REFERENCE_PATH, ORIGINAL_QUERY);
+        ContentBinding.Snapshot binding = ContentBinding.snapshot(
+                "dashboard", ORIGINAL_DASH, path -> ds.getFileData(path, "alice", List.of("ROLE_USER")));
+        EmbedToken t = tokens.create(
+                "dashboard",
+                DASH_PATH,
+                "alice",
+                List.of("ROLE_USER"),
+                3600_000L,
+                null,
+                null,
+                null,
+                binding.contentSha256(),
+                binding.referenceSha256());
+        pinGuest(t.token, "dashboard", DASH_PATH);
+        ds.files.put(REFERENCE_PATH, TAMPERED_QUERY);
+
+        assertEquals(
+                409, resource.tileQuery("homes/alice/d.saikudash", "t1", null).getStatus());
+        assertNull(ai.lastSavedRequest);
+    }
+
+    @Test
+    public void collaborator_rewriting_only_dashboard_reference_poisons_public_grant() {
+        ds.files.put(DASH_PATH, ORIGINAL_DASH);
+        ds.files.put(REFERENCE_PATH, ORIGINAL_QUERY);
+        ContentBinding.Snapshot binding = ContentBinding.snapshot(
+                "dashboard", ORIGINAL_DASH, path -> ds.getFileData(path, "alice", List.of("ROLE_USER")));
+        grants.grant(
+                "dashboard",
+                DASH_PATH,
+                "alice",
+                List.of("ROLE_USER"),
+                null,
+                binding.contentSha256(),
+                binding.referenceSha256());
+        pinGuest(null, "dashboard", DASH_PATH);
+        org.saiku.web.share.SharedContentBindingListener listener =
+                new org.saiku.web.share.SharedContentBindingListener();
+        listener.setEmbedPublicRegistry(grants);
+        listener.onFileSaved(REFERENCE_PATH, TAMPERED_QUERY, "bob", ds);
+
+        assertEquals(
+                409, resource.tileQuery("homes/alice/d.saikudash", "t1", null).getStatus());
+        assertNull(ai.lastSavedRequest);
+    }
+
+    @Test
     public void unchanged_public_grant_still_serves() {
         grants.grant(
                 "dashboard", DASH_PATH, "alice", List.of("ROLE_USER"), null, ContentBinding.sha256Hex(ORIGINAL_DASH));
@@ -214,6 +268,33 @@ public class EmbedViewResourceContentBindingTest {
         Response r = resource.app("homes/alice/a.saikuapp");
 
         assertEquals(409, r.getStatus());
+    }
+
+    @Test
+    public void collaborator_rewriting_only_app_reference_is_refused() {
+        ds.files.put(APP_PATH, APP_WITH_REFERENCE);
+        ds.files.put(REFERENCE_PATH, ORIGINAL_QUERY);
+        ContentBinding.Snapshot binding = ContentBinding.snapshot(
+                "app", APP_WITH_REFERENCE, path -> ds.getFileData(path, "alice", List.of("ROLE_USER")));
+        EmbedToken t = tokens.create(
+                "app",
+                APP_PATH,
+                "alice",
+                List.of("ROLE_USER"),
+                3600_000L,
+                null,
+                null,
+                null,
+                binding.contentSha256(),
+                binding.referenceSha256());
+        pinGuest(t.token, "app", APP_PATH);
+        ds.files.put(REFERENCE_PATH, TAMPERED_QUERY);
+
+        assertEquals(
+                409,
+                resource.appTileQuery("homes/alice/a.saikuapp", "pg1", "t1", null)
+                        .getStatus());
+        assertNull(ai.lastSavedRequest);
     }
 
     /* --------------------- legacy + JWT reads --------------------- */
@@ -259,10 +340,11 @@ public class EmbedViewResourceContentBindingTest {
 
     private static class StubDatasourceService extends DatasourceService {
         String fileContent = "{}";
+        Map<String, String> files = new HashMap<>();
 
         @Override
         public String getFileData(String path, String username, List<String> roles) {
-            return fileContent;
+            return files.getOrDefault(path, files.getOrDefault("/" + path, fileContent));
         }
     }
 

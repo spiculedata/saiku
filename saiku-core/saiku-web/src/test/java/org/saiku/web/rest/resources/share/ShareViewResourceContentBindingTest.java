@@ -9,6 +9,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import jakarta.ws.rs.core.Response;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
@@ -41,6 +42,7 @@ import org.springframework.security.web.authentication.preauth.PreAuthenticatedA
 public class ShareViewResourceContentBindingTest {
 
     private static final String PATH = "/homes/alice/F/d.saikudash";
+    private static final String REFERENCE = "/homes/alice/p.saiku";
     private static final String ORIGINAL =
             "{\"id\":\"d\",\"name\":\"d\",\"layout\":{\"tiles\":[{\"id\":\"t1\",\"query\":{\"kind\":\"reference\",\"path\":\"/homes/alice/p.saiku\"}}]}}";
     private static final String TAMPERED =
@@ -111,6 +113,61 @@ public class ShareViewResourceContentBindingTest {
         Response r = resource.dashboard();
 
         assertEquals(409, r.getStatus());
+    }
+
+    @Test
+    public void collaborator_rewriting_only_referenced_query_is_refused() {
+        ds.files.put(PATH, ORIGINAL);
+        ds.files.put(REFERENCE, "original saved query");
+        ContentBinding.Snapshot binding = ContentBinding.snapshot(
+                "dashboard", ORIGINAL, path -> ds.getFileData(path, "alice", List.of("ROLE_USER")));
+        ShareToken t = store.create(
+                PATH,
+                "alice",
+                List.of("ROLE_USER"),
+                3600_000L,
+                null,
+                binding.contentSha256(),
+                binding.referenceSha256());
+        pinGuest(t);
+        ds.files.put(REFERENCE, "bob's private-query swap");
+
+        Response r = resource.tileQuery("t1");
+
+        assertEquals(409, r.getStatus());
+        assertEquals(null, ai.lastSavedRequest);
+        // Restoring the bytes cannot clear a write by another user.
+        org.saiku.web.share.SharedContentBindingListener listener =
+                new org.saiku.web.share.SharedContentBindingListener();
+        listener.setShareTokenStore(store);
+        listener.onFileSaved(REFERENCE, "bob's private-query swap", "bob", ds);
+        ds.files.put(REFERENCE, "original saved query");
+        assertEquals(409, resource.tileQuery("t1").getStatus());
+    }
+
+    @Test
+    public void minter_rewriting_referenced_query_rearms_its_binding() {
+        ds.files.put(PATH, ORIGINAL);
+        ds.files.put(REFERENCE, "old query");
+        ContentBinding.Snapshot binding = ContentBinding.snapshot(
+                "dashboard", ORIGINAL, path -> ds.getFileData(path, "alice", List.of("ROLE_USER")));
+        ShareToken t = store.create(
+                PATH,
+                "alice",
+                List.of("ROLE_USER"),
+                3600_000L,
+                null,
+                binding.contentSha256(),
+                binding.referenceSha256());
+        pinGuest(t);
+        ds.files.put(REFERENCE, "new query");
+        org.saiku.web.share.SharedContentBindingListener listener =
+                new org.saiku.web.share.SharedContentBindingListener();
+        listener.setShareTokenStore(store);
+        listener.onFileSaved("//homes//alice/p.saiku", "new query", "alice", ds);
+
+        assertEquals(200, resource.tileQuery("t1").getStatus());
+        assertNotNull(ai.lastSavedRequest);
     }
 
     /** The minter's own edit re-arms the binding — the link keeps working. */
@@ -209,10 +266,11 @@ public class ShareViewResourceContentBindingTest {
 
     private static class StubDatasourceService extends DatasourceService {
         String fileContent = ORIGINAL;
+        Map<String, String> files = new HashMap<>();
 
         @Override
         public String getFileData(String path, String username, List<String> roles) {
-            return fileContent;
+            return files.getOrDefault(path, files.getOrDefault("/" + path, fileContent));
         }
     }
 
