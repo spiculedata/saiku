@@ -1,0 +1,29 @@
+{
+  "issue": 2521,
+  "title": "Repository save and move decide on the resolved file name and refuse trailing-separator .sds spellings; the loader reads only the /datasources tree",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "a non-admin save or move whose path resolves to a *.sds descriptor via a trailing-separator spelling (x.sds/, x.sds/., x.sds//, x.SDS/)",
+      "then": "the repository manager's guard runs on the RESOLVED file name (after resolveWithinDatadir) and the resource refuses with 403 before the service layer is reached, so nothing is written"
+    },
+    {
+      "id": "C2",
+      "given": "the manager's descriptor guard",
+      "then": "it lives in FilesystemRepositoryManager (requireAdminForDatasourceDescriptor), resolves the request path first, and gates save and BOTH ends of move — including a move whose source resolves to a descriptor"
+    },
+    {
+      "id": "C3",
+      "given": "datasource loading at start-up and on admin-role discover/refresh (getAllDataSources)",
+      "then": "it lists *.sds only under the /datasources subtree, so a descriptor anywhere else (a user's writable home) is never loaded"
+    },
+    {
+      "id": "C4",
+      "given": "the predicate both guards share",
+      "then": "it collapses trailing separators and dot segments before the .sds extension check, and still lets admin datasource writes (saveDataSource to /datasources/<name>.sds) and ordinary user files through"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}
