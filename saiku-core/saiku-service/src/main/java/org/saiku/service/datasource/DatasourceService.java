@@ -256,12 +256,31 @@ public class DatasourceService implements Serializable {
         }
     }
 
+    private void notifyFileChangedWithoutSave(String path, String writer) {
+        for (RepositoryFileListener l : repositoryFileListeners) {
+            try {
+                l.onFileChangedWithoutSave(path, writer, this);
+            } catch (RuntimeException e) {
+                log.warn("RepositoryFileListener {} failed after changing {} by {}", l, path, writer, e);
+            }
+        }
+    }
+
     public String removeFile(String path, String name, List<String> roles) {
-        return datasources.removeFile(path, name, roles);
+        String resp = datasources.removeFile(path, name, roles);
+        if ("Remove Okay".equals(resp)) {
+            notifyFileChangedWithoutSave(path, name);
+        }
+        return resp;
     }
 
     public String moveFile(String source, String target, String name, List<String> roles) {
-        return datasources.moveFile(source, target, name, roles);
+        String resp = datasources.moveFile(source, target, name, roles);
+        if ("Move Okay".equals(resp)) {
+            notifyFileChangedWithoutSave(source, name);
+            notifyFileChangedWithoutSave(target, name);
+        }
+        return resp;
     }
 
     public List<IRepositoryObject> getFiles(List<String> type, String username, List<String> roles) {

@@ -85,17 +85,37 @@ public final class ContentBinding {
     public static Map<String, String> referenceHashes(String kind, String raw, Function<String, String> readAsOwner) {
         Map<String, String> hashes = new HashMap<>();
         for (String path : referencePaths(kind, raw)) {
-            String content;
-            try {
-                content = readAsOwner.apply(path);
-            } catch (RuntimeException e) {
-                content = null;
-            }
-            // An unreadable target can never be used as a binding. Keep its
-            // path with an impossible hash so the guest read fails closed.
-            hashes.put(normalizePath(path), content == null ? "" : sha256Hex(content));
+            hashes.put(normalizePath(path), referenceHash(path, readAsOwner));
         }
         return hashes;
+    }
+
+    /** A parent save can add or remove references, but cannot re-arm a reference
+     *  that was already bound. Only saving that referenced file may do so. */
+    public static Map<String, String> refreshReferenceHashes(
+            String kind, String raw, Map<String, String> previous, Function<String, String> readAsOwner) {
+        Map<String, String> hashes = new HashMap<>();
+        for (String path : referencePaths(kind, raw)) {
+            String normalized = normalizePath(path);
+            hashes.put(
+                    normalized,
+                    previous != null && previous.containsKey(normalized)
+                            ? previous.get(normalized)
+                            : referenceHash(path, readAsOwner));
+        }
+        return hashes;
+    }
+
+    private static String referenceHash(String path, Function<String, String> readAsOwner) {
+        String content;
+        try {
+            content = readAsOwner.apply(path);
+        } catch (RuntimeException e) {
+            content = null;
+        }
+        // An unreadable target can never be used as a binding. Keep its
+        // path with an impossible hash so the guest read fails closed.
+        return content == null ? "" : sha256Hex(content);
     }
 
     public static Set<String> referencePaths(String kind, String raw) {

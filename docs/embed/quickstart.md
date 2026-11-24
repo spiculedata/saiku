@@ -139,8 +139,9 @@ saiku-embed {
    refuses the embed read with `409 CONTENT_CHANGED` if any bound file was
    later written by anyone other than the minter — even if it was edited back —
    because guest queries execute under the minter's data scope. Your own
-   edits as the minter re-arm the binding, so iterating on a shared query or
-   dashboard never breaks the embed. Tokens minted before this binding
+   saves as the minter re-arm the file you saved; saving a dashboard or app
+   cannot re-arm an existing referenced query. Delete and move operations
+   by another user also invalidate a bound path. Tokens minted before this binding
    existed bind to current content on their first read; re-mint (or revoke
    + re-mint) to bind immediately.
 2. **Public grant (no token at all)** — for a public blog post, mark the

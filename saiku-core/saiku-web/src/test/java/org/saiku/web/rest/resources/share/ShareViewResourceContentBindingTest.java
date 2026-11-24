@@ -146,6 +146,36 @@ public class ShareViewResourceContentBindingTest {
     }
 
     @Test
+    public void minter_parent_save_does_not_trust_unobserved_reference_swap() {
+        ds.files.put(PATH, ORIGINAL);
+        ds.files.put(REFERENCE, "original saved query");
+        ContentBinding.Snapshot binding = ContentBinding.snapshot(
+                "dashboard", ORIGINAL, path -> ds.getFileData(path, "alice", List.of("ROLE_USER")));
+        ShareToken t = store.create(
+                PATH,
+                "alice",
+                List.of("ROLE_USER"),
+                3600_000L,
+                null,
+                binding.contentSha256(),
+                binding.referenceSha256());
+        pinGuest(t);
+
+        // Bob replaced the referenced file by remove + move, without a save event for its path.
+        ds.files.put(REFERENCE, "bob's private-query swap");
+        assertEquals(409, resource.tileQuery("t1").getStatus());
+        String edited = ORIGINAL.replace("\"name\":\"d\"", "\"name\":\"retitled\"");
+        ds.files.put(PATH, edited);
+        org.saiku.web.share.SharedContentBindingListener listener =
+                new org.saiku.web.share.SharedContentBindingListener();
+        listener.setShareTokenStore(store);
+        listener.onFileSaved(PATH, edited, "alice", ds);
+
+        assertEquals(409, resource.tileQuery("t1").getStatus());
+        assertEquals(null, ai.lastSavedRequest);
+    }
+
+    @Test
     public void minter_rewriting_referenced_query_rearms_its_binding() {
         ds.files.put(PATH, ORIGINAL);
         ds.files.put(REFERENCE, "old query");

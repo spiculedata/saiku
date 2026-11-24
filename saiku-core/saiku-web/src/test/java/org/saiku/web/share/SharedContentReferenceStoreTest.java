@@ -86,4 +86,67 @@ public class SharedContentReferenceStoreTest {
 
         assertEquals(Map.of(QUERY, ContentBinding.sha256Hex("new query")), store.load(token.token).referenceSha256);
     }
+
+    @Test
+    public void parent_save_preserves_existing_reference_hash_for_all_record_types() throws Exception {
+        ShareTokenStore shares = new ShareTokenStore(tmp.newFolder().getAbsolutePath());
+        EmbedTokenStore tokens = new EmbedTokenStore(tmp.newFolder().getAbsolutePath());
+        EmbedPublicRegistry grants = new EmbedPublicRegistry(tmp.newFolder().getAbsolutePath());
+        ShareToken share = shares.create(
+                DASH, "alice", List.of("ROLE_USER"), 1000, null, ContentBinding.sha256Hex(DASH_RAW), REFERENCES);
+        EmbedToken token = tokens.create(
+                "dashboard",
+                DASH,
+                "alice",
+                List.of("ROLE_USER"),
+                1000,
+                null,
+                null,
+                null,
+                ContentBinding.sha256Hex(DASH_RAW),
+                REFERENCES);
+        grants.grant(
+                "dashboard", DASH, "alice", List.of("ROLE_USER"), null, ContentBinding.sha256Hex(DASH_RAW), REFERENCES);
+
+        shares.onContentSaved(DASH, ContentBinding.sha256Hex(DASH_RAW), "alice", DASH_RAW, (path, record) -> "bob");
+        tokens.onContentSaved(DASH, ContentBinding.sha256Hex(DASH_RAW), "alice", DASH_RAW, (path, record) -> "bob");
+        grants.onContentSaved(
+                "dashboard", DASH, ContentBinding.sha256Hex(DASH_RAW), "alice", DASH_RAW, (path, record) -> "bob");
+
+        assertEquals(REFERENCES, shares.load(share.token).referenceSha256);
+        assertEquals(REFERENCES, tokens.load(token.token).referenceSha256);
+        assertEquals(REFERENCES, grants.lookup("dashboard", DASH).referenceSha256);
+    }
+
+    @Test
+    public void delete_or_move_of_bound_path_by_other_user_poisons_all_records() throws Exception {
+        ShareTokenStore shares = new ShareTokenStore(tmp.newFolder().getAbsolutePath());
+        EmbedTokenStore tokens = new EmbedTokenStore(tmp.newFolder().getAbsolutePath());
+        EmbedPublicRegistry grants = new EmbedPublicRegistry(tmp.newFolder().getAbsolutePath());
+        ShareToken share = shares.create(
+                DASH, "alice", List.of("ROLE_USER"), 1000, null, ContentBinding.sha256Hex(DASH_RAW), REFERENCES);
+        EmbedToken token = tokens.create(
+                "dashboard",
+                DASH,
+                "alice",
+                List.of("ROLE_USER"),
+                1000,
+                null,
+                null,
+                null,
+                ContentBinding.sha256Hex(DASH_RAW),
+                REFERENCES);
+        grants.grant(
+                "dashboard", DASH, "alice", List.of("ROLE_USER"), null, ContentBinding.sha256Hex(DASH_RAW), REFERENCES);
+        SharedContentBindingListener listener = new SharedContentBindingListener();
+        listener.setShareTokenStore(shares);
+        listener.setEmbedTokenStore(tokens);
+        listener.setEmbedPublicRegistry(grants);
+
+        listener.onFileChangedWithoutSave("//homes//alice/F/q.saiku", "bob", null);
+
+        assertTrue(shares.load(share.token).referencesChangedByOther.contains(QUERY));
+        assertTrue(tokens.load(token.token).referencesChangedByOther.contains(QUERY));
+        assertTrue(grants.lookup("dashboard", DASH).referencesChangedByOther.contains(QUERY));
+    }
 }

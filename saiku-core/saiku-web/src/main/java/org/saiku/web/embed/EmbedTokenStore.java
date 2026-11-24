@@ -268,8 +268,8 @@ public class EmbedTokenStore {
                 t.contentSha256 = newSha256Hex;
                 t.contentChangedByOther = false;
                 if (content != null && ("dashboard".equals(t.resourceKind) || "app".equals(t.resourceKind))) {
-                    t.referenceSha256 = ContentBinding.referenceHashes(
-                            t.resourceKind, content, reference -> readReference.apply(reference, t));
+                    t.referenceSha256 = ContentBinding.refreshReferenceHashes(
+                            t.resourceKind, content, t.referenceSha256, reference -> readReference.apply(reference, t));
                     if (t.referencesChangedByOther != null) {
                         t.referencesChangedByOther.retainAll(t.referenceSha256.keySet());
                     }
@@ -298,6 +298,36 @@ public class EmbedTokenStore {
                 }
             }
             persist(t);
+        }
+    }
+
+    /** A successful delete or move can replace a bound path without a save event. */
+    public void onContentChangedWithoutSave(String path, String writer) {
+        if (path == null) {
+            return;
+        }
+        String normalized = ContentBinding.normalizePath(path);
+        for (EmbedToken t : listAll()) {
+            if ("authoring".equals(t.resourceKind) || "ai".equals(t.resourceKind)) {
+                continue;
+            }
+            if (Usernames.sameUser(writer, t.createdBy)) {
+                continue;
+            }
+            boolean primary = normalized.equals(ContentBinding.normalizePath(t.resourcePath));
+            boolean referenced = t.referenceSha256 != null && t.referenceSha256.containsKey(normalized);
+            if (primary || referenced) {
+                if (primary) {
+                    t.contentChangedByOther = true;
+                }
+                if (referenced) {
+                    if (t.referencesChangedByOther == null) {
+                        t.referencesChangedByOther = new HashSet<>();
+                    }
+                    t.referencesChangedByOther.add(normalized);
+                }
+                persist(t);
+            }
         }
     }
 

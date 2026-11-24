@@ -75,6 +75,12 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-11-24 — feature/share-bind-content-2536 — PR #2565 reference rework
+**Was doing:** merged development and fixed the parent-save reference rehash hole; successful removes and moves now notify binding listeners. Added share, embed-token, public-grant, and service regression tests.
+**Now:** check PR #2565 CI on the pushed head, especially the Java build and new resource tests.
+**Watch out:** local Maven cannot resolve private Mondrian/olap4j packages (401); 24 isolated binding/store/listener tests, Spotless, and acceptance #2536 passed.
+**Refs:** #2536, #2565
+
 ## 2026-11-24 — feature/2540-mcp-ai-audit — PR #2563 review rework
 **Was doing:** merged current development into the PR branch, retaining both session-summary entries, and added assertions for the MCP validation error's `status`, `field` and `available` fields.
 **Now:** check PR #2563 CI after the push, especially the JDK 22 build and the focused MCP audit tests.

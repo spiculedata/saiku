@@ -5,10 +5,8 @@
 package org.saiku.service.datasource;
 
 /**
- * A callback fired after a successful repository file save (saiku#2536). Every
- * REST save path funnels through {@link DatasourceService#saveFile}, so a
- * listener registered here observes every user-facing write to a repository
- * object — including its writer's username and the exact content written.
+ * Callbacks fired after successful repository file mutations (saiku#2536).
+ * A listener registered here observes user-facing saves, removes and moves.
  *
  * <p>The share/embed content-binding hook uses this to re-bind a minted
  * content hash when the minter themself saves (the link keeps serving their
@@ -30,4 +28,7 @@ public interface RepositoryFileListener {
      * @param datasourceService repository access for resolving files referenced by the saved content
      */
     void onFileSaved(String path, String content, String writer, DatasourceService datasourceService);
+
+    /** Called after a successful remove or move changes a path without saving its bytes. */
+    default void onFileChangedWithoutSave(String path, String writer, DatasourceService datasourceService) {}
 }

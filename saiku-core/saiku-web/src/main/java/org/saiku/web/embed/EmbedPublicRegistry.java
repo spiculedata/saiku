@@ -223,8 +223,8 @@ public class EmbedPublicRegistry {
                 g.contentSha256 = newSha256Hex;
                 g.contentChangedByOther = false;
                 if (content != null && ("dashboard".equals(g.resourceKind) || "app".equals(g.resourceKind))) {
-                    g.referenceSha256 = ContentBinding.referenceHashes(
-                            g.resourceKind, content, reference -> readReference.apply(reference, g));
+                    g.referenceSha256 = ContentBinding.refreshReferenceHashes(
+                            g.resourceKind, content, g.referenceSha256, reference -> readReference.apply(reference, g));
                     if (g.referencesChangedByOther != null) {
                         g.referencesChangedByOther.retainAll(g.referenceSha256.keySet());
                     }
@@ -253,6 +253,33 @@ public class EmbedPublicRegistry {
                 }
             }
             persist();
+        }
+    }
+
+    /** A successful delete or move can replace a bound path without a save event. */
+    public synchronized void onContentChangedWithoutSave(String path, String writer) {
+        if (path == null) {
+            return;
+        }
+        String normalized = ContentBinding.normalizePath(path);
+        for (EmbedPublicGrant g : grants.values()) {
+            if (Usernames.sameUser(writer, g.grantedBy)) {
+                continue;
+            }
+            boolean primary = normalized.equals(ContentBinding.normalizePath(g.resourcePath));
+            boolean referenced = g.referenceSha256 != null && g.referenceSha256.containsKey(normalized);
+            if (primary || referenced) {
+                if (primary) {
+                    g.contentChangedByOther = true;
+                }
+                if (referenced) {
+                    if (g.referencesChangedByOther == null) {
+                        g.referencesChangedByOther = new HashSet<>();
+                    }
+                    g.referencesChangedByOther.add(normalized);
+                }
+                persist();
+            }
         }
     }
 

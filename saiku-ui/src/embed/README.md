@@ -525,9 +525,9 @@ An embed with none of these set renders exactly as before (ECharts defaults).
   dashboard/app tile no longer matches, or was written by
   anyone other than the minter after minting — because guest queries
   execute under the minter's data scope, so a collaborator's tile swap must
-  never be executed for them. The minter's own writes re-arm the binding
-  (iterating on an embedded dashboard keeps its embeds working); records
-  minted before this binding existed bind to current content on first read.
+  never be executed for them. The minter's own save re-arms only the file saved;
+  saving a dashboard or app does not re-arm an existing referenced query.
+  Records minted before this binding existed bind to current content on first read.
 - **RLS / PII stay fail-closed on every kind.** App-page tile queries run
   through the exact same guarded execution as dashboard tiles: forced
   row-level-security filters from the token are applied **last** and fail

@@ -71,4 +71,19 @@ public class ContentBindingTest {
         assertFalse(ContentBinding.referencesMatch(hashes, path -> ""));
         assertEquals("F/q.saiku", ContentBinding.normalizePath("//F//q.saiku"));
     }
+
+    @Test
+    public void parent_refresh_keeps_existing_hash_and_only_reads_new_references() {
+        String dash = "{\"layout\":{\"tiles\":["
+                + "{\"query\":{\"kind\":\"reference\",\"path\":\"/F/old.saiku\"}},"
+                + "{\"query\":{\"kind\":\"reference\",\"path\":\"/F/new.saiku\"}}]}}";
+        Map<String, String> refreshed = ContentBinding.refreshReferenceHashes(
+                "dashboard", dash, Map.of("F/old.saiku", ContentBinding.sha256Hex("trusted")), path -> {
+                    assertEquals("/F/new.saiku", path);
+                    return "new query";
+                });
+
+        assertEquals(ContentBinding.sha256Hex("trusted"), refreshed.get("F/old.saiku"));
+        assertEquals(ContentBinding.sha256Hex("new query"), refreshed.get("F/new.saiku"));
+    }
 }

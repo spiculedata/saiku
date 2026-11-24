@@ -213,6 +213,40 @@ public class EmbedViewResourceContentBindingTest {
     }
 
     @Test
+    public void minter_dashboard_save_does_not_trust_unobserved_reference_swap_for_token() {
+        ds.files.put(DASH_PATH, ORIGINAL_DASH);
+        ds.files.put(REFERENCE_PATH, ORIGINAL_QUERY);
+        ContentBinding.Snapshot binding = ContentBinding.snapshot(
+                "dashboard", ORIGINAL_DASH, path -> ds.getFileData(path, "alice", List.of("ROLE_USER")));
+        EmbedToken t = tokens.create(
+                "dashboard",
+                DASH_PATH,
+                "alice",
+                List.of("ROLE_USER"),
+                3600_000L,
+                null,
+                null,
+                null,
+                binding.contentSha256(),
+                binding.referenceSha256());
+        pinGuest(t.token, "dashboard", DASH_PATH);
+
+        ds.files.put(REFERENCE_PATH, TAMPERED_QUERY);
+        assertEquals(
+                409, resource.tileQuery("homes/alice/d.saikudash", "t1", null).getStatus());
+        String edited = ORIGINAL_DASH.replace("\"name\":\"d\"", "\"name\":\"retitled\"");
+        ds.files.put(DASH_PATH, edited);
+        org.saiku.web.share.SharedContentBindingListener listener =
+                new org.saiku.web.share.SharedContentBindingListener();
+        listener.setEmbedTokenStore(tokens);
+        listener.onFileSaved(DASH_PATH, edited, "alice", ds);
+
+        assertEquals(
+                409, resource.tileQuery("homes/alice/d.saikudash", "t1", null).getStatus());
+        assertNull(ai.lastSavedRequest);
+    }
+
+    @Test
     public void collaborator_rewriting_only_dashboard_reference_poisons_public_grant() {
         ds.files.put(DASH_PATH, ORIGINAL_DASH);
         ds.files.put(REFERENCE_PATH, ORIGINAL_QUERY);
@@ -231,6 +265,37 @@ public class EmbedViewResourceContentBindingTest {
                 new org.saiku.web.share.SharedContentBindingListener();
         listener.setEmbedPublicRegistry(grants);
         listener.onFileSaved(REFERENCE_PATH, TAMPERED_QUERY, "bob", ds);
+
+        assertEquals(
+                409, resource.tileQuery("homes/alice/d.saikudash", "t1", null).getStatus());
+        assertNull(ai.lastSavedRequest);
+    }
+
+    @Test
+    public void minter_dashboard_save_does_not_trust_unobserved_reference_swap_for_public_grant() {
+        ds.files.put(DASH_PATH, ORIGINAL_DASH);
+        ds.files.put(REFERENCE_PATH, ORIGINAL_QUERY);
+        ContentBinding.Snapshot binding = ContentBinding.snapshot(
+                "dashboard", ORIGINAL_DASH, path -> ds.getFileData(path, "alice", List.of("ROLE_USER")));
+        grants.grant(
+                "dashboard",
+                DASH_PATH,
+                "alice",
+                List.of("ROLE_USER"),
+                null,
+                binding.contentSha256(),
+                binding.referenceSha256());
+        pinGuest(null, "dashboard", DASH_PATH);
+
+        ds.files.put(REFERENCE_PATH, TAMPERED_QUERY);
+        assertEquals(
+                409, resource.tileQuery("homes/alice/d.saikudash", "t1", null).getStatus());
+        String edited = ORIGINAL_DASH.replace("\"name\":\"d\"", "\"name\":\"retitled\"");
+        ds.files.put(DASH_PATH, edited);
+        org.saiku.web.share.SharedContentBindingListener listener =
+                new org.saiku.web.share.SharedContentBindingListener();
+        listener.setEmbedPublicRegistry(grants);
+        listener.onFileSaved(DASH_PATH, edited, "alice", ds);
 
         assertEquals(
                 409, resource.tileQuery("homes/alice/d.saikudash", "t1", null).getStatus());

@@ -277,6 +277,30 @@ public class DatasourceServiceTest {
     }
 
     @Test
+    public void successful_remove_and_move_notify_bound_paths_but_failed_mutations_do_not() {
+        List<String> changed = new ArrayList<>();
+        svc.setRepositoryFileListeners(List.of(new RepositoryFileListener() {
+            @Override
+            public void onFileSaved(String path, String content, String writer, DatasourceService service) {}
+
+            @Override
+            public void onFileChangedWithoutSave(String path, String writer, DatasourceService service) {
+                changed.add(path + "/" + writer);
+            }
+        }));
+
+        assertEquals("Remove Okay", svc.removeFile("/bound/q.saiku", "bob", List.of("R")));
+        assertEquals("Move Okay", svc.moveFile("/tmp/q.saiku", "/bound/q.saiku", "bob", List.of("R")));
+        assertEquals(List.of("/bound/q.saiku/bob", "/tmp/q.saiku/bob", "/bound/q.saiku/bob"), changed);
+
+        manager.failRemove = true;
+        manager.failMove = true;
+        assertEquals("Save Failed: repository", svc.removeFile("/bound/q.saiku", "bob", List.of("R")));
+        assertEquals("Move Failed: repository", svc.moveFile("/tmp/q.saiku", "/bound/q.saiku", "bob", List.of("R")));
+        assertEquals(3, changed.size());
+    }
+
+    @Test
     public void importLegacy_methodsAreNoOps_doNotThrow() {
         svc.importLegacySchema();
         svc.importLegacyDatasources();
@@ -356,6 +380,8 @@ public class DatasourceServiceTest {
         final Map<String, Object> internalFiles = new HashMap<>();
         final Map<String, Object> savedFiles = new HashMap<>();
         boolean failSave;
+        boolean failRemove;
+        boolean failMove;
         final Set<String> removedFiles = new HashSet<>();
         final List<String> movedFiles = new ArrayList<>();
         final List<Map<String, String>> addSchemaCalls = new ArrayList<>();
@@ -472,14 +498,20 @@ public class DatasourceServiceTest {
 
         @Override
         public String removeFile(String path, String user, List<String> roles) {
+            if (failRemove) {
+                return "Save Failed: repository";
+            }
             removedFiles.add(path);
-            return "ok";
+            return "Remove Okay";
         }
 
         @Override
         public String moveFile(String source, String target, String user, List<String> roles) {
+            if (failMove) {
+                return "Move Failed: repository";
+            }
             movedFiles.add(source + " -> " + target);
-            return "ok";
+            return "Move Okay";
         }
 
         @Override

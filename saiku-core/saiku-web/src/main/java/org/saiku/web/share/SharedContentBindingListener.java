@@ -13,8 +13,8 @@ import org.slf4j.LoggerFactory;
 
 /**
  * saiku#2536 — the repository save hook behind the share/embed content
- * binding. Every user-facing write to a repository object funnels through
- * {@code DatasourceService#saveFile}; this listener observes each one and
+ * binding. User-facing saves, removes and moves pass through
+ * {@code DatasourceService}; this listener observes each one and
  * keeps the minted bindings honest:
  *
  * <ul>
@@ -116,5 +116,21 @@ public class SharedContentBindingListener implements RepositoryFileListener {
     /** Convenient direct hook for isolated tests. Production saves pass the datasource service. */
     public void onFileSaved(String path, String content, String writer) {
         onFileSaved(path, content, writer, null);
+    }
+
+    @Override
+    public void onFileChangedWithoutSave(String path, String writer, DatasourceService datasourceService) {
+        if (path == null) {
+            return;
+        }
+        if (shareTokenStore != null) {
+            shareTokenStore.onContentChangedWithoutSave(path, writer);
+        }
+        if (embedTokenStore != null) {
+            embedTokenStore.onContentChangedWithoutSave(path, writer);
+        }
+        if (embedPublicRegistry != null) {
+            embedPublicRegistry.onContentChangedWithoutSave(path, writer);
+        }
     }
 }
