@@ -110,6 +110,16 @@ public class McpResourceTest {
         assertEquals(-32600, body.path("error").path("code").asInt());
     }
 
+    @Test
+    public void toolsCallWithoutSessionIsRejectedBeforeToolAudit() throws Exception {
+        AiAuditLog auditLog = wireAuditLog();
+        Response resp =
+                resource.handle(rpc("tools/call", 1, callParams("list_cubes", MAPPER.createObjectNode())), null);
+        JsonNode body = MAPPER.valueToTree(resp.getEntity());
+        assertEquals(-32600, body.path("error").path("code").asInt());
+        assertEquals(0, auditLog.recent(10, 0, null, null).size());
+    }
+
     /* ----------------------------- notifications ------------------------- */
 
     @Test
@@ -341,19 +351,27 @@ public class McpResourceTest {
     public void badRequestResponseIsAuditedAsValidationErrorNotSuccess() throws Exception {
         AiAuditLog auditLog = wireAuditLog();
         String sid = initSession();
-        stubAi.executeResponse = Response.status(400).entity(Map.of("error", "validation failed")).build();
+        stubAi.executeResponse = Response.status(400)
+                .entity(Map.of("error", "validation failed"))
+                .build();
 
         ObjectNode args = MAPPER.createObjectNode();
         args.put("cube", "foodmart/FoodMart/FoodMart/Sales");
         Response resp = resource.handle(rpc("tools/call", 11, callParams("run_query", args)), sid);
         JsonNode body = MAPPER.valueToTree(resp.getEntity());
-        assertEquals("the failure surfaces as an RPC error, not a success result", -32602, body.path("error").path("code").asInt());
+        assertEquals(
+                "the failure surfaces as an RPC error, not a success result",
+                -32602,
+                body.path("error").path("code").asInt());
 
         List<AiAuditEntry> entries = auditLog.recent(10, 0, null, null);
         assertEquals(1, entries.size());
         AiAuditEntry e = entries.get(0);
         assertEquals("run_query", e.tool);
-        assertEquals("a non-2xx Response is a validation failure, not success", AiAuditEntry.OUTCOME_VALIDATION_ERROR, e.outcome);
+        assertEquals(
+                "a non-2xx Response is a validation failure, not success",
+                AiAuditEntry.OUTCOME_VALIDATION_ERROR,
+                e.outcome);
         assertEquals(AiAuditEntry.DECISION_ALLOW, e.policyDecision);
         assertEquals("http_400", e.error);
     }
@@ -364,7 +382,8 @@ public class McpResourceTest {
     public void notFoundDrillthroughIsAuditedAsErrorNotSuccess() throws Exception {
         AiAuditLog auditLog = wireAuditLog();
         String sid = initSession();
-        stubAi.drillthroughResponse = Response.status(404).entity(Map.of("error", "unknown queryId")).build();
+        stubAi.drillthroughResponse =
+                Response.status(404).entity(Map.of("error", "unknown queryId")).build();
 
         ObjectNode args = MAPPER.createObjectNode();
         args.put("queryId", "someone-elses-query");

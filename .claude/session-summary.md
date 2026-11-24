@@ -75,6 +75,12 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-11-24 — feature/2540-mcp-ai-audit — PR #2563 review rework
+**Was doing:** checked the maintainer's non-2xx audit fix, narrowed Ossie generation auditing to the start path, and documented the MCP session boundary with regression tests.
+**Now:** check PR #2563 CI after the push, especially the JDK 22 build and the focused audit tests.
+**Watch out:** local Maven resolves GitHub Packages without credentials and stops at 401 before Java compilation; the acceptance script and Spotless run locally.
+**Refs:** #2540, PR #2563
+
 ## 2026-11-24 — fix/2544-csv-header-quote-escape — PR #2573 acceptance gate rework
 **Was doing:** added the missing executable acceptance spec for the CSV header quote-escaping fix; the PR branch merges cleanly with development.
 **Now:** check PR #2573 CI on the pushed commit, especially the acceptance convention and red-on-base proof.

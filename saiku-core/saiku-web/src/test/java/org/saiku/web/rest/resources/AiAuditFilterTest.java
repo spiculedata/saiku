@@ -90,6 +90,8 @@ public class AiAuditFilterTest {
     public void admin_surface_is_scoped_to_the_ai_endpoints() {
         assertNull(AiAuditFilter.buildEntry("/saiku/admin/cube-designer/schema/x", "admin", 200, 1L, null, GUARD));
         assertNull(AiAuditFilter.buildEntry("/saiku/admin/ai-evals", "admin", 200, 1L, null, GUARD));
+        assertNull(AiAuditFilter.buildEntry("/saiku/admin/ossie-generate/job-1", "admin", 200, 1L, null, GUARD));
+        assertNull(AiAuditFilter.buildEntry("/saiku/admin/ossie-generate-other", "admin", 200, 1L, null, GUARD));
         assertNull(AiAuditFilter.buildEntry("/saiku/admin/users", "admin", 200, 1L, null, GUARD));
         assertNull(
                 "MCP audits itself (tool + target are JSON-RPC data) — the filter must not double it",

@@ -200,7 +200,7 @@ public class AiAuditFilter implements ContainerRequestFilter, ContainerResponseF
         return path.contains("/ai/")
                 || path.startsWith("/saiku/admin/cube-designer/turn")
                 || path.startsWith("/saiku/admin/ai-evals/run")
-                || path.startsWith("/saiku/admin/ossie-generate");
+                || path.equals("/saiku/admin/ossie-generate");
     }
 
     private static String principalName(ContainerRequestContext request) {

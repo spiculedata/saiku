@@ -245,14 +245,7 @@ public class McpResource {
             } else {
                 outcome = AiAuditEntry.OUTCOME_ERROR;
             }
-            auditToolCall(
-                    name,
-                    targetCube,
-                    targetModel,
-                    latencyMs(auditStart),
-                    outcome,
-                    decision,
-                    "http_" + e.status);
+            auditToolCall(name, targetCube, targetModel, latencyMs(auditStart), outcome, decision, "http_" + e.status);
             int rpcCode = (e.status == 400 || e.status == 422) ? RPC_INVALID_PARAMS : RPC_INTERNAL_ERROR;
             return rpcError(idNode, rpcCode, "tool call failed with HTTP " + e.status, sessionId);
         } catch (UnknownToolException e) {
@@ -315,9 +308,10 @@ public class McpResource {
      *  {@code EmbedViewResource.audit()}: a direct {@link AiAuditEntry} with
      *  the same shape a REST entry has — user, tool, target cube/model, policy
      *  tier, decision, outcome, latency — and never the arguments or result
-     *  content. Exactly one entry per tools/call, written on every exit path
-     *  (allowed, denied or failed). Never throws: an audit failure is logged,
-     *  not propagated. */
+     *  content. Exactly one entry per tools/call after session validation,
+     *  written on every tool exit path (allowed, denied or failed). A missing
+     *  or unknown session is rejected at the protocol layer before reaching
+     *  this method. Never throws: an audit failure is logged, not propagated. */
     void auditToolCall(
             String tool,
             String targetCube,
