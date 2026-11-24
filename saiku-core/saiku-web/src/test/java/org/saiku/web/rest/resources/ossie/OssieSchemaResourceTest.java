@@ -17,6 +17,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.saiku.datasources.connection.ISaikuConnection;
@@ -39,6 +40,7 @@ public class OssieSchemaResourceTest {
     private Path yamlFile;
     private OssieSchemaResource resource;
     private SchemaHistoryService historyService;
+    private String previousExtraRoots;
 
     private static class FakeDs extends DatasourceService {
         final Map<String, SaikuDatasource> byName = new HashMap<>();
@@ -65,6 +67,13 @@ public class OssieSchemaResourceTest {
     public void setUp() throws IOException {
         yamlFile = Files.createTempDirectory("ossie-schema-test").resolve("sales.ossie.yaml");
 
+        // saiku#2534: resolveYamlPath confines the model path; point the operator extra-roots
+        // property at this test's scratch directory so the fixture path is allowed.
+        previousExtraRoots = System.getProperty("saiku.ossie.model.allowedRoots");
+        System.setProperty(
+                "saiku.ossie.model.allowedRoots",
+                yamlFile.getParent().toAbsolutePath().toString());
+
         Properties props = new Properties();
         props.setProperty(ISaikuConnection.OSSIE_YAML_KEY, yamlFile.toString());
         SaikuDatasource ds = new SaikuDatasource(DATA_SOURCE_ID, SaikuDatasource.Type.OSSIE, props);
@@ -78,6 +87,38 @@ public class OssieSchemaResourceTest {
         resource = new OssieSchemaResource();
         resource.setDatasourceService(ds2);
         resource.setHistoryService(historyService);
+    }
+
+    @After
+    public void restoreExtraRoots() {
+        if (previousExtraRoots == null) {
+            System.clearProperty("saiku.ossie.model.allowedRoots");
+        } else {
+            System.setProperty("saiku.ossie.model.allowedRoots", previousExtraRoots);
+        }
+    }
+
+    /**
+     * saiku#2534: GET/PUT re-check the path — a descriptor pointing outside the model roots
+     * (e.g. written before the guard existed) must not become an arbitrary file read/write.
+     */
+    @Test
+    public void get_refusesYamlOutsideModelRoots() throws IOException {
+        Path canary = Files.createTempDirectory("ossie-escape").resolve("canary.txt");
+        Files.writeString(canary, "SECRET");
+        Properties props = new Properties();
+        props.setProperty(ISaikuConnection.OSSIE_YAML_KEY, canary.toString());
+        SaikuDatasource escapee = new SaikuDatasource("escapee", SaikuDatasource.Type.OSSIE, props);
+        FakeDs ds2 = new FakeDs();
+        ds2.byName.put("escapee", escapee);
+        resource.setDatasourceService(ds2);
+
+        Response getResp = resource.get("escapee");
+        assertEquals(400, getResp.getStatus());
+
+        Response putResp = resource.save("escapee", VALID_YAML);
+        assertEquals(400, putResp.getStatus());
+        assertEquals("SECRET", Files.readString(canary)); // PUT must not have written
     }
 
     @Test

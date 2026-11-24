@@ -1,0 +1,29 @@
+{
+  "issue": 2543,
+  "title": "OAuth bearer tokens require this server's audience, explicit role mapping, and session isolation",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "an OAuth issuer is configured without an audience",
+      "then": "bearer authentication stays disabled, every bearer token is rejected, and the configuration warning explains why"
+    },
+    {
+      "id": "C2",
+      "given": "a signed bearer token names a different audience",
+      "then": "the decoder rejects it with an invalid-token response"
+    },
+    {
+      "id": "C3",
+      "given": "a token contains an unmapped role claim, including ADMIN or ROLE_ADMIN",
+      "then": "it grants no authority; only an explicit operator mapping can grant a Saiku role, as documented"
+    },
+    {
+      "id": "C4",
+      "given": "a bearer request also carries an existing session cookie",
+      "then": "the filter restores the session's original security context after the request"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}

@@ -80,6 +80,11 @@ pushed down; normal sessions append and the history stays useful.
 **Now:** use PR #2559 CI for the Maven build and Java tests; local Maven dependency resolution stops at GitHub Packages 401 for Mondrian and olap4j.
 **Watch out:** send only JSESSIONID on the token-seeding GET; echoing the login response's stale XSRF-TOKEN prevents a fresh cookie from being issued.
 **Refs:** #2527, PR #2559
+## 2026-11-24 — fix/2544-csv-header-quote-escape — PR #2573 acceptance gate rework
+**Was doing:** added the missing executable acceptance spec for the CSV header quote-escaping fix; the PR branch merges cleanly with development.
+**Now:** check PR #2573 CI on the pushed commit, especially the acceptance convention and red-on-base proof.
+**Watch out:** this workspace has Node but no Java or Maven, so the launcher build and Java tests require CI.
+**Refs:** #2544, PR #2573, acceptance/2544/spec.json
 
 ## 2026-11-12 — fix/2322-ossie-ai-policy-gate — PR #2355 formatting rework
 **Was doing:** fixed the async role test fixture's Spotless violation; local Spotless and licence checks pass, but focused Maven tests stop during dependency resolution with GitHub Packages 401.
@@ -228,3 +233,8 @@ the tree first.
 **Was doing:** made `SqlCaptureProbe` share one raise/restore of the planner logger levels across overlapping probes (first open records and raises, last close restores), with a cleaner releasing a probe that is never closed. Added overlap tests for both close orders and for a logger that only an ancestor configures.
 **Now:** opening fails closed on any `Throwable` (raise, attach, logger update, cleaner registration), and closing restores in a `finally`. Fault-injection tests cover each path, and reflection tests keep the appender and release action static with no path back to the probe, which the cleaner depends on. A logger whose restore fails is retried at the next cycle with its recorded level.
 **Watch out:** an open PR also edits this class's event filter; this change only touches the level lifecycle and the appender's fields.
+
+## 2026-11-24 — fix/2543-oauth-audience-role-mapping — acceptance proof for PR #2574
+**Was doing:** added `acceptance/2543` to prove the OAuth audience, explicit role mapping, and session-context requirements that the existing PR implements. The command spec passes on the PR head and fails on the current development base; there is no merge conflict.
+**Now:** check CI after the push. Local focused Maven tests stopped before compilation because GitHub Packages returned 401 for private Mondrian and olap4j artifacts.
+**Refs:** #2543, #2574

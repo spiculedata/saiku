@@ -20,6 +20,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.Properties;
 import java.util.UUID;
 import org.saiku.datasources.datasource.SaikuDatasource;
+import org.saiku.service.datasource.OssieModelPathGuard;
 import org.saiku.web.rest.util.MondrianLocation;
 
 /**
@@ -188,6 +189,10 @@ public class DataSourceMapper {
                 JdbcUrlValidator.validate(this.jdbcurl);
                 props.setProperty("location", this.jdbcurl);
             }
+            // saiku#2534: the YAML path is a host path Saiku reads and (via the schema
+            // endpoints) serves back — confine it to the model directories the same way the
+            // Mondrian Catalog is confined by SchemaFileAccessGuard.
+            OssieModelPathGuard.requireWithinRoots(java.nio.file.Path.of(this.ossieYaml));
             props.setProperty("ossieYaml", this.ossieYaml);
             if (this.schema != null) {
                 props.setProperty("schema", this.schema);
