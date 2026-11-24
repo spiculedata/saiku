@@ -4,11 +4,13 @@
  */
 package org.saiku.service.olap.ai;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import com.github.benmanes.caffeine.cache.Ticker;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import org.saiku.olap.dto.SaikuCube;
 import org.saiku.olap.dto.SaikuDimension;
 import org.saiku.olap.dto.SaikuHierarchy;
@@ -32,13 +34,51 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
     private static final Logger log = LoggerFactory.getLogger(OlapAiCubeMetadataService.class);
 
     private OlapDiscoverService discoverService;
-    private final ConcurrentMap<String, AiSchema> schemaCache = new ConcurrentHashMap<>();
+
+    /** saiku#2539: the AI schema caches are BOUNDED — a maximum entry count and
+     *  an expiry — so no storm of case variants (or any other unbounded key
+     *  growth) can grow the heap without limit. The key is the cube's RESOLVED
+     *  canonical identifiers (see {@link #cacheKey}), so every case/wildcard
+     *  spelling of one cube shares a single entry. Package-private for tests.
+     *  Entries expire after WRITE: a steady request rate must not keep a stale
+     *  snapshot alive forever, and the visibility re-check (#2326) plus the
+     *  explicit invalidation seams still drop entries eagerly. */
+    static final long SCHEMA_CACHE_MAXIMUM_SIZE = 64;
+
+    static final Duration SCHEMA_CACHE_EXPIRY = Duration.ofMinutes(30);
+
+    final Cache<String, AiSchema> schemaCache;
 
     /** saiku#902 phase 3: per-cube cache of PiiScanner findings. Populated on
      *  schema-build, returned by {@link #getPiiSuggestions}. Cleared in lock-step
      *  with {@link #schemaCache} so stale annotations don't haunt the
-     *  suggestion surface after a schema reload. */
-    private final ConcurrentMap<String, List<PiiScanner.Match>> piiSuggestionsCache = new ConcurrentHashMap<>();
+     *  suggestion surface after a schema reload. Bounded exactly like
+     *  {@link #schemaCache} (saiku#2539). */
+    final Cache<String, List<PiiScanner.Match>> piiSuggestionsCache;
+
+    public OlapAiCubeMetadataService() {
+        this(SCHEMA_CACHE_MAXIMUM_SIZE, SCHEMA_CACHE_EXPIRY);
+    }
+
+    /** saiku#2539: production bounds. */
+    OlapAiCubeMetadataService(long maximumSize, Duration expiry) {
+        this(maximumSize, expiry, Ticker.systemTicker());
+    }
+
+    /** saiku#2539: test constructor — fixed bounds and a controllable ticker so
+     *  both the size bound and the expiry are deterministic in unit tests. */
+    OlapAiCubeMetadataService(long maximumSize, Duration expiry, Ticker ticker) {
+        this.schemaCache = Caffeine.newBuilder()
+                .maximumSize(maximumSize)
+                .expireAfterWrite(expiry)
+                .ticker(ticker)
+                .build();
+        this.piiSuggestionsCache = Caffeine.newBuilder()
+                .maximumSize(maximumSize)
+                .expireAfterWrite(expiry)
+                .ticker(ticker)
+                .build();
+    }
 
     private java.util.function.Function<AiCubeRef, AiSchemaEnrichment> enrichmentProvider;
     private final AiSchemaEnricher enricher = new AiSchemaEnricher();
@@ -87,11 +127,11 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
 
     /** Bump when downstream schema state changes (e.g. cube reload, draft enrichment update). */
     public void invalidateCache() {
-        schemaCache.clear();
+        schemaCache.invalidateAll();
         // Lock-step so a re-scan happens on the next describe. Otherwise an
         // operator who fixes an annotation, reloads the cube, then hits the
         // suggestions endpoint sees the stale finding from before the fix.
-        piiSuggestionsCache.clear();
+        piiSuggestionsCache.invalidateAll();
     }
 
     @Override
@@ -103,8 +143,8 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
             invalidateCache();
             return;
         }
-        schemaCache.keySet().removeIf(key -> keyBelongsToConnection(key, connectionName));
-        piiSuggestionsCache.keySet().removeIf(key -> keyBelongsToConnection(key, connectionName));
+        schemaCache.asMap().keySet().removeIf(key -> keyBelongsToConnection(key, connectionName));
+        piiSuggestionsCache.asMap().keySet().removeIf(key -> keyBelongsToConnection(key, connectionName));
     }
 
     /** True when a cache key ("<visibility>\u001F<conn>/<cat>/<schema>/<cube>" or the
@@ -158,20 +198,22 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
         if (ref == null || ref.getCubeName() == null) {
             throw new AiValidationException("cube", "cube ref required", null);
         }
-        String key = cacheKey(ref);
-        AiSchema cached = schemaCache.get(key);
+        // saiku#2539: resolve the cube through the CALLER's role-scoped
+        // enumeration BEFORE touching the cache — the saiku#2326 (CWE-284/524/863)
+        // fail-closed rule, now on every path rather than only the hit path. A
+        // caller who lost the datasource grant, sits in a workspace without the
+        // cube, or holds no Mondrian role at all (saiku#1968) gets the same
+        // AiValidationException the cold path raises — not another caller's schema.
+        // The cache is then keyed on the RESOLVED cube's canonical identifiers, so
+        // every case/wildcard spelling of one cube collapses onto a single entry
+        // instead of each spelling paying a full cold build and a ~40 KB entry.
+        SaikuCube cube = findCube(ref);
+        String key = cacheKey(cube);
+        AiSchema cached = schemaCache.getIfPresent(key);
         if (cached != null) {
-            // saiku#2326 (CWE-284/524/863): a cached snapshot must never be
-            // served without re-resolving the cube against the CALLER's
-            // role-scoped enumeration. findCube() walks getAllCubes() through
-            // the caller's own connection, so a caller who lost the datasource
-            // grant, sits in a workspace without the cube, or holds no Mondrian
-            // role at all (saiku#1968) gets the same AiValidationException the
-            // cold path raises — not another caller's schema.
-            findCube(ref);
             return cached;
         }
-        AiSchema fresh = buildSchema(ref);
+        AiSchema fresh = buildSchema(cube);
         if (enrichmentProvider != null) {
             try {
                 AiSchemaEnrichment overlay = enrichmentProvider.apply(ref);
@@ -212,8 +254,16 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
      */
     public List<PiiScanner.Match> getPiiSuggestions(AiCubeRef ref) {
         if (ref == null) return java.util.Collections.emptyList();
-        List<PiiScanner.Match> cached = piiSuggestionsCache.get(cacheKey(ref));
-        return cached == null ? java.util.Collections.emptyList() : cached;
+        // saiku#2539: key on the RESOLVED cube's canonical identifiers, like the
+        // schema cache. A cube the caller cannot resolve is fail-closed: an empty
+        // list (the same answer "never scanned yet" gives), never a suggestion.
+        try {
+            SaikuCube cube = findCube(ref);
+            List<PiiScanner.Match> cached = piiSuggestionsCache.getIfPresent(cacheKey(cube));
+            return cached == null ? java.util.Collections.emptyList() : cached;
+        } catch (RuntimeException e) {
+            return java.util.Collections.emptyList();
+        }
     }
 
     /**
@@ -307,9 +357,26 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
 
     /* ----------------------------- impl ------------------------------- */
 
-    private String cacheKey(AiCubeRef ref) {
-        String vis = visibilityKeyFor(ref);
-        return vis == null || vis.isEmpty() ? baseCacheKey(ref) : vis + VISIBILITY_SEPARATOR + baseCacheKey(ref);
+    /** saiku#2539: the cache key is built from the RESOLVED cube's canonical
+     *  identifiers — the spelling the caller's own discover service reports —
+     *  never from the request strings. The cube lookup (see {@link #matchesRef})
+     *  is case-insensitive and treats a null catalog or schema as a wildcard, so
+     *  keying on the raw spelling made every case variant a separate ~40 KB entry
+     *  and a separate cold build. The resolved SaikuCube's own fields are the
+     *  same for every variant of one cube, so all spellings share one entry. */
+    private String cacheKey(SaikuCube cube) {
+        AiCubeRef canonical = canonicalRef(cube);
+        String vis = visibilityKeyFor(canonical);
+        return vis == null || vis.isEmpty()
+                ? baseCacheKey(canonical)
+                : vis + VISIBILITY_SEPARATOR + baseCacheKey(canonical);
+    }
+
+    /** The resolved cube's canonical identifiers (saiku#811/saiku#2539) — built
+     *  from the fields the discover service reports, not from what the caller
+     *  spelled. */
+    private static AiCubeRef canonicalRef(SaikuCube cube) {
+        return new AiCubeRef(cube.getConnection(), cube.getCatalog(), cube.getSchema(), cube.getName());
     }
 
     /** The role-less base key — also the serialised AiSchema cubeId, which must
@@ -335,15 +402,16 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
         this.sampleMembersPerLevel = n;
     }
 
-    private AiSchema buildSchema(AiCubeRef ref) {
-        SaikuCube cube = findCube(ref);
+    private AiSchema buildSchema(SaikuCube cube) {
         // saiku#811: build the canonical AiCubeRef from the matched cube's
         // actual fields, not from the agent-supplied ref. The cacheKey and
         // every downstream consumer (AiSchemaConverter.toSaikuCube,
         // serialised cubeId in the response) reads from this canonical
         // form, so a lowercase/mixed-case agent input doesn't produce
         // "Cannot get native cube" 500s further down the pipeline.
-        AiCubeRef canonical = new AiCubeRef(cube.getConnection(), cube.getCatalog(), cube.getSchema(), cube.getName());
+        // saiku#2539: buildSchema receives the cube the caller's findCube()
+        // already resolved — the cold path no longer re-runs the lookup.
+        AiCubeRef canonical = canonicalRef(cube);
         // saiku#2326: the serialised cubeId stays role-less (the base key) —
         // the visibility fingerprint must never leak into the agent-facing
         // schema body. The cache map key (cacheKey()) is the scoped one.
@@ -424,7 +492,7 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
 
         // Auto-generate 2–3 example requests for the cube — a top-N pattern
         // and a breakdown pattern. The LLM can use these as templates.
-        schema.examples.addAll(AiExampleBuilder.build(schema, ref));
+        schema.examples.addAll(AiExampleBuilder.build(schema, canonical));
 
         // saiku#810: optional probe step. Runs after the full schema is
         // built so the probe sees the same shape consumers do; pruning
