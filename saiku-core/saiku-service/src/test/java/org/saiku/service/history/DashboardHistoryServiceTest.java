@@ -138,7 +138,9 @@ public class DashboardHistoryServiceTest {
         ds.internal.put(legacy, "{\"dashboard\":\"{}\",\"author\":\"admin\",\"ts\":1}\n");
 
         svc.purge(ab);
-        assertNotNull("ambiguous legacy file kept while another dashboard shares the flattened name", ds.internal.get(legacy));
+        assertNotNull(
+                "ambiguous legacy file kept while another dashboard shares the flattened name",
+                ds.internal.get(legacy));
     }
 
     @Test

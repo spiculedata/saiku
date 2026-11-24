@@ -19,8 +19,8 @@ import org.junit.Before;
 import org.junit.Test;
 import org.saiku.repository.IRepositoryObject;
 import org.saiku.repository.RepositoryFileObject;
-import org.saiku.service.util.DashboardSidecars;
 import org.saiku.service.datasource.DatasourceService;
+import org.saiku.service.util.DashboardSidecars;
 
 /**
  * Unit coverage for {@link CommentService} (issue #942) — append/list/soft-delete
@@ -71,6 +71,11 @@ public class CommentServiceTest {
     private CommentService svc;
 
     private static final String DASH = "dashboards/foo.saikudash";
+
+    /** One pre-upgrade comment row, as the legacy writer left it. */
+    private static final String LEGACY_LINE =
+            "{\"id\":\"old\",\"body\":\"pre-upgrade\",\"tile\":\"t1\"," +
+                    "\"author\":\"admin\",\"created\":0,\"mentions\":[]}\n";
 
     @Before
     public void setUp() {
@@ -123,7 +128,7 @@ public class CommentServiceTest {
     @Test
     public void purge_removes_the_legacy_file_so_a_recreated_dashboard_starts_clean() {
         String legacy = DashboardSidecars.legacyPath(CommentService.KIND, DASH);
-        ds.internal.put(legacy, "{\"id\":\"old\",\"body\":\"pre-upgrade\",\"tile\":\"t1\",\"author\":\"admin\",\"created\":0,\"mentions\":[]}\n");
+        ds.internal.put(legacy, LEGACY_LINE);
         svc.purge(DASH);
         assertNull("legacy file removed with the dashboard", ds.internal.get(legacy));
         assertEquals(0, svc.list(DASH, "t1").size());
@@ -139,7 +144,7 @@ public class CommentServiceTest {
         ds.dashboards.clear();
         ds.dashboards.add(ab);
         String legacy = DashboardSidecars.legacyPath(CommentService.KIND, ab);
-        ds.internal.put(legacy, "{\"id\":\"old\",\"body\":\"pre-upgrade\",\"tile\":\"t1\",\"author\":\"admin\",\"created\":0,\"mentions\":[]}\n");
+        ds.internal.put(legacy, LEGACY_LINE);
 
         // Only a_b exists: the file is unambiguous and goes with its dashboard.
         svc.purge(ab);
@@ -161,10 +166,12 @@ public class CommentServiceTest {
         ds.dashboards.add(ab);
         ds.dashboards.add(abx);
         String legacy = DashboardSidecars.legacyPath(CommentService.KIND, ab);
-        ds.internal.put(legacy, "{\"id\":\"old\",\"body\":\"pre-upgrade\",\"tile\":\"t1\",\"author\":\"admin\",\"created\":0,\"mentions\":[]}\n");
+        ds.internal.put(legacy, LEGACY_LINE);
 
         svc.purge(ab);
-        assertNotNull("ambiguous legacy file kept while another dashboard shares the flattened name", ds.internal.get(legacy));
+        assertNotNull(
+                "ambiguous legacy file kept while another dashboard shares the flattened name",
+                ds.internal.get(legacy));
     }
 
     @Test

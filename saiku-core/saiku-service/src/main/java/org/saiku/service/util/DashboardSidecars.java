@@ -103,7 +103,12 @@ public final class DashboardSidecars {
             return true;
         }
         if (dashboards == null) return true;
-        String flattened = legacyPath(kind, normaliseRepositoryPath(dashboardPath));
+        // The comparison kind must match countMatchingPaths' own "owner" kind
+        // (review of PR #2576): building the target name with the caller's kind
+        // (comments/history) against candidates built with "owner" could never
+        // match, so the count was always 0 and purge deleted the legacy file
+        // even while another dashboard still shared it.
+        String flattened = legacyPath("owner", normaliseRepositoryPath(dashboardPath));
         return countMatchingPaths(dashboards, flattened, null) > 0;
     }
 
