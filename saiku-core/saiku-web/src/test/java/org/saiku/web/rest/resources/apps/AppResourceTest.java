@@ -187,8 +187,8 @@ public class AppResourceTest {
      *  requires. */
     @Test
     public void save_hostileIdReturnsTyped400() {
-        String doc = "{\"id\":\"x\\\"]{} body::before{content:'injected'} [x=\\\"\","
-                + "\"name\":\"css\",\"pages\":[]}";
+        String hostileId = "x\\\"]{} body::before{content:'injected'} [x=\\\"";
+        String doc = "{\"id\":\"" + hostileId + "\",\"name\":\"css\",\"pages\":[]}";
         Response r = resource.save("/apps/css.saikuapp", doc);
         assertEquals(400, r.getStatus());
         @SuppressWarnings("unchecked")

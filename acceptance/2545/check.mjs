@@ -136,6 +136,22 @@ for (const name of ['JSESSIONID', 'XSRF-TOKEN']) {
 }
 if (!jar.has('JSESSIONID')) fail('C1: the login did not set a JSESSIONID cookie');
 
+// The login response often clears or has not yet set the CSRF cookie (review of
+// PR #2581: C1 answered 403 because the POST went out without a valid
+// x-xsrf-token). An authenticated GET re-reads the session the way the SPA does,
+// and the CSRF filter sets XSRF-TOKEN on it — always refresh from it and prefer
+// the probe's cookies over the login response's.
+{
+  const probe = await api('GET', '/rest/saiku/session');
+  for (const name of ['JSESSIONID', 'XSRF-TOKEN']) {
+    const value = cookieFrom(probe, name);
+    if (value) jar.set(name, value);
+  }
+}
+if (!jar.has('XSRF-TOKEN')) {
+  fail('C1: no XSRF-TOKEN cookie after login and an authenticated GET; cannot send a valid CSRF token');
+}
+
 /** POST/GET/DELETE an .saikuapp with the session + CSRF cookies the runner itself uses. */
 async function api(method, path, body) {
   const headers = { Accept: 'application/json', cookie: [...jar.values()].join('; ') };

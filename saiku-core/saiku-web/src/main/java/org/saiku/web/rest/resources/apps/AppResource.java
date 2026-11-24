@@ -223,15 +223,19 @@ public class AppResource {
         }
         // saiku#2545: the id reaches the UI as a CSS attribute-selector value, so
         // it must stay inside [A-Za-z0-9_-]{1,64}. An empty id is the UI's
-        // "preview before the first save" sentinel and stays legal; an id that
-        // could close the selector is refused here rather than sanitised later.
+        // "preview before the first save" sentinel and stays legal (the UI's
+        // isValidAppId accepts it and the first save relies on it — the server
+        // used to refuse it with 400, which made a NEW app unsavable, review of
+        // PR #2581); an id that could close the selector is refused here rather
+        // than sanitised later.
         JsonNode id = node.get("id");
         if (id != null && !id.isNull()) {
             if (!id.isTextual()) {
                 return badRequest("id", "app id must be a string");
             }
-            if (!APP_ID_PATTERN.matcher(id.asText()).matches()) {
-                return badRequest("id", "app id must match ^[A-Za-z0-9_-]{1,64}$");
+            String idText = id.asText();
+            if (!idText.isEmpty() && !APP_ID_PATTERN.matcher(idText).matches()) {
+                return badRequest("id", "app id must match ^[A-Za-z0-9_-]{1,64}$ (empty id is the UI preview sentinel)");
             }
         }
         String username = currentUsername();
