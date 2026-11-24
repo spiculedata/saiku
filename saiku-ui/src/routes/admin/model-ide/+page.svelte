@@ -40,6 +40,7 @@
 	import { lintOssieYaml } from '$lib/monaco/ossie-yaml-lint';
 	import type { OssieCatalogue } from '$lib/monaco/ossie-yaml-completions';
 	import { diffCubeNames, type CubeDiff } from './cubeDiff';
+	import { bufferKeyFor } from './bufferKey';
 	import { FileCode, Plus } from '@lucide/svelte';
 
 	const NEW_SCHEMA_TEMPLATE = `<Schema name="NewSchema">\n  <Cube name="NewCube">\n    <Table name="table_name"/>\n    <Dimension name="Dimension1" foreignKey="fk_column">\n      <Hierarchy hasAll="true" primaryKey="pk_column">\n        <Level name="Level1" column="column_name" uniqueMembers="true"/>\n      </Hierarchy>\n    </Dimension>\n    <Measure name="Measure1" column="amount_column" aggregator="sum"/>\n  </Cube>\n</Schema>\n`;
@@ -101,6 +102,18 @@
 	const catalogue = new MondrianCatalogue();
 	// Same for the live Ossie model: read by the completion provider via a closure.
 	const ossieCatalogue: OssieCatalogue = { datasets: [], datasetFields: {}, metrics: [] };
+	// Which datasource the catalogue currently mirrors. Completion and the save-diff
+	// snapshot may only use the catalogue when it matches the open file — a stale
+	// catalogue from another datasource would otherwise offer foreign dataset names
+	// and produce a bogus post-save diff. `null` = empty / unknown.
+	let ossieCatalogueDs: string | null = null;
+
+	function clearOssieCatalogue(): void {
+		ossieCatalogue.datasets = [];
+		ossieCatalogue.datasetFields = {};
+		ossieCatalogue.metrics = [];
+		ossieCatalogueDs = null;
+	}
 
 	const ossieDatasources = $derived(datasources.filter((d) => d.connectiontype === 'OSSIE'));
 	const selectedName = $derived(
@@ -110,7 +123,7 @@
 				? selected.schema.name
 				: selected.datasource.name
 	);
-	const bufferKey = $derived(selected ? `${selected.kind}:${selectedName}` : '');
+	const bufferKey = $derived(selected ? bufferKeyFor(selected) : '');
 	const currentContent = $derived(selected ? (buffers[bufferKey] ?? '') : '');
 	const lintIssues = $derived<LintIssue[]>(
 		!currentContent
@@ -217,8 +230,12 @@
 				model.datasets.map((d) => [d.name, d.fields.map((f) => f.name)])
 			);
 			ossieCatalogue.metrics = model.metrics.map((m) => m.name);
+			ossieCatalogueDs = datasourceName;
 			return model;
 		} catch {
+			// Failed fetch: stale entries from another datasource would surface as
+			// foreign completions and a bogus save diff — clear rather than keep them.
+			clearOssieCatalogue();
 			return null;
 		}
 	}
@@ -251,8 +268,12 @@
 			const yaml = content ?? ossieTemplate(ds.name);
 			buffers[`ossie:${ds.name}`] = yaml;
 			if (content !== null) baselines[`ossie:${ds.name}`] = content;
+			// No completion catalogue from a previously opened datasource may leak into
+			// this one while the prefetch is in flight.
+			clearOssieCatalogue();
 			void prefetchOssieModel(ds.name);
 		} catch (e) {
+			clearOssieCatalogue();
 			saveMsg = { tone: 'error', text: e instanceof Error ? e.message : 'Failed to load model.' };
 			selected = null;
 		} finally {
@@ -388,11 +409,14 @@
 		const ds = selected.datasource;
 		const yaml = buffers[`ossie:${ds.name}`] ?? '';
 		// Snapshot the live dataset/metric names BEFORE the save so the post-refresh diff
-		// answers "what changed". If the live model was never fetchable (connection down),
-		// there is no honest "before" — skip the diff rather than report the whole model as
-		// added.
-		const before = ossieCatalogue.datasets.length > 0 ? [...ossieCatalogue.datasets] : null;
-		const beforeMetrics = ossieCatalogue.metrics.length > 0 ? [...ossieCatalogue.metrics] : null;
+		// answers "what changed". Only the snapshot fetched for THIS datasource counts —
+		// a catalogue left over from another file (or from a failed prefetch) is not an
+		// honest "before" — skip the diff rather than diff against the wrong model.
+		const catalogueIsForDs = ossieCatalogueDs === ds.name;
+		const before =
+			catalogueIsForDs && ossieCatalogue.datasets.length > 0 ? [...ossieCatalogue.datasets] : null;
+		const beforeMetrics =
+			catalogueIsForDs && ossieCatalogue.metrics.length > 0 ? [...ossieCatalogue.metrics] : null;
 
 		await saveOssieSchemaYaml(ds.name, yaml);
 		baselines[`ossie:${ds.name}`] = yaml;
@@ -410,12 +434,13 @@
 				if (cubeDiffResult.added.length) parts.push(`+${cubeDiffResult.added.length} dataset(s)`);
 				if (cubeDiffResult.removed.length)
 					parts.push(`-${cubeDiffResult.removed.length} dataset(s)`);
-				if (beforeMetrics && model.metrics.length !== beforeMetrics.length) {
-					parts.push(
-						model.metrics.length > beforeMetrics.length
-							? `+${model.metrics.length - beforeMetrics.length} metric(s)`
-							: `-${beforeMetrics.length - model.metrics.length} metric(s)`
+				if (beforeMetrics) {
+					const metricDiff = diffCubeNames(
+						beforeMetrics,
+						model.metrics.map((m) => m.name)
 					);
+					if (metricDiff.added.length) parts.push(`+${metricDiff.added.length} metric(s)`);
+					if (metricDiff.removed.length) parts.push(`-${metricDiff.removed.length} metric(s)`);
 				}
 				diffText = parts.length ? ` (${parts.join(', ')})` : ' (no dataset changes)';
 			}
