@@ -72,7 +72,7 @@ claim('C1', 'QueryCacheIdentityContext declares identityKey(String connectionNam
 claim(
   'C1',
   'QueryCacheKey.of takes the caller identity and mixes it into the canonical view',
-  /of\(ThinQuery query, String cubeVersion, Collection<String> roles, String identity\)/.test(cacheKey) &&
+  /of\(\s*ThinQuery query, String cubeVersion, Collection<String> roles, String identity\)/.test(cacheKey) &&
     /public String identity;/.test(cacheKey) &&
     /canonicalIdentity/.test(cacheKey),
 );
@@ -135,10 +135,10 @@ claim(
   'executeCached treats a null key as cache-disabled and executes live',
   executeCached.includes('key == null') && executeCached.includes('runAndMaterialise'),
 );
-const rolesBlock = service.slice(
-  Math.max(service.indexOf('currentRolesForCacheKey()'), 0),
-  Math.max(service.indexOf('/** Live-execute the query'), 0),
-);
+const rolesStart = service.indexOf('private java.util.Collection<String> currentRolesForCacheKey()');
+const rolesBlock = rolesStart < 0
+  ? ''
+  : service.slice(rolesStart, Math.max(service.indexOf('/** Live-execute the query'), 0));
 claim(
   'C3',
   'currentRolesForCacheKey no longer swallows exceptions into a shared role-less key',
