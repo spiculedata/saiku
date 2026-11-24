@@ -194,6 +194,37 @@ public class ScimServiceTest {
         }
     }
 
+    /** saiku#2537 (review of PR #2564): create-with-groups that names a stale
+     *  non-grantable group must fail BEFORE the account exists — nothing
+     *  written, no half-applied user for the IdP retry to hit 409 on. */
+    @Test
+    public void createWithGroupsFailsFastWhenAGroupIsNotGrantable() {
+        ScimGroupStore.GroupRecord seeded = new ScimGroupStore.GroupRecord();
+        String staleId = java.util.UUID.randomUUID().toString();
+        seeded.id = staleId;
+        seeded.displayName = "ROLE_SQL_EXEC";
+        groups.save(seeded);
+
+        ScimGroup good = new ScimGroup();
+        good.displayName = "analysts";
+        good = scim.createGroup(good);
+
+        ScimUser in = new ScimUser();
+        in.userName = "idp-user";
+        in.active = true;
+        in.emails = List.of(new ScimUser.Email("idp-user@example.com", "work", true));
+        in.groups = new ArrayList<>(List.of(
+                new ScimUser.Member(good.id, "analysts"),
+                new ScimUser.Member(staleId, "ROLE_SQL_EXEC")));
+        try {
+            scim.createUser(in);
+            fail("a non-grantable group must refuse the create outright");
+        } catch (ScimException e) {
+            assertEquals("invalidValue", e.getScimType());
+        }
+        assertNull("no account may exist after the refused create", users.findByUsername("idp-user"));
+    }
+
     @Test
     public void createRejectsABlankUserName() {
         try {
@@ -666,15 +697,19 @@ public class ScimServiceTest {
      *  grant the reserved role to members the IdP adds after an upgrade. */
     @Test
     public void patchMembersOnASeededReservedRoleGroupIsRefusedAndGrantsNothing() {
+        // ScimGroupStore.load only accepts 36-char UUID ids (review of PR
+        // #2564: the "seed-reserved" literal never loaded, so the test never
+        // reached the grant-site check).
         ScimGroupStore.GroupRecord seeded = new ScimGroupStore.GroupRecord();
-        seeded.id = "seed-reserved";
+        String reservedId = java.util.UUID.randomUUID().toString();
+        seeded.id = reservedId;
         seeded.displayName = "ROLE_SQL_EXEC";
         groups.save(seeded);
 
         SaikuUser victim = users.seed("victim");
         try {
             scim.patchGroup(
-                    "seed-reserved",
+                    reservedId,
                     patch("{\"Operations\":[{\"op\":\"add\",\"path\":\"members\",\"value\":[{\"value\":\""
                             + victim.getId() + "\"}]}]}"));
             fail("adding a member to a pre-existing reserved-name group must be refused");
@@ -686,7 +721,7 @@ public class ScimServiceTest {
         try {
             ScimUser in = new ScimUser();
             in.userName = "victim";
-            in.groups = new ArrayList<>(List.of(new ScimUser.Member("seed-reserved", "ROLE_SQL_EXEC")));
+            in.groups = new ArrayList<>(List.of(new ScimUser.Member(reservedId, "ROLE_SQL_EXEC")));
             scim.replaceUser(String.valueOf(victim.getId()), in);
             fail("a wholesale sync granting a reserved role must be refused");
         } catch (ScimException e) {
@@ -701,14 +736,15 @@ public class ScimServiceTest {
     public void patchMembersOnAGroupOutsideTheAllowListIsRefusedAndGrantsNothing() {
         ScimService limited = scimWithAllowList("editors");
         ScimGroupStore.GroupRecord seeded = new ScimGroupStore.GroupRecord();
-        seeded.id = "seed-offlist";
+        String offListId = java.util.UUID.randomUUID().toString();
+        seeded.id = offListId;
         seeded.displayName = "ghosts";
         groups.save(seeded);
 
         SaikuUser dana = users.seed("dana");
         try {
             limited.patchGroup(
-                    "seed-offlist",
+                    offListId,
                     patch("{\"Operations\":[{\"op\":\"add\",\"path\":\"members\",\"value\":[{\"value\":\""
                             + dana.getId() + "\"}]}]}"));
             fail("a member add to a group outside the allow-list must be refused");
@@ -716,6 +752,32 @@ public class ScimServiceTest {
             assertEquals("invalidValue", e.getScimType());
         }
         assertEquals("USER_ROLES unchanged", List.of("ROLE_USER"), rolesOf(dana));
+    }
+
+    /** saiku#2537 (review of PR #2564): member REMOVAL from a stale reserved-name
+     *  group must still work — it is the one path an operator has to revoke the
+     *  escalation one member at a time. Only JOINING members hit the grant check. */
+    @Test
+    public void patchRemoveMemberFromASeededReservedRoleGroupStillRevokes() {
+        ScimGroupStore.GroupRecord seeded = new ScimGroupStore.GroupRecord();
+        String groupId = java.util.UUID.randomUUID().toString();
+        seeded.id = groupId;
+        seeded.displayName = "ROLE_SQL_EXEC";
+        SaikuUser alice = users.seed("alice");
+        SaikuUser mallory = users.seed("mallory");
+        // Both already hold the escalated role (pre-upgrade grants / the #2537 attack).
+        users.replaceRoles(alice, new String[] {"ROLE_USER", "ROLE_SQL_EXEC"});
+        users.replaceRoles(mallory, new String[] {"ROLE_USER", "ROLE_SQL_EXEC"});
+        seeded.members = new ArrayList<>(List.of(alice.getUsername(), mallory.getUsername()));
+        groups.save(seeded);
+
+        scim.patchGroup(
+                groupId,
+                patch("{\"Operations\":[{\"op\":\"remove\",\"path\":\"members\",\"value\":{\"value\":\""
+                        + mallory.getUsername() + "\"}}]}"));
+
+        assertFalse("the removed member must lose the escalated role", rolesOf(mallory).contains("ROLE_SQL_EXEC"));
+        assertTrue("the remaining member keeps the role she already had", rolesOf(alice).contains("ROLE_SQL_EXEC"));
     }
 
     /** saiku#2537: the allow-list never rescues a reserved role. */

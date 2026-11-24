@@ -179,6 +179,20 @@ public class ScimService {
         applyEmailList(u, in.emails);
         applyProfile(u, in);
         u.setRoles(new String[] {BASE_ROLE});
+        // saiku#2537 (review of PR #2564): the grant policy applies BEFORE the
+        // account exists. Validating only inside grantRole left a half-applied
+        // write: a create with groups [analysts, <stale reserved group>] answered
+        // 400 AFTER the account was created and 'analysts' granted, and the IdP's
+        // retry then hit 409 uniqueness. Resolve and check every named group up
+        // front — fail fast with nothing written.
+        if (in.groups != null) {
+            for (ScimUser.Member m : in.groups) {
+                ScimGroupStore.GroupRecord r = resolveGroupRecord(m == null ? null : m.value);
+                if (r != null) {
+                    rejectNonGrantableRoleName(r.displayName);
+                }
+            }
+        }
         SaikuUser created = userService.addUser(u);
         if (in.active != null && !in.active) {
             // addUser always inserts enabled=TRUE (the DAO hard-codes it), so an explicit
@@ -709,7 +723,15 @@ public class ScimService {
      */
     private void setMembers(ScimGroupStore.GroupRecord r, Set<String> desired) {
         List<String> current = r.members == null ? new ArrayList<>() : new ArrayList<>(r.members);
+        // saiku#2537 (review of PR #2564): only JOINING members go through the
+        // grant path. Re-granting existing members made the reserved/off-list
+        // check block every member REMOVAL from a stale group — the one path an
+        // operator has to revoke the escalation one member at a time. Members
+        // who stay keep the role they already have; only leavers are revoked.
         for (String username : desired) {
+            if (current.contains(username)) {
+                continue;
+            }
             SaikuUser u = userService.findByUsername(username);
             if (u != null) {
                 grantRole(u, r.displayName);
