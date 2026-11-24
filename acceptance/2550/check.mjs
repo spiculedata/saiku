@@ -32,6 +32,9 @@ const aiResource = read('saiku-core/saiku-web/src/main/java/org/saiku/web/rest/r
 const graphQl = read('saiku-core/saiku-web/src/main/java/org/saiku/web/graphql/GraphQlResource.java');
 const webappPom = read('saiku-webapp/pom.xml');
 
+const sidecarReadAndWrite = sidecars.split('public static void purge(')[0];
+const sidecarPurge = sidecars.split('public static void purge(')[1]?.split('private static boolean legacyFileOwnedByAnotherDashboard(')[0] ?? '';
+
 const failures = [];
 const claim = (criterion, what, holds) => {
   if (!holds) failures.push(`${criterion}: ${what}`);
@@ -68,7 +71,9 @@ claim(
     /DashboardSidecars\.(read|write|purge|path)\(/.test(history) &&
     /soleLegacyOwner\(datasourceService, dashboardPath\)/.test(sidecars) &&
     /getInternalFileData\(legacyPath/.test(sidecars) &&
-    !/removeInternalFile\(legacyPath/.test(sidecars),
+    !/removeInternalFile\(legacyPath/.test(sidecarReadAndWrite) &&
+    /if \(legacyFileOwnedByAnotherDashboard\(datasourceService, kind, dashboardPath\)\)/.test(sidecarPurge) &&
+    /return;[\s\S]*removeInternalFile\(legacyPath\(kind, dashboardPath\)\)/.test(sidecarPurge),
 );
 
 // e — selfTo is admin-only

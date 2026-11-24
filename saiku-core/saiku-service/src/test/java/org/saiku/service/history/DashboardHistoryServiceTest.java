@@ -108,6 +108,7 @@ public class DashboardHistoryServiceTest {
     public void purge_removes_the_history_file() {
         svc.archive(DASH, "{\"v\":1}", "admin");
         assertEquals(1, svc.list(DASH).size());
+        ds.dashboards.remove(DASH);
         svc.purge(DASH);
         assertEquals("purged history is empty", 0, svc.list(DASH).size());
     }
@@ -120,8 +121,10 @@ public class DashboardHistoryServiceTest {
     public void purge_removes_the_legacy_file_so_a_recreated_dashboard_starts_clean() {
         String legacy = DashboardSidecars.legacyPath(DashboardHistoryService.KIND, DASH);
         ds.internal.put(legacy, "{\"dashboard\":\"{\\\"v\\\":1}\",\"author\":\"admin\",\"ts\":1}\n");
+        ds.dashboards.remove(DASH);
         svc.purge(DASH);
         assertNull("legacy file removed with the dashboard", ds.internal.get(legacy));
+        ds.dashboards.add(DASH);
         assertEquals(0, svc.list(DASH).size());
     }
 
@@ -137,6 +140,7 @@ public class DashboardHistoryServiceTest {
         String legacy = DashboardSidecars.legacyPath(DashboardHistoryService.KIND, ab);
         ds.internal.put(legacy, "{\"dashboard\":\"{}\",\"author\":\"admin\",\"ts\":1}\n");
 
+        ds.dashboards.remove(ab);
         svc.purge(ab);
         assertNotNull(
                 "ambiguous legacy file kept while another dashboard shares the flattened name",

@@ -73,9 +73,8 @@ public class CommentServiceTest {
     private static final String DASH = "dashboards/foo.saikudash";
 
     /** One pre-upgrade comment row, as the legacy writer left it. */
-    private static final String LEGACY_LINE =
-            "{\"id\":\"old\",\"body\":\"pre-upgrade\",\"tile\":\"t1\"," +
-                    "\"author\":\"admin\",\"created\":0,\"mentions\":[]}\n";
+    private static final String LEGACY_LINE = "{\"id\":\"old\",\"body\":\"pre-upgrade\",\"tile\":\"t1\","
+            + "\"author\":\"admin\",\"created\":0,\"mentions\":[]}\n";
 
     @Before
     public void setUp() {
@@ -117,6 +116,7 @@ public class CommentServiceTest {
     public void purge_removes_the_comment_file() {
         svc.add(DASH, "t1", "admin", "hi");
         assertEquals(1, svc.list(DASH, "t1").size());
+        ds.dashboards.remove(DASH);
         svc.purge(DASH);
         assertEquals("purged thread is empty", 0, svc.list(DASH, "t1").size());
     }
@@ -129,8 +129,10 @@ public class CommentServiceTest {
     public void purge_removes_the_legacy_file_so_a_recreated_dashboard_starts_clean() {
         String legacy = DashboardSidecars.legacyPath(CommentService.KIND, DASH);
         ds.internal.put(legacy, LEGACY_LINE);
+        ds.dashboards.remove(DASH);
         svc.purge(DASH);
         assertNull("legacy file removed with the dashboard", ds.internal.get(legacy));
+        ds.dashboards.add(DASH);
         assertEquals(0, svc.list(DASH, "t1").size());
     }
 
@@ -147,13 +149,17 @@ public class CommentServiceTest {
         ds.internal.put(legacy, LEGACY_LINE);
 
         // Only a_b exists: the file is unambiguous and goes with its dashboard.
+        ds.dashboards.remove(ab);
         svc.purge(ab);
         assertNull("legacy file removed when no other dashboard flattens to the name", ds.internal.get(legacy));
 
         // User a recreates the collision path; it must read nothing.
         ds.dashboards.clear();
         ds.dashboards.add(abx);
-        assertEquals("a/b/x must not inherit a_b/x's pre-upgrade comments", 0, svc.list(abx, "t1").size());
+        assertEquals(
+                "a/b/x must not inherit a_b/x's pre-upgrade comments",
+                0,
+                svc.list(abx, "t1").size());
     }
 
     /** While both colliding dashboards exist, deleting ONE of them keeps the
@@ -168,6 +174,7 @@ public class CommentServiceTest {
         String legacy = DashboardSidecars.legacyPath(CommentService.KIND, ab);
         ds.internal.put(legacy, LEGACY_LINE);
 
+        ds.dashboards.remove(ab);
         svc.purge(ab);
         assertNotNull(
                 "ambiguous legacy file kept while another dashboard shares the flattened name",
