@@ -84,8 +84,12 @@ public final class McpOutboundClient {
         this(http, requestTimeout, java.net.InetAddress::getAllByName);
     }
 
-    /** Package-visible ctor for tests that also need to inject the pre-send resolver. */
-    McpOutboundClient(HttpClient http, Duration requestTimeout, WebhookUrlValidator.HostResolver resolver) {
+    /**
+     * Ctor for tests that inject the pre-send SSRF resolver (public because tests outside
+     * this package — e.g. the ask-service wiring — build clients against non-resolving
+     * hosts and must not touch live DNS, review of PR #2580).
+     */
+    public McpOutboundClient(HttpClient http, Duration requestTimeout, WebhookUrlValidator.HostResolver resolver) {
         this.http = http;
         this.requestTimeout = requestTimeout == null ? Duration.ofSeconds(10) : requestTimeout;
         this.resolver = resolver == null ? java.net.InetAddress::getAllByName : resolver;

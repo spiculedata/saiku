@@ -1339,7 +1339,9 @@ public class AiAskServiceTest {
                 ScriptedHttpClient.Resp.ok("{\"jsonrpc\":\"2.0\",\"id\":\"3\",\"result\":{\"content\":["
                         + "{\"type\":\"text\",\"text\":\"" + callResultText + "\"}]}}"));
         return new McpOutboundToolCatalog(
-                registry, new org.saiku.service.mcp.outbound.McpOutboundClient(http, java.time.Duration.ofSeconds(5)));
+                registry,
+                new org.saiku.service.mcp.outbound.McpOutboundClient(
+                        http, java.time.Duration.ofSeconds(5), HERMETIC_RESOLVER));
     }
 
     /** Hermetic resolver: every host resolves to a public address — no live DNS in tests. */

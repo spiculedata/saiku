@@ -87,7 +87,6 @@ public final class WebhookUrlValidator {
         return validateResolved(url, resolver).uri();
     }
 
-    /** As {@link #validateResolved(String)} but with a pluggable resolver (also for tests). */
     /**
      * saiku#2542 (review of PR #2580): every check that needs NO DNS — https scheme, no
      * userinfo, host present, non-canonical numeric IPv4 encoding, blocked internal names,
