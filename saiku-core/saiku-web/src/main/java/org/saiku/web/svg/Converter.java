@@ -81,6 +81,52 @@ class SvgConverter extends Converter {
     }
 }
 
+    /**
+     * Bounded transcode (saiku#2527, review of PR #2559): the deadline covers
+     * queueing and execution. If it expires before a worker starts the task,
+     * server-side saturation answers {@code 503}; if the task started, an overrun
+     * answers {@code 400}. The overload lets tests exercise both mappings without
+     * competing with the shared pool.
+     */
+    static void runBounded(java.util.concurrent.Callable<Void> work, long timeoutMs, ExecutorService pool)
+            throws TranscoderException {
+        final java.util.concurrent.atomic.AtomicBoolean started = new java.util.concurrent.atomic.AtomicBoolean(false);
+        Future<Void> future;
+        try {
+            future = pool.submit(() -> {
+                started.set(true);
+                return work.call();
+            });
+        } catch (RejectedExecutionException e) {
+            throw new SvgExportException(503, "chart export is at capacity; try again shortly");
+        }
+        try {
+            future.get(timeoutMs, TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            future.cancel(true);
+            if (!started.get()) {
+                throw new SvgExportException(503, "chart export is at capacity; try again shortly");
+            }
+            throw new SvgExportException(400, "chart export exceeded the " + timeoutMs + "ms time limit");
+        } catch (InterruptedException e) {
+            future.cancel(true);
+            Thread.currentThread().interrupt();
+            throw new TranscoderException("chart export was interrupted");
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof TranscoderException te) {
+                throw te;
+            }
+            if (cause instanceof SvgExportException se) {
+                throw se;
+            }
+            throw new TranscoderException(
+                    String.valueOf(cause),
+                    cause instanceof Exception ? (Exception) cause : new IllegalStateException(cause));
+        }
+    }
+
+
 abstract class BatikConverter extends Converter {
 
     BatikConverter(String extension) {
@@ -142,51 +188,6 @@ abstract class BatikConverter extends Converter {
 
     private static void runBounded(java.util.concurrent.Callable<Void> work) throws TranscoderException {
         runBounded(work, TRANSCODE_TIMEOUT_MS, TRANSCODE_POOL);
-    }
-
-    /**
-     * Bounded transcode (saiku#2527, review of PR #2559): the deadline covers
-     * queueing and execution. If it expires before a worker starts the task,
-     * server-side saturation answers {@code 503}; if the task started, an overrun
-     * answers {@code 400}. The overload lets tests exercise both mappings without
-     * competing with the shared pool.
-     */
-    static void runBounded(java.util.concurrent.Callable<Void> work, long timeoutMs, ExecutorService pool)
-            throws TranscoderException {
-        final java.util.concurrent.atomic.AtomicBoolean started = new java.util.concurrent.atomic.AtomicBoolean(false);
-        Future<Void> future;
-        try {
-            future = pool.submit(() -> {
-                started.set(true);
-                return work.call();
-            });
-        } catch (RejectedExecutionException e) {
-            throw new SvgExportException(503, "chart export is at capacity; try again shortly");
-        }
-        try {
-            future.get(timeoutMs, TimeUnit.MILLISECONDS);
-        } catch (TimeoutException e) {
-            future.cancel(true);
-            if (!started.get()) {
-                throw new SvgExportException(503, "chart export is at capacity; try again shortly");
-            }
-            throw new SvgExportException(400, "chart export exceeded the " + timeoutMs + "ms time limit");
-        } catch (InterruptedException e) {
-            future.cancel(true);
-            Thread.currentThread().interrupt();
-            throw new TranscoderException("chart export was interrupted");
-        } catch (ExecutionException e) {
-            Throwable cause = e.getCause();
-            if (cause instanceof TranscoderException te) {
-                throw te;
-            }
-            if (cause instanceof SvgExportException se) {
-                throw se;
-            }
-            throw new TranscoderException(
-                    String.valueOf(cause),
-                    cause instanceof Exception ? (Exception) cause : new IllegalStateException(cause));
-        }
     }
 
     /** One raster bound from a system property, defensively clamped to a sane range. */
