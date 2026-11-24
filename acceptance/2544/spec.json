@@ -1,0 +1,44 @@
+{
+  "issue": 2544,
+  "title": "CSV header quotes cannot split a caption into a formula field",
+  "kind": "api",
+  "auth": "session",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "a FoodMart query has a calculated measure whose caption contains a quote, comma and formula prefix",
+      "then": "CSV export doubles the caption's quotes, keeping the formula text inside its original header field"
+    }
+  ],
+  "steps": [
+    {
+      "name": "execute the calculated-member query from issue 2544",
+      "criterion": "C1",
+      "request": {
+        "method": "POST",
+        "path": "/query/execute",
+        "json": {
+          "name": "acceptance-2544",
+          "cube": {
+            "connection": "unknown_foodmart",
+            "catalog": "FoodMart",
+            "schema": "FoodMart",
+            "name": "Sales",
+            "uniqueName": "[Sales]"
+          },
+          "mdx": "WITH MEMBER [Measures].[x\",\"=HYPERLINK(\"\"http://127.0.0.1:1/x\"\",\"\"click\"\")] AS 1 SELECT {[Measures].[Unit Sales], [Measures].[x\",\"=HYPERLINK(\"\"http://127.0.0.1:1/x\"\",\"\"click\"\")]} ON COLUMNS, {[Gender].[Gender].Members} ON ROWS FROM [Sales]"
+        }
+      },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "CSV header keeps the formula-looking text inside its quoted field",
+      "criterion": "C1",
+      "request": { "method": "GET", "path": "/query/acceptance-2544/export/csv" },
+      "expect": {
+        "status": 200,
+        "bodyContains": "x\"\",\"\"=HYPERLINK"
+      }
+    }
+  ]
+}
