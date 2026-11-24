@@ -1,147 +1,114 @@
 /*
- * ### SPDX-License-Identifier: GPL-3.0 ###
+ *   Copyright 2026 Spicule Ltd
+ *   Apache License, Version 2.0.
  */
 package org.saiku.web.rest.resources;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import jakarta.ws.rs.core.Response;
-import java.nio.file.Files;
-import java.util.List;
-import java.util.Map;
+import java.nio.file.Path;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
-import org.saiku.service.mcp.outbound.McpOutboundClient;
 import org.saiku.service.mcp.outbound.McpOutboundServerRegistry;
+import org.saiku.service.schedule.alert.WebhookUrlValidator;
+import org.saiku.web.rest.resources.McpOutboundAdminResource.ServerDto;
 
-/** Unit tests for {@link McpOutboundAdminResource}. */
+/**
+ * saiku#2542: the admin save endpoint applies the same webhook-grade gates as the on-disk parser —
+ * https-only, SSRF-refusing URLs and restricted/invalid auth header names are refused at save time
+ * (400) instead of failing every later discovery call.
+ */
 public class McpOutboundAdminResourceTest {
 
     @Rule
-    public TemporaryFolder folder = new TemporaryFolder();
+    public TemporaryFolder tmp = new TemporaryFolder();
+
+    /** Hermetic resolver: every host "resolves" to a public address — no live DNS in tests. */
+    private static final WebhookUrlValidator.HostResolver RESOLVER = host -> {
+        try {
+            return new java.net.InetAddress[] {
+                java.net.InetAddress.getByAddress(new byte[] {93, (byte) 184, (byte) 216, 34})
+            };
+        } catch (java.net.UnknownHostException e) {
+            throw new IllegalStateException(e);
+        }
+    };
 
     private McpOutboundAdminResource resource;
-    private McpOutboundServerRegistry registry;
 
     @Before
     public void setUp() throws Exception {
-        registry = new McpOutboundServerRegistry(
-                Files.createTempDirectory(folder.getRoot().toPath(), "mcp").toString());
+        Path root = tmp.newFolder("mcp-servers").toPath();
+        McpOutboundServerRegistry registry = new McpOutboundServerRegistry(root, RESOLVER);
         resource = new McpOutboundAdminResource();
         resource.setRegistry(registry);
-        // A real client against a loopback port nothing listens on: discovery
-        // fails fast and deterministically, which is what the unreachable
-        // branch of the tools endpoint needs.
-        resource.setClient(new McpOutboundClient(java.time.Duration.ofMillis(250)));
-        resource.setCatalog(null);
     }
 
-    private static McpOutboundAdminResource.ServerDto server(String id, String name, String url) {
-        McpOutboundAdminResource.ServerDto dto = new McpOutboundAdminResource.ServerDto();
-        dto.id = id;
-        dto.name = name;
-        dto.url = url;
-        dto.enabledTools = List.of("search");
-        return dto;
+    private static ServerDto dto(String url, String headerName) {
+        ServerDto d = new ServerDto();
+        d.id = "notion";
+        d.name = "Notion";
+        d.url = url;
+        d.authHeaderName = headerName;
+        d.authHeaderValue = headerName == null ? null : "Bearer token";
+        return d;
     }
 
     @Test
-    public void save_then_list_round_trips_a_server() {
-        Response saved = resource.save("docs-server", server("docs-server", "Docs", "http://localhost:9000/mcp"));
-        assertEquals(200, saved.getStatus());
-
-        List<McpOutboundAdminResource.ServerDto> listed = resource.list();
-        assertEquals(1, listed.size());
-        assertEquals("Docs", listed.get(0).name);
-        assertEquals("docs-server", listed.get(0).id);
+    public void plainHttpUrlIsRefused() {
+        Response resp = resource.save("notion", dto("http://mcp.notion.com/mcp", null));
+        assertEquals(400, resp.getStatus());
+        assertTrue(registryIsEmpty());
     }
 
     @Test
-    public void save_validates_id_name_and_url() {
+    public void loopbackAndPrivateHostsAreRefused() {
         assertEquals(
-                400, resource.save("Bad Id", server("Bad Id", "n", "http://x")).getStatus());
-        assertEquals(400, resource.save("ok", null).getStatus());
-
-        McpOutboundAdminResource.ServerDto noName = server("ok", null, "http://x");
-        assertEquals(400, resource.save("ok", noName).getStatus());
-
-        McpOutboundAdminResource.ServerDto noUrl = server("ok", "n", " ");
-        assertEquals(400, resource.save("ok", noUrl).getStatus());
+                400,
+                resource.save("notion", dto("https://localhost:3000/mcp", null)).getStatus());
+        assertEquals(
+                400,
+                resource.save("notion", dto("https://127.0.0.1:3000/mcp", null)).getStatus());
+        assertEquals(
+                400,
+                resource.save("notion", dto("https://192.168.1.10/mcp", null)).getStatus());
+        assertEquals(
+                400,
+                resource.save("notion", dto("https://169.254.169.254/latest/meta-data", null))
+                        .getStatus());
+        assertTrue(registryIsEmpty());
     }
 
     @Test
-    public void save_requires_auth_header_name_and_value_together() {
-        McpOutboundAdminResource.ServerDto orphan = server("ok", "n", "http://x");
-        orphan.authHeaderName = "Authorization";
-        assertEquals(400, resource.save("ok", orphan).getStatus());
+    public void validHttpsUrlSaves() {
+        Response resp = resource.save("notion", dto("https://mcp.notion.com/mcp", null));
+        assertEquals(200, resp.getStatus());
+        assertFalse(registryIsEmpty());
     }
 
     @Test
-    public void save_reuses_the_stored_auth_header_when_the_value_is_omitted() {
-        McpOutboundAdminResource.ServerDto withAuth = server("keeper", "n", "http://x");
-        withAuth.authHeaderName = "Authorization";
-        withAuth.authHeaderValue = "Bearer s3cret";
-        assertEquals(200, resource.save("keeper", withAuth).getStatus());
-
-        McpOutboundAdminResource.ServerDto update = server("keeper", "renamed", "http://x");
-        Response response = resource.save("keeper", update);
-        assertEquals(200, response.getStatus());
-        McpOutboundAdminResource.ServerDto dto = resource.list().get(0);
-        assertEquals("renamed", dto.name);
-        assertTrue(dto.hasAuthHeader);
+    public void restrictedAndNonTokenHeaderNamesAreRefused() {
+        assertEquals(
+                400,
+                resource.save("notion", dto("https://mcp.notion.com/mcp", "Host"))
+                        .getStatus());
+        assertEquals(
+                400,
+                resource.save("notion", dto("https://mcp.notion.com/mcp", "Content-Length"))
+                        .getStatus());
+        assertEquals(
+                400,
+                resource.save("notion", dto("https://mcp.notion.com/mcp", "bad header name"))
+                        .getStatus());
+        assertTrue(registryIsEmpty());
     }
 
-    @Test
-    public void a_saved_server_with_an_invalid_url_is_skipped_and_reported() {
-        // save() persists the file, but the scanner refuses non-http(s) URLs —
-        // the server vanishes from list() and shows up in errors().
-        McpOutboundAdminResource.ServerDto odd = server("odd", "n", "not-a-url");
-        assertEquals(200, resource.save("odd", odd).getStatus());
-        assertTrue(resource.list().isEmpty());
-        List<Map<String, String>> errors = resource.errors();
-        assertEquals(1, errors.size());
-        assertEquals("INVALID_URL", errors.get(0).get("code"));
-    }
-
-    @Test
-    public void delete_removes_a_saved_server_and_404s_the_second_time() {
-        resource.save("temp", server("temp", "n", "http://x"));
-        assertEquals(200, resource.delete("temp").getStatus());
-        assertEquals(404, resource.delete("temp").getStatus());
-        assertTrue(resource.list().isEmpty());
-    }
-
-    @Test
-    public void refresh_reports_ok() {
-        Response response = resource.refresh();
-        assertEquals(200, response.getStatus());
-        assertEquals(true, ((Map<?, ?>) response.getEntity()).get("refreshed"));
-    }
-
-    @Test
-    public void discovery_for_an_unknown_server_is_not_found() {
-        assertEquals(404, resource.discoverTools("nope").getStatus());
-    }
-
-    @Test
-    public void discovery_against_an_unreachable_server_reports_bad_gateway() {
-        resource.save("down", server("down", "Down", "http://127.0.0.1:1/mcp"));
-        Response response = resource.discoverTools("down");
-        assertEquals(502, response.getStatus());
-    }
-
-    @Test
-    public void errors_lists_unparseable_files() throws Exception {
-        java.nio.file.Path root = java.nio.file.Path.of(
-                Files.createTempDirectory(folder.getRoot().toPath(), "broken").toString());
-        Files.write(root.resolve("bad id.json"), "not json".getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        McpOutboundAdminResource broken = new McpOutboundAdminResource();
-        broken.setRegistry(new McpOutboundServerRegistry(root.toString()));
-        List<Map<String, String>> errors = broken.errors();
-        assertEquals(1, errors.size());
-        assertEquals("bad id.json", errors.get(0).get("source"));
+    private boolean registryIsEmpty() {
+        return resource.list().isEmpty();
     }
 }

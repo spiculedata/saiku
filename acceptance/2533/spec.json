@@ -1,0 +1,14 @@
+{
+  "issue": 2533,
+  "title": "Deleting a datasource removes its descriptor, list entry, and live connection",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "an admin created a datasource through POST /rest/saiku/admin/datasources",
+      "then": "DELETE /rest/saiku/admin/datasources/{id} removes it: the datasource is absent from the parsed admin datasource list, and stays absent after a discover refresh"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}

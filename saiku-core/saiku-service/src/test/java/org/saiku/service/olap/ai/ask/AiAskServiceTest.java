@@ -36,16 +36,20 @@ import org.saiku.olap.query2.ThinQuery;
 import org.saiku.service.mcp.outbound.McpOutboundServer;
 import org.saiku.service.mcp.outbound.McpOutboundServerRegistry;
 import org.saiku.service.mcp.outbound.McpOutboundToolCatalog;
+import org.saiku.service.mcp.outbound.ScriptedHttpClient;
 import org.saiku.service.olap.ThinQueryService;
+import org.saiku.service.olap.ai.AiAxisSelection;
 import org.saiku.service.olap.ai.AiCubeMetadataService;
 import org.saiku.service.olap.ai.AiCubeRef;
 import org.saiku.service.olap.ai.AiFilterSelection;
 import org.saiku.service.olap.ai.AiMeasureSelection;
+import org.saiku.service.olap.ai.AiNamedSet;
 import org.saiku.service.olap.ai.AiPolicy;
 import org.saiku.service.olap.ai.AiPolicyGuard;
 import org.saiku.service.olap.ai.AiQueryRequest;
 import org.saiku.service.olap.ai.AiSchema;
 import org.saiku.service.olap.ai.KAnonymityFilter;
+import org.saiku.service.schedule.alert.WebhookUrlValidator;
 
 /** Unit tests for {@link AiAskService}. Provider + metadata service are stubbed. */
 public class AiAskServiceTest {
@@ -636,6 +640,53 @@ public class AiAskServiceTest {
         return cq;
     }
 
+    /** saiku#2542: rows/columns member lists and named-set MDX carry the same member names. */
+    private static AiQueryRequest currentQueryWithMembersEverywhere() {
+        AiQueryRequest cq = currentQueryWithFilterMember();
+        AiAxisSelection row = new AiAxisSelection();
+        row.setDimension("Customers");
+        row.setHierarchy("[Customers]");
+        row.setLevel("[Customers].[Name]");
+        row.setMembers(new ArrayList<>(List.of("[Customers].[John Smith]")));
+        AiAxisSelection column = new AiAxisSelection();
+        column.setDimension("Time");
+        column.setLevel("[Time].[Month]");
+        column.setMembers(new ArrayList<>(List.of("[Time].[1997].[Q1]")));
+        cq.setRows(new ArrayList<>(List.of(row)));
+        cq.setColumns(new ArrayList<>(List.of(column)));
+        cq.setNamedSets(
+                new ArrayList<>(List.of(new AiNamedSet("top-customers", "TOPCOUNT([Customers].[Name].MEMBERS, 5)"))));
+        return cq;
+    }
+
+    @Test
+    public void schemaOnlyStripsRowColumnMembersAndNamedSetExpressions() {
+        AtomicReference<NlAskRequest> seen = new AtomicReference<>();
+        NlAskProvider capturing = req -> {
+            seen.set(req);
+            return NlAskResponse.ok("{\"cube\":{\"cubeName\":\"Sales\"},\"measures\":[]}", "m", 0, 0);
+        };
+        AiAskService svc = new AiAskService(fixedSchemaService(emptySchema()), capturing);
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.SCHEMA_ONLY));
+
+        svc.ask(
+                CUBE,
+                "spot the trend",
+                List.of(),
+                null,
+                NlAskRequest.ForceTool.AUTO,
+                currentQueryWithMembersEverywhere());
+
+        String cqJson = seen.get().currentQueryJson();
+        assertNotNull(cqJson);
+        assertFalse("row member must be stripped: " + cqJson, cqJson.contains("[Customers].[John Smith]"));
+        assertFalse("column member must be stripped: " + cqJson, cqJson.contains("[Time].[1997].[Q1]"));
+        assertFalse("named-set MDX must be stripped: " + cqJson, cqJson.contains("TOPCOUNT"));
+        // Structure kept: dimension/level refs survive so the model still sees the query's shape.
+        assertTrue("row dimension ref retained: " + cqJson, cqJson.contains("\"dimension\":\"Customers\""));
+        assertTrue("named-set name retained: " + cqJson, cqJson.contains("top-customers"));
+    }
+
     @Test
     public void schemaOnlyDropsAssistantHistoryTurnsButKeepsUserTurns() {
         AtomicReference<NlAskRequest> seen = new AtomicReference<>();
@@ -1133,12 +1184,12 @@ public class AiAskServiceTest {
 
     @Test
     public void mcpToolCallIsDispatchedFedBackAndNeverTouchesCellsetDigest() throws Exception {
-        HttpServer fakeServer = startFakeMcpServer(
+        McpOutboundToolCatalog catalog = catalogWithOneServer(
+                Set.of("lookup_ticket"),
                 "{\"name\":\"lookup_ticket\",\"description\":\"Look up a support ticket\","
                         + "\"inputSchema\":{\"type\":\"object\"}}",
                 "Ticket 123: open, priority high");
-        try {
-            McpOutboundToolCatalog catalog = catalogWithOneServer(fakeServer, Set.of("lookup_ticket"));
+        {
             String qualifiedName = catalog.tools().get(0).qualifiedName();
 
             ScriptedProvider provider = new ScriptedProvider(List.of(
@@ -1178,8 +1229,6 @@ public class AiAskServiceTest {
             // ...but NEVER as the cellset digest — that channel is reserved for executed cube
             // queries (unlocks emit_insight over the GRID, which an external tool result is not).
             assertNull("an mcp tool result must not masquerade as a cellset digest", secondReq.cellsetDigest());
-        } finally {
-            fakeServer.stop(0);
         }
     }
 
@@ -1192,7 +1241,7 @@ public class AiAskServiceTest {
         deadServer.stop(0);
 
         Path root = Files.createTempDirectory("mcp-servers-test");
-        McpOutboundServerRegistry registry = new McpOutboundServerRegistry(root);
+        McpOutboundServerRegistry registry = new McpOutboundServerRegistry(root, HERMETIC_RESOLVER);
         registry.save(new McpOutboundServer(
                 "dead",
                 "Dead server",
@@ -1270,15 +1319,41 @@ public class AiAskServiceTest {
         return server;
     }
 
-    private static McpOutboundToolCatalog catalogWithOneServer(HttpServer server, Set<String> enabledTools)
-            throws Exception {
-        int port = server.getAddress().getPort();
+    /** saiku#2542: registrations are now https/SSRF-gated, so the catalogue fixture registers a
+     *  syntactically-valid https URL (resolved hermetically to a public address) and drives the
+     *  discovery/call round-trips through a scripted {@code HttpClient} instead of a live socket. */
+    private static McpOutboundToolCatalog catalogWithOneServer(
+            Set<String> enabledTools, String toolJson, String callResultText) throws Exception {
         Path root = Files.createTempDirectory("mcp-servers-test");
-        McpOutboundServerRegistry registry = new McpOutboundServerRegistry(root);
+        McpOutboundServerRegistry registry = new McpOutboundServerRegistry(root, HERMETIC_RESOLVER);
         registry.save(new McpOutboundServer(
-                "fake", "Fake MCP server", "http://127.0.0.1:" + port + "/mcp", null, null, enabledTools, "fake.json"));
-        return new McpOutboundToolCatalog(registry, new org.saiku.service.mcp.outbound.McpOutboundClient());
+                "fake", "Fake MCP server", "https://fake-mcp.test/mcp", null, null, enabledTools, "fake.json"));
+        String init = "{\"jsonrpc\":\"2.0\",\"id\":\"1\",\"result\":{"
+                + "\"protocolVersion\":\"2025-03-26\",\"capabilities\":{\"tools\":{}},"
+                + "\"serverInfo\":{\"name\":\"fake\",\"version\":\"1\"}}}";
+        ScriptedHttpClient http = ScriptedHttpClient.of(
+                ScriptedHttpClient.Resp.ok(init).withHeader("Mcp-Session-Id", "sess-1"),
+                ScriptedHttpClient.Resp.ok(
+                        "{\"jsonrpc\":\"2.0\",\"id\":\"2\",\"result\":{\"tools\":[" + toolJson + "]}}"),
+                ScriptedHttpClient.Resp.ok(init).withHeader("Mcp-Session-Id", "sess-1"),
+                ScriptedHttpClient.Resp.ok("{\"jsonrpc\":\"2.0\",\"id\":\"3\",\"result\":{\"content\":["
+                        + "{\"type\":\"text\",\"text\":\"" + callResultText + "\"}]}}"));
+        return new McpOutboundToolCatalog(
+                registry,
+                new org.saiku.service.mcp.outbound.McpOutboundClient(
+                        http, java.time.Duration.ofSeconds(5), HERMETIC_RESOLVER));
     }
+
+    /** Hermetic resolver: every host resolves to a public address — no live DNS in tests. */
+    private static final WebhookUrlValidator.HostResolver HERMETIC_RESOLVER = host -> {
+        try {
+            return new java.net.InetAddress[] {
+                java.net.InetAddress.getByAddress(new byte[] {93, (byte) 184, (byte) 216, 34})
+            };
+        } catch (java.net.UnknownHostException e) {
+            throw new IllegalStateException(e);
+        }
+    };
 
     /* ---- OPT-3: bounded rate-limit paced retry in askChained ---- */
 

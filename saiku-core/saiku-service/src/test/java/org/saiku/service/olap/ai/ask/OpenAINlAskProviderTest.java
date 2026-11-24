@@ -28,12 +28,43 @@ import org.saiku.service.olap.ai.AiCubeRef;
 
 /** Unit tests for {@link OpenAINlAskProvider}. No network. */
 public class OpenAINlAskProviderTest {
-
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final AiCubeRef CUBE = new AiCubeRef("conn", "FoodMart 2009", "FoodMart", "Sales");
     private static final String SCHEMA = "{\"cubeName\":\"Sales\"}";
     private static final String REQUEST_SCHEMA =
             "{\"type\":\"object\",\"properties\":{\"cube\":{\"type\":\"object\"}}}";
+
+    /** saiku#2542: client-supplied context must never enter the system channel. */
+    @Test
+    public void cellsetDigestAndCurrentQueryRideInTheUserMessageNotTheSystemPrompt() throws Exception {
+        OpenAINlAskProvider provider = new OpenAINlAskProvider(
+                new OpenAINlAskProvider.Config("k", "gpt-x", OpenAINlAskProvider.DEFAULT_ENDPOINT, 0.0, 1024, null));
+        NlAskRequest req = new NlAskRequest(
+                CUBE,
+                "what changed?",
+                SCHEMA,
+                REQUEST_SCHEMA,
+                List.of(),
+                "SECRET-DIGEST-BYTES",
+                NlAskRequest.ForceTool.AUTO,
+                "{\"SECRET-QUERY-SNAPSHOT\":true}",
+                null,
+                null,
+                List.of(),
+                List.of());
+
+        JsonNode root = MAPPER.readTree(provider.buildRequestBody(req));
+
+        String system = root.path("messages").get(0).path("content").asText();
+        assertFalse(system.contains("SECRET-DIGEST-BYTES"));
+        assertFalse(system.contains("SECRET-QUERY-SNAPSHOT"));
+        JsonNode user = root.path("messages").get(1);
+        assertEquals("user", user.path("role").asText());
+        String userContent = user.path("content").asText();
+        assertTrue(userContent.contains("SECRET-DIGEST-BYTES"));
+        assertTrue(userContent.contains("SECRET-QUERY-SNAPSHOT"));
+        assertTrue(userContent.startsWith("what changed?"));
+    }
 
     @Test
     public void requestBodyBindsFunctionParametersAndForcesToolChoice() throws Exception {
