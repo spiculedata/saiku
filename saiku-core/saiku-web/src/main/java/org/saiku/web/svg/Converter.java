@@ -68,18 +68,6 @@ public abstract class Converter {
         }
         return null;
     }
-}
-
-class SvgConverter extends Converter {
-
-    public SvgConverter() {
-        super("image/svg+xml", "svg");
-    }
-
-    public void convert(InputStream in, OutputStream out, Integer size) throws IOException {
-        IOUtils.copy(in, out);
-    }
-}
 
     /**
      * Bounded transcode (saiku#2527, review of PR #2559): the deadline covers
@@ -125,7 +113,18 @@ class SvgConverter extends Converter {
                     cause instanceof Exception ? (Exception) cause : new IllegalStateException(cause));
         }
     }
+}
 
+class SvgConverter extends Converter {
+
+    public SvgConverter() {
+        super("image/svg+xml", "svg");
+    }
+
+    public void convert(InputStream in, OutputStream out, Integer size) throws IOException {
+        IOUtils.copy(in, out);
+    }
+}
 
 abstract class BatikConverter extends Converter {
 

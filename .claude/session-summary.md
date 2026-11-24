@@ -75,6 +75,12 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-11-24 — feature/chart-export-pixel-budget — PR #2559 compile rework
+**Was doing:** merged current development while retaining both session entries and higher test floors, then moved `runBounded` inside `Converter` to address the latest review.
+**Now:** check PR #2559 CI for main/test compilation, the chart acceptance spec, and the required rollup.
+**Watch out:** local `ConverterTest` stops in dependency resolution at GitHub Packages 401; `saiku-web` Spotless passes.
+**Refs:** #2527, PR #2559
+
 ## 2026-11-24 — feature/chart-export-pixel-budget — PR #2559 review and base rework
 **Was doing:** merged development at cb2263027, retained both session entries and the higher service/web test floors, clarified Batik timeout wording, and stabilized the running-task timeout test.
 **Now:** check PR #2559 CI for the JDK 22 build and chart acceptance after the push.

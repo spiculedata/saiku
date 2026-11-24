@@ -17,6 +17,11 @@ A promoted entry has the same shape plus `**Status:** promoted`, `**Supersedes:*
 
 ---
 
+## 2026-11-24 — Java method moves: check the destination class boundary
+When moving a method so tests can call it through a different class, place it inside that class's braces and compile both main and test sources where dependencies are available.
+**Why:** moving `runBounded` out of `BatikConverter` left it at file scope, where Java cannot compile it, and the earlier location did not satisfy `ConverterTest`'s call.
+**Source:** PR #2559 reviews of #2527
+
 ## 2026-11-24 — SCIM user PUT: validate group grants before any user write
 Check every requested group's role before changing the username, profile, email, or enabled state in a full user replace.
 **Why:** a stale reserved or off-list group otherwise returns 400 after part of the PUT has persisted, leaving the IdP retrying a failed sync against changed data.
