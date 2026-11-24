@@ -18,6 +18,7 @@ import java.util.UUID;
 import org.saiku.service.olap.ai.AiValidationException;
 import org.saiku.service.util.exception.SaikuAccessDeniedException;
 import org.saiku.service.util.exception.SaikuQueryRejectedException;
+import org.saiku.service.util.exception.SaikuValidationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -160,7 +161,24 @@ public class GenericExceptionMapper implements ExceptionMapper<Throwable> {
                     .build();
         }
 
-        // 7) Everything else: log the full stack server-side keyed by a
+        // 7) saiku#2526 — an Ossie shelf identifier that resolves to no field/metric of the
+        //    caller's model (typically an attempt to name a hidden field's physical column) is a
+        //    client-fixable 400, not an internal fault. Belt-and-suspenders: the query resources
+        //    catch this themselves; this keeps any other door typed too. The message names what
+        //    the caller sent, which is exactly what they need to self-correct.
+        SaikuValidationException validation = findValidation(t);
+        if (validation != null) {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("status", "VALIDATION_ERROR");
+            body.put("field", "query");
+            body.put("error", validation.getMessage());
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .type(MediaType.APPLICATION_JSON)
+                    .entity(body)
+                    .build();
+        }
+
+        // 8) Everything else: log the full stack server-side keyed by a
         //    correlation id and return an information-free 500. The body
         //    carries no message, class name, cause chain, or stack.
         String ref = UUID.randomUUID().toString();
@@ -202,6 +220,20 @@ public class GenericExceptionMapper implements ExceptionMapper<Throwable> {
         for (Throwable c = t; c != null; c = c.getCause() == c ? null : c.getCause()) {
             if (c instanceof SaikuQueryRejectedException rejected) {
                 return rejected;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Walk the cause chain for a {@link SaikuValidationException} (saiku#2526), same walk
+     * discipline as {@link #findAccessDenied}: by type, wrapping-safe, self-referencing chains
+     * terminate the loop.
+     */
+    static SaikuValidationException findValidation(Throwable t) {
+        for (Throwable c = t; c != null; c = c.getCause() == c ? null : c.getCause()) {
+            if (c instanceof SaikuValidationException validation) {
+                return validation;
             }
         }
         return null;
