@@ -329,3 +329,34 @@ Raise them only if a legitimate report needs more, and prefer raising the
 The Docker image and `dist/run.sh` / `dist/run.bat` start the JVM with
 `-XX:+ExitOnOutOfMemoryError -XX:MaxRAMPercentage=75`, so an out-of-memory
 condition restarts the process instead of leaving it limping.
+
+---
+
+## Chart export raster bounds (`saiku.export.chart.*`)
+
+`POST /rest/saiku/{user}/export/saiku/chart` rasterises an uploaded SVG with
+Batik (PNG, JPG, TIFF; PDF is vector). Two independent budgets protect the JVM
+heap (CWE-400):
+
+- **byte budget** (saiku#1165): the SVG payload itself is capped at 20 MB, and
+  anything that would make Batik reach off-document is rejected;
+- **pixel budget** (saiku#2527): the output raster is capped per side, so a
+  `width="12000" height="12000"` chart can no longer allocate a 144-megapixel
+  raster inside one request. The root element's `width`/`height` (or
+  `viewBox`) is resolved before the transcoder runs; an unsized request that
+  exceeds the budget is refused with a `400` before anything is allocated, and
+  with a `size` hint the request is scaled down to fit the budget instead.
+  Both `KEY_WIDTH` and `KEY_HEIGHT` are always set on the transcoder, so a
+  percentage- or missing-dimension document can no longer inherit unbounded
+  intrinsic sizes.
+
+The transcode also runs on a small fixed thread pool with a wall-clock limit
+(the same shape as the snapshot renderer's bounded pool), so a byte-legal but
+pathological SVG is abandoned with a `400` rather than wedging a request
+thread. A saturated pool answers `503`.
+
+| Property | Default | Effect |
+|---|---|---|
+| `saiku.export.chart.maxWidth` | `2000` | Maximum output raster width in px (per side; 32–10000). An unsized request whose intrinsic width exceeds it gets a typed `400`. |
+| `saiku.export.chart.maxHeight` | `2000` | Maximum output raster height in px (per side; 32–10000). With a `size` hint the export is scaled down to fit instead of refused. |
+| `saiku.export.chart.timeoutMillis` | `30000` | Wall-clock limit for one transcode (1000–120000 ms). |

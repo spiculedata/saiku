@@ -34,6 +34,7 @@ import org.saiku.olap.query2.ThinQuery;
 import org.saiku.web.rest.util.ContentDispositions;
 import org.saiku.web.rest.util.ServletUtil;
 import org.saiku.web.svg.Converter;
+import org.saiku.web.svg.SvgExportException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -285,6 +286,12 @@ public class ExporterResource {
                     .header("content-length", b.length)
                     .build();
 
+        } catch (SvgExportException e) {
+            // saiku#2527: a typed export rejection (raster over the pixel budget,
+            // transcode timeout, saturated export pool) is a client-facing 4xx/503,
+            // not the generic 500 the old catch-all produced.
+            log.warn("Chart export to {} rejected: {}", type, e.getMessage());
+            return Response.status(e.getHttpStatus()).entity(e.getMessage()).build();
         } catch (Exception e) {
             log.error("Error exporting Chart to  " + type, e);
             return Response.serverError()

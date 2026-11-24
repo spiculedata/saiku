@@ -13,6 +13,15 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.apache.batik.transcoder.*;
 import org.apache.batik.transcoder.image.JPEGTranscoder;
 import org.apache.batik.transcoder.image.PNGTranscoder;
@@ -85,6 +94,21 @@ abstract class BatikConverter extends Converter {
     /** saiku#1165: cap the in-memory SVG so a giant payload can't OOM the server. */
     private static final int MAX_SVG_BYTES = 20 * 1024 * 1024;
 
+    /** saiku#2527: the output raster is bounded per side, not only by SVG bytes. */
+    private static final float MAX_WIDTH = rasterBound("saiku.export.chart.maxWidth", 2000);
+
+    private static final float MAX_HEIGHT = rasterBound("saiku.export.chart.maxHeight", 2000);
+
+    /**
+     * saiku#2527: the transcode runs on a small fixed pool with a wall-clock
+     * limit, the same shape as the snapshot renderer's bounded pool, so a
+     * pathological (but byte-legal) SVG is abandoned instead of wedging a
+     * request thread while it grinds the heap.
+     */
+    private static final int TRANSCODE_TIMEOUT_MS = timeoutMillis();
+
+    private static final ExecutorService TRANSCODE_POOL = newPool();
+
     public void convert(InputStream in, OutputStream out, Integer size) throws TranscoderException, IOException {
         // saiku#1165: read the SVG, reject external references / DOCTYPE (SSRF /
         // local-file-read / XXE via Batik), then transcode from the validated copy.
@@ -92,16 +116,80 @@ abstract class BatikConverter extends Converter {
         if (svg.length > MAX_SVG_BYTES) {
             throw new TranscoderException("SVG exceeds the " + MAX_SVG_BYTES + "-byte export limit");
         }
-        SvgSecurity.requireSafe(new String(svg, StandardCharsets.UTF_8));
+        String document = new String(svg, StandardCharsets.UTF_8);
+        SvgSecurity.requireSafe(document);
+
+        // saiku#2527: resolve the raster size before anything is allocated, so an
+        // oversized request is refused with a typed 4xx instead of an OOM.
+        float[] target = SvgGeometry.target(SvgGeometry.parse(document), size, MAX_WIDTH, MAX_HEIGHT);
 
         Transcoder t = createTranscoder();
         // Defense-in-depth: never run on-load scripts during transcode.
         t.addTranscodingHint(SVGAbstractTranscoder.KEY_EXECUTE_ONLOAD, Boolean.FALSE);
-        if (size != null) {
-            final float sizeBound = Math.max(Math.min(size, 2000.0f), 32.0f);
-            t.addTranscodingHint(SVGAbstractTranscoder.KEY_WIDTH, sizeBound);
+        // Always set BOTH hints: with only KEY_WIDTH (the old behaviour) the height
+        // followed the aspect ratio past any bound, and with neither hint Batik
+        // took the SVG's own width/height verbatim.
+        t.addTranscodingHint(SVGAbstractTranscoder.KEY_WIDTH, target[0]);
+        t.addTranscodingHint(SVGAbstractTranscoder.KEY_HEIGHT, target[1]);
+
+        final TranscoderInput input = new TranscoderInput(new ByteArrayInputStream(svg));
+        final TranscoderOutput output = new TranscoderOutput(out);
+        runBounded(() -> {
+            t.transcode(input, output);
+            return null;
+        });
+    }
+
+    private static void runBounded(java.util.concurrent.Callable<Void> work) throws TranscoderException {
+        Future<Void> future;
+        try {
+            future = TRANSCODE_POOL.submit(work);
+        } catch (RejectedExecutionException e) {
+            throw new SvgExportException(503, "chart export is at capacity; try again shortly");
         }
-        t.transcode(new TranscoderInput(new ByteArrayInputStream(svg)), new TranscoderOutput(out));
+        try {
+            future.get(TRANSCODE_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            future.cancel(true);
+            throw new SvgExportException(400, "chart export exceeded the " + TRANSCODE_TIMEOUT_MS + "ms time limit");
+        } catch (InterruptedException e) {
+            future.cancel(true);
+            Thread.currentThread().interrupt();
+            throw new TranscoderException("chart export was interrupted");
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof TranscoderException te) {
+                throw te;
+            }
+            if (cause instanceof SvgExportException se) {
+                throw se;
+            }
+            throw new TranscoderException(
+                    String.valueOf(cause),
+                    cause instanceof Exception ? (Exception) cause : new IllegalStateException(cause));
+        }
+    }
+
+    /** One raster bound from a system property, defensively clamped to a sane range. */
+    private static float rasterBound(String property, int defaultPx) {
+        int v = Integer.getInteger(property, defaultPx);
+        return Math.max(32, Math.min(v, 10000));
+    }
+
+    private static int timeoutMillis() {
+        int v = Integer.getInteger("saiku.export.chart.timeoutMillis", 30_000);
+        return Math.max(1_000, Math.min(v, 120_000));
+    }
+
+    private static ExecutorService newPool() {
+        ThreadFactory tf = r -> {
+            Thread t = new Thread(r, "saiku-chart-export");
+            t.setDaemon(true);
+            return t;
+        };
+        // Small fixed pool, short queue: saturation is refused (503) rather than
+        // silently queueing an unbounded number of pathological transcodes.
+        return new ThreadPoolExecutor(2, 2, 60L, TimeUnit.SECONDS, new ArrayBlockingQueue<>(16), tf);
     }
 
     protected abstract Transcoder createTranscoder();
