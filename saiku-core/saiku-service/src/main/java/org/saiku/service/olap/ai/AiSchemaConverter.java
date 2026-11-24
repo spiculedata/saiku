@@ -1384,15 +1384,11 @@ public class AiSchemaConverter {
      *  gets a clean 400 instead of Mondrian's "name already defined" or
      *  syntax-error surface.
      *
-     *  <p>saiku#2541: the {@code expression} is no longer trusted with
-     *  statement-level MDX. It is concatenated into {@code WITH SET ... AS
-     *  (...)} verbatim, so an expression that closes the set could append
-     *  its own calculated {@code MEMBER} (and the PII gate never looked at
-     *  named sets). {@link #validateNamedSetExpression} now refuses
-     *  statement keywords, comments and unbalanced delimiters, resolves
-     *  every dimension/measure reference against the schema, and applies
-     *  the same PII refusal a PII level would get on {@code rows} —
-     *  before anything reaches Mondrian. */
+     *  <p>saiku#2541: both the name and expression reach {@code WITH SET ...
+     *  AS (...)}. Names must be identifiers. Expressions refuse statement
+     *  keywords, string-to-MDX functions, comments and unbalanced delimiters;
+     *  references are checked against the schema; and any hierarchy containing
+     *  a PII level is refused before anything reaches Mondrian. */
     private static void validateNamedSets(AiQueryRequest req, AiSchema schema) {
         List<AiNamedSet> sets = req.getNamedSets();
         if (sets == null || sets.isEmpty()) return;
@@ -1408,6 +1404,9 @@ public class AiSchemaConverter {
                 throw new AiValidationException(
                         "namedSets[" + i + "].name", "namedSets entry requires a non-blank 'name'.", null);
             }
+            // Names are identifiers, never MDX fragments. Accept the legacy
+            // [Name] spelling, but validate its contents before emission.
+            String identifier = namedSetIdentifier(n, "namedSets[" + i + "].name");
             String e = ns.getExpression();
             if (e == null || e.isBlank()) {
                 throw new AiValidationException(
@@ -1415,15 +1414,29 @@ public class AiSchemaConverter {
                         "namedSets entry '" + n + "' requires a non-blank 'expression' (raw MDX set).",
                         null);
             }
-            if (!seen.add(n)) {
+            if (!seen.add(AiSchema.key(identifier))) {
                 throw new AiValidationException(
                         "namedSets[" + i + "].name",
                         "Duplicate named-set name '" + n + "'. Each entry in namedSets[] must use a unique name.",
                         null);
             }
             validateNamedSetExpression(n, e, "namedSets[" + i + "].expression", earlier, schema);
-            earlier.add(AiSchema.key(n));
+            earlier.add(AiSchema.key(identifier));
         }
+    }
+
+    private static String namedSetIdentifier(String name, String fieldPath) {
+        String identifier = name.startsWith("[") && name.endsWith("]") ? name.substring(1, name.length() - 1) : name;
+        if (identifier.length() < 1
+                || identifier.length() > 64
+                || identifier.isBlank()
+                || !identifier.matches("[A-Za-z0-9 _-]+")) {
+            throw namedSetError(
+                    fieldPath,
+                    "Named-set name must be 1–64 letters, digits, spaces, underscores or hyphens, "
+                            + "optionally surrounded by one pair of brackets.");
+        }
+        return identifier;
     }
 
     /** saiku#2541: MDX keywords a set expression may never contain. A set
@@ -1453,10 +1466,9 @@ public class AiSchemaConverter {
      *        set in the same request (single-identifier reference).
      *        Unresolved references get the converter's usual teaching
      *        message instead of a Mondrian syntax error.</li>
-     *    <li><b>PII.</b> A chain that resolves to a PII-annotated level or
-     *        measure is refused exactly like the same level on {@code rows}
-     *        (saiku#1918 contract extended to named sets — the PII gate
-     *        previously never looked at them).</li>
+     *    <li><b>PII.</b> A chain that may resolve to a hierarchy containing a
+     *        PII level, or to a PII measure, is refused. Navigation can reach
+     *        levels not named literally in the expression.</li>
      *  </ol> */
     private static void validateNamedSetExpression(
             String name, String expression, String fieldPath, java.util.Set<String> earlierSetNames, AiSchema schema) {
@@ -1594,11 +1606,12 @@ public class AiSchemaConverter {
         if (word.length() == 0) return;
         String w = word.toString();
         word.setLength(0);
-        if (NAMED_SET_BANNED_KEYWORDS.contains(w.toUpperCase(java.util.Locale.ROOT))) {
+        String upper = w.toUpperCase(java.util.Locale.ROOT);
+        if (NAMED_SET_BANNED_KEYWORDS.contains(upper) || upper.startsWith("STRTO")) {
             throw namedSetError(
                     fieldPath,
                     "Named set '" + name
-                            + "' contains the MDX keyword " + w.toUpperCase(java.util.Locale.ROOT)
+                            + "' contains the MDX keyword " + upper
                             + " — a set expression is a set over members of the typed fields, not a statement. "
                             + "Select members with rows/columns/filters instead.");
         }
@@ -1622,11 +1635,8 @@ public class AiSchemaConverter {
         return -1;
     }
 
-    /** saiku#2541: resolve the bracket chains a named-set expression
-     *  references. Leading identifiers must be known dimensions (canonical
-     *  or display alias), the {@code [Measures]} hierarchy, or an earlier
-     *  named set of the same request; deeper segments resolve for the PII
-     *  check and are otherwise left alone (they can be members or keys). */
+    /** Resolve leading identifiers and conservatively check each referenced
+     *  hierarchy for PII. Deeper segments may be members or keys. */
     private static void resolveNamedSetReferences(
             String name,
             List<List<String>> chains,
@@ -1640,6 +1650,10 @@ public class AiSchemaConverter {
                     AiSchema.Measure m = lookupMeasureOrNull(chain.get(1), schema);
                     if (m != null && m.pii) {
                         throw piiRefusal(fieldPath, "Measure '" + m.name + "'");
+                    }
+                } else {
+                    for (AiSchema.Measure m : schema.measures.values()) {
+                        if (m.pii) throw piiRefusal(fieldPath, "Measure '" + m.name + "'");
                     }
                 }
                 continue;
@@ -1660,37 +1674,35 @@ public class AiSchemaConverter {
                 }
                 continue;
             }
-            if (chain.size() < 2) continue; // bare dimension reference — nothing more to check
+            if (chain.size() < 2) {
+                // A bare dimension may select any of its hierarchies.
+                for (AiSchema.Hierarchy hierarchy : d.hierarchies.values()) {
+                    rejectPiiHierarchy(hierarchy, fieldPath);
+                }
+                continue;
+            }
             AiSchema.Hierarchy h = d.hierarchies.get(AiSchema.key(chain.get(1)));
             if (h == null) {
                 String t = d.hierarchyAliases.get(AiSchema.key(chain.get(1)));
                 if (t != null) h = d.hierarchies.get(t);
             }
             if (h != null) {
-                if (chain.size() >= 3) {
-                    AiSchema.Level l = h.levels.get(AiSchema.key(chain.get(2)));
-                    if (l == null) {
-                        String t = h.levelAliases.get(AiSchema.key(chain.get(2)));
-                        if (t != null) l = h.levels.get(t);
-                    }
-                    if (l != null && l.pii) {
-                        throw piiRefusal(fieldPath, "Level '" + l.name + "'");
-                    }
-                }
+                rejectPiiHierarchy(h, fieldPath);
             } else {
                 // Second segment is not a hierarchy: level shorthand
-                // ([Time].[Year]) or a member. Check level shorthand for PII.
+                // ([Time].[Year]) or a member. It may resolve in any hierarchy.
                 for (AiSchema.Hierarchy h2 : d.hierarchies.values()) {
-                    AiSchema.Level l = h2.levels.get(AiSchema.key(chain.get(1)));
-                    if (l == null) {
-                        String t = h2.levelAliases.get(AiSchema.key(chain.get(1)));
-                        if (t != null) l = h2.levels.get(t);
-                    }
-                    if (l != null && l.pii) {
-                        throw piiRefusal(fieldPath, "Level '" + l.name + "'");
-                    }
+                    rejectPiiHierarchy(h2, fieldPath);
                 }
             }
+        }
+    }
+
+    private static void rejectPiiHierarchy(AiSchema.Hierarchy hierarchy, String fieldPath) {
+        // Navigation from a safe level can reach every level in its hierarchy.
+        // Refuse it until expressions have a parser that can prove otherwise.
+        for (AiSchema.Level level : hierarchy.levels.values()) {
+            if (level.pii) throw piiRefusal(fieldPath, "Level '" + level.name + "'");
         }
     }
 
@@ -1712,14 +1724,9 @@ public class AiSchemaConverter {
         return new AiValidationException(field, message, null);
     }
 
-    /** Wrap a named-set name in brackets if the caller didn't already.
-     *  Names with embedded ']' get escaped per Mondrian's MDX-identifier
-     *  rules (double the bracket). Defensive — agents that supply the
-     *  already-bracketed form keep working. */
+    /** Emit a validated named-set identifier as exactly one bracketed name. */
     private static String bracketName(String n) {
-        if (n == null) return "[]";
-        if (n.startsWith("[") && n.endsWith("]")) return n;
-        return "[" + n.replace("]", "]]") + "]";
+        return "[" + namedSetIdentifier(n, "namedSets[].name") + "]";
     }
 
     /**

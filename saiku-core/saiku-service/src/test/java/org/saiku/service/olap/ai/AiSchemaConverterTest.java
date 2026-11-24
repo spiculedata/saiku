@@ -1050,6 +1050,40 @@ public class AiSchemaConverterTest {
     }
 
     @Test
+    public void namedSetNameCannotInjectMdx() {
+        String[] names = {
+            "[S] AS ({}) MEMBER [Measures].[Unit Sales] AS (Generate(Head([Customer].[Customers].[Name].Members, 5), [Customer].[Customers].CurrentMember.Name, \"\", \"\")) SET [T]",
+            "S] AS ({}) MEMBER [Measures].[Unit Sales] AS (1)",
+            "[S]] AS ({}]",
+            "S; DROP SET [T]",
+            "X".repeat(65),
+            "[]"
+        };
+        for (String name : names) {
+            AiQueryRequest req = baseReq();
+            req.setNamedSets(Collections.singletonList(new AiNamedSet(name, "{}")));
+            try {
+                converter.convert(req, schema);
+                fail("expected name validation error for " + name);
+            } catch (AiValidationException e) {
+                assertEquals("namedSets[0].name", e.getField());
+            }
+        }
+    }
+
+    @Test
+    public void bracketedAndBareNamedSetNamesAreTheSameIdentifier() {
+        AiQueryRequest req = baseReq();
+        req.setNamedSets(Arrays.asList(new AiNamedSet("[First]", "{}"), new AiNamedSet("First", "{}")));
+        try {
+            converter.convert(req, schema);
+            fail("expected duplicate named-set name");
+        } catch (AiValidationException e) {
+            assertEquals("namedSets[1].name", e.getField());
+        }
+    }
+
+    @Test
     public void duplicateNamedSetNameRejected() {
         AiQueryRequest req = baseReq();
         req.setNamedSets(Arrays.asList(
@@ -1279,6 +1313,71 @@ public class AiSchemaConverterTest {
         }
     }
 
+    @Test
+    public void piiHierarchyCannotBeNavigatedFromNamedSet() {
+        addPiiCustomerDimension();
+        String[] expressions = {
+            "{[Customer].[Customers].Members}",
+            "Descendants([Customer].[Customers].[City].Members, 1)",
+            "Generate([Customer].[Customers].[City].Members, [Customer].[Customers].CurrentMember.Children)",
+            "[Customer].[Customers].Levels(1).Members",
+            "{[Customer].Members}",
+            "{[Customer].[Customers].[City].Members}"
+        };
+        for (String expression : expressions) {
+            AiQueryRequest req = baseReq();
+            req.setNamedSets(Collections.singletonList(new AiNamedSet("S", expression)));
+            try {
+                converter.convert(req, schema);
+                fail("expected PII refusal for " + expression);
+            } catch (AiPiiException e) {
+                assertEquals("namedSets[0].expression", e.getField());
+            }
+        }
+    }
+
+    @Test
+    public void siblingHierarchyWithoutPiiStillWorks() {
+        addPiiCustomerDimension();
+        AiSchema.Dimension customer = schema.dimensions.get(AiSchema.key("Customer"));
+        AiSchema.Hierarchy geography = new AiSchema.Hierarchy("Geography", "[Customer].[Geography]");
+        geography.levels.put(AiSchema.key("Region"), new AiSchema.Level("Region", "[Customer].[Geography].[Region]"));
+        customer.hierarchies.put(AiSchema.key("Geography"), geography);
+        AiQueryRequest req = baseReq();
+        req.setNamedSets(
+                Collections.singletonList(new AiNamedSet("Regions", "{[Customer].[Geography].[Region].Members}")));
+        assertTrue(converter.convert(req, schema).getMdx().contains("SET [Regions] AS ("));
+    }
+
+    @Test
+    public void stringToMdxFunctionsCannotHidePiiReferences() {
+        String[] functions = {"StrToSet", "StrToMember", "StrToTuple", "StrToValue"};
+        for (String function : functions) {
+            AiQueryRequest req = baseReq();
+            req.setNamedSets(Collections.singletonList(
+                    new AiNamedSet("S", function + "(\"{[Customer].[Customers].[Name].Members}\")")));
+            try {
+                converter.convert(req, schema);
+                fail("expected validation error for " + function);
+            } catch (AiValidationException e) {
+                assertEquals("namedSets[0].expression", e.getField());
+            }
+        }
+    }
+
+    @Test
+    public void unqualifiedMeasuresReferenceCannotEnumeratePiiMeasure() {
+        schema.measures.get(AiSchema.key("Unit Sales")).pii = true;
+        AiQueryRequest req = baseReq();
+        req.setNamedSets(Collections.singletonList(new AiNamedSet("S", "[Measures].Members")));
+        try {
+            converter.convert(req, schema);
+            fail("expected PII refusal for the Measures hierarchy");
+        } catch (AiPiiException e) {
+            assertEquals("namedSets[0].expression", e.getField());
+        }
+    }
+
     /** Member-key fragments (.&[key], including compound .&[USA].&[WA])
      *  are not name references and must not trip the resolver. */
     @Test
@@ -1302,6 +1401,41 @@ public class AiSchemaConverterTest {
                         + "InStr([Product].[Product].CurrentMember.Name, \"Dr\") > 0)")));
         ThinQuery tq = converter.convert(req, schema);
         assertTrue(tq.getMdx(), tq.getMdx().contains("SET [S] AS (Filter("));
+    }
+
+    @Test
+    public void tokenizerAllowsEscapesInsideStringsAndBracketedIdentifiers() {
+        String[] expressions = {
+            "Filter([Product].[Product].[Department].Members, "
+                    + "InStr([Product].[Product].CurrentMember.Name, \"a\"\"--})\") > 0)",
+            "{[Product].[Product].[A]]--}MEMBER].Members}"
+        };
+        for (String expression : expressions) {
+            AiQueryRequest req = baseReq();
+            req.setNamedSets(Collections.singletonList(new AiNamedSet("S", expression)));
+            assertTrue(converter.convert(req, schema).getMdx().contains("SET [S] AS (" + expression + ")"));
+        }
+    }
+
+    @Test
+    public void tokenizerRejectsSemicolonUnderflowAndUnterminatedTokens() {
+        String[] expressions = {
+            "{[Product].[Product].Members};",
+            "} {[Product].[Product].Members}",
+            "{[Product].[Product].Members",
+            "{[Product].[Product].Members} [Unterminated",
+            "Filter([Product].[Product].Members, \"unterminated)"
+        };
+        for (String expression : expressions) {
+            AiQueryRequest req = baseReq();
+            req.setNamedSets(Collections.singletonList(new AiNamedSet("S", expression)));
+            try {
+                converter.convert(req, schema);
+                fail("expected validation error for " + expression);
+            } catch (AiValidationException e) {
+                assertEquals("namedSets[0].expression", e.getField());
+            }
+        }
     }
 
     /* ------------------------ saiku#864 limit guards ------------------------ */

@@ -75,6 +75,12 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-11-24 — fix/2541-named-set-expression-validation — PR #2593 review rework
+**Was doing:** closed the named-set name injection and hierarchy-navigation PII gaps, corrected acceptance C3 to use seeded FoodMart, and added regression tests.
+**Now:** check PR #2593 CI after the rework push, especially acceptance C3 and `AiSchemaConverterTest`.
+**Watch out:** local Maven tests stop before compilation: GitHub Packages returns 401 for Mondrian and olap4j; Spotless and static checks pass.
+**Refs:** #2541, PR #2593
+
 ## 2026-11-24 — feature/2524-unauth-401-no-session — PR #2560 formatting rework
 **Was doing:** matched the two launcher test files to Spotless's CI diff; the prior CI run passed both affected test classes but failed at formatting.
 **Now:** check PR #2560 CI for the rework commit; local Java and Maven are unavailable in this workspace.

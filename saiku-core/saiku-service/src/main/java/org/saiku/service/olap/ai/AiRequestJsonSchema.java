@@ -68,13 +68,13 @@ public final class AiRequestJsonSchema {
                 arrayOf(
                         namedSet(),
                         "Optional named sets, emitted ahead of the SELECT as WITH SET [name] AS (expression). "
-                                + "Reference a set in rows/columns/filters by its name. The expression is an MDX "
-                                + "set expression and is validated server-side: no statement keywords (MEMBER, "
-                                + "SELECT, WITH, FROM, WHERE, CREATE, DROP), no MDX comments (--, /*, //), "
-                                + "balanced parentheses and braces, and every [Dimension] reference must resolve "
-                                + "against the cube (or an earlier named set in the same request). Expressions "
-                                + "referencing PII-annotated levels or measures are refused like the same level "
-                                + "on rows."));
+                                + "Names contain 1-64 letters, digits, spaces, underscores or hyphens, with one "
+                                + "optional surrounding bracket pair. Reference a set by its name. The MDX set "
+                                + "expression is validated server-side: no statement keywords (MEMBER, SET, "
+                                + "SELECT, WITH, FROM, WHERE, CREATE, DROP, DIMENSION), StrTo* functions, MDX "
+                                + "comments (--, /*, //), or unbalanced parentheses and braces. Every bracketed "
+                                + "reference must resolve against the cube or an earlier named set. References "
+                                + "to a hierarchy containing any PII level, or to a PII measure, are refused."));
         root.put("properties", properties);
 
         Map<String, Object> exampleRoot = new LinkedHashMap<>();
@@ -118,7 +118,10 @@ public final class AiRequestJsonSchema {
 
     private static Map<String, Object> namedSet() {
         Map<String, Object> props = new LinkedHashMap<>();
-        props.put("name", stringField("Set name. Unique within the request; referenced later as [name]."));
+        props.put(
+                "name",
+                stringField("Set identifier: 1-64 letters, digits, spaces, underscores or hyphens, optionally "
+                        + "surrounded by brackets. Unique within the request; referenced later as [name]."));
         props.put(
                 "expression",
                 stringField("MDX set expression, e.g. {[Product].[Products].[Product Family].Members} or "

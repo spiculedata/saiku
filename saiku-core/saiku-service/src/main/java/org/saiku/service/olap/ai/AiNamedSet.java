@@ -12,15 +12,17 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
  * clause, then becomes available as a member-set reference inside
  * {@code rows}, {@code columns}, or {@code filters}.
  *
- * <p>The {@code expression} is an MDX set expression, validated by
+ * <p>The {@code name} is a validated identifier (letters, digits, spaces,
+ * underscores and hyphens, at most 64 characters, optionally bracketed).
+ * The {@code expression} is an MDX set expression, validated by
  * {@code AiSchemaConverter.validateNamedSetExpression} (saiku#2541)
  * before it is concatenated into {@code WITH SET [<name>] AS (...)}:
  * statement keywords ({@code MEMBER}, {@code SELECT}, {@code WITH}, ...),
- * MDX comments and unbalanced delimiters are refused; every reference
+ * MDX comments, StrTo* functions and unbalanced delimiters are refused; every reference
  * must resolve against the cube's dimensions, the {@code [Measures]}
  * hierarchy or an earlier named set of the same request; and a reference
- * to a PII-annotated level or measure is refused exactly like the same
- * level on {@code rows} (saiku#1918). The legacy trust model
+ * to a hierarchy containing a PII level or a PII measure is refused
+ * (saiku#1918). The legacy trust model
  * ("expression bodies passed to Mondrian unmodified") does not apply
  * on the AI surface.
  *

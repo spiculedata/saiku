@@ -17,6 +17,11 @@ A promoted entry has the same shape plus `**Status:** promoted`, `**Supersedes:*
 
 ---
 
+## 2026-11-24 — AI named sets: validate names and reachable PII levels
+Treat both `namedSets[].name` and `expression` as untrusted MDX inputs. Validate names as identifiers before writing `WITH SET`; reject references to a hierarchy containing a PII level, since navigation can reach that level without naming it literally. Reject string-to-MDX functions that hide references in quoted text.
+**Why:** a name could inject a calculated `MEMBER` even after expression validation, while hierarchy navigation and `StrToSet` bypassed literal level matching.
+**Source:** PR #2593 review of #2541
+
 ## 2026-11-24 — Ossie filters: resolve semantic names through their dataset and expression
 Checking that an unqualified filter name is visible somewhere in the model is insufficient. Resolve it to one declaring dataset, reject ambiguity, and emit that dataset's mapped column expression.
 **Why:** a bare quoted name can bind to a different table's hidden physical column and disclose values through filter results.

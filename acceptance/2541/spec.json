@@ -80,7 +80,7 @@
         "json": {
           "cube": "foodmart/FoodMart/FoodMart/Sales",
           "measures": [{ "name": "Unit Sales" }],
-          "rows": [{ "dimension": "Time", "hierarchy": "Time By", "level": "Year" }],
+          "rows": [{ "dimension": "Time", "hierarchy": "Time", "level": "Year" }],
           "namedSets": [
             { "name": "Families", "expression": "{[Product].[Products].[Product Family].Members}" }
           ]
