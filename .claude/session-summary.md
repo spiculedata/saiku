@@ -75,6 +75,12 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-11-24 — feature/1428-model-ide-ossie-yaml — PR #2490 page regression tests
+**Was doing:** integrated the concurrent review-fix commit and added browser tests for Mondrian editor uploads and Ossie completion when switching files or receiving a late response.
+**Now:** check PR #2490 CI on the pushed head, especially the new Playwright spec.
+**Watch out:** local Chromium cannot launch because the host lacks `libglib-2.0.so.0` and other shared libraries; UI unit tests, type check, and build ran locally.
+**Refs:** #1428, PR #2490, `saiku-ui/e2e/model-ide.spec.ts`
+
 ## 2026-11-24 — feature/2524-unauth-401-no-session — PR #2560 formatting rework
 **Was doing:** matched the two launcher test files to Spotless's CI diff; the prior CI run passed both affected test classes but failed at formatting.
 **Now:** check PR #2560 CI for the rework commit; local Java and Maven are unavailable in this workspace.
