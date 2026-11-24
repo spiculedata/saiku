@@ -115,7 +115,7 @@ if (!base) {
 if (!user || !password) fail('ACCEPTANCE_USER / ACCEPTANCE_PASSWORD are not set');
 
 const form = (pairs) => new URLSearchParams(pairs).toString();
-const repoBase = `${base}/rest/saiku/api`;
+const repoBase = '/rest/saiku/api';
 
 // ---- the admin session ----------------------------------------------------------------------------------
 const cookies = new Map();
