@@ -181,6 +181,35 @@ public class AiOssieResource {
     }
 
     /**
+     * saiku#2540 — publish the Ossie model this call targeted as AI-audit
+     * enrichment ({@code AiAuditFilter.P_MODEL}), so the audit entry names the
+     * model, not just the endpoint. The resource is a Spring singleton and
+     * cannot reach the JAX-RS request context, so the enrichment crosses as a
+     * servlet request attribute (the filter reads the {@code P_*} keys off the
+     * {@code RequestContextHolder}-bound request). Never throws — a missing
+     * enrichment degrades the entry gracefully, it must never break the call
+     * being audited. Written as {@code connection/model} when both are known,
+     * else whichever is.
+     */
+    private static void auditEnrichModel(String connection, String model) {
+        if (connection == null && model == null) {
+            return;
+        }
+        String target = (connection != null && model != null)
+                ? connection + "/" + model
+                : connection != null ? connection : model;
+        try {
+            org.springframework.web.context.request.RequestAttributes attrs =
+                    org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+            if (attrs instanceof org.springframework.web.context.request.ServletRequestAttributes sra) {
+                sra.getRequest().setAttribute(org.saiku.web.rest.resources.AiAuditFilter.P_MODEL, target);
+            }
+        } catch (RuntimeException ignore) {
+            // No request bound (tests) — the entry just carries no model.
+        }
+    }
+
+    /**
      * Rate-limit identity = the authenticated principal alone; falls back to the client IP only
      * for genuinely anonymous traffic, matching {@link AiQueryResource#askRateKey()} so a
      * caller's spend across the MDX and Ossie ask endpoints keys the same way.
@@ -419,6 +448,8 @@ public class AiOssieResource {
         // saiku#2322: schema metadata is the schema-only tier — never blocks, recorded for
         // symmetry with AiQueryResource's /ai/schema gate (AiQueryResource.java:670).
         aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.SCHEMA_METADATA);
+        // saiku#2540: the audit entry for this call carries the model.
+        auditEnrichModel(connectionName, modelName);
         if (ossieDiscoverService == null) {
             return error("Ossie discover not wired");
         }
@@ -469,6 +500,8 @@ public class AiOssieResource {
     public Response getOntology(@PathParam("connection") String connectionName, @PathParam("model") String modelName) {
         // saiku#2322: ontology is schema metadata — same symmetry gate as /schema.
         aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.SCHEMA_METADATA);
+        // saiku#2540: the audit entry for this call carries the model.
+        auditEnrichModel(connectionName, modelName);
         if (ossieDiscoverService == null) {
             return error("Ossie discover not wired");
         }
@@ -562,6 +595,10 @@ public class AiOssieResource {
         // saiku#2322: aggregated result values require the aggregated tier. Before the try so
         // AiPolicyViolation reaches AiPolicyViolationMapper (403), not the generic catch (500).
         aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.AGGREGATED_RESULT_VALUES);
+        if (req != null) {
+            // saiku#2540: the audit entry for this call carries the model.
+            auditEnrichModel(req.getConnection(), req.getModel());
+        }
         try {
             if (req == null) {
                 return badRequest("body", "request body required", List.of());
@@ -916,6 +953,10 @@ public class AiOssieResource {
         // saiku#2322: row-detail is Ossie's drillthrough — RAW_ROW_DATA needs the full tier,
         // exactly as MDX /ai/drillthrough does (AiQueryResource.java:2615).
         aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.RAW_ROW_DATA);
+        if (req != null) {
+            // saiku#2540: the audit entry for this call carries the model.
+            auditEnrichModel(req.getConnection(), req.getModel());
+        }
         try {
             if (req == null) return badRequest("body", "request body required", List.of());
             if (req.getConnection() == null) {
@@ -1196,6 +1237,10 @@ public class AiOssieResource {
         // saiku#2322: preview returns generated SQL, no data — schema-only tier, recorded for
         // symmetry with the MDX preview gate.
         aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.SCHEMA_METADATA);
+        if (req != null) {
+            // saiku#2540: the audit entry for this call carries the model.
+            auditEnrichModel(req.getConnection(), req.getModel());
+        }
         try {
             if (req == null) {
                 return badRequest("body", "request body required", List.of());

@@ -579,6 +579,38 @@ public class AnthropicNlAskProviderTest {
         assertTrue(sawMcpTool);
     }
 
+    /** saiku#2542: client-supplied context must never enter the system channel. */
+    @Test
+    public void cellsetDigestAndCurrentQueryRideInTheUserMessageNotTheSystemPrompt() throws Exception {
+        AnthropicNlAskProvider provider =
+                new AnthropicNlAskProvider(new AnthropicNlAskProvider.Config("k", "claude-x", 0.0, 1024, null));
+        NlAskRequest req = new NlAskRequest(
+                CUBE,
+                "what changed?",
+                SCHEMA,
+                REQUEST_SCHEMA,
+                List.of(),
+                "SECRET-DIGEST-BYTES",
+                NlAskRequest.ForceTool.AUTO,
+                "{\"SECRET-QUERY-SNAPSHOT\":true}",
+                null,
+                null,
+                List.of(),
+                List.of());
+
+        JsonNode root = MAPPER.readTree(provider.buildRequestBody(req));
+
+        String system = root.path("system").asText();
+        assertFalse(system.contains("SECRET-DIGEST-BYTES"));
+        assertFalse(system.contains("SECRET-QUERY-SNAPSHOT"));
+        JsonNode user = root.path("messages").get(0);
+        assertEquals("user", user.path("role").asText());
+        String userContent = user.path("content").asText();
+        assertTrue(userContent.contains("SECRET-DIGEST-BYTES"));
+        assertTrue(userContent.contains("SECRET-QUERY-SNAPSHOT"));
+        assertTrue(userContent.startsWith("what changed?"));
+    }
+
     @Test
     public void parseToolResponseRecognisesMcpQualifiedToolName() throws Exception {
         String body = "{\"usage\":{\"input_tokens\":9,\"output_tokens\":4},"

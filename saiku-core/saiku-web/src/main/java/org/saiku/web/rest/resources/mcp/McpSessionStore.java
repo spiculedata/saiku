@@ -25,6 +25,11 @@ import java.util.concurrent.ConcurrentMap;
  * <p>saiku#2325: the store is bounded by {@code saiku.mcp.session.max} (default 1000). When
  * {@code create} finds it full it drops idle sessions, then the least-recently-active one; idle
  * sessions are also swept periodically from {@code touch} so they cannot accumulate unseen.
+ *
+ * <p>saiku#2542: every session is bound to the principal that created it. {@code touch} and
+ * {@code drop} only ever act on a session whose stored principal matches the caller's — a
+ * session id presented by a different user reads as unknown (null), so it can neither use nor
+ * destroy another user's session.
  */
 public final class McpSessionStore {
 
@@ -73,8 +78,8 @@ public final class McpSessionStore {
         }
     }
 
-    /** Mint a new session and return its id. Called from {@code initialize}. */
-    public synchronized String create(String protocolVersion) {
+    /** Mint a new session owned by {@code principal} and return its id. Called from {@code initialize}. */
+    public synchronized String create(String protocolVersion, String principal) {
         if (sessions.size() >= maxSessions) {
             sweepIdle(System.currentTimeMillis());
             while (sessions.size() >= maxSessions && evictLeastRecentlyActive()) {
@@ -82,7 +87,7 @@ public final class McpSessionStore {
             }
         }
         String id = UUID.randomUUID().toString().replace("-", "");
-        sessions.put(id, new McpSession(protocolVersion, System.currentTimeMillis()));
+        sessions.put(id, new McpSession(protocolVersion, principal, System.currentTimeMillis()));
         return id;
     }
 
@@ -99,10 +104,13 @@ public final class McpSessionStore {
     }
 
     /**
-     * Look up a session by id, touching its last-activity timestamp.
-     * Returns null if unknown or idle-expired (and removes the stale entry).
+     * Look up a session by id on behalf of {@code principal}, touching its last-activity
+     * timestamp. Returns null when the id is unknown, idle-expired (the stale entry is removed),
+     * or owned by a different principal (saiku#2542 — a foreign principal reads the same "unknown
+     * session" answer; the stored last-activity is deliberately not refreshed so probing a
+     * foreign id cannot keep someone else's session alive).
      */
-    public McpSession touch(String id) {
+    public McpSession touch(String id, String principal) {
         if (id == null || id.isBlank()) return null;
         long now = System.currentTimeMillis();
         if (now - lastSweepMs > idleTimeoutMs / 2) sweepIdle(now);
@@ -112,13 +120,28 @@ public final class McpSessionStore {
             sessions.remove(id);
             return null;
         }
-        sessions.put(id, new McpSession(s.protocolVersion(), now));
+        if (!samePrincipal(s.principal(), principal)) return null;
+        sessions.put(id, new McpSession(s.protocolVersion(), s.principal(), now));
         return s;
     }
 
-    /** Drop a session explicitly — used by the JSON-RPC delete-session DELETE handler. */
-    public boolean drop(String id) {
-        return id != null && sessions.remove(id) != null;
+    /**
+     * Drop a session explicitly — used by the JSON-RPC delete-session DELETE handler. Only the
+     * session's owner may drop it (saiku#2542); a foreign or unknown id leaves the store
+     * untouched and reports false.
+     */
+    public boolean drop(String id, String principal) {
+        if (id == null || id.isBlank()) return false;
+        McpSession s = sessions.get(id);
+        if (s == null || !samePrincipal(s.principal(), principal)) return false;
+        return sessions.remove(id, s);
+    }
+
+    private static boolean samePrincipal(String stored, String caller) {
+        // Identity equality: an absent principal only ever matches another absent one — in
+        // production the auth chain always supplies an authenticated name before this resource is
+        // reached, and a test without a security context mints and uses its session the same way.
+        return java.util.Objects.equals(stored, caller);
     }
 
     /** Test hook. */
@@ -131,6 +154,6 @@ public final class McpSessionStore {
         return idleTimeoutMs;
     }
 
-    /** A live MCP session — immutable. */
-    public record McpSession(String protocolVersion, long lastActivityMs) {}
+    /** A live MCP session — immutable. Bound to the principal that created it (saiku#2542). */
+    public record McpSession(String protocolVersion, String principal, long lastActivityMs) {}
 }

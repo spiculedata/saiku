@@ -1,0 +1,93 @@
+{
+  "issue": 2523,
+  "title": "The generated Spring /login endpoint is gone (fail-closed, no session minted) and one wrong password at /rest/saiku/session counts once against the login budget",
+  "kind": "api",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "an anonymous caller fetching /login",
+      "then": "the generated Spring \"Please sign in\" page is no longer served: the request is refused (401/403/404), never 200"
+    },
+    {
+      "id": "C2",
+      "given": "a caller posting credentials to /login",
+      "then": "no authentication happens: the request is refused (401/403/404), never a 302 that mints a session"
+    },
+    {
+      "id": "C3",
+      "given": "four wrong passwords for one user posted to /rest/saiku/session",
+      "then": "each attempt answers 401 — one failure is recorded per attempt, so the budget of 5 is not exhausted on the fourth"
+    },
+    {
+      "id": "C4",
+      "given": "the fifth wrong password for that user (the budget's last attempt)",
+      "then": "it still answers 401, and only the next attempt for the same user answers 429"
+    }
+  ],
+  "steps": [
+    {
+      "name": "the generated sign-in page is not served",
+      "criterion": "C1",
+      "request": {
+        "method": "GET",
+        "path": "http://127.0.0.1:18080/login"
+      },
+      "expect": {
+        "status": [401, 403, 404],
+        "because": "the main security chain no longer registers form login or the generated /login page; a fail-closed 401 is the terminal catch-all answer"
+      }
+    },
+    {
+      "name": "posting credentials to /login does not authenticate",
+      "criterion": "C2",
+      "request": {
+        "method": "POST",
+        "path": "http://127.0.0.1:18080/login?username=hive-2523-probe&password=definitely-not-the-password"
+      },
+      "expect": {
+        "status": [401, 403, 404],
+        "because": "no form-login filter exists any more, so a credential POST to /login must never mint a session or redirect to /"
+      }
+    },
+    {
+      "name": "four wrong passwords each answer 401 — failures count once per attempt",
+      "criterion": "C3",
+      "request": {
+        "method": "POST",
+        "path": "/rest/saiku/session?username=hive-2523-budget-probe&password=wrong-password-2523",
+        "headers": { "Content-Type": "application/x-www-form-urlencoded" }
+      },
+      "repeat": { "count": 4, "untilStatus": 429 },
+      "expect": {
+        "status": 401,
+        "because": "the documented (client IP, username) budget is 5; with single counting the fourth wrong password is still a plain 401"
+      }
+    },
+    {
+      "name": "the fifth wrong password is the last one the budget allows",
+      "criterion": "C4",
+      "request": {
+        "method": "POST",
+        "path": "/rest/saiku/session?username=hive-2523-budget-probe&password=wrong-password-2523",
+        "headers": { "Content-Type": "application/x-www-form-urlencoded" }
+      },
+      "expect": {
+        "status": 401,
+        "because": "five single-counted failures exhaust the budget exactly; the lockout must not trip early"
+      }
+    },
+    {
+      "name": "the budget is exhausted: the next attempt for that user is locked out",
+      "criterion": "C4",
+      "request": {
+        "method": "POST",
+        "path": "/rest/saiku/session?username=hive-2523-budget-probe&password=wrong-password-2523",
+        "headers": { "Content-Type": "application/x-www-form-urlencoded" }
+      },
+      "expect": {
+        "status": 429,
+        "because": "after the five-attempt budget is spent the account stays locked until the window ends, whatever password is presented"
+      }
+    }
+  ]
+}

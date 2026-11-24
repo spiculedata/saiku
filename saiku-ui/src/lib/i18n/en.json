@@ -877,6 +877,7 @@
 	"upgrade.available": "A newer version of Saiku is available",
 	"upgrade.current": "current",
 	"upgrade.releaseNotes": "Release notes",
+	"upgrade.sponsor": "Support Saiku",
 	"upgrade.dismiss": "Dismiss",
 	"a11y.newTab": "New tab",
 	"a11y.viewOptions": "View options",
