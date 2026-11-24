@@ -27,6 +27,12 @@ import org.saiku.service.mcp.outbound.ScriptedHttpClient.Resp;
  */
 public class McpOutboundToolCatalogTest {
 
+    /** Hermetic client: the pre-send SSRF gate resolves every host to a fixed public
+     *  address — no live DNS in tests (mirrors McpOutboundServerParserTest.RESOLVER). */
+    private static McpOutboundClient client(ScriptedHttpClient http, Duration timeout) {
+        return new McpOutboundClient(http, timeout, McpOutboundServerParserTest.RESOLVER);
+    }
+
     @Rule
     public TemporaryFolder tmp = new TemporaryFolder();
 
@@ -53,7 +59,7 @@ public class McpOutboundToolCatalogTest {
                 new McpOutboundServerRegistry(tmp.newFolder("mcp").toPath(), RESOLVER);
         registry.save(new McpOutboundServer("srv-a", "A", "https://a.example/mcp", null, null, Set.of(), "x"));
         ScriptedHttpClient http = ScriptedHttpClient.of(); // empty — any send() would fail the test
-        McpOutboundToolCatalog catalog = new McpOutboundToolCatalog(registry, new McpOutboundClient(http, TIMEOUT));
+        McpOutboundToolCatalog catalog = new McpOutboundToolCatalog(registry, client(http, TIMEOUT));
 
         assertTrue(catalog.tools().isEmpty());
         assertFalse(catalog.hasEnabledTools());
@@ -66,7 +72,7 @@ public class McpOutboundToolCatalogTest {
                 new McpOutboundServerRegistry(tmp.newFolder("mcp").toPath(), RESOLVER);
         registry.save(new McpOutboundServer("srv-a", "A", "https://a.example/mcp", null, null, Set.of("tool1"), "x"));
         ScriptedHttpClient http = ScriptedHttpClient.of(Resp.ok(INIT_OK), Resp.ok(toolsList("tool1", "tool2")));
-        McpOutboundToolCatalog catalog = new McpOutboundToolCatalog(registry, new McpOutboundClient(http, TIMEOUT));
+        McpOutboundToolCatalog catalog = new McpOutboundToolCatalog(registry, client(http, TIMEOUT));
 
         List<McpOutboundToolDescriptor> tools = catalog.tools();
 
@@ -87,7 +93,7 @@ public class McpOutboundToolCatalogTest {
         // registry.list() is sorted by id: srv-a processed first (fails), then srv-b (succeeds).
         ScriptedHttpClient http =
                 ScriptedHttpClient.of(Resp.status(500, "boom"), Resp.ok(INIT_OK), Resp.ok(toolsList("tool2")));
-        McpOutboundToolCatalog catalog = new McpOutboundToolCatalog(registry, new McpOutboundClient(http, TIMEOUT));
+        McpOutboundToolCatalog catalog = new McpOutboundToolCatalog(registry, client(http, TIMEOUT));
 
         List<McpOutboundToolDescriptor> tools = catalog.tools();
 
@@ -105,7 +111,7 @@ public class McpOutboundToolCatalogTest {
         ScriptedHttpClient http = ScriptedHttpClient.of(
                 Resp.ok(INIT_OK), Resp.ok(toolsList("tool1")), // tools() discovery
                 Resp.ok(INIT_OK), Resp.ok(callResult)); // callTool dispatch
-        McpOutboundToolCatalog catalog = new McpOutboundToolCatalog(registry, new McpOutboundClient(http, TIMEOUT));
+        McpOutboundToolCatalog catalog = new McpOutboundToolCatalog(registry, client(http, TIMEOUT));
 
         String qualified = catalog.tools().get(0).qualifiedName();
         McpOutboundClient.CallResult result = catalog.callTool(qualified, "{\"x\":1}");
@@ -119,7 +125,7 @@ public class McpOutboundToolCatalogTest {
         McpOutboundServerRegistry registry =
                 new McpOutboundServerRegistry(tmp.newFolder("mcp").toPath(), RESOLVER);
         ScriptedHttpClient http = ScriptedHttpClient.of();
-        McpOutboundToolCatalog catalog = new McpOutboundToolCatalog(registry, new McpOutboundClient(http, TIMEOUT));
+        McpOutboundToolCatalog catalog = new McpOutboundToolCatalog(registry, client(http, TIMEOUT));
 
         McpOutboundClient.CallResult result = catalog.callTool("mcp__bogus__tool", "{}");
 
@@ -133,7 +139,7 @@ public class McpOutboundToolCatalogTest {
         McpOutboundServerRegistry registry = new McpOutboundServerRegistry(root, RESOLVER);
         registry.save(new McpOutboundServer("srv-a", "A", "https://a.example/mcp", null, null, Set.of("tool1"), "x"));
         ScriptedHttpClient http = ScriptedHttpClient.of(Resp.ok(INIT_OK), Resp.ok(toolsList("tool1")));
-        McpOutboundToolCatalog catalog = new McpOutboundToolCatalog(registry, new McpOutboundClient(http, TIMEOUT));
+        McpOutboundToolCatalog catalog = new McpOutboundToolCatalog(registry, client(http, TIMEOUT));
 
         String qualified = catalog.tools().get(0).qualifiedName();
 
@@ -157,7 +163,7 @@ public class McpOutboundToolCatalogTest {
                 Resp.ok(INIT_OK), Resp.ok(toolsList("tool1")), Resp.ok(INIT_OK), Resp.ok(toolsList("tool1")));
         long[] clockNanos = {0L};
         McpOutboundToolCatalog catalog = new McpOutboundToolCatalog(
-                registry, new McpOutboundClient(http, TIMEOUT), Duration.ofSeconds(30), () -> clockNanos[0]);
+                registry, client(http, TIMEOUT), Duration.ofSeconds(30), () -> clockNanos[0]);
 
         catalog.tools();
         assertEquals(2, http.requests.size());
@@ -177,7 +183,7 @@ public class McpOutboundToolCatalogTest {
         registry.save(new McpOutboundServer("srv-a", "A", "https://a.example/mcp", null, null, Set.of("tool1"), "x"));
         ScriptedHttpClient http = ScriptedHttpClient.of(
                 Resp.ok(INIT_OK), Resp.ok(toolsList("tool1")), Resp.ok(INIT_OK), Resp.ok(toolsList("tool1")));
-        McpOutboundToolCatalog catalog = new McpOutboundToolCatalog(registry, new McpOutboundClient(http, TIMEOUT));
+        McpOutboundToolCatalog catalog = new McpOutboundToolCatalog(registry, client(http, TIMEOUT));
 
         catalog.tools();
         assertEquals(2, http.requests.size());

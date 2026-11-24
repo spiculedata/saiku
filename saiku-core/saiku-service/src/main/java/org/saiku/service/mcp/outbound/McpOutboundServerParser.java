@@ -139,11 +139,18 @@ public final class McpOutboundServerParser {
      * header must never travel over plaintext), no credentials in the authority, and no
      * loopback / link-local / private / otherwise-internal address (an admin-authored URL is
      * defence-in-depth, not a licence to reach the deployment's own network).
+     *
+     * <p>saiku#2542 (review of PR #2580): only the DNS-FREE checks run here. Resolving the host
+     * live at scan time made a brief resolver outage (container start, resolver blip) put every
+     * hostname-based registration into {@code errors} until someone edits a file — an
+     * availability bug — and the address was never re-checked afterwards anyway. The
+     * resolve-and-range check (plus the rebinding guard) now runs in {@link McpOutboundClient}
+     * immediately before every send, the same shape {@link WebhookJsonSender} uses.
      */
     private static void validateUrl(String url, String source, WebhookUrlValidator.HostResolver resolver)
             throws ParseException {
         try {
-            WebhookUrlValidator.validateResolved(url, resolver);
+            WebhookUrlValidator.validateSyntax(url);
         } catch (IllegalArgumentException e) {
             throw new ParseException("INVALID_URL", source, "url rejected: " + e.getMessage());
         }

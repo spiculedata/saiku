@@ -8,6 +8,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.io.IOException;
 import java.net.http.HttpRequest;
@@ -17,6 +18,7 @@ import java.util.Locale;
 import java.util.Set;
 import org.junit.Test;
 import org.saiku.service.mcp.outbound.ScriptedHttpClient.Resp;
+import org.saiku.service.schedule.alert.WebhookUrlValidator;
 
 /**
  * {@link McpOutboundClient} exercised entirely against {@link ScriptedHttpClient} — no network.
@@ -28,6 +30,12 @@ import org.saiku.service.mcp.outbound.ScriptedHttpClient.Resp;
  * sends.
  */
 public class McpOutboundClientTest {
+
+    /** Hermetic client: the pre-send SSRF gate resolves every host to a fixed public
+     *  address — no live DNS in tests (mirrors McpOutboundServerParserTest.RESOLVER). */
+    private static McpOutboundClient client(ScriptedHttpClient http, Duration timeout) {
+        return new McpOutboundClient(http, timeout, McpOutboundServerParserTest.RESOLVER);
+    }
 
     private static final McpOutboundServer PLAIN_SERVER =
             new McpOutboundServer("srv", "Server", "https://example.com/mcp", null, null, Set.of("read_file"), "x");
@@ -56,7 +64,7 @@ public class McpOutboundClientTest {
                 + "]}}";
         ScriptedHttpClient http =
                 ScriptedHttpClient.of(Resp.ok(INIT_OK).withHeader("Mcp-Session-Id", "sess-123"), Resp.ok(toolsList));
-        McpOutboundClient client = new McpOutboundClient(http, Duration.ofSeconds(5));
+        McpOutboundClient client = client(http, Duration.ofSeconds(5));
 
         McpOutboundClient.DiscoveryResult result = client.discoverTools(PLAIN_SERVER);
 
@@ -83,7 +91,7 @@ public class McpOutboundClientTest {
                 + "{\"name\":\"ok_tool\",\"description\":\"fine\"}"
                 + "]}}";
         ScriptedHttpClient http = ScriptedHttpClient.of(Resp.ok(INIT_OK), Resp.ok(toolsList));
-        McpOutboundClient client = new McpOutboundClient(http, Duration.ofSeconds(5));
+        McpOutboundClient client = client(http, Duration.ofSeconds(5));
 
         McpOutboundClient.DiscoveryResult result = client.discoverTools(PLAIN_SERVER);
 
@@ -95,7 +103,7 @@ public class McpOutboundClientTest {
     @Test
     public void discoverToolsFailsOnNon2xxInitialize() {
         ScriptedHttpClient http = ScriptedHttpClient.of(Resp.status(500, "internal error"));
-        McpOutboundClient client = new McpOutboundClient(http, Duration.ofSeconds(5));
+        McpOutboundClient client = client(http, Duration.ofSeconds(5));
 
         McpOutboundClient.DiscoveryResult result = client.discoverTools(PLAIN_SERVER);
 
@@ -107,7 +115,7 @@ public class McpOutboundClientTest {
     @Test
     public void discoverToolsFailsOnMalformedJsonResponse() {
         ScriptedHttpClient http = ScriptedHttpClient.of(Resp.ok(INIT_OK), Resp.ok("this is not json"));
-        McpOutboundClient client = new McpOutboundClient(http, Duration.ofSeconds(5));
+        McpOutboundClient client = client(http, Duration.ofSeconds(5));
 
         McpOutboundClient.DiscoveryResult result = client.discoverTools(PLAIN_SERVER);
 
@@ -119,7 +127,7 @@ public class McpOutboundClientTest {
     public void discoverToolsFailsOnMissingToolsArray() {
         ScriptedHttpClient http =
                 ScriptedHttpClient.of(Resp.ok(INIT_OK), Resp.ok("{\"jsonrpc\":\"2.0\",\"id\":\"2\",\"result\":{}}"));
-        McpOutboundClient client = new McpOutboundClient(http, Duration.ofSeconds(5));
+        McpOutboundClient client = client(http, Duration.ofSeconds(5));
 
         McpOutboundClient.DiscoveryResult result = client.discoverTools(PLAIN_SERVER);
 
@@ -131,7 +139,7 @@ public class McpOutboundClientTest {
         String rpcError =
                 "{\"jsonrpc\":\"2.0\",\"id\":\"2\",\"error\":{\"code\":-32601,\"message\":\"method not found\"}}";
         ScriptedHttpClient http = ScriptedHttpClient.of(Resp.ok(INIT_OK), Resp.ok(rpcError));
-        McpOutboundClient client = new McpOutboundClient(http, Duration.ofSeconds(5));
+        McpOutboundClient client = client(http, Duration.ofSeconds(5));
 
         McpOutboundClient.DiscoveryResult result = client.discoverTools(PLAIN_SERVER);
 
@@ -142,7 +150,7 @@ public class McpOutboundClientTest {
     @Test
     public void discoverToolsFailsOnTimeoutWithoutThrowing() {
         ScriptedHttpClient http = ScriptedHttpClient.throwing(new HttpTimeoutException("request timed out"));
-        McpOutboundClient client = new McpOutboundClient(http, Duration.ofSeconds(1));
+        McpOutboundClient client = client(http, Duration.ofSeconds(1));
 
         // Must never propagate — the whole point is "unreachable → tool absent", not an exception
         // reaching the ask flow.
@@ -160,7 +168,7 @@ public class McpOutboundClientTest {
                 "{\"jsonrpc\":\"2.0\",\"id\":\"2\",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"hello world\"}],"
                         + "\"isError\":false}}";
         ScriptedHttpClient http = ScriptedHttpClient.of(Resp.ok(INIT_OK), Resp.ok(callResult));
-        McpOutboundClient client = new McpOutboundClient(http, Duration.ofSeconds(5));
+        McpOutboundClient client = client(http, Duration.ofSeconds(5));
 
         McpOutboundClient.CallResult result = client.callTool(PLAIN_SERVER, "read_file", "{\"path\":\"/tmp/x\"}");
 
@@ -174,7 +182,7 @@ public class McpOutboundClientTest {
         String callResult = "{\"jsonrpc\":\"2.0\",\"id\":\"2\",\"result\":{\"isError\":true,"
                 + "\"content\":[{\"type\":\"text\",\"text\":\"file not found\"}]}}";
         ScriptedHttpClient http = ScriptedHttpClient.of(Resp.ok(INIT_OK), Resp.ok(callResult));
-        McpOutboundClient client = new McpOutboundClient(http, Duration.ofSeconds(5));
+        McpOutboundClient client = client(http, Duration.ofSeconds(5));
 
         McpOutboundClient.CallResult result = client.callTool(PLAIN_SERVER, "read_file", "{}");
 
@@ -188,7 +196,7 @@ public class McpOutboundClientTest {
         // initialize still happens (arguments are only validated after the handshake); the
         // tools/call response is never consumed since argument parsing fails first.
         ScriptedHttpClient http = ScriptedHttpClient.of(Resp.ok(INIT_OK));
-        McpOutboundClient client = new McpOutboundClient(http, Duration.ofSeconds(5));
+        McpOutboundClient client = client(http, Duration.ofSeconds(5));
 
         McpOutboundClient.CallResult result = client.callTool(PLAIN_SERVER, "read_file", "not json");
 
@@ -202,7 +210,7 @@ public class McpOutboundClientTest {
         String callResult = "{\"jsonrpc\":\"2.0\",\"id\":\"2\",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\""
                 + huge + "\"}]}}";
         ScriptedHttpClient http = ScriptedHttpClient.of(Resp.ok(INIT_OK), Resp.ok(callResult));
-        McpOutboundClient client = new McpOutboundClient(http, Duration.ofSeconds(5));
+        McpOutboundClient client = client(http, Duration.ofSeconds(5));
 
         McpOutboundClient.CallResult result = client.callTool(PLAIN_SERVER, "read_file", "{}");
 
@@ -216,7 +224,7 @@ public class McpOutboundClientTest {
     public void oversizedResponseIsRefused() {
         String huge = "x".repeat(McpOutboundClient.MAX_RESPONSE_BYTES + 1);
         ScriptedHttpClient http = ScriptedHttpClient.of(Resp.ok(huge));
-        McpOutboundClient client = new McpOutboundClient(http, Duration.ofSeconds(5));
+        McpOutboundClient client = client(http, Duration.ofSeconds(5));
 
         McpOutboundClient.DiscoveryResult result = client.discoverTools(PLAIN_SERVER);
 
@@ -228,7 +236,7 @@ public class McpOutboundClientTest {
     @Test
     public void callToolFailsCleanlyWhenServerUnreachable() {
         ScriptedHttpClient http = ScriptedHttpClient.throwing(new IOException("connection refused"));
-        McpOutboundClient client = new McpOutboundClient(http, Duration.ofSeconds(5));
+        McpOutboundClient client = client(http, Duration.ofSeconds(5));
 
         McpOutboundClient.CallResult result = client.callTool(PLAIN_SERVER, "read_file", "{}");
 
@@ -243,7 +251,7 @@ public class McpOutboundClientTest {
         String callResult =
                 "{\"jsonrpc\":\"2.0\",\"id\":\"2\",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"ok\"}]}}";
         ScriptedHttpClient http = ScriptedHttpClient.of(Resp.ok(INIT_OK), Resp.ok(callResult));
-        McpOutboundClient client = new McpOutboundClient(http, Duration.ofSeconds(5));
+        McpOutboundClient client = client(http, Duration.ofSeconds(5));
 
         client.callTool(AUTH_SERVER, "read_file", "{}");
 
@@ -260,7 +268,7 @@ public class McpOutboundClientTest {
         String callResult =
                 "{\"jsonrpc\":\"2.0\",\"id\":\"2\",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"ok\"}]}}";
         ScriptedHttpClient http = ScriptedHttpClient.of(Resp.ok(INIT_OK), Resp.ok(callResult));
-        McpOutboundClient client = new McpOutboundClient(http, Duration.ofSeconds(5));
+        McpOutboundClient client = client(http, Duration.ofSeconds(5));
 
         // A model-controlled (or attacker-controlled) argument payload that TRIES to look like it
         // carries header material. It must land only inside the JSON-RPC params body, never as an
@@ -282,7 +290,7 @@ public class McpOutboundClientTest {
     public void noAuthHeaderSentWhenServerHasNoCredential() {
         ScriptedHttpClient http =
                 ScriptedHttpClient.of(Resp.ok(INIT_OK), Resp.ok("{\"jsonrpc\":\"2.0\",\"id\":\"2\",\"result\":{}}"));
-        McpOutboundClient client = new McpOutboundClient(http, Duration.ofSeconds(5));
+        McpOutboundClient client = client(http, Duration.ofSeconds(5));
 
         client.discoverTools(PLAIN_SERVER);
 
@@ -290,4 +298,57 @@ public class McpOutboundClientTest {
             assertTrue(req.headers().allValues("Authorization").isEmpty());
         }
     }
+    /* ------------- pre-send SSRF gate + rebinding guard (review of PR #2580) ------------- */
+
+    @Test
+    public void rebindBeforeSendRefusesTheCall() {
+        // First resolution (the pre-send validate) approves a public address; the re-resolve
+        // right before the send answers a loopback address — the rebinding signature.
+        java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+        WebhookUrlValidator.HostResolver rebinding = host -> {
+            if (calls.incrementAndGet() == 1) {
+                return new java.net.InetAddress[] {
+                    java.net.InetAddress.getByAddress(new byte[] {93, (byte) 184, (byte) 216, 34})
+                };
+            }
+            return new java.net.InetAddress[] {java.net.InetAddress.getLoopbackAddress()};
+        };
+        ScriptedHttpClient http = ScriptedHttpClient.of(Resp.ok(INIT_OK).withHeader("Mcp-Session-Id", "sess-1"));
+        McpOutboundClient client = new McpOutboundClient(http, Duration.ofSeconds(5), rebinding);
+        McpOutboundClient.DiscoveryResult r = client.discoverTools(PLAIN_SERVER);
+        assertFalse("a rebound address must not receive the credential header", r.ok());
+        assertTrue(r.error(), r.error().contains("rebinding"));
+        assertEquals("the send must never happen against a rebound address", 0, http.requests.size());
+    }
+
+    @Test
+    public void unresolvableHostAtParseTimeNoLongerDropsTheRegistration() throws Exception {
+        // The parser applies only the DNS-free checks: a hostname whose resolution fails
+        // at scan time still registers (review of PR #2580) — availability, not config.
+        String json = "{\"id\":\"blip\",\"name\":\"Blip\",\"url\":\"https://mcp.example.internal/mcp\"}";
+        WebhookUrlValidator.HostResolver outage = host -> {
+            throw new java.net.UnknownHostException("resolver down during the scan");
+        };
+        McpOutboundServer server = McpOutboundServerParser.parse("blip.json", json, outage);
+        assertEquals("blip", server.id());
+        assertEquals("https://mcp.example.internal/mcp", server.url());
+    }
+
+    @Test
+    public void syntaxChecksStillRefuseAtParseTime() {
+        // The DNS-free checks stay at parse time: plaintext, credentials, blocked hosts.
+        for (String bad : new String[] {
+            "{\"id\":\"x\",\"name\":\"X\",\"url\":\"http://mcp.example.com/mcp\"}",
+            "{\"id\":\"x\",\"name\":\"X\",\"url\":\"https://user:pass@mcp.example.com/mcp\"}",
+            "{\"id\":\"x\",\"name\":\"X\",\"url\":\"https://127.0.0.1/mcp\"}"
+        }) {
+            try {
+                McpOutboundServerParser.parse("bad.json", bad, McpOutboundServerParserTest.RESOLVER);
+                fail("the DNS-free gate must still refuse: " + bad);
+            } catch (McpOutboundServerParser.ParseException expected) {
+                assertEquals("INVALID_URL", expected.code());
+            }
+        }
+    }
+
 }

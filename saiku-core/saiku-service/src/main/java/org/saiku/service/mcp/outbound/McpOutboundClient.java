@@ -18,6 +18,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import org.saiku.service.schedule.alert.WebhookUrlValidator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -67,6 +68,9 @@ public final class McpOutboundClient {
     private final HttpClient http;
     private final Duration requestTimeout;
 
+    /** DNS seam for the pre-send SSRF gate — tests stay hermetic by injecting a stub. */
+    private final WebhookUrlValidator.HostResolver resolver;
+
     public McpOutboundClient() {
         this(defaultHttpClient(), Duration.ofSeconds(10));
     }
@@ -77,12 +81,48 @@ public final class McpOutboundClient {
 
     /** Package-visible ctor for tests that need to inject a fake client. */
     public McpOutboundClient(HttpClient http, Duration requestTimeout) {
+        this(http, requestTimeout, java.net.InetAddress::getAllByName);
+    }
+
+    /** Package-visible ctor for tests that also need to inject the pre-send resolver. */
+    McpOutboundClient(HttpClient http, Duration requestTimeout, WebhookUrlValidator.HostResolver resolver) {
         this.http = http;
         this.requestTimeout = requestTimeout == null ? Duration.ofSeconds(10) : requestTimeout;
+        this.resolver = resolver == null ? java.net.InetAddress::getAllByName : resolver;
     }
 
     private static HttpClient defaultHttpClient() {
         return HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+    }
+
+    /**
+     * Re-resolve the target's host and fail the send if the result diverges from the addresses
+     * the pre-send validation just approved — the DNS-rebinding signature (mirrors the
+     * alert-webhook sender's guard, saiku#1846/#2542).
+     */
+    private void assertNoRebind(URI target, java.net.InetAddress[] approved) throws McpTransportException {
+        String host = target.getHost();
+        if (host == null) {
+            throw new McpTransportException("outbound url lost its host before send");
+        }
+        java.net.InetAddress[] fresh;
+        try {
+            fresh = resolver.resolve(host);
+        } catch (java.net.UnknownHostException e) {
+            throw new McpTransportException("outbound host no longer resolves before send");
+        }
+        if (fresh == null || fresh.length == 0) {
+            throw new McpTransportException("outbound host no longer resolves before send");
+        }
+        java.util.Set<String> approvedIps = new java.util.LinkedHashSet<>();
+        for (java.net.InetAddress a : approved) {
+            approvedIps.add(a.getHostAddress());
+        }
+        for (java.net.InetAddress addr : fresh) {
+            if (!approvedIps.contains(addr.getHostAddress()) || WebhookUrlValidator.isBlockedAddress(addr)) {
+                throw new McpTransportException("outbound host DNS changed before send (possible rebinding); refusing");
+            }
+        }
     }
 
     /** One tool advertised by {@code tools/list} on the remote server. */
@@ -231,10 +271,22 @@ public final class McpOutboundClient {
 
     private PostResult post(McpOutboundServer server, ObjectNode request, String sessionId)
             throws McpTransportException {
+        // saiku#2542 (review of PR #2580): the SSRF gate runs HERE, immediately before every
+        // send — resolve-and-range-check, then a rebinding guard against a fresh resolution.
+        // Parse time only applies the DNS-free checks, so a brief resolver outage can no
+        // longer drop a registration, and a record whose address changed between scan and
+        // send (DNS rebinding) never receives the credential header.
+        WebhookUrlValidator.ValidatedTarget validated;
+        try {
+            validated = WebhookUrlValidator.validateResolved(server.url(), resolver);
+        } catch (IllegalArgumentException e) {
+            throw new McpTransportException("outbound url rejected: " + e.getMessage());
+        }
+        assertNoRebind(validated.uri(), validated.addresses());
         HttpRequest.Builder builder;
         try {
             builder = HttpRequest.newBuilder()
-                    .uri(URI.create(server.url()))
+                    .uri(validated.uri())
                     .timeout(requestTimeout)
                     .header("content-type", "application/json")
                     .header("accept", "application/json")
