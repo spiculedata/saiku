@@ -100,8 +100,7 @@ public class ConverterTest {
     public void queuedTaskTimingOutBeforeItStartsAnswers503() throws Exception {
         java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
         java.util.concurrent.ExecutorService pool = new java.util.concurrent.ThreadPoolExecutor(
-                1, 1, 0L, java.util.concurrent.TimeUnit.MILLISECONDS,
-                new java.util.concurrent.LinkedBlockingQueue<>());
+                1, 1, 0L, java.util.concurrent.TimeUnit.MILLISECONDS, new java.util.concurrent.LinkedBlockingQueue<>());
         try {
             pool.submit(() -> {
                 release.await();
@@ -129,21 +128,32 @@ public class ConverterTest {
      *  the export's fault — 400, as before. */
     @Test
     public void startedTaskOverrunningTheLimitAnswers400() throws Exception {
+        java.util.concurrent.CountDownLatch started = new java.util.concurrent.CountDownLatch(1);
         java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newSingleThreadExecutor();
+        java.util.concurrent.ExecutorService caller = java.util.concurrent.Executors.newSingleThreadExecutor();
         try {
-            try {
-                Converter.runBounded(
-                        () -> {
-                            Thread.sleep(1_000);
-                            return null;
-                        },
-                        50L,
-                        pool);
-                fail("expected the running task to time out");
-            } catch (SvgExportException expected) {
-                assertEquals("an overrun transcode is a client-visible 400", 400, expected.getHttpStatus());
-            }
+            java.util.concurrent.Future<Integer> result = caller.submit(() -> {
+                try {
+                    Converter.runBounded(
+                            () -> {
+                                started.countDown();
+                                Thread.sleep(5_000);
+                                return null;
+                            },
+                            1_000L,
+                            pool);
+                    return 200;
+                } catch (SvgExportException expected) {
+                    return expected.getHttpStatus();
+                }
+            });
+            assertTrue(
+                    "the transcode must start before its timeout",
+                    started.await(5, java.util.concurrent.TimeUnit.SECONDS));
+            assertEquals("an overrun transcode is a client-visible 400", 400, (int)
+                    result.get(5, java.util.concurrent.TimeUnit.SECONDS));
         } finally {
+            caller.shutdownNow();
             pool.shutdownNow();
         }
     }

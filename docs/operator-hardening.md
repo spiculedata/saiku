@@ -388,8 +388,8 @@ pathological SVG answers `400` once it has overrun the limit instead of
 wedging a request thread. A queued request that never got a worker within
 the limit answers `503` — that is server-side saturation, not the caller's
 fault, and clients and proxies may retry it. Note the limit does not force-stop
-Batik mid-render: the timed-out task's interrupt releases its pool slot when
-Batik returns, so a pathological render keeps one worker until it finishes.
+Batik mid-render: a timed-out task releases its pool slot only when Batik
+returns, so a pathological render keeps one worker until it finishes.
 
 | Property | Default | Effect |
 |---|---|---|

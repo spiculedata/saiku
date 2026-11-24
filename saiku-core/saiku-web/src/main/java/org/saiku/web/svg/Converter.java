@@ -102,8 +102,8 @@ abstract class BatikConverter extends Converter {
     /**
      * saiku#2527: the transcode runs on a small fixed pool with a wall-clock
      * limit, the same shape as the snapshot renderer's bounded pool, so a
-     * pathological (but byte-legal) SVG is abandoned instead of wedging a
-     * request thread while it grinds the heap.
+     * pathological (but byte-legal) SVG stops occupying the request thread.
+     * Batik may continue running in the pool after a timeout until it returns.
      */
     private static final int TRANSCODE_TIMEOUT_MS = timeoutMillis();
 
@@ -145,25 +145,21 @@ abstract class BatikConverter extends Converter {
     }
 
     /**
-     * Bounded transcode with the queue-wait and the transcode time kept apart
-     * (saiku#2527, review of PR #2559): the timer covers submit → completion, and
-     * a timeout that fires BEFORE the task got a worker is server-side saturation —
-     * the client did nothing wrong — so it answers {@code 503} and can be retried.
-     * Only a task that actually ran and overran the limit answers the client-fault
-     * {@code 400}. Package-private overloads so tests can exercise both mappings
-     * without competing with the shared pool.
+     * Bounded transcode (saiku#2527, review of PR #2559): the deadline covers
+     * queueing and execution. If it expires before a worker starts the task,
+     * server-side saturation answers {@code 503}; if the task started, an overrun
+     * answers {@code 400}. The overload lets tests exercise both mappings without
+     * competing with the shared pool.
      */
-    static void runBounded(
-            java.util.concurrent.Callable<Void> work, long timeoutMs, ExecutorService pool)
+    static void runBounded(java.util.concurrent.Callable<Void> work, long timeoutMs, ExecutorService pool)
             throws TranscoderException {
         final java.util.concurrent.atomic.AtomicBoolean started = new java.util.concurrent.atomic.AtomicBoolean(false);
         Future<Void> future;
         try {
-            future = pool.submit(
-                    () -> {
-                        started.set(true);
-                        return work.call();
-                    });
+            future = pool.submit(() -> {
+                started.set(true);
+                return work.call();
+            });
         } catch (RejectedExecutionException e) {
             throw new SvgExportException(503, "chart export is at capacity; try again shortly");
         }
