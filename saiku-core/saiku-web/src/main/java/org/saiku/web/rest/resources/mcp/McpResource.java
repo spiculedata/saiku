@@ -50,6 +50,12 @@ import org.slf4j.LoggerFactory;
  * <p>The auth chain configured in {@code applicationContext-saiku.xml}
  * rejects unauthenticated requests with 401 before they reach this method,
  * so {@code initialize} requires credentials too — no anonymous handshake.
+ *
+ * <p>saiku#2542: sessions are bound to their creating principal. A session id
+ * presented by a different user (or an unknown/expired one) answers HTTP 404
+ * — the status the streamable-http spec names for an invalid session — rather
+ * than a JSON-RPC error over 200, and a foreign {@code DELETE} cannot destroy
+ * someone else's session.
  */
 @Path("/saiku/api/mcp")
 public class McpResource {
@@ -59,6 +65,13 @@ public class McpResource {
             new ObjectMapper().setSerializationInclusion(JsonInclude.Include.NON_NULL);
     private static final String SERVER_NAME = "saiku";
     private static final String MCP_PROTOCOL_VERSION = "2025-03-26";
+    /**
+     * Protocol versions this server is willing to negotiate (saiku#2542). Anything else —
+     * including an oversized or hostile string — is clamped to {@link #MCP_PROTOCOL_VERSION} in
+     * the response instead of being stored or echoed verbatim.
+     */
+    private static final java.util.Set<String> SUPPORTED_PROTOCOL_VERSIONS = java.util.Set.of(MCP_PROTOCOL_VERSION);
+
     private static final String SESSION_HEADER = "Mcp-Session-Id";
     /** JSON-RPC 2.0 error codes (spec §5.1). */
     private static final int RPC_INVALID_REQUEST = -32600;
@@ -141,7 +154,15 @@ public class McpResource {
                     return rpcError(idNode, RPC_METHOD_NOT_FOUND, "Method not found: " + method, sessionId);
             }
         } catch (SessionRequiredException e) {
+            // A MISSING session header keeps the structured JSON-RPC error (the client has no id
+            // at all yet). A PRESENT but invalid id is a transport-level 404 — the status the
+            // streamable-http spec names for an invalid Mcp-Session-Id.
             return rpcError(idNode, RPC_INVALID_REQUEST, e.getMessage(), null);
+        } catch (InvalidSessionException e) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity(java.util.Map.of("error", "unknown, expired or foreign session id"))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
         } catch (RuntimeException e) {
             // saiku#1920: the message can carry SQL, JDBC URLs or RLS predicates and an MCP host
             // feeds it to the model. Log it with a ref; return only the ref.
@@ -154,24 +175,30 @@ public class McpResource {
     /**
      * Optional explicit session teardown. Streamable-http hosts MAY send a
      * DELETE with the {@code Mcp-Session-Id} header to drop server state
-     * when the client process exits cleanly. No-op if the id is unknown.
+     * when the client process exits cleanly. Only the session's owner can
+     * drop it (saiku#2542); a foreign or unknown id is answered with the same
+     * silent 204 so a caller learns nothing about which ids exist.
      */
     @DELETE
     public Response deleteSession(@HeaderParam(SESSION_HEADER) String sessionId) {
-        if (sessionId != null && sessionStore != null) sessionStore.drop(sessionId);
+        if (sessionId != null && sessionStore != null) {
+            sessionStore.drop(sessionId, currentPrincipal());
+        }
         return Response.noContent().build();
     }
 
     /* --------------------------- method handlers --------------------------- */
 
     private Response handleInitialize(JsonNode idNode, JsonNode params) {
-        // We ignore the client's protocolVersion negotiation for now — both
-        // sides settle on what the server advertises. The wider MCP spec
-        // permits this; Claude Desktop / mcp-inspector tolerate it.
+        // saiku#2542: negotiate only against the versions this server actually implements.
+        // The client's string is never stored or echoed verbatim, so an arbitrary (or
+        // 300,000-character) protocolVersion cannot be parked per session or bounced back.
         String clientProtocol = params != null ? textOrNull(params.get("protocolVersion")) : null;
-        String negotiated = clientProtocol != null ? clientProtocol : MCP_PROTOCOL_VERSION;
+        String negotiated = clientProtocol != null && SUPPORTED_PROTOCOL_VERSIONS.contains(clientProtocol)
+                ? clientProtocol
+                : MCP_PROTOCOL_VERSION;
 
-        String newSessionId = sessionStore != null ? sessionStore.create(negotiated) : "";
+        String newSessionId = sessionStore != null ? sessionStore.create(negotiated, currentPrincipal()) : "";
         ObjectNode result = MAPPER.createObjectNode();
         result.put("protocolVersion", negotiated);
         ObjectNode capabilities = result.putObject("capabilities");
@@ -955,12 +982,33 @@ public class McpResource {
             throw new SessionRequiredException(
                     "Missing " + SESSION_HEADER + " header. Call initialize first to obtain a session id.");
         }
-        McpSessionStore.McpSession s = sessionStore.touch(sessionId);
+        McpSessionStore.McpSession s = sessionStore.touch(sessionId, currentPrincipal());
         if (s == null) {
-            throw new SessionRequiredException(
-                    "Unknown or expired session id. Call initialize to start a new session.");
+            // Unknown, expired, or owned by a different principal (saiku#2542). The message is
+            // deliberately uniform — a foreign principal must not be able to distinguish
+            // "that id exists but is yours" from "no such session".
+            throw new InvalidSessionException("Unknown or expired session id. Call initialize to start a new session.");
         }
         return sessionId;
+    }
+
+    /**
+     * The authenticated caller's name, from the same Spring Security context every other
+     * REST resource reads. Used to bind MCP sessions to their creating principal (saiku#2542).
+     * Never throws — a broken context reads as an absent principal and denies session access.
+     */
+    private static String currentPrincipal() {
+        try {
+            org.springframework.security.core.Authentication auth =
+                    org.springframework.security.core.context.SecurityContextHolder.getContext()
+                            .getAuthentication();
+            if (auth == null || auth.getName() == null) {
+                return null;
+            }
+            return auth.getName();
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     private static String textOrNull(JsonNode n) {
@@ -1055,6 +1103,14 @@ public class McpResource {
 
     private static final class SessionRequiredException extends RuntimeException {
         SessionRequiredException(String message) {
+            super(message);
+        }
+    }
+
+    /** A session header was presented but the id is unknown, expired or foreign (saiku#2542) —
+     * answered with a transport-level 404, per the streamable-http spec. */
+    private static final class InvalidSessionException extends RuntimeException {
+        InvalidSessionException(String message) {
             super(message);
         }
     }

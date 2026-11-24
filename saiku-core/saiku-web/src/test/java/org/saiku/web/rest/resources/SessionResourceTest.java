@@ -16,7 +16,14 @@ import org.junit.Before;
 import org.junit.Test;
 import org.saiku.service.ISessionService;
 import org.saiku.service.user.UserService;
+import org.saiku.web.security.audit.SpringSecurityAuditListener;
 import org.saiku.web.security.ratelimit.LoginRateLimiter;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.authentication.event.AuthenticationFailureBadCredentialsEvent;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 /**
  * Exercise the SessionResource HTTP contract without spinning up Jersey. We
@@ -75,6 +82,41 @@ public class SessionResourceTest {
         assertEquals(429, resp.getStatus());
         assertNotNull("Retry-After header must be set", resp.getHeaderString("Retry-After"));
         assertEquals(String.valueOf(strict.getWindowMs() / 1000), resp.getHeaderString("Retry-After"));
+    }
+
+    @Test
+    public void login_failureIsCountedExactlyOnce_againstTheBudget() {
+        // saiku#2523: the webapp wires SpringSecurityAuditListener to the SAME limiter
+        // the resource uses (saiku-beans.xml). The stub session service simulates the
+        // authentication manager publishing its failure event during login. Before the
+        // fix the resource AND the listener each recorded the failure, so the
+        // documented budget of 5 tripped on the 3rd attempt; with a budget of 2 here,
+        // double counting would already 429 the second attempt.
+        SpringSecurityAuditListener listener = new SpringSecurityAuditListener();
+        listener.setRateLimiter(rateLimiter);
+        Authentication failed = new UsernamePasswordAuthenticationToken("admin", "wrong");
+        session.loginFailureHook = () -> listener.onApplicationEvent(
+                new AuthenticationFailureBadCredentialsEvent(failed, new BadCredentialsException("nope")));
+        session.loginException = new RuntimeException("bad creds");
+        LoginRateLimiter strict = new LoginRateLimiter(2, 60_000L, false);
+        resource.setRateLimiter(strict);
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(req));
+        try {
+            assertEquals(401, resource.login(req, "admin", "wrong").getStatus());
+            // One recorded failure so far: this attempt must still be a plain 401.
+            assertEquals(401, resource.login(req, "admin", "wrong").getStatus());
+            // Two recorded failures exhaust the budget of 2: the next attempt is locked out.
+            assertEquals(429, resource.login(req, "admin", "wrong").getStatus());
+        } finally {
+            RequestContextHolder.resetRequestAttributes();
+        }
+    }
+
+    @Test
+    public void login_marksTheRequestAsSelfRecorded() {
+        session.loginException = new RuntimeException("bad creds");
+        resource.login(req, "admin", "wrong");
+        assertEquals(Boolean.TRUE, req.getAttribute(SessionResource.LOGIN_RECORDED_ATTRIBUTE));
     }
 
     @Test
@@ -156,6 +198,7 @@ public class SessionResourceTest {
     // ---------------------------------------------------------------- helpers
 
     private static HttpServletRequest newRequest(String remoteAddr, Locale locale) {
+        Map<String, Object> attributes = new HashMap<>();
         return (HttpServletRequest) Proxy.newProxyInstance(
                 HttpServletRequest.class.getClassLoader(),
                 new Class<?>[] {HttpServletRequest.class},
@@ -165,6 +208,14 @@ public class SessionResourceTest {
                     if ("getLocale".equals(n)) return locale;
                     if ("getHeader".equals(n)) return null;
                     if ("getSession".equals(n)) return null;
+                    // saiku#2523: the resource marks its requests with
+                    // LOGIN_RECORDED_ATTRIBUTE — the proxy must store attributes so
+                    // tests can observe (and the listener can read) the mark.
+                    if ("setAttribute".equals(n)) {
+                        attributes.put((String) args[0], args[1]);
+                        return null;
+                    }
+                    if ("getAttribute".equals(n)) return attributes.get(args[0]);
                     Class<?> rt = method.getReturnType();
                     if (rt == boolean.class) return false;
                     if (rt == int.class) return 0;
@@ -181,11 +232,16 @@ public class SessionResourceTest {
         int loginCalls;
         int logoutCalls;
         int clearCalls;
+        /** saiku#2523: runs while login fails — stands in for the authentication manager publishing its failure event. */
+        Runnable loginFailureHook;
 
         @Override
         public Map<String, Object> login(HttpServletRequest req, String username, String password) {
             loginCalls++;
-            if (loginException != null) throw loginException;
+            if (loginException != null) {
+                if (loginFailureHook != null) loginFailureHook.run();
+                throw loginException;
+            }
             return sessionMap;
         }
 

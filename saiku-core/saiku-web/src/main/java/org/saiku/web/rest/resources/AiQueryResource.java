@@ -294,6 +294,14 @@ public class AiQueryResource {
         return AsyncQueryService.currentPrincipal();
     }
 
+    /** saiku#2542: the uniform 403 body for admin-only AI catalogue surfaces. */
+    private static Response adminOnly() {
+        return Response.status(Response.Status.FORBIDDEN)
+                .entity(java.util.Map.of("error", "this AI catalogue surface is admin-only"))
+                .type(MediaType.APPLICATION_JSON)
+                .build();
+    }
+
     /** True when the current caller holds {@code ROLE_ADMIN}. */
     private static boolean currentUserIsAdmin() {
         try {
@@ -1037,6 +1045,11 @@ public class AiQueryResource {
     @Path("/skills")
     @Produces(MediaType.APPLICATION_JSON)
     public Response listSkills(@QueryParam("errors") @DefaultValue("false") boolean includeErrors) {
+        if (includeErrors && !currentUserIsAdmin()) {
+            // saiku#2542: parse/IO messages are server-side diagnostics for the authoring operator,
+            // not user data (paths, frontmatter text, filesystem errors).
+            return adminOnly();
+        }
         if (askService == null || askService.skills() == null) {
             return Response.ok(java.util.Map.of("skills", List.of()))
                     .type(MediaType.APPLICATION_JSON)
@@ -1063,6 +1076,11 @@ public class AiQueryResource {
     @Path("/skills/{name}")
     @Produces(MediaType.APPLICATION_JSON)
     public Response getSkill(@PathParam("name") String name) {
+        // saiku#2542: the skill BODY and its sourcePath are admin-authored server-side content —
+        // the same posture the ?errors=true list carries. Non-admins keep the summary list.
+        if (!currentUserIsAdmin()) {
+            return adminOnly();
+        }
         if (askService == null || askService.skills() == null) {
             return Response.status(Response.Status.NOT_FOUND)
                     .entity(java.util.Map.of("error", "skill not found"))
@@ -1088,6 +1106,10 @@ public class AiQueryResource {
     @Path("/skills/refresh")
     @Produces(MediaType.APPLICATION_JSON)
     public Response refreshSkills() {
+        // saiku#2542: forcing a rescan is an operator action.
+        if (!currentUserIsAdmin()) {
+            return adminOnly();
+        }
         if (askService == null || askService.skills() == null) {
             return Response.ok(java.util.Map.of("skills", 0, "errors", 0))
                     .type(MediaType.APPLICATION_JSON)
@@ -1111,6 +1133,10 @@ public class AiQueryResource {
     @Path("/spaces")
     @Produces(MediaType.APPLICATION_JSON)
     public Response listSpaces(@QueryParam("errors") @DefaultValue("false") boolean includeErrors) {
+        if (includeErrors && !currentUserIsAdmin()) {
+            // saiku#2542: parse/IO messages are server-side diagnostics.
+            return adminOnly();
+        }
         if (askService == null || askService.spaces() == null) {
             return Response.ok(java.util.Map.of("spaces", List.of()))
                     .type(MediaType.APPLICATION_JSON)
@@ -1183,6 +1209,10 @@ public class AiQueryResource {
     @Path("/spaces/refresh")
     @Produces(MediaType.APPLICATION_JSON)
     public Response refreshSpaces() {
+        // saiku#2542: forcing a rescan is an operator action.
+        if (!currentUserIsAdmin()) {
+            return adminOnly();
+        }
         if (askService == null || askService.spaces() == null) {
             return Response.ok(java.util.Map.of("spaces", 0, "errors", 0))
                     .type(MediaType.APPLICATION_JSON)
@@ -1214,6 +1244,10 @@ public class AiQueryResource {
     @Path("/certified")
     @Produces(MediaType.APPLICATION_JSON)
     public Response listCertified(@QueryParam("errors") @DefaultValue("false") boolean includeErrors) {
+        if (includeErrors && !currentUserIsAdmin()) {
+            // saiku#2542: parse/IO messages are server-side diagnostics.
+            return adminOnly();
+        }
         if (certifiedQueries == null) {
             return Response.ok(java.util.Map.of("certified", List.of()))
                     .type(MediaType.APPLICATION_JSON)
@@ -1239,6 +1273,12 @@ public class AiQueryResource {
     @Path("/certified/{id}")
     @Produces(MediaType.APPLICATION_JSON)
     public Response getCertified(@PathParam("id") String id) {
+        // saiku#2542: the full approved query/MDX is the admin's review surface — the list
+        // endpoint deliberately returns summaries only, and this detail route must not undo that
+        // for a non-admin caller the way the full agent-space record route did (saiku#1920).
+        if (!currentUserIsAdmin()) {
+            return adminOnly();
+        }
         if (certifiedQueries == null) {
             return Response.status(Response.Status.NOT_FOUND)
                     .entity(java.util.Map.of("error", "certified query not found"))
@@ -1266,6 +1306,10 @@ public class AiQueryResource {
     @Path("/certified/refresh")
     @Produces(MediaType.APPLICATION_JSON)
     public Response refreshCertified() {
+        // saiku#2542: forcing a rescan is an operator action.
+        if (!currentUserIsAdmin()) {
+            return adminOnly();
+        }
         if (certifiedQueries == null) {
             return Response.ok(java.util.Map.of("certified", 0, "errors", 0))
                     .type(MediaType.APPLICATION_JSON)
@@ -1315,14 +1359,41 @@ public class AiQueryResource {
      * Run one certified query and shape the response, shared by {@code /certified/{id}/run} and the
      * ask layer's certified short-circuit so the two can never disagree on attribution.
      *
-     * <p>The parsed {@link ThinQuery} is used as-is. The one permitted mutation is the same
-     * null / slash-bearing name fix-up {@code /query/saved} applies (a name with a slash would
-     * otherwise be rejected by Jetty's strict URI handling downstream) — the query itself is never
-     * touched, which is what "verbatim" has to mean for an approval to be worth anything.
+     * <p>The parsed {@link ThinQuery} is run against a defensive COPY (saiku#2542): the registry
+     * hands out its one shared, cached instance, and the name fix-up below is a mutation — a
+     * previous run's setName used to leak into every later reader of the same registry entry.
+     * The one permitted mutation is the same null / slash-bearing name fix-up {@code /query/saved}
+     * applies (a name with a slash would otherwise be rejected by Jetty's strict URI handling
+     * downstream) — the query itself is never touched, which is what "verbatim" has to mean for
+     * an approval to be worth anything.
      */
+    private ThinQuery copyCertifiedThinQuery(org.saiku.service.olap.ai.ask.CertifiedQuery certified) {
+        ThinQuery original = certified.query();
+        try {
+            return MAPPER.readValue(MAPPER.writeValueAsString(original), ThinQuery.class);
+        } catch (Exception e) {
+            // Fail-closed, copy-not-mutate: if the copy can't be made, run nothing rather than
+            // mutate the registry's shared instance.
+            log.error("certified query '{}' could not be copied; refusing to run", certified.id(), e);
+            throw new IllegalStateException("certified query could not be copied");
+        }
+    }
+
     private AiQueryResponse executeCertified(org.saiku.service.olap.ai.ask.CertifiedQuery certified, String format) {
         long start = System.currentTimeMillis();
-        ThinQuery tq = certified.query();
+        ThinQuery tq;
+        try {
+            tq = copyCertifiedThinQuery(certified);
+        } catch (RuntimeException e) {
+            AiQueryResponse err = new AiQueryResponse();
+            err.setQueryId(certified.id());
+            err.setStatus(AiQueryResponse.Status.EXECUTION_ERROR);
+            err.setError("execute failed");
+            err.setRuntimeMs(System.currentTimeMillis() - start);
+            err.setSource("certified");
+            err.setCertifiedId(certified.id());
+            return err;
+        }
         if (tq.getName() == null || tq.getName().isBlank() || tq.getName().contains("/")) {
             tq.setName(java.util.UUID.randomUUID().toString());
         }

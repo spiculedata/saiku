@@ -159,6 +159,30 @@ public class OpenAINlAskProvider extends AbstractNlAskProvider {
 
     // ---------- request building ----------
 
+    /**
+     * The user-role message: the question, then the two client-supplied context fields appended
+     * by the SERVER — the cellset digest and the current-query snapshot. saiku#2542: they used to
+     * be appended to the system prompt, which let a client-controlled field enter the system
+     * channel; now every user-controlled byte stays in a user-role message.
+     */
+    static String userContent(NlAskRequest request, boolean wantQuery) {
+        StringBuilder sb = new StringBuilder(request.question() == null ? "" : request.question());
+        if (request.cellsetDigest() != null && !request.cellsetDigest().isBlank()) {
+            sb.append("\n\n[Current cellset (markdown digest — use for emit_insight / emit_view_change "
+                            + "reasoning)]\n")
+                    .append(truncate(request.cellsetDigest(), 8000));
+        }
+        if (wantQuery
+                && request.currentQueryJson() != null
+                && !request.currentQueryJson().isBlank()) {
+            sb.append("\n\n[Current AiQueryRequest on screen — 'add X' or 'also break down by Y' should KEEP "
+                            + "existing measures/rows/columns/filters and add the new one; only drop a field when "
+                            + "the user asks to remove it]\n")
+                    .append(truncate(request.currentQueryJson(), 4000));
+        }
+        return sb.toString();
+    }
+
     @Override
     String buildRequestBody(NlAskRequest request) throws IOException {
         ObjectNode root = MAPPER.createObjectNode();
@@ -222,7 +246,7 @@ public class OpenAINlAskProvider extends AbstractNlAskProvider {
             insightFn.put("name", INSIGHT_TOOL_NAME);
             insightFn.put(
                     "description",
-                    "Analyse the user's CURRENT cellset (provided as a digest in the system prompt) and "
+                    "Analyse the user's CURRENT cellset (provided as a digest in this conversation) and "
                             + "return a markdown explanation. Use when the user asks about trends, "
                             + "comparisons, summaries, or 'what's interesting' about the data already on screen. "
                             + "Do not propose a new query.");
@@ -319,21 +343,12 @@ public class OpenAINlAskProvider extends AbstractNlAskProvider {
         if (wantViewChange) {
             sys.append("\n\nChart-type catalog (for emit_view_change):\n").append(chartTypeCatalogText());
         }
-        if (request.cellsetDigest() != null && !request.cellsetDigest().isBlank()) {
-            sys.append("\n\nUser's current cellset (markdown digest — use for emit_insight / "
-                            + "emit_view_change reasoning):\n")
-                    .append(truncate(request.cellsetDigest(), 8000));
-        } else if (wantInsight || wantViewChange) {
+        // saiku#2542: the cellset digest and current-query snapshot are client-supplied fields —
+        // they travel in the user-role message (see userContent), never the system channel
+        // (docs/AGENT-SPACES-SPEC.md: users cannot override the prompt).
+        if ((request.cellsetDigest() == null || request.cellsetDigest().isBlank()) && (wantInsight || wantViewChange)) {
             sys.append("\n\nNo current cellset on screen — emit_insight and emit_view_change are "
                     + "unavailable for this turn.");
-        }
-        if (wantQuery
-                && request.currentQueryJson() != null
-                && !request.currentQueryJson().isBlank()) {
-            sys.append("\n\nUser's CURRENT AiQueryRequest (preserve fields when extending — 'add X' or "
-                            + "'also break down by Y' should KEEP existing measures/rows/columns/filters "
-                            + "and add the new one; only drop a field when the user asks to remove it):\n")
-                    .append(truncate(request.currentQueryJson(), 4000));
         }
         // Dashboard-mode directive — only appended when the dashboard function is the forced choice.
         if (wantDashboard) {
@@ -351,9 +366,11 @@ public class OpenAINlAskProvider extends AbstractNlAskProvider {
             mNode.put("role", m.role().wireName());
             mNode.put("content", m.content());
         }
+        // saiku#2542: client-supplied context travels as user-role content, appended AFTER the
+        // server-built system prompt was already fixed — never in the system channel.
         ObjectNode user = messages.addObject();
         user.put("role", "user");
-        user.put("content", request.question());
+        user.put("content", userContent(request, wantQuery));
 
         for (ToolTurn t : request.toolTranscript()) {
             // Assistant's prior tool call. OpenAI: content is null when tool_calls is present.

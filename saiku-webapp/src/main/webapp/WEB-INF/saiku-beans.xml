@@ -242,6 +242,11 @@
         <property name="queryCache" ref="saikuQueryCacheBean"/>
         <!-- saiku#1114: role-set mixed into the cellset cache key so role-masked results never leak across roles -->
         <property name="userService" ref="userServiceBean"/>
+        <!-- saiku#2538 (CWE-636): per-caller identity fragment for the result caches — on a
+             pass-through datasource two users with the same roles connect to the warehouse
+             with their own credentials, so they must not share a cached cellset or coalesce
+             onto each other's execution (reuses the saiku#2326 visibility rule). -->
+        <property name="identityContext" ref="connectionManager"/>
         <!-- saiku#946: shared in-flight coalescer (singleton) -->
         <property name="queryCoalescer" ref="queryCoalescerBean"/>
         <!-- Ossie query executor: takes over when ThinQuery.queryType = "OSSIE". -->
@@ -579,13 +584,16 @@
     <!-- saiku#909 — Tier-1 tile-title/description suggestion (POST /ai/describe-query).
          Reuses the ask feature's own credentials (saiku.ai.ask.*) rather than a
          separate config namespace — same "off by default (no API key), 503 with a
-         clear message until configured" posture as aiAskServiceBean / cubeDesignerAiService. -->
+         clear message until configured" posture as aiAskServiceBean / cubeDesignerAiService.
+         saiku#2542: the configured provider is passed through so the Anthropic wire-format
+         transport refuses (503) rather than handing the ask API key to a non-Anthropic endpoint. -->
     <bean id="tileDescribeService"
           class="org.saiku.service.olap.ai.describe.TileDescribeService">
         <constructor-arg value="${saiku.ai.ask.apiKey:}"/>
         <constructor-arg value="${saiku.ai.ask.model:}"/>
         <constructor-arg value="${saiku.ai.ask.endpoint:}"/>
         <constructor-arg value="${saiku.ai.ask.timeoutSeconds:60}"/>
+        <constructor-arg value="${saiku.ai.ask.provider:}"/>
     </bean>
 
     <bean id="aiQueryResource" scope="request"
@@ -800,6 +808,8 @@
         <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
         <property name="queryCache" ref="saikuQueryCacheBean"/>
         <property name="userService" ref="userServiceBean"/>
+        <!-- saiku#2538: per-caller identity for the shared result caches (pass-through datasources). -->
+        <property name="identityContext" ref="connectionManager"/>
         <property name="queryCoalescer" ref="queryCoalescerBean"/>
         <property name="ossieQueryService" ref="ossieQueryServiceBean"/>
     </bean>
@@ -1631,6 +1641,8 @@
     <!-- Cube/schema designer backend (saiku-ui/src/lib/cube-designer). Reuses the
          schema-generator's JDBC connection provider + the datasource service;
          auto-registered as a JAX-RS resource by SaikuJerseyApplication's @Path scan. -->
+    <!-- saiku#2542: the configured provider is passed through so the Anthropic wire-format
+         transport refuses rather than handing the ask API key to a non-Anthropic endpoint. -->
     <bean id="cubeDesignerAiService"
           class="org.saiku.service.olap.ai.cubedesigner.CubeDesignerAiService">
         <!-- saiku#2489: the Cube Designer picks its AI upstream with the SAME provider
@@ -1770,6 +1782,8 @@
         <constructor-arg ref="userServiceBean"/>
         <constructor-arg ref="queryCoalescerBean"/>
         <constructor-arg ref="ossieQueryServiceBean"/>
+        <!-- saiku#2538: per-caller identity for the shared result caches (pass-through datasources). -->
+        <constructor-arg ref="connectionManager"/>
     </bean>
 
     <!-- Webhook channel: POSTs a small JSON body via the JDK HttpClient to the
@@ -1894,6 +1908,8 @@
         <constructor-arg ref="userServiceBean"/>
         <constructor-arg ref="queryCoalescerBean"/>
         <constructor-arg ref="ossieQueryServiceBean"/>
+        <!-- saiku#2538: per-caller identity for the shared result caches (pass-through datasources). -->
+        <constructor-arg ref="connectionManager"/>
     </bean>
 
     <!-- The EXPORT_DELIVERY job handler. Runs as the job owner (the owner-identity

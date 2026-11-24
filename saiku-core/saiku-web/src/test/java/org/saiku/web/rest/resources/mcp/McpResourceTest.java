@@ -21,6 +21,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.saiku.service.olap.ai.AiCubeSummary;
@@ -83,12 +84,35 @@ public class McpResourceTest {
     }
 
     @Test
-    public void initializeAcceptsClientProtocolVersion() throws Exception {
+    public void initializeClampsAnUnsupportedProtocolVersion() throws Exception {
         ObjectNode params = MAPPER.createObjectNode();
         params.put("protocolVersion", "2024-11-05");
         Response resp = resource.handle(rpc("initialize", 1, params), null);
         JsonNode body = MAPPER.valueToTree(resp.getEntity());
-        assertEquals("2024-11-05", body.path("result").path("protocolVersion").asText());
+        // saiku#2542: only the versions this server implements are negotiable; an arbitrary
+        // client string is clamped to the supported version, never echoed verbatim.
+        assertEquals("2025-03-26", body.path("result").path("protocolVersion").asText());
+    }
+
+    @Test
+    public void initializeClampsAnOversizedProtocolVersion() throws Exception {
+        ObjectNode params = MAPPER.createObjectNode();
+        params.put("protocolVersion", "9".repeat(300_000));
+        Response resp = resource.handle(rpc("initialize", 1, params), null);
+        assertEquals(200, resp.getStatus());
+        JsonNode body = MAPPER.valueToTree(resp.getEntity());
+        String echoed = MAPPER.writeValueAsString(body);
+        assertTrue("response must not echo the oversized string", echoed.length() < 4_000);
+        assertEquals("2025-03-26", body.path("result").path("protocolVersion").asText());
+    }
+
+    @Test
+    public void initializeKeepsASupportedProtocolVersion() throws Exception {
+        ObjectNode params = MAPPER.createObjectNode();
+        params.put("protocolVersion", "2025-03-26");
+        Response resp = resource.handle(rpc("initialize", 1, params), null);
+        JsonNode body = MAPPER.valueToTree(resp.getEntity());
+        assertEquals("2025-03-26", body.path("result").path("protocolVersion").asText());
     }
 
     /* ------------------------- session enforcement ----------------------- */
@@ -104,10 +128,62 @@ public class McpResourceTest {
     }
 
     @Test
-    public void unknownSessionIsRejected() throws Exception {
+    public void unknownSessionIsA404() throws Exception {
+        // saiku#2542: a present-but-invalid session id is a transport-level 404, per the
+        // streamable-http spec — not a JSON-RPC error over 200.
         Response resp = resource.handle(rpc("tools/list", 1, null), "nonexistent");
-        JsonNode body = MAPPER.valueToTree(resp.getEntity());
-        assertEquals(-32600, body.path("error").path("code").asInt());
+        assertEquals(404, resp.getStatus());
+    }
+
+    /* ------------------- saiku#2542: principal binding ------------------- */
+
+    private static void login(String principal, String... roles) {
+        java.util.List<org.springframework.security.core.GrantedAuthority> authorities = new java.util.ArrayList<>();
+        for (String role : roles) {
+            authorities.add(new org.springframework.security.core.authority.SimpleGrantedAuthority(role));
+        }
+        org.springframework.security.core.context.SecurityContext ctx =
+                org.springframework.security.core.context.SecurityContextHolder.createEmptyContext();
+        ctx.setAuthentication(new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                principal, "x", authorities));
+        org.springframework.security.core.context.SecurityContextHolder.setContext(ctx);
+    }
+
+    @After
+    public void clearAuth() {
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    public void aForeignPrincipalCannotUseAnotherUsersSession() throws Exception {
+        login("alice", "ROLE_ADMIN");
+        Response init = resource.handle(rpc("initialize", 1, MAPPER.createObjectNode()), null);
+        String sid = init.getHeaderString(SESSION_HEADER);
+
+        login("bob", "ROLE_USER"); // bob asks for alice's session
+        Response foreign = resource.handle(rpc("tools/list", 2, MAPPER.createObjectNode()), sid);
+        assertEquals(404, foreign.getStatus());
+
+        login("alice", "ROLE_ADMIN"); // the owner is unaffected
+        Response owner = resource.handle(rpc("tools/list", 3, MAPPER.createObjectNode()), sid);
+        assertEquals(200, owner.getStatus());
+    }
+
+    @Test
+    public void aForeignPrincipalCannotDeleteAnotherUsersSession() throws Exception {
+        login("alice", "ROLE_ADMIN");
+        Response init = resource.handle(rpc("initialize", 1, MAPPER.createObjectNode()), null);
+        String sid = init.getHeaderString(SESSION_HEADER);
+
+        login("bob", "ROLE_USER");
+        Response foreignDelete = resource.deleteSession(sid);
+        assertEquals("a foreign DELETE leaks nothing and must not destroy the session", 204, foreignDelete.getStatus());
+        assertEquals(1, sessionStore.size());
+
+        login("alice", "ROLE_ADMIN");
+        Response ownerDelete = resource.deleteSession(sid);
+        assertEquals(204, ownerDelete.getStatus());
+        assertEquals(0, sessionStore.size());
     }
 
     @Test
@@ -245,9 +321,9 @@ public class McpResourceTest {
         // entry on every supported JVM clock resolution. Real production
         // values are 1h+, but the eviction path needs explicit coverage.
         McpSessionStore shortTtl = new McpSessionStore(1L);
-        String sid = shortTtl.create("v1");
+        String sid = shortTtl.create("v1", null);
         Thread.sleep(5L);
-        assertNull("expired entry should not resolve", shortTtl.touch(sid));
+        assertNull("expired entry should not resolve", shortTtl.touch(sid, null));
         assertEquals(0, shortTtl.size());
     }
 
