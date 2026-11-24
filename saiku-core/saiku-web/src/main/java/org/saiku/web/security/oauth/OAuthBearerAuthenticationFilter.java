@@ -104,7 +104,7 @@ public class OAuthBearerAuthenticationFilter extends OncePerRequestFilter {
 
         List<GrantedAuthority> authorities = roleMapper.mapAuthorities(jwt);
         JwtAuthenticationToken authentication = new JwtAuthenticationToken(jwt, authorities, jwt.getSubject());
-        // saiku#2543: install the JWT identity in a FRESH context, never in the one the outer
+        // saiku#2543 / saiku#2520: install the JWT identity in a FRESH context, never in the one the outer
         // SecurityContextPersistenceFilter loaded from the caller's HTTP session — and restore
         // that previous context afterwards, so the persistence filter saves the session's own
         // principal back unchanged and the JWT identity never outlives the request.

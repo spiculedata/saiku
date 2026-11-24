@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Set;
 import org.saiku.olap.query2.OssieQueryModel;
 import org.saiku.service.util.exception.SaikuAccessDeniedException;
+import org.saiku.service.util.exception.SaikuValidationException;
 
 /**
  * Ossie role-based security (saiku#1393) — Mondrian-role parity for the semantic-YAML query path.
@@ -21,8 +22,11 @@ import org.saiku.service.util.exception.SaikuAccessDeniedException;
  *   <li><b>Row-level security</b> — {@link #rowPredicatesFor(String)} returns the ANSI SQL WHERE
  *       conjunctions a dataset's role-scoped predicates contribute for the caller, for the
  *       translator to inject.
- *   <li><b>Visibility (HIDE) enforcement</b> — {@link #assertShelfVisible(OssieQueryModel)} rejects
- *       a shelf state that references a field or metric every one of the caller's roles denies.
+ *   <li><b>Visibility (HIDE) enforcement</b> — {@link #assertShelfVisible(OssieQueryModel)}
+ *       resolves every row/filter/sort/value identifier against the model and rejects a shelf
+ *       state that references a field or metric every one of the caller's roles denies, or an
+ *       identifier that resolves to nothing (saiku#2526 — a name that resolved to nothing used
+ *       to be emitted as a raw physical column, bypassing the whole mechanism).
  * </ul>
  *
  * <p>{@link #filterHidden(OssieModelDto, Set)} is the discover-surface counterpart: it returns a
@@ -83,24 +87,45 @@ public final class OssieRoleContext {
 
     /**
      * Throws {@link SaikuAccessDeniedException} if the shelf state references a field or metric
-     * that exists in the semantic model and denies the caller. Entries that don't resolve to a
-     * known field/metric are left alone — that's the translator's own not-found handling to do.
+     * that exists in the semantic model and denies the caller — and {@link
+     * SaikuValidationException} if an identifier does not resolve to any field or metric of the
+     * model at all (saiku#2526).
+     *
+     * <p>The second half is the physical-column-bypass fix: the translator's historical fallback
+     * emitted any name it could not resolve as a quoted physical column, so a caller denied the
+     * semantic field {@code c_email} could name its physical column {@code C_EMAIL_ADDRESS} and
+     * get the values. Every row, filter (with or without {@code dataset}) and sort (by field or
+     * by {@code metric}) identifier is resolved here, before any SQL is emitted.
      */
     public void assertShelfVisible(OssieQueryModel model) {
+        String factDataset = model.getFactDataset();
+        if (factDataset == null || factDataset.isBlank() || findDataset(factDataset) == null) {
+            throw new SaikuValidationException(
+                    "Unknown fact dataset '" + factDataset + "' in model '" + modelName() + "'");
+        }
         for (OssieQueryModel.FieldRef f : model.getRows()) {
-            assertFieldVisible(f.getDataset(), f.getField());
+            assertFieldRef(f.getDataset(), f.getField());
         }
         for (OssieQueryModel.FieldRef f : model.getColumns()) {
-            assertFieldVisible(f.getDataset(), f.getField());
+            assertFieldRef(f.getDataset(), f.getField());
         }
         for (OssieQueryModel.FilterExpr f : model.getFilters()) {
             if (f.getDataset() != null) {
-                assertFieldVisible(f.getDataset(), f.getField());
+                assertFieldRef(f.getDataset(), f.getField());
+            } else {
+                resolveUnqualifiedField(f.getField());
             }
         }
         for (OssieQueryModel.SortRef s : model.getSorts()) {
-            if (s.getDataset() != null && s.getField() != null) {
-                assertFieldVisible(s.getDataset(), s.getField());
+            // saiku#2526 — the translator emits the METRIC branch whenever a metric is named,
+            // dataset aside, so the metric is the identifier that must resolve. Previously a
+            // sort's metric was never checked at all.
+            if (s.getMetric() != null && !s.getMetric().isBlank()) {
+                assertMetricVisible(s.getMetric());
+            } else if (s.getDataset() != null) {
+                assertFieldRef(s.getDataset(), s.getField());
+            } else {
+                throw new SaikuValidationException("Sort field '" + s.getField() + "' requires a dataset");
             }
         }
         for (OssieQueryModel.MetricRef v : model.getValues()) {
@@ -108,23 +133,76 @@ public final class OssieRoleContext {
         }
     }
 
-    private void assertFieldVisible(String datasetName, String fieldName) {
-        if (datasetName == null || fieldName == null) return;
+    /**
+     * Resolve a {@code dataset.field} shelf reference: unknown dataset or field name is a typed
+     * validation error (saiku#2526); a field the caller's roles deny is an access denial.
+     */
+    private void assertFieldRef(String datasetName, String fieldName) {
+        if (fieldName == null || fieldName.isBlank()) {
+            throw new SaikuValidationException("Shelf entry on dataset '" + datasetName + "' names no field");
+        }
         OssieModelDto.Dataset ds = findDataset(datasetName);
-        if (ds == null) return;
+        if (ds == null) {
+            throw new SaikuValidationException("Unknown field '" + datasetName + "." + fieldName + "': dataset '"
+                    + datasetName + "' is not in the model");
+        }
         for (OssieModelDto.Field f : ds.getFields()) {
             if (fieldName.equalsIgnoreCase(f.getName())) {
                 if (!permits(f.getAllowRoles(), f.getDenyRoles(), callerRoles)) {
-                    throw new SaikuAccessDeniedException("Access denied: field '" + datasetName + "." + fieldName
+                    throw new SaikuAccessDeniedException("Access denied: field '" + ds.getName() + "." + f.getName()
                             + "' is not visible to the caller's roles");
                 }
                 return;
             }
         }
+        throw new SaikuValidationException(
+                "Unknown field '" + datasetName + "." + fieldName + "' in model '" + modelName() + "'");
     }
 
+    /**
+     * Resolve an unqualified filter to its sole declaring dataset. The translator must use this
+     * dataset and the field's declared expression: a bare SQL column could otherwise resolve to
+     * a different dataset's hidden physical column. Ambiguous semantic names are rejected.
+     */
+    String resolveUnqualifiedField(String fieldName) {
+        if (fieldName == null || fieldName.isBlank()) {
+            throw new SaikuValidationException("Shelf entry names no field");
+        }
+        OssieModelDto.Dataset matchDataset = null;
+        OssieModelDto.Field matchField = null;
+        if (semantic != null) {
+            for (OssieModelDto.Dataset ds : semantic.getDatasets()) {
+                for (OssieModelDto.Field f : ds.getFields()) {
+                    if (fieldName.equalsIgnoreCase(f.getName())) {
+                        if (matchDataset != null) {
+                            throw new SaikuValidationException(
+                                    "Ambiguous field '" + fieldName + "': specify a dataset");
+                        }
+                        matchDataset = ds;
+                        matchField = f;
+                    }
+                }
+            }
+        }
+        if (matchDataset == null) {
+            throw new SaikuValidationException("Unknown field '" + fieldName + "' in model '" + modelName() + "'");
+        }
+        if (!permits(matchField.getAllowRoles(), matchField.getDenyRoles(), callerRoles)) {
+            throw new SaikuAccessDeniedException(
+                    "Access denied: field '" + fieldName + "' is not visible to the caller's roles");
+        }
+        return matchDataset.getName();
+    }
+
+    /**
+     * Resolve a metric shelf reference: unknown metric name is a typed validation error
+     * (saiku#2526); a metric the caller's roles deny is an access denial.
+     */
     private void assertMetricVisible(String metricName) {
-        if (metricName == null || semantic == null) return;
+        if (metricName == null || metricName.isBlank()) {
+            throw new SaikuValidationException("Shelf entry names no metric");
+        }
+        if (semantic == null) return;
         for (OssieModelDto.Metric m : semantic.getMetrics()) {
             if (metricName.equals(m.getName())) {
                 if (!permits(m.getAllowRoles(), m.getDenyRoles(), callerRoles)) {
@@ -134,6 +212,12 @@ public final class OssieRoleContext {
                 return;
             }
         }
+        throw new SaikuValidationException("Unknown metric '" + metricName + "' in model '" + modelName() + "'");
+    }
+
+    /** The model name for typed rejection messages (never null-bearing on the wire). */
+    private String modelName() {
+        return semantic == null || semantic.getName() == null ? "?" : semantic.getName();
     }
 
     private OssieModelDto.Dataset findDataset(String name) {

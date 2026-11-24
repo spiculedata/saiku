@@ -69,7 +69,7 @@ const floorsPath = join(here, '..', '..', '.github', 'test-floors.json');
 const probe = readFileSync(probePath, 'utf8');
 const probeTests = readFileSync(probeTestPath, 'utf8');
 const scopeTests = readFileSync(scopeTestPath, 'utf8');
-const floors = readFileSync(floorsPath, 'utf8');
+const floors = JSON.parse(readFileSync(floorsPath, 'utf8'));
 
 const failures = [];
 const claim = (id, fn) => {
@@ -143,10 +143,10 @@ claim('C4', () => {
   assert.ok(owns, 'ownsCurrentEvent() was found in SqlCaptureProbe');
   assert.match(owns[0], /catch\s*\(\s*Throwable/, 'ownsCurrentEvent() catches Throwable, not just RuntimeException');
   assert.doesNotMatch(owns[0], /catch\s*\(\s*RuntimeException/, 'the narrower RuntimeException catch is gone');
-  assert.match(
-    floors,
-    /"saiku-core\/saiku-service"\s*:\s*58\d/,
-    'the saiku-service test-count floor is raised to cover the new tests',
+  const serviceFloor = floors.modules['saiku-core/saiku-service'];
+  assert.ok(
+    Number.isInteger(serviceFloor) && serviceFloor >= 582,
+    'the saiku-service test-count floor is at least 582 to cover the new tests',
   );
 });
 
