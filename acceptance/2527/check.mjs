@@ -10,7 +10,8 @@
 // returned PNG's raster size (read from its IHDR chunk) to stay within the
 // budget, and C4 wants an ordinary export unchanged. On the base branch C1
 // returns 200 with a 3000 px wide PNG and C2 returns a 3200 px tall PNG, so the
-// spec is red on base and green on head.
+// spec is red on base and green on head. Spring rotates the CSRF token at
+// login, so the POSTs use the fresh token from an authenticated GET afterward.
 
 const BASE_URL = process.env.ACCEPTANCE_BASE_URL || 'http://127.0.0.1:18080';
 const USER = process.env.ACCEPTANCE_USER || 'admin';
@@ -71,6 +72,12 @@ function sessionCookieJar(resp) {
   return jar;
 }
 
+function cookieHeader(cookies) {
+  return Object.entries(cookies)
+    .map(([k, v]) => `${k}=${v}`)
+    .join('; ');
+}
+
 async function login() {
   const body = new URLSearchParams({ username: USER, password: PASSWORD });
   const resp = await fetch(`${BASE_URL}/rest/saiku/session`, {
@@ -82,7 +89,24 @@ async function login() {
   if (resp.status !== 200) {
     throw new Error(`login as ${USER} failed with ${resp.status} — check ACCEPTANCE_USER/ACCEPTANCE_PASSWORD`);
   }
-  return sessionCookieJar(resp);
+  const loginCookies = sessionCookieJar(resp);
+  if (!loginCookies.JSESSIONID) throw new Error(`login as ${USER} returned no JSESSIONID cookie`);
+
+  // The login response's XSRF-TOKEN belongs to the pre-login session. A GET
+  // with only the new JSESSIONID materializes the token for the authenticated
+  // one; echoing the stale token on that GET would suppress a new cookie.
+  const probe = await fetch(`${BASE_URL}/rest/saiku/session`, {
+    headers: { accept: 'application/json', cookie: cookieHeader({ JSESSIONID: loginCookies.JSESSIONID }) },
+    redirect: 'manual',
+  });
+  if (probe.status !== 200) throw new Error(`session check after login as ${USER} returned ${probe.status}`);
+  const session = await probe.json();
+  if (session.username !== USER) {
+    throw new Error(`session check after login as ${USER} returned ${JSON.stringify(session.username)}`);
+  }
+  const freshCookies = sessionCookieJar(probe);
+  if (!freshCookies['XSRF-TOKEN']) throw new Error(`session check after login as ${USER} returned no XSRF-TOKEN`);
+  return { JSESSIONID: loginCookies.JSESSIONID, ...freshCookies };
 }
 
 async function exportChart(cookies, svg, size) {
@@ -91,9 +115,7 @@ async function exportChart(cookies, svg, size) {
   const headers = {
     'content-type': 'application/x-www-form-urlencoded',
     accept: 'image/png',
-    cookie: Object.entries(cookies)
-      .map(([k, v]) => `${k}=${v}`)
-      .join('; '),
+    cookie: cookieHeader(cookies),
   };
   const xsrf = cookies['XSRF-TOKEN'];
   if (xsrf) headers['x-xsrf-token'] = xsrf;

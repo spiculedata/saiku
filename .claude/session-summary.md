@@ -75,6 +75,12 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-11-24 — feature/chart-export-pixel-budget — PR #2559 acceptance rework
+**Was doing:** fixed acceptance/2527 to obtain the post-login CSRF token before chart POSTs; all four live cases pass against the PR's CI-built launcher JAR.
+**Now:** use PR #2559 CI for the Maven build and Java tests; local Maven dependency resolution stops at GitHub Packages 401 for Mondrian and olap4j.
+**Watch out:** send only JSESSIONID on the token-seeding GET; echoing the login response's stale XSRF-TOKEN prevents a fresh cookie from being issued.
+**Refs:** #2527, PR #2559
+
 ## 2026-11-12 — fix/2322-ossie-ai-policy-gate — PR #2355 formatting rework
 **Was doing:** fixed the async role test fixture's Spotless violation; local Spotless and licence checks pass, but focused Maven tests stop during dependency resolution with GitHub Packages 401.
 **Now:** use the latest PR #2355 CI result to verify the full build and focused tests; no local edits remain after the rework push.
