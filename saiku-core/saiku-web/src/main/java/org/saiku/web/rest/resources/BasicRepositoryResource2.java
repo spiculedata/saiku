@@ -103,6 +103,22 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
         while (p.startsWith("./")) {
             p = p.substring(2);
         }
+        // saiku#2521: collapse trailing separators and dot segments — "x.sds/", "x.sds/." and
+        // "x.sds//" all land on the single file "x.sds" (the same collapse
+        // FilesystemRepositoryManager's resolved-path guard performs) — so a trailing "/" or
+        // "/." can no longer smuggle a descriptor write past this 403.
+        boolean collapsed;
+        do {
+            collapsed = false;
+            while (p.endsWith("/")) {
+                p = p.substring(0, p.length() - 1);
+                collapsed = true;
+            }
+            if (p.endsWith("/.")) {
+                p = p.substring(0, p.length() - 2);
+                collapsed = true;
+            }
+        } while (collapsed);
         p = stripWindowsFilenameTail(p);
         if (p.endsWith(".sds")) {
             return true;

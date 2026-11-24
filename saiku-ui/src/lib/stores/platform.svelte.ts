@@ -22,6 +22,8 @@ export interface PlatformCapabilities {
 	 *  online demo (demoMode) with telemetry not opted out; day-to-day self-hosted
 	 *  installs report `enabled:false` and the SPA never emits events. */
 	demoAnalytics?: { enabled: boolean; endpoint: string };
+	/** saiku#2577: show the top-bar GitHub Sponsors link (operator opt-out via SAIKU_SPONSOR_LINK=false). */
+	sponsorLink?: boolean;
 }
 
 class PlatformStore {

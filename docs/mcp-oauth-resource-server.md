@@ -35,15 +35,16 @@ All system properties (`-D` flags on the launcher), inert unless `saiku.oauth.is
 | Property | Purpose |
 | --- | --- |
 | `saiku.oauth.issuerUri` | The IdP's OIDC issuer (Keycloak realm URL, Auth0 domain, Okta/Entra tenant). Turns the resource server on. JWKS + signature validation are discovered from this on the first bearer request (not at server start-up, so a briefly-unreachable IdP never blocks boot). |
-| `saiku.oauth.audience` | Optional. When set, a token's `aud` claim must contain this value. |
+| `saiku.oauth.audience` | **Required whenever `issuerUri` is set** (saiku#2543, RFC 8707 §5: a resource server must identify itself). A token's `aud` claim must contain this value. Without it the resource server refuses to enable bearer authentication: it logs a clear warning, `capabilities` reports `basic`, the protected-resource metadata 404s, and every bearer token is rejected — without an audience check any token the issuer signed for **any** client would be accepted. |
 | `saiku.oauth.resource` | Optional. The canonical resource identifier advertised in the discovery metadata's `resource` field. Defaults to this deployment's own derived MCP URL. |
 | `saiku.oauth.roleClaim` | Which claim carries the caller's groups/roles. Supports a dotted path for nested claims, e.g. Keycloak's `realm_access.roles`. Defaults to `roles`. |
-| `saiku.oauth.roleMapping.<claimValue>=<saikuRole>` | Maps one claim value to a Saiku role name. An unmapped claim value is used verbatim. |
+| `saiku.oauth.roleMapping.<claimValue>=<saikuRole>` | Maps one claim value to a Saiku role name. **Only mapped values are granted** (saiku#2543): an unmapped claim value yields no authority at all, so a claim value `ADMIN` can never mint `ROLE_ADMIN` unless the operator maps it explicitly. An empty mapping means bearer callers authenticate as their `sub` claim with no Saiku roles. |
 
 Example (Keycloak):
 
 ```
 -Dsaiku.oauth.issuerUri=https://keycloak.example.com/realms/saiku
+-Dsaiku.oauth.audience=saiku-mcp
 -Dsaiku.oauth.roleClaim=realm_access.roles
 -Dsaiku.oauth.roleMapping.saiku-admin=ROLE_ADMIN
 ```
@@ -56,7 +57,11 @@ Example (Keycloak):
 - `Authorization: Bearer <token>` presented but invalid, expired, or this deployment hasn't
   configured `saiku.oauth.issuerUri` → `401` with `WWW-Authenticate: Bearer error="invalid_token"`
   (RFC 6750 §3), independent of the Basic chain.
-- A valid, signature- and issuer-verified token → the request is authenticated as the token's `sub`
-  claim, with authorities from `OAuthRoleMapper`.
+- A valid, signature-, issuer- and audience-verified token → the request is authenticated as the
+  token's `sub` claim, with authorities from `OAuthRoleMapper` (only explicitly mapped claim values
+  grant roles).
+- The JWT identity is installed in a fresh `SecurityContext` and the pre-request context is restored
+  when the chain returns (saiku#2543): a bearer request that also carries a session cookie leaves
+  the session's principal unchanged — the JWT identity is never saved back into the session.
 
 See `docs/mcp-native-migration.md` for the #878 HTTP Basic baseline this builds on.
