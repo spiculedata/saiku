@@ -1,0 +1,24 @@
+{
+  "issue": 2528,
+  "title": "HTML export escapes cell link, image, style and arrow properties; the non-SPA CSP carries form-action and an img-src limited to self",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "a DATA_CELL whose properties carry quote and markup payloads (image, style, link, arrow, and the datadiv raw/position attributes)",
+      "then": "the rendered export HTML contains no unescaped element or attribute introduced by those payloads; a property value can only appear as escaped text (renderer test with the issue's payloads)"
+    },
+    {
+      "id": "C2",
+      "given": "link and image cell properties whose URL scheme is not http or https",
+      "then": "the property is dropped and no URL of another scheme reaches the rendered HTML"
+    },
+    {
+      "id": "C3",
+      "given": "SecurityHeadersFilter",
+      "then": "the default non-SPA Content-Security-Policy carries form-action 'self' and an img-src that does not allow arbitrary hosts"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}
