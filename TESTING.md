@@ -81,9 +81,9 @@ For live counts, read the reports the build itself writes: `<module>/target/sure
 
 ## CI
 
-`.github/workflows/ci.yml` runs **`mvn -B -ntp -DskipITs=false verify`** (plus further flags on the
-wrapped line — see `ci.yml` itself) on **Ubuntu**
-(`ubuntu-latest`) against **JDK 22** (Temurin). Main artifacts still compile at `release 21`, so the
+`.github/workflows/ci.yml` runs **`mvn -B -ntp -DskipITs=false verify`** on **Ubuntu**
+(`ubuntu-latest`) against **JDK 22** (Temurin), with further flags on the wrapped line in `ci.yml`
+itself. Main artifacts still compile at `release 21`, so the
 shipped runtime is unchanged — JDK 22 is required to build the full reactor because
 `saiku-proptest` uses Java-22 bytecode. A PR is green only when, on Ubuntu:
 
