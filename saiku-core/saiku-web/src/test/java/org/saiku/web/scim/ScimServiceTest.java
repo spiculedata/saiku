@@ -90,6 +90,13 @@ public class ScimServiceTest {
             // in-memory DTO is the store
         }
 
+        List<String> adminRoles = new ArrayList<>(List.of("ROLE_ADMIN"));
+
+        @Override
+        public List<String> getAdminRoles() {
+            return adminRoles;
+        }
+
         SaikuUser seed(String username, String... roles) {
             SaikuUser u = new SaikuUser();
             u.setId(nextId++);
@@ -111,6 +118,11 @@ public class ScimServiceTest {
         users = new FakeUserService();
         groups = new ScimGroupStore(null);
         scim = new ScimService(users, groups, "common");
+    }
+
+    /** A SCIM service built against an operator-configured allow-list. */
+    private ScimService scimWithAllowList(String csv) {
+        return new ScimService(users, groups, "common", csv);
     }
 
     private static JsonNode json(String s) {
@@ -569,10 +581,22 @@ public class ScimServiceTest {
         }
     }
 
-    /** saiku#2065: a SCIM token must not be able to grant ROLE_ADMIN or any other privileged role. */
+    /** saiku#2065 + saiku#2537: a SCIM token must not be able to grant privileged roles. */
     @Test
     public void groupCreateRejectsPrivilegedRoleNames() {
-        for (String reserved : new String[] {"ROLE_ADMIN", "ROLE_SCIM", "ROLE_ACTUATOR", "role_admin"}) {
+        for (String reserved : new String[] {
+            "ROLE_ADMIN",
+            "ROLE_SCIM",
+            "ROLE_ACTUATOR",
+            "ROLE_SQL_EXEC",
+            "ROLE_TOKEN_PRINCIPAL",
+            "ROLE_EMBED_AUTHOR",
+            "ROLE_EMBED_GUEST",
+            "ROLE_SHARE_GUEST",
+            "ROLE_ANONYMOUS",
+            "role_admin",
+            "role_sql_exec"
+        }) {
             ScimGroup g = new ScimGroup();
             g.displayName = reserved;
             try {
@@ -581,6 +605,20 @@ public class ScimServiceTest {
             } catch (ScimException e) {
                 assertEquals("invalidValue '" + reserved + "' accepted", "invalidValue", e.getScimType());
             }
+        }
+    }
+
+    /** saiku#2537: the reserved check must use the admin roles configured on UserService. */
+    @Test
+    public void groupCreateRejectsACustomConfiguredAdminRole() {
+        users.adminRoles = new ArrayList<>(List.of("ROLE_TENANT_ADMIN"));
+        ScimGroup g = new ScimGroup();
+        g.displayName = "role_tenant_admin";
+        try {
+            scim.createGroup(g);
+            fail("a configured admin role must be rejected even though it is not hard-coded");
+        } catch (ScimException e) {
+            assertEquals("invalidValue", e.getScimType());
         }
     }
 
@@ -598,6 +636,106 @@ public class ScimServiceTest {
         } catch (ScimException e) {
             assertEquals("invalidValue", e.getScimType());
         }
+    }
+
+    /** saiku#2537: with an allow-list configured, only those roles are grantable. */
+    @Test
+    public void allowListRestrictsGrantableRoleNames() {
+        ScimService limited = scimWithAllowList("analysts, editors");
+        ScimGroup g = new ScimGroup();
+        g.displayName = "analysts";
+        assertEquals("analysts", limited.createGroup(g).displayName);
+
+        ScimGroup off = new ScimGroup();
+        off.displayName = "ghosts";
+        try {
+            limited.createGroup(off);
+            fail("a role outside the allow-list must be rejected");
+        } catch (ScimException e) {
+            assertEquals("invalidValue", e.getScimType());
+        }
+
+        // Case-insensitive: the configured casing governs, any casing matches it.
+        ScimGroup variant = new ScimGroup();
+        variant.displayName = "EDITORS";
+        assertNotNull(limited.createGroup(variant));
+    }
+
+    /** saiku#2537: the allow-list never rescues a reserved role. */
+    @Test
+    public void allowListDoesNotRescueReservedRoles() {
+        ScimService limited = scimWithAllowList("ROLE_ADMIN,ROLE_SQL_EXEC,editors");
+        for (String reserved : new String[] {"ROLE_ADMIN", "ROLE_SQL_EXEC"}) {
+            ScimGroup g = new ScimGroup();
+            g.displayName = reserved;
+            try {
+                limited.createGroup(g);
+                fail("'" + reserved + "' on the allow-list must still be refused");
+            } catch (ScimException e) {
+                assertEquals("invalidValue", e.getScimType());
+            }
+        }
+        ScimGroup g = new ScimGroup();
+        g.displayName = "editors";
+        assertNotNull(limited.createGroup(g));
+    }
+
+    /** saiku#2537: SCIM cannot deactivate the last enabled admin (DELETE /Users/{id}). */
+    @Test
+    public void deactivateRefusesTheLastEnabledAdmin() {
+        SaikuUser admin = users.seed("admin", "ROLE_ADMIN");
+        try {
+            scim.deactivateUser(String.valueOf(admin.getId()));
+            fail("the last enabled admin must not be deactivatable");
+        } catch (ScimException e) {
+            assertEquals("invalidValue", e.getScimType());
+        }
+        // With a second enabled admin present, deactivating one is fine.
+        users.seed("root", "ROLE_ADMIN");
+        scim.deactivateUser(String.valueOf(admin.getId()));
+        assertFalse(users.findByUsername("admin").isEnabled());
+    }
+
+    /** saiku#2537: PATCH active:false must refuse the last enabled admin. */
+    @Test
+    public void patchActiveFalseRefusesTheLastEnabledAdmin() {
+        SaikuUser admin = users.seed("admin", "ROLE_ADMIN");
+        try {
+            scim.patchUser(
+                    String.valueOf(admin.getId()),
+                    patch("{\"Operations\":[{\"op\":\"replace\",\"path\":\"active\",\"value\":false}]}"));
+            fail("the last enabled admin must not be deactivatable via PATCH");
+        } catch (ScimException e) {
+            assertEquals("invalidValue", e.getScimType());
+        }
+        assertTrue(
+                "the admin must still be enabled", users.findByUsername("admin").isEnabled());
+    }
+
+    /** saiku#2537: PUT with active:false must refuse the last enabled admin. */
+    @Test
+    public void replaceActiveFalseRefusesTheLastEnabledAdmin() {
+        SaikuUser admin = users.seed("admin", "ROLE_ADMIN");
+        ScimUser in = new ScimUser();
+        in.userName = "admin";
+        in.active = false;
+        try {
+            scim.replaceUser(String.valueOf(admin.getId()), in);
+            fail("the last enabled admin must not be deactivatable via PUT");
+        } catch (ScimException e) {
+            assertEquals("invalidValue", e.getScimType());
+        }
+        assertTrue(
+                "the admin must still be enabled", users.findByUsername("admin").isEnabled());
+    }
+
+    /** saiku#2537: deactivating a non-admin, or a disabled admin re-check, stays allowed. */
+    @Test
+    public void deactivateStillAllowsPlainUsers() {
+        users.seed("admin", "ROLE_ADMIN");
+        SaikuUser plain = users.seed("ben", "ROLE_USER");
+        scim.deactivateUser(String.valueOf(plain.getId()));
+        assertFalse(users.findByUsername("ben").isEnabled());
     }
 
     @Test

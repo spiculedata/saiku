@@ -2045,6 +2045,9 @@
         <constructor-arg ref="userServiceBean"/>
         <constructor-arg ref="scimGroupStore"/>
         <constructor-arg value="${saiku.scim.default-workspace:}"/>
+        <!-- saiku#2537: comma-separated allow-list of roles a SCIM group may grant. Unset means
+             every role not in the reserved set is grantable; see docs/operator-hardening.md. -->
+        <constructor-arg value="${saiku.scim.grantableRoles:}"/>
     </bean>
 
     <bean id="scimAuthFilter" class="org.saiku.web.security.scim.ScimAuthFilter">
