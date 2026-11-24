@@ -1,0 +1,29 @@
+{
+  "issue": 2520,
+  "title": "Share, embed, SCIM and OAuth token swaps never mutate a session-backed SecurityContext, and SessionService.runAs restores the prior context object — a guest request can no longer rewrite the session's identity or keep a revoked token alive on the cookie alone",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "ShareTokenAuthFilter and EmbedAuthFilter (view, authoring and public-grant paths all funnel through the same swap)",
+      "then": "they build a fresh context (SecurityContextHolder.createEmptyContext) and install it with setContext, and never call SecurityContextHolder.getContext().setAuthentication(...) — with a logged-in session cookie that returns the object stored in the HttpSession, so the old pattern rewrote the session's identity"
+    },
+    {
+      "id": "C2",
+      "given": "the OAuthBearerAuthenticationFilter and the ScimAuthFilter, which mint request-scoped identities with the same pattern",
+      "then": "they swap a fresh context object the same way, so a bearer token on a request that carries a logged-in cookie cannot rewrite that session either"
+    },
+    {
+      "id": "C3",
+      "given": "SessionService.runAs",
+      "then": "it installs the owner identity in a fresh context object and restores the prior context object in finally, so while a guest request runs under the owner's scope the session-stored context (and any concurrent cookie-only request) never sees the owner's identity"
+    },
+    {
+      "id": "C4",
+      "given": "the regression suite",
+      "then": "each of the four filters and SessionService.runAs is covered by a test that installs a session-backed SecurityContext (the object a logged-in cookie would have in the HttpSession) and asserts the object, its principal and its authorities are unchanged during and after the swap — nothing guest- or owner-shaped persists, so a revoked token stops working on the cookie alone"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}

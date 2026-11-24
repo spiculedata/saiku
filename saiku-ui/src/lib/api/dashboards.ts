@@ -887,9 +887,12 @@ export type { ThinQuery };
 const SHARE_BASE = '/rest/saiku/share';
 
 /** Load a dashboard via the account-free guest share surface (#941). Token in
- *  the `X-Saiku-Share-Token` header — no cookie. */
+ *  the `X-Saiku-Share-Token` header — no cookie. `credentials: 'omit'` is
+ *  defence in depth for saiku#2520: the request must never carry a logged-in
+ *  session cookie alongside the token. */
 export async function loadSharedDashboard(token: string): Promise<Dashboard> {
 	const res = await fetch(`${SHARE_BASE}/view/dashboard`, {
+		credentials: 'omit',
 		headers: { 'X-Saiku-Share-Token': token, Accept: 'application/json' }
 	});
 	if (!res.ok) {
