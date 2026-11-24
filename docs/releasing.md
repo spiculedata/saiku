@@ -105,6 +105,27 @@ job.
 
 Same rule as the embed npm split: *build untrusted, publish trusted.*
 
+## Cache hygiene: publish jobs restore nothing a less-trusted run could write (saiku#2530)
+
+Actions caches are scoped per branch, and a `workflow_dispatch` with
+`ref=<default branch>` both reads and saves the default-branch scope.
+`docker.yml`'s PR-targeted dispatch (sent by `/preview`, see
+`preview-ctl.mjs`) runs PR content **on the default-branch ref**, so its
+runs sit in exactly that scope. Maven does not re-verify artifacts already
+in `~/.m2`, and Maven plugins and the JDK come from their caches too, so a
+poisoned cache entry is code execution in whatever job restores it.
+
+`release.yml` therefore restores no Actions cache at all — no
+`cache: maven`/`cache: npm` on the setup actions, no `cache-from` on the
+image build. Releases are rare; a cold build is the accepted trade. On the
+`docker.yml` side, the PR-dispatch path gets neither restore nor save: the
+build job's `setup-java` cache and the push job's BuildKit
+`cache-from`/`cache-to` are expression-gated on `needs.target.outputs.pr`,
+so a normal run (push, `pull_request`, plain manual dispatch) keeps the
+caches while a PR build runs cacheless. Both rules are pinned by the
+workflow-shape test `.github/scripts/cache-hygiene.test.mjs` (part of the
+`ci / flake-policy tests` node run).
+
 ## Dependency sourcing: Chainguard Libraries (saiku#2463)
 
 The `jar` job consults [Chainguard Libraries](./chainguard-libraries.md) for Maven first (a settings

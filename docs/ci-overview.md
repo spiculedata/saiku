@@ -91,6 +91,10 @@ commands.
   7-hex head SHA for same-repo PRs into `development` that touch image inputs. Fork and
   Dependabot PRs build without pushing. `ghcr-tag-retention.yml` sweeps expired PR tags weekly
   (dry run unless `GHCR_RETENTION_APPLY=true`).
+- **Cache hygiene (saiku#2530).** A `docker.yml` dispatch with `pr` executes PR content on the
+  default-branch ref, in the default-branch cache scope, so its Maven and BuildKit caches are
+  expression-gated off there; `release.yml` restores no Actions cache at all. The rule and the
+  reason are in [releasing.md](releasing.md); the shape test is `.github/scripts/cache-hygiene.test.mjs`.
 - **Preview environments** ([decisions/ci-preview-environments.md](decisions/ci-preview-environments.md),
   [infra/preview/README.md](../infra/preview/README.md)). A same-repo PR authored by a listed bot
   login, labelled `preview`, or `/preview`ed by a collaborator gets a container on the shared

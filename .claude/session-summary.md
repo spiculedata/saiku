@@ -75,6 +75,12 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-11-24 — feature/2530-release-cache-hygiene — release.yml cache restore removed, docker.yml PR-dispatch caches gated
+**Was doing:** shipped saiku#2530: spec-first commit (acceptance/2530, red on base), then release.yml restores no Actions cache (deploy-packages `cache: maven`, docker job `cache-from`, npm-embed-build `cache: npm` all removed), docker.yml gates setup-java `cache` and BuildKit `cache-from`/`cache-to` on `needs.target.outputs.pr`, new shape test `.github/scripts/cache-hygiene.test.mjs`, docs in releasing.md + ci-overview.md.
+**Now:** watch PR CI — the node test glob (419 tests) passes locally; no Maven run needed (workflow/docs-only change, plus the spec).
+**Watch out:** the PR-targeted docker dispatch runs PR content ON the default-branch ref, so any cache it saves lands in the default-branch scope — never re-introduce an ungated `cache:` there.
+**Refs:** #2530, #2333, .github/scripts/cache-hygiene.test.mjs
+
 ## 2026-11-12 — fix/2322-ossie-ai-policy-gate — PR #2355 formatting rework
 **Was doing:** fixed the async role test fixture's Spotless violation; local Spotless and licence checks pass, but focused Maven tests stop during dependency resolution with GitHub Packages 401.
 **Now:** use the latest PR #2355 CI result to verify the full build and focused tests; no local edits remain after the rework push.

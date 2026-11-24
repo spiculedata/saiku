@@ -133,7 +133,12 @@ jobs:
         with:
           distribution: temurin
           java-version: "22"
-          cache: maven
+          # saiku#2530: a dispatch with `pr` executes PR content ON the
+          # default-branch ref, so its runs read AND save the default-branch
+          # cache scope — and Maven does not re-verify artifacts already in
+          # ~/.m2. PR builds therefore run with no Maven cache at all; normal
+          # runs (push / pull_request / plain dispatch) keep it.
+          cache: ${{ needs.target.outputs.pr == '' && 'maven' || '' }}
 
       # Same multi-server settings.xml as ci.yml / release.yml — the
       # build needs to pull mondrian, olap4j, olap4j-xmlaserver, and
@@ -315,8 +320,14 @@ jobs:
           # buildx cache via GitHub's built-in Action cache, so iterative
           # pushes only rebuild the changed layer (mostly the COPY of
           # the freshly-built JARs).
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # saiku#2530: a dispatch with `pr` gets neither restore nor save —
+          # the run executes PR content on the default-branch ref, so the
+          # plain type=gha scope would be the default-branch cache scope, and
+          # a PR build would both restore other runs' layers there and save
+          # its own for release/rolling builds to pick up. Gated to empty
+          # (build-push-action treats '' as no cache source/destination).
+          cache-from: ${{ needs.target.outputs.pr == '' && 'type=gha' || '' }}
+          cache-to: ${{ needs.target.outputs.pr == '' && 'type=gha,mode=max' || '' }}
           # saiku#1990 + #1992: the rolling development image is the primary
           # image push on `development`, so it carries the same SBOM + SLSA
           # provenance attestations as the released image. This is where the
