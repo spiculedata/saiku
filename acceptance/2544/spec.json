@@ -34,7 +34,11 @@
     {
       "name": "CSV header keeps the formula-looking text inside its quoted field",
       "criterion": "C1",
-      "request": { "method": "GET", "path": "/query/acceptance-2544/export/csv" },
+      "request": {
+        "method": "GET",
+        "path": "/query/acceptance-2544/export/csv",
+        "headers": { "accept": "text/csv" }
+      },
       "expect": {
         "status": 200,
         "bodyContains": "x\"\",\"\"=HYPERLINK"
