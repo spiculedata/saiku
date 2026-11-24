@@ -123,10 +123,27 @@ jobs:
           # candidate set; each distinct login is then resolved through the
           # collaborators API and only admin/maintain/write survive, and
           # automation accounts are denied even when they hold write.
+          # saiku#2531 (second review of PR #2561): gh --paginate emits its
+          # per-page JSON as SEPARATE documents — an array per page, a bare
+          # object per item — so a --jq filter that wraps in [ ... ] only
+          # wrapped ONE page and --argjson got a scalar on any PR past the
+          # first page (>30 reviews / >30 inline comments). Emit one line per
+          # item instead and slurp the whole stream into a single array.
           reviews_json=$(gh api "repos/${GH_REPO}/pulls/${PR_NUMBER}/reviews" --paginate \
-            --jq '[.[] | select(.body != "") | select(.author_association == "OWNER" or .author_association == "MEMBER" or .author_association == "COLLABORATOR") | {login: .user.login, state: .state, body: .body}]')
+            --jq '.[] | select(.body != "") | select(.author_association == "OWNER" or .author_association == "MEMBER" or .author_association == "COLLABORATOR") | {login: .user.login, state: .state, body: .body}' \
+            | jq -s '[.[] | select(type == "object" and .login != null)]')
           comments_json=$(gh api "repos/${GH_REPO}/pulls/${PR_NUMBER}/comments" --paginate \
-            --jq '[.[] | select(.author_association == "OWNER" or .author_association == "MEMBER" or .author_association == "COLLABORATOR") | {login: .user.login, path: .path, line: (.line // .original_line // 0), body: .body}]')
+            --jq '.[] | select(.author_association == "OWNER" or .author_association == "MEMBER" or .author_association == "COLLABORATOR") | {login: .user.login, path: .path, line: (.line // .original_line // 0), body: .body}' \
+            | jq -s '[.[] | select(type == "object" and .login != null)]')
+          # Fail loudly if collection still yields a non-array (e.g. an empty
+          # stream producing nothing at all is fine — jq -s makes [] — but an
+          # unexpected scalar would break every downstream --argjson).
+          for payload in "$reviews_json" "$comments_json"; do
+            if ! jq -e 'type == "array"' >/dev/null <<< "$payload"; then
+              echo "::error::Review collection produced a non-array JSON payload; aborting before the model run."
+              exit 1
+            fi
+          done
           trusted_list=""
           while read -r login; do
             [ -n "$login" ] || continue

@@ -34,6 +34,28 @@ test('both collection queries filter review comments to collaborators', () => {
   }
 });
 
+test('paginated collection emits per-item lines and slurps them into ONE array (saiku#2531, review of PR #2561)', () => {
+  // gh --paginate emits one JSON document per page (an array per page, a bare
+  // object per item); a [ ... ] wrapper inside --jq only wrapped the FIRST
+  // page and --argjson then received a scalar. The per-item + jq -s shape
+  // survives any number of pages.
+  for (const name of ['reviews', 'comments']) {
+    const m = new RegExp(
+      `gh api "repos/\\$\\{GH_REPO\\}/pulls/\\$\\{PR_NUMBER\\}/${name}" --paginate[\\s\\S]*?--jq '([^']*)'`)
+      .exec(wf);
+    assert.ok(m, `${name} collection exists`);
+    assert.ok(m[1].startsWith('.[] |'), `${name} jq emits one line per item, not a wrapped array`);
+  }
+  assert.ok(/jq -s '\[\.\[\] \| select\(type == "object"/.test(wf), 'the per-item stream is slurped into one array');
+});
+
+test('collection guards against a non-array payload before the model run (saiku#2531, review of PR #2561)', () => {
+  assert.ok(
+    /if ! jq -e 'type == "array"' >\/dev\/null/.test(wf),
+    'a scalar payload aborts the job before the model run');
+  assert.ok(/Review collection produced a non-array JSON payload/.test(wf), 'the failure names the cause');
+});
+
 test('the checkout does not persist credentials', () => {
   assert.match(checkout, /persist-credentials: false/);
 });
