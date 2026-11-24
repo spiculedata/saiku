@@ -32,9 +32,7 @@ public class McpOutboundAdminResourceCoverageTest {
                 Files.createTempDirectory(folder.getRoot().toPath(), "mcp").toString());
         resource = new McpOutboundAdminResource();
         resource.setRegistry(registry);
-        // A real client against a loopback port nothing listens on: discovery
-        // fails fast and deterministically, which is what the unreachable
-        // branch of the tools endpoint needs.
+        // A real client; the unreachable-server test swaps in one whose resolver fails.
         resource.setClient(new McpOutboundClient(java.time.Duration.ofMillis(250)));
         resource.setCatalog(null);
     }
@@ -50,7 +48,7 @@ public class McpOutboundAdminResourceCoverageTest {
 
     @Test
     public void save_then_list_round_trips_a_server() {
-        Response saved = resource.save("docs-server", server("docs-server", "Docs", "http://localhost:9000/mcp"));
+        Response saved = resource.save("docs-server", server("docs-server", "Docs", "https://mcp.notion.com/mcp"));
         assertEquals(200, saved.getStatus());
 
         List<McpOutboundAdminResource.ServerDto> listed = resource.list();
@@ -62,10 +60,12 @@ public class McpOutboundAdminResourceCoverageTest {
     @Test
     public void save_validates_id_name_and_url() {
         assertEquals(
-                400, resource.save("Bad Id", server("Bad Id", "n", "http://x")).getStatus());
+                400,
+                resource.save("Bad Id", server("Bad Id", "n", "https://mcp.notion.com/mcp"))
+                        .getStatus());
         assertEquals(400, resource.save("ok", null).getStatus());
 
-        McpOutboundAdminResource.ServerDto noName = server("ok", null, "http://x");
+        McpOutboundAdminResource.ServerDto noName = server("ok", null, "https://mcp.notion.com/mcp");
         assertEquals(400, resource.save("ok", noName).getStatus());
 
         McpOutboundAdminResource.ServerDto noUrl = server("ok", "n", " ");
@@ -74,19 +74,19 @@ public class McpOutboundAdminResourceCoverageTest {
 
     @Test
     public void save_requires_auth_header_name_and_value_together() {
-        McpOutboundAdminResource.ServerDto orphan = server("ok", "n", "http://x");
+        McpOutboundAdminResource.ServerDto orphan = server("ok", "n", "https://mcp.notion.com/mcp");
         orphan.authHeaderName = "Authorization";
         assertEquals(400, resource.save("ok", orphan).getStatus());
     }
 
     @Test
     public void save_reuses_the_stored_auth_header_when_the_value_is_omitted() {
-        McpOutboundAdminResource.ServerDto withAuth = server("keeper", "n", "http://x");
+        McpOutboundAdminResource.ServerDto withAuth = server("keeper", "n", "https://mcp.notion.com/mcp");
         withAuth.authHeaderName = "Authorization";
         withAuth.authHeaderValue = "Bearer s3cret";
         assertEquals(200, resource.save("keeper", withAuth).getStatus());
 
-        McpOutboundAdminResource.ServerDto update = server("keeper", "renamed", "http://x");
+        McpOutboundAdminResource.ServerDto update = server("keeper", "renamed", "https://mcp.notion.com/mcp");
         Response response = resource.save("keeper", update);
         assertEquals(200, response.getStatus());
         McpOutboundAdminResource.ServerDto dto = resource.list().get(0);
@@ -96,19 +96,17 @@ public class McpOutboundAdminResourceCoverageTest {
 
     @Test
     public void a_saved_server_with_an_invalid_url_is_skipped_and_reported() {
-        // save() persists the file, but the scanner refuses non-http(s) URLs —
-        // the server vanishes from list() and shows up in errors().
+        // saiku#2542: save() now refuses a non-https URL up front, so nothing is
+        // persisted and the server never reaches list() or errors().
         McpOutboundAdminResource.ServerDto odd = server("odd", "n", "not-a-url");
-        assertEquals(200, resource.save("odd", odd).getStatus());
+        assertEquals(400, resource.save("odd", odd).getStatus());
         assertTrue(resource.list().isEmpty());
-        List<Map<String, String>> errors = resource.errors();
-        assertEquals(1, errors.size());
-        assertEquals("INVALID_URL", errors.get(0).get("code"));
+        assertTrue(resource.errors().isEmpty());
     }
 
     @Test
     public void delete_removes_a_saved_server_and_404s_the_second_time() {
-        resource.save("temp", server("temp", "n", "http://x"));
+        resource.save("temp", server("temp", "n", "https://mcp.notion.com/mcp"));
         assertEquals(200, resource.delete("temp").getStatus());
         assertEquals(404, resource.delete("temp").getStatus());
         assertTrue(resource.list().isEmpty());
@@ -128,7 +126,14 @@ public class McpOutboundAdminResourceCoverageTest {
 
     @Test
     public void discovery_against_an_unreachable_server_reports_bad_gateway() {
-        resource.save("down", server("down", "Down", "http://127.0.0.1:1/mcp"));
+        // Saved against a resolvable host, then sent through a client whose resolver
+        // always fails: the send-time URL check refuses, which the tools endpoint
+        // reports as a bad gateway — no live connection is attempted.
+        resource.save("down", server("down", "Down", "https://mcp.notion.com/mcp"));
+        resource.setClient(new McpOutboundClient(
+                java.net.http.HttpClient.newHttpClient(), java.time.Duration.ofMillis(250), host -> {
+                    throw new java.net.UnknownHostException(host);
+                }));
         Response response = resource.discoverTools("down");
         assertEquals(502, response.getStatus());
     }
