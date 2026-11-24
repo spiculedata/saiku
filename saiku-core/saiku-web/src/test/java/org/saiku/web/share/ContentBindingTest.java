@@ -51,7 +51,8 @@ public class ContentBindingTest {
     @Test
     public void snapshot_binds_dashboard_and_app_reference_tiles() {
         String dash = "{\"layout\":{\"tiles\":[{\"query\":{\"kind\":\"reference\",\"path\":\"/F/q.saiku\"}}]}}";
-        String app = "{\"pages\":[{\"grid\":{\"tiles\":[{\"query\":{\"kind\":\"reference\",\"path\":\"/F/q.saiku\"}}]}}]}";
+        String app =
+                "{\"pages\":[{\"grid\":{\"tiles\":[{\"query\":{\"kind\":\"reference\",\"path\":\"/F/q.saiku\"}}]}}]}";
         for (String kind : Set.of("dashboard", "app")) {
             String raw = "dashboard".equals(kind) ? dash : app;
             ContentBinding.Snapshot snapshot = ContentBinding.snapshot(kind, raw, path -> "query-v1");
