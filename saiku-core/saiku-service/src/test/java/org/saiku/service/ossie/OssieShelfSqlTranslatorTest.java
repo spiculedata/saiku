@@ -14,6 +14,7 @@ import org.junit.Before;
 import org.junit.Test;
 import org.saiku.olap.query2.OssieQueryModel;
 import org.saiku.service.util.exception.SaikuAccessDeniedException;
+import org.saiku.service.util.exception.SaikuValidationException;
 
 /**
  * Shelf-state → SQL translation. String-compare assertions on the emitted SQL — the actual query
@@ -29,6 +30,24 @@ public class OssieShelfSqlTranslatorTest {
         translator = new OssieShelfSqlTranslator();
         semantic = new OssieModelDto();
         semantic.setName("SALES");
+
+        // The datasets/fields the shelf states below reference. saiku#2526: every shelf
+        // identifier is resolved against the model before SQL is emitted, so these tests declare
+        // them. No ANSI expression is declared — the fields fall back to their own name, which
+        // is exactly what the tests asserted before the resolution gate existed.
+        OssieModelDto.Dataset customers = new OssieModelDto.Dataset();
+        customers.setName("customers");
+        customers.getFields().add(field("region"));
+        customers.getFields().add(field("name"));
+        OssieModelDto.Dataset dates = new OssieModelDto.Dataset();
+        dates.setName("dates");
+        dates.getFields().add(field("year"));
+        OssieModelDto.Dataset orders = new OssieModelDto.Dataset();
+        orders.setName("orders");
+        orders.getFields().add(field("amount"));
+        semantic.getDatasets().add(customers);
+        semantic.getDatasets().add(dates);
+        semantic.getDatasets().add(orders);
 
         OssieModelDto.Metric revenue = new OssieModelDto.Metric();
         revenue.setName("revenue");
@@ -207,13 +226,13 @@ public class OssieShelfSqlTranslatorTest {
         m.setValues(List.of(metric("revenue")));
         try {
             translator.translate(m, semantic);
-            fail("expected IllegalArgumentException");
-        } catch (IllegalArgumentException e) {
-            assertEquals("OssieQueryModel.factDataset is required", e.getMessage());
+            fail("expected SaikuValidationException");
+        } catch (SaikuValidationException e) {
+            assertTrue(e.getMessage(), e.getMessage().contains("fact dataset"));
         }
     }
 
-    @Test(expected = IllegalArgumentException.class)
+    @Test(expected = SaikuValidationException.class)
     public void unknownMetricRejected() {
         OssieQueryModel m = new OssieQueryModel();
         m.setConnection("SALES");
@@ -349,13 +368,7 @@ public class OssieShelfSqlTranslatorTest {
 
     @Test
     public void hiddenFieldDeniedForNonMatchingRole() {
-        OssieModelDto.Dataset customers = new OssieModelDto.Dataset();
-        customers.setName("customers");
-        OssieModelDto.Field ssn = new OssieModelDto.Field();
-        ssn.setName("ssn");
-        ssn.setAllowRoles(List.of("ROLE_ADMIN"));
-        customers.getFields().add(ssn);
-        semantic.getDatasets().add(customers);
+        dataset("customers").getFields().add(restrictedField("ssn", "ROLE_ADMIN"));
 
         OssieQueryModel m = new OssieQueryModel();
         m.setFactDataset("orders");
@@ -372,13 +385,7 @@ public class OssieShelfSqlTranslatorTest {
 
     @Test
     public void hiddenFieldPermittedForMatchingRole() {
-        OssieModelDto.Dataset customers = new OssieModelDto.Dataset();
-        customers.setName("customers");
-        OssieModelDto.Field ssn = new OssieModelDto.Field();
-        ssn.setName("ssn");
-        ssn.setAllowRoles(List.of("ROLE_ADMIN"));
-        customers.getFields().add(ssn);
-        semantic.getDatasets().add(customers);
+        dataset("customers").getFields().add(restrictedField("ssn", "ROLE_ADMIN"));
 
         OssieQueryModel m = new OssieQueryModel();
         m.setFactDataset("orders");
@@ -409,6 +416,27 @@ public class OssieShelfSqlTranslatorTest {
         } catch (SaikuAccessDeniedException e) {
             assertTrue(e.getMessage(), e.getMessage().contains("exec_only"));
         }
+    }
+
+    /** saiku#2526 — a field restricted to a single role, for the HIDE tests. */
+    private static OssieModelDto.Field restrictedField(String name, String allowedRole) {
+        OssieModelDto.Field f = new OssieModelDto.Field();
+        f.setName(name);
+        f.setAllowRoles(List.of(allowedRole));
+        return f;
+    }
+
+    private static OssieModelDto.Field field(String name) {
+        OssieModelDto.Field f = new OssieModelDto.Field();
+        f.setName(name);
+        return f;
+    }
+
+    private OssieModelDto.Dataset dataset(String name) {
+        for (OssieModelDto.Dataset ds : semantic.getDatasets()) {
+            if (ds.getName().equals(name)) return ds;
+        }
+        throw new IllegalStateException("test dataset not declared: " + name);
     }
 
     private static OssieQueryModel.FieldRef fieldRef(String dataset, String field) {
@@ -486,5 +514,221 @@ public class OssieShelfSqlTranslatorTest {
         String sql = translator.translate(
                 modelFilteringRegion("EQ", "O'Neil", null), semantic, Set.of(), "jdbc:mysql://db/sales");
         assertTrue(sql, sql.contains("= 'O''Neil'"));
+    }
+
+    // ---- saiku#2526: physical-column bypass via unresolvable identifiers ----
+
+    @Test
+    public void physicalColumnNameInRowsIsRejected() {
+        // `email` is the semantic field; EMAIL_ADDRESS is its physical column. The old
+        // fall-through emitted the unresolvable name as a quoted column, reading the restricted
+        // values of the caller's role-filtered model.
+        OssieModelDto.Dataset customers = dataset("customers");
+        customers.getFields().add(restrictedField("email", "ROLE_ADMIN"));
+
+        OssieQueryModel m = new OssieQueryModel();
+        m.setFactDataset("orders");
+        m.setRows(List.of(fieldRef("customers", "EMAIL_ADDRESS")));
+        m.setValues(List.of(metric("revenue")));
+
+        try {
+            translator.translate(m, semantic, Set.of("ROLE_USER"));
+            fail("expected SaikuValidationException");
+        } catch (SaikuValidationException e) {
+            assertTrue(e.getMessage(), e.getMessage().contains("EMAIL_ADDRESS"));
+        }
+    }
+
+    @Test
+    public void physicalColumnNameInFilterWithoutDatasetIsRejected() {
+        OssieModelDto.Dataset customers = dataset("customers");
+        customers.getFields().add(restrictedField("email", "ROLE_ADMIN"));
+
+        OssieQueryModel m = new OssieQueryModel();
+        m.setFactDataset("orders");
+        m.setRows(List.of(fieldRef("orders", "amount")));
+        m.setValues(List.of(metric("revenue")));
+        OssieQueryModel.FilterExpr f = new OssieQueryModel.FilterExpr();
+        f.setField("EMAIL_ADDRESS"); // no dataset — previously skipped entirely
+        f.setOp("EQ");
+        f.setValue("alice@example.com");
+        m.setFilters(List.of(f));
+
+        try {
+            translator.translate(m, semantic, Set.of("ROLE_USER"));
+            fail("expected SaikuValidationException");
+        } catch (SaikuValidationException e) {
+            assertTrue(e.getMessage(), e.getMessage().contains("EMAIL_ADDRESS"));
+        }
+    }
+
+    @Test
+    public void deniedFieldInFilterWithoutDatasetIsDenied() {
+        OssieModelDto.Dataset customers = dataset("customers");
+        customers.getFields().add(restrictedField("email", "ROLE_ADMIN"));
+
+        OssieQueryModel m = new OssieQueryModel();
+        m.setFactDataset("orders");
+        m.setRows(List.of(fieldRef("orders", "amount")));
+        m.setValues(List.of(metric("revenue")));
+        OssieQueryModel.FilterExpr f = new OssieQueryModel.FilterExpr();
+        f.setField("email"); // resolves — but every dataset declaring it denies the caller
+        f.setOp("EQ");
+        f.setValue("alice@example.com");
+        m.setFilters(List.of(f));
+
+        try {
+            translator.translate(m, semantic, Set.of("ROLE_USER"));
+            fail("expected SaikuAccessDeniedException");
+        } catch (SaikuAccessDeniedException e) {
+            assertTrue(e.getMessage(), e.getMessage().contains("email"));
+        }
+    }
+
+    @Test
+    public void physicalColumnNameInSortIsRejected() {
+        OssieModelDto.Dataset customers = dataset("customers");
+        customers.getFields().add(restrictedField("email", "ROLE_ADMIN"));
+
+        OssieQueryModel m = new OssieQueryModel();
+        m.setFactDataset("orders");
+        m.setRows(List.of(fieldRef("customers", "region")));
+        m.setValues(List.of(metric("revenue")));
+        OssieQueryModel.SortRef s = new OssieQueryModel.SortRef();
+        s.setDataset("customers");
+        s.setField("EMAIL_ADDRESS");
+        s.setDirection("ASC");
+        m.setSorts(List.of(s));
+
+        try {
+            translator.translate(m, semantic, Set.of("ROLE_USER"));
+            fail("expected SaikuValidationException");
+        } catch (SaikuValidationException e) {
+            assertTrue(e.getMessage(), e.getMessage().contains("EMAIL_ADDRESS"));
+        }
+    }
+
+    @Test
+    public void unknownMetricInSortIsRejected() {
+        // A sort's metric was never checked at all — it used to be emitted as a bare quoted
+        // column regardless of the model.
+        OssieQueryModel m = new OssieQueryModel();
+        m.setFactDataset("orders");
+        m.setRows(List.of(fieldRef("customers", "region")));
+        m.setValues(List.of(metric("revenue")));
+        OssieQueryModel.SortRef s = new OssieQueryModel.SortRef();
+        s.setMetric("EMAIL_ADDRESS");
+        s.setDirection("DESC");
+        m.setSorts(List.of(s));
+
+        try {
+            translator.translate(m, semantic);
+            fail("expected SaikuValidationException");
+        } catch (SaikuValidationException e) {
+            assertTrue(e.getMessage(), e.getMessage().contains("EMAIL_ADDRESS"));
+        }
+    }
+
+    @Test
+    public void unknownFieldForEveryCallerIsRejectedEvenWithoutRoles() {
+        // The resolution gate is not role-scoped: an identifier that is no field of the model is
+        // rejected for every caller, on the unscoped translate() path too.
+        OssieQueryModel m = new OssieQueryModel();
+        m.setFactDataset("orders");
+        m.setRows(List.of(fieldRef("customers", "not_a_field")));
+        m.setValues(List.of(metric("revenue")));
+
+        try {
+            translator.translate(m, semantic);
+            fail("expected SaikuValidationException");
+        } catch (SaikuValidationException e) {
+            assertTrue(e.getMessage(), e.getMessage().contains("not_a_field"));
+        }
+    }
+
+    @Test
+    public void validFieldsStillTranslateAfterTheResolutionGate() {
+        OssieQueryModel m = new OssieQueryModel();
+        m.setFactDataset("orders");
+        m.setRows(List.of(fieldRef("customers", "region")));
+        m.setValues(List.of(metric("revenue")));
+
+        String sql = translator.translate(m, semantic);
+        assertTrue(sql, sql.contains("SELECT \"customers\".\"region\" AS \"customers.region\""));
+    }
+
+    @Test
+    public void unqualifiedFilterUsesDeclaredDatasetAndExpressionDespiteHiddenPhysicalCollision() {
+        OssieModelDto.Field hidden = restrictedField("hidden_email", "ROLE_ADMIN");
+        hidden.setExpression("email");
+        dataset("customers").getFields().add(hidden);
+        OssieModelDto.Field visible = field("email");
+        visible.setExpression("ORDER_EMAIL");
+        dataset("orders").getFields().add(visible);
+
+        OssieQueryModel m = new OssieQueryModel();
+        m.setFactDataset("customers");
+        m.setRows(List.of(fieldRef("customers", "region")));
+        OssieQueryModel.FilterExpr filter = new OssieQueryModel.FilterExpr();
+        filter.setField("email");
+        filter.setOp("EQ");
+        filter.setValue("alice@example.com");
+        m.setFilters(List.of(filter));
+
+        String sql = translator.translate(m, semantic, Set.of("ROLE_USER"));
+        assertTrue(sql, sql.contains("FROM \"customers\", \"orders\""));
+        assertTrue(sql, sql.contains("WHERE \"orders\".\"ORDER_EMAIL\" = 'alice@example.com'"));
+        assertTrue(sql, !sql.contains("WHERE \"email\""));
+    }
+
+    @Test
+    public void ambiguousUnqualifiedFilterIsAValidationError() {
+        dataset("orders").getFields().add(field("region"));
+        OssieQueryModel m = new OssieQueryModel();
+        m.setFactDataset("orders");
+        m.setRows(List.of(fieldRef("customers", "region")));
+        OssieQueryModel.FilterExpr filter = new OssieQueryModel.FilterExpr();
+        filter.setField("region");
+        filter.setOp("EQ");
+        filter.setValue("NA");
+        m.setFilters(List.of(filter));
+
+        try {
+            translator.translate(m, semantic);
+            fail("expected SaikuValidationException");
+        } catch (SaikuValidationException e) {
+            assertTrue(e.getMessage(), e.getMessage().contains("Ambiguous field 'region'"));
+        }
+    }
+
+    @Test
+    public void unqualifiedSortIsAValidationError() {
+        OssieQueryModel m = new OssieQueryModel();
+        m.setFactDataset("orders");
+        m.setRows(List.of(fieldRef("customers", "region")));
+        OssieQueryModel.SortRef sort = new OssieQueryModel.SortRef();
+        sort.setField("region");
+        m.setSorts(List.of(sort));
+
+        try {
+            translator.translate(m, semantic);
+            fail("expected SaikuValidationException");
+        } catch (SaikuValidationException e) {
+            assertTrue(e.getMessage(), e.getMessage().contains("requires a dataset"));
+        }
+    }
+
+    @Test
+    public void unknownFactDatasetIsAValidationError() {
+        OssieQueryModel m = new OssieQueryModel();
+        m.setFactDataset("not_a_dataset");
+        m.setValues(List.of(metric("revenue")));
+
+        try {
+            translator.translate(m, semantic);
+            fail("expected SaikuValidationException");
+        } catch (SaikuValidationException e) {
+            assertTrue(e.getMessage(), e.getMessage().contains("not_a_dataset"));
+        }
     }
 }
