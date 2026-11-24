@@ -22,6 +22,11 @@ Validate the syntax of a client member name before constructing MDX, then resolv
 **Why:** MDX member names include the hierarchy and ancestor members, while level names describe a different metadata object.
 **Source:** PR #2576 review
 
+## 2026-11-24 — SCIM user PUT: validate group grants before any user write
+Check every requested group's role before changing the username, profile, email, or enabled state in a full user replace.
+**Why:** a stale reserved or off-list group otherwise returns 400 after part of the PUT has persisted, leaving the IdP retrying a failed sync against changed data.
+**Source:** PR #2564 review of #2537
+
 ## 2026-11-24 — Result-cache identity: test the real datasource decision
 A stubbed identity fragment and source-text assertions did not test whether pass-through
 datasources resolve to distinct caller identities. Add a Java test of the real
