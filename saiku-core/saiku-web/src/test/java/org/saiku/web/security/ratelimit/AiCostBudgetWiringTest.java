@@ -174,27 +174,31 @@ public class AiCostBudgetWiringTest {
             bindEmbedBucket(embedBucket);
             assertEquals(503, resource.ask(request("guest question")).getStatus());
             assertEquals(503, resource.ask(request("guest question")).getStatus());
-            assertEquals("the guest's third ask is over the EMBED's budget", 429,
+            assertEquals(
+                    "the guest's third ask is over the EMBED's budget",
+                    429,
                     resource.ask(request("guest question")).getStatus());
             assertEquals(
                     "the embed exhaustion is charged to the embed bucket, not the owner",
                     3,
                     budget.callsMadeBy(embedBucket));
+            assertEquals("the guests' calls were NOT charged to the owner's name", 2, budget.callsMadeBy(owner));
 
             // And the owner — same address, own identity (no embed stamp on the thread) — is
             // NOT bound by the guests' spend.
             org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();
             SecurityContextHolder.getContext().setAuthentication(new TestingAuthenticationToken(owner, "pw"));
-            assertEquals("owner's third ask is refused only by her own usage, not the guests'", 429,
-                    resource.ask(request(owner)).getStatus());
             assertEquals(
-                    "the guests' calls were NOT charged to the owner's name",
-                    2,
-                    budget.callsMadeBy(owner));
+                    "owner's third ask is refused only by her own usage, not the guests'",
+                    429,
+                    resource.ask(request(owner)).getStatus());
+            assertEquals("a refused call also advances the owner's own counter", 3, budget.callsMadeBy(owner));
 
             // Conversely a guest whose embed bucket is fresh passes even though the owner is spent.
             bindEmbedBucket("embed:token:" + String.format("%064x", 0xDEADL));
-            assertEquals("a different embed has its own budget", 503,
+            assertEquals(
+                    "a different embed has its own budget",
+                    503,
                     resource.ask(request("guest question")).getStatus());
         }
     }

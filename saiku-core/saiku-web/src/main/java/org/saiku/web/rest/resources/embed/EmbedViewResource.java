@@ -1150,8 +1150,7 @@ public class EmbedViewResource {
         if (req == null) {
             return; // no request bound (unit tests / async): the AI resource falls back
         }
-        req.setAttribute(
-                org.saiku.web.security.ratelimit.AiRequestPrincipal.EMBED_BUCKET_ATTRIBUTE, embedAiBucket(g));
+        req.setAttribute(org.saiku.web.security.ratelimit.AiRequestPrincipal.EMBED_BUCKET_ATTRIBUTE, embedAiBucket(g));
     }
 
     /**

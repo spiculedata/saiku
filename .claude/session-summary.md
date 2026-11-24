@@ -75,6 +75,11 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-11-24 — feature/ai-budget-shared-wired — PR #2556 embed budget CI rework
+**Was doing:** corrected the refused-call counter assertion, covered the embed request stamp, and applied Spotless formatting for the CI failure.
+**Now:** check PR #2556 CI for the Java build and focused tests; local Maven dependency resolution stops at GitHub Packages 401.
+**Refs:** #2529, PR #2556
+
 ## 2026-11-12 — fix/2322-ossie-ai-policy-gate — PR #2355 formatting rework
 **Was doing:** fixed the async role test fixture's Spotless violation; local Spotless and licence checks pass, but focused Maven tests stop during dependency resolution with GitHub Packages 401.
 **Now:** use the latest PR #2355 CI result to verify the full build and focused tests; no local edits remain after the rework push.
