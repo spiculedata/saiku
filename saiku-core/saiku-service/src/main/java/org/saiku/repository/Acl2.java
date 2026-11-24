@@ -168,7 +168,8 @@ class Acl2 {
 
     /**
      * Canonicalise a node path into the stable key form used for {@code acl.json}
-     * entries. saiku#1660: the seed writer keyed entries by the path form
+     * entries. Package-visible so {@link FilesystemRepositoryManager}'s saiku#2525 sidecar
+     * re-key/migration helpers key their writes the same way. saiku#1660: the seed writer keyed entries by the path form
      * {@code FilesystemRepositoryManager.createFolder(...).getPath()} produces
      * (a raw {@code datadir + path} concatenation), while the save-time lookup in
      * {@link #getMethods} keyed by the form {@code getNode(...)} produces
@@ -184,7 +185,7 @@ class Acl2 {
      * path so we never regress into denying a legitimate write.
      */
     @NotNull
-    private static String canonicalKey(@Nullable String path) {
+    static String canonicalKey(@Nullable String path) {
         if (path == null) {
             return "";
         }
@@ -192,7 +193,7 @@ class Acl2 {
     }
 
     @NotNull
-    private static String canonicalKey(@NotNull File file) {
+    static String canonicalKey(@NotNull File file) {
         try {
             return file.getCanonicalPath();
         } catch (Exception e) {
