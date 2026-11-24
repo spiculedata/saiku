@@ -8,6 +8,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 import java.util.List;
@@ -22,7 +23,10 @@ import org.saiku.web.share.ShareTokenStore;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 /**
@@ -90,6 +94,60 @@ public class ShareTokenAuthFilterTest {
                 chain.capturedAuth.getAuthorities().stream()
                         .map(a -> a.getAuthority())
                         .collect(java.util.stream.Collectors.toSet()));
+        assertNull(SecurityContextHolder.getContext().getAuthentication());
+    }
+
+    /** saiku#2520 — the request carries bob's logged-in session cookie, so the thread's
+     *  SecurityContext is the very object stored in the HttpSession. The guest swap must
+     *  leave that object, its principal and its authorities untouched, while the resource
+     *  still sees the pinned guest identity — and the guest must not survive the request. */
+    @Test
+    public void valid_token_sessionBackedContext_isLeftUntouched() throws Exception {
+        Authentication bobsLogin =
+                new UsernamePasswordAuthenticationToken("bob", "N/A", List.of(new SimpleGrantedAuthority("ROLE_USER")));
+        SecurityContext sessionContext = SecurityContextHolder.createEmptyContext();
+        sessionContext.setAuthentication(bobsLogin);
+        SecurityContextHolder.setContext(sessionContext);
+        Authentication before = sessionContext.getAuthentication();
+
+        ShareToken t = store.create("/homes/admin/exec.saikudash", "admin", List.of("ROLE_ADMIN"), 60_000L, "label");
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", VIEW_PATH);
+        req.addHeader(ShareTokenAuthFilter.TOKEN_HEADER, t.token);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        ContextCapturingChain chain = new ContextCapturingChain();
+
+        try {
+            filter.doFilter(req, resp, chain);
+
+            assertTrue(chain.called);
+            assertEquals("share-guest", chain.capturedAuth.getPrincipal());
+            // The exact object the session holds is back, with the exact authentication.
+            assertSame(sessionContext, SecurityContextHolder.getContext());
+            assertSame(before, sessionContext.getAuthentication());
+            assertEquals("bob", sessionContext.getAuthentication().getPrincipal());
+            assertTrue(sessionContext.getAuthentication().getAuthorities().stream()
+                    .anyMatch(a -> a.getAuthority().equals("ROLE_USER")));
+            assertFalse(
+                    "the guest authority must not leak into the stored authentication",
+                    sessionContext.getAuthentication().getAuthorities().stream()
+                            .anyMatch(a -> a.getAuthority().equals(ShareTokenAuthFilter.GUEST_ROLE)));
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
+    }
+
+    /** saiku#2520 — the same for the no-cookie case: nothing is left on the thread. */
+    @Test
+    public void valid_token_leaves_no_authentication_behind_for_anonymous_thread() throws Exception {
+        ShareToken t = store.create("/homes/admin/exec.saikudash", "admin", List.of("ROLE_ADMIN"), 60_000L, null);
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", VIEW_PATH);
+        req.addHeader(ShareTokenAuthFilter.TOKEN_HEADER, t.token);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        TrackingChain chain = new TrackingChain();
+
+        filter.doFilter(req, resp, chain);
+
+        assertTrue(chain.called);
         assertNull(SecurityContextHolder.getContext().getAuthentication());
     }
 
