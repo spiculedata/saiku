@@ -424,6 +424,18 @@ public class SaikuLauncher implements Callable<Integer> {
             sessionCache.setSessionDataStore(sessionStore);
             sessionCache.setSaveOnCreate(true);
             sessionCache.setFlushOnResponseCommit(true);
+            // saiku#2524: Jetty's default cache policy is NEVER_EVICT, so every session ever
+            // created stayed resident on the heap until its 7-day idle expiry — the same
+            // memory half of the unauthenticated-session fill the request-cache fix stops.
+            // Idle sessions now leave the cache after 5 minutes without a request. That is
+            // a cache residency policy, not data loss: with a FileSessionDataStore an
+            // evicted session is reloaded from disk on its next use, and
+            // setSaveOnInactiveEviction writes it out before the eviction. Authenticated
+            // idle sessions therefore still survive a restart (saiku#1859), they just
+            // occupy heap only while they are actually used.
+            // >0 is the number of seconds of inactivity after which a session is evicted.
+            sessionCache.setEvictionPolicy(300);
+            sessionCache.setSaveOnInactiveEviction(true);
             sessionHandler.setSessionCache(sessionCache);
             sessionHandler.setMaxInactiveInterval(7 * 24 * 60 * 60);
         }
