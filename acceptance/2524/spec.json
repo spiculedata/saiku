@@ -1,0 +1,24 @@
+{
+  "issue": 2524,
+  "title": "Refused unauthenticated requests create no server-side session: no JSESSIONID cookie on 401, logins still persist",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "an unauthenticated request to a protected /rest/** URL (anonymous, or with a padded header)",
+      "then": "the 401 response sets no cookie carrying JSESSIONID (an XSRF-TOKEN cookie may still be written), so no HTTP session — and no persisted session file — is created for a request that was refused before login"
+    },
+    {
+      "id": "C2",
+      "given": "a failed login (bad password at POST /rest/saiku/session, or wrong Basic credentials on a protected URL)",
+      "then": "the 401 responses set no cookie carrying JSESSIONID, so a refused login leaves no 7-day session behind"
+    },
+    {
+      "id": "C3",
+      "given": "a successful login at POST /rest/saiku/session",
+      "then": "the 200 response still sets JSESSIONID and the session endpoint answers, so saiku#1859's persisted logged-in session behaviour is unchanged"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 120
+}

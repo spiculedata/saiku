@@ -235,6 +235,9 @@ export async function runSharedTileQuery(
 	const url = `${SHARE_VIEW_BASE}/tile/${encodeURIComponent(tileId)}/query?format=${encodeURIComponent(format)}`;
 	const res = await fetch(url, {
 		method: 'POST',
+		// credentials: 'omit' — defence in depth for saiku#2520: the guest call must
+		// never carry a logged-in session cookie alongside the share token.
+		credentials: 'omit',
 		headers: { 'X-Saiku-Share-Token': token, Accept: 'application/json' }
 	});
 	const text = await res.text();

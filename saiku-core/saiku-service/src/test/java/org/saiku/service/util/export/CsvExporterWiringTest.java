@@ -4,10 +4,17 @@
  */
 package org.saiku.service.util.export;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
+import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
+import java.sql.Types;
+import java.util.ArrayList;
+import java.util.List;
 import org.junit.Test;
 import org.saiku.olap.dto.resultset.AbstractBaseCell;
 import org.saiku.olap.dto.resultset.CellDataSet;
@@ -35,7 +42,7 @@ public class CsvExporterWiringTest {
         CellDataSet cds = new CellDataSet();
         cds.setCellSetHeaders(new AbstractBaseCell[][] {{cell(headerValue)}});
         cds.setCellSetBody(new AbstractBaseCell[][] {{cell(bodyValue)}});
-        return new String(CsvExporter.getCsv(cds, ",", ""), StandardCharsets.UTF_8);
+        return new String(CsvExporter.getCsv(cds, ",", "\""), StandardCharsets.UTF_8);
     }
 
     @Test
@@ -59,5 +66,76 @@ public class CsvExporterWiringTest {
         assertFalse("benign text must not gain a formula-guard prefix: " + text, text.contains("'Beer"));
         String number = export("Margin", "-1,234.50");
         assertFalse("a negative number must not be quoted into text: " + number, number.contains("'-1,234.50"));
+    }
+
+    /** A calculated-member caption carrying {@code ","} must not close its own CSV field:
+     *  the header cell's quotes are doubled, so the line stays ONE field and no field can
+     *  begin with a formula character. saiku#2544 — previously the header escaped nothing,
+     *  so {@code x","=HYPERLINK(...)} emitted a live fourth field. */
+    @Test
+    public void exportDoublesQuotesInAHeaderCaptionCarryingCommaQuote() {
+        String caption = "x\",\"=HYPERLINK(\"http://127.0.0.1:1/x\",\"click\")";
+        String csv = export(caption, "Beer");
+        String[] lines = csv.split("\r\n", -1);
+        // The whole header line must be one field: the caption with every quote doubled,
+        // wrapped once — not four comma-separated fields with the fourth starting with '='.
+        assertEquals(
+                "header must be a single quoted field with doubled quotes: " + lines[0],
+                "\"" + caption.replace("\"", "\"\"") + "\"",
+                lines[0]);
+        assertFalse("no field may start with a formula char: " + lines[0], lines[0].contains(",=\""));
+    }
+
+    /* ---- ResultSet path: the header loop there had the same gap (saiku#2544). ---- */
+
+    /** Minimal {@link ResultSet} stub over one VARCHAR column, driven by dynamic proxies —
+     *  no mocking framework involved. */
+    private static ResultSet resultSetWith(String columnName, String... rowValues) throws Exception {
+        List<Object[]> rows = new ArrayList<>();
+        for (String v : rowValues) {
+            rows.add(new Object[] {v});
+        }
+        ResultSetMetaData meta = (ResultSetMetaData) Proxy.newProxyInstance(
+                ResultSet.class.getClassLoader(), new Class<?>[] {ResultSetMetaData.class}, (proxy, method, args) -> {
+                    switch (method.getName()) {
+                        case "getColumnCount":
+                            return 1;
+                        case "getColumnName":
+                            return columnName;
+                        case "getColumnType":
+                            return Types.VARCHAR;
+                        default:
+                            return null;
+                    }
+                });
+        final int[] cursor = {0};
+        return (ResultSet) Proxy.newProxyInstance(
+                ResultSet.class.getClassLoader(), new Class<?>[] {ResultSet.class}, (proxy, method, args) -> {
+                    switch (method.getName()) {
+                        case "next":
+                            return cursor[0]++ < rows.size();
+                        case "getMetaData":
+                            return meta;
+                        case "getString": {
+                            String v = (String) rows.get(cursor[0] - 1)[(int) args[0] - 1];
+                            return v;
+                        }
+                        case "wasNull":
+                            return false;
+                        default:
+                            return null;
+                    }
+                });
+    }
+
+    @Test
+    public void resultSetExportDoublesQuotesInHeaderCells() throws Exception {
+        String caption = "x\",\"=HYPERLINK(\"http://127.0.0.1:1/x\",\"click\")";
+        String csv = new String(CsvExporter.exportCsv(resultSetWith(caption, "F", "M")), StandardCharsets.UTF_8);
+        String[] lines = csv.split("\r\n", -1);
+        assertEquals(
+                "ResultSet header must be a single quoted field with doubled quotes: " + lines[0],
+                "\"" + caption.replace("\"", "\"\"") + "\"",
+                lines[0]);
     }
 }

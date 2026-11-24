@@ -12,7 +12,7 @@
 //   1. the cache key gains a visibility fingerprint of the CALLER
 //      (`AiVisibilityContext`, implemented by `SecurityAwareConnectionManager`
 //      from the caller's resolved Mondrian role fingerprint);
-//   2. every cache hit re-resolves the cube against the caller's own
+//   2. every cache lookup re-resolves the cube against the caller's own
 //      enumeration (`findCube`) before the cached entry is returned;
 //   3. `refreshConnection` invalidates the entries scoped to that connection.
 //
@@ -80,14 +80,15 @@ claim(
   /new AiSchema\(baseCacheKey\(/.test(service),
 );
 
-// ---- C2: the cache-hit path re-checks the caller's visibility ------------
+// ---- C2: the cache lookup re-checks the caller's visibility ---------------
 const getSchema = service.slice(service.indexOf('public AiSchema getSchema'), service.indexOf('private AiSchema buildSchema'));
 claim(
   'C2',
   'getSchema re-resolves the cube (findCube) before returning a cached entry',
-  /schemaCache\.get\(key\)/.test(getSchema) &&
+  /schemaCache\.getIfPresent\(key\)/.test(getSchema) &&
     /findCube\(ref\)/.test(getSchema) &&
-    getSchema.indexOf('findCube(ref)') < getSchema.indexOf('return cached;'),
+    getSchema.indexOf('findCube(ref)') < getSchema.indexOf('schemaCache.getIfPresent(key)') &&
+    getSchema.indexOf('schemaCache.getIfPresent(key)') < getSchema.indexOf('return cached;'),
 );
 claim(
   'C2',

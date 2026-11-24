@@ -92,4 +92,20 @@ public class CsvExporterTest {
         assertFalse(CsvExporter.isPlainNumber("=1"));
         assertFalse(CsvExporter.isPlainNumber("Beer"));
     }
+
+    /* ---- escapeCsvCell: neutralise THEN double quotes (saiku#2544) ---- */
+
+    @Test
+    public void escapeCsvCell_doublesQuotes_andNeutralises() {
+        String caption = "x\",\"=HYPERLINK(\"http://e\",\"c\")";
+        // First character of the caption is 'x', so no neutralisation prefix — but the embedded
+        // "," would close the field, so the quotes must be doubled (saiku#2544).
+        assertEquals("x\"\",\"\"=HYPERLINK(\"\"http://e\"\",\"\"c\"\")", CsvExporter.escapeCsvCell(caption));
+    }
+
+    @Test
+    public void escapeCsvCell_leavesBenignText_andNullPassThrough() {
+        assertEquals("Beer", CsvExporter.escapeCsvCell("Beer"));
+        assertEquals(null, CsvExporter.escapeCsvCell(null));
+    }
 }
