@@ -366,8 +366,9 @@ condition restarts the process instead of leaving it limping.
 ## Chart export raster bounds (`saiku.export.chart.*`)
 
 `POST /rest/saiku/{user}/export/saiku/chart` rasterises an uploaded SVG with
-Batik (PNG, JPG, TIFF; PDF is vector). Two independent budgets protect the JVM
-heap (CWE-400):
+Batik (PNG, JPG, TIFF; PDF's vector output is bounded by the same budgets —
+unsized oversized requests get a typed `400` and `KEY_WIDTH`/`KEY_HEIGHT` are
+always set). Two independent budgets protect the JVM heap (CWE-400):
 
 - **byte budget** (saiku#1165): the SVG payload itself is capped at 20 MB, and
   anything that would make Batik reach off-document is rejected;
@@ -383,8 +384,12 @@ heap (CWE-400):
 
 The transcode also runs on a small fixed thread pool with a wall-clock limit
 (the same shape as the snapshot renderer's bounded pool), so a byte-legal but
-pathological SVG is abandoned with a `400` rather than wedging a request
-thread. A saturated pool answers `503`.
+pathological SVG answers `400` once it has overrun the limit instead of
+wedging a request thread. A queued request that never got a worker within
+the limit answers `503` — that is server-side saturation, not the caller's
+fault, and clients and proxies may retry it. Note the limit does not force-stop
+Batik mid-render: the timed-out task's interrupt releases its pool slot when
+Batik returns, so a pathological render keeps one worker until it finishes.
 
 | Property | Default | Effect |
 |---|---|---|

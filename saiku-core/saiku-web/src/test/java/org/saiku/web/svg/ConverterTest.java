@@ -92,4 +92,59 @@ public class ConverterTest {
             assertEquals(400, expected.getHttpStatus());
         }
     }
+
+    /** saiku#2527 (review of PR #2559): a timeout that fires BEFORE the task got
+     *  a worker is server-side saturation — 503, retryable — not the caller's
+     *  400. Uses a dedicated one-worker pool with a queued slow task. */
+    @Test
+    public void queuedTaskTimingOutBeforeItStartsAnswers503() throws Exception {
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.ExecutorService pool = new java.util.concurrent.ThreadPoolExecutor(
+                1, 1, 0L, java.util.concurrent.TimeUnit.MILLISECONDS,
+                new java.util.concurrent.LinkedBlockingQueue<>());
+        try {
+            pool.submit(() -> {
+                release.await();
+                return null;
+            });
+            try {
+                Converter.runBounded(
+                        () -> {
+                            release.await();
+                            return null;
+                        },
+                        50L,
+                        pool);
+                fail("expected the queued task to time out before starting");
+            } catch (SvgExportException expected) {
+                assertEquals("queue-wait timeout is saturation, not a client fault", 503, expected.getHttpStatus());
+            }
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+        }
+    }
+
+    /** saiku#2527 (review of PR #2559): a task that RAN and overran the limit is
+     *  the export's fault — 400, as before. */
+    @Test
+    public void startedTaskOverrunningTheLimitAnswers400() throws Exception {
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            try {
+                Converter.runBounded(
+                        () -> {
+                            Thread.sleep(1_000);
+                            return null;
+                        },
+                        50L,
+                        pool);
+                fail("expected the running task to time out");
+            } catch (SvgExportException expected) {
+                assertEquals("an overrun transcode is a client-visible 400", 400, expected.getHttpStatus());
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+    }
 }
