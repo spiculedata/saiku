@@ -50,8 +50,22 @@ public class SqlWorkbenchServiceTest {
      * wide to hand-implement usefully; every other call is answered leniently (empty result set).
      */
     private static Connection recordingConnection(String url, List<String> statements, boolean failOnExecute) {
+        return recordingConnection(url, statements, null, failOnExecute);
+    }
+
+    /**
+     * As above, but also records every {@code setEscapeProcessing} flag into
+     * {@code escapeProcessingCalls} (nullable) — saiku#2522 asserts the service disables escape
+     * processing BEFORE the user's statement is handed to the driver.
+     */
+    private static Connection recordingConnection(
+            String url, List<String> statements, List<Boolean> escapeProcessingCalls, boolean failOnExecute) {
         Statement statement = (Statement) Proxy.newProxyInstance(
                 Statement.class.getClassLoader(), new Class<?>[] {Statement.class}, (proxy, method, args) -> {
+                    if ("setEscapeProcessing".equals(method.getName()) && escapeProcessingCalls != null) {
+                        escapeProcessingCalls.add((Boolean) args[0]);
+                        return null;
+                    }
                     if ("execute".equals(method.getName())) {
                         statements.add((String) args[0]);
                         if (failOnExecute) {
@@ -402,6 +416,104 @@ public class SqlWorkbenchServiceTest {
         assertFalse(ex.getMessage().contains("Exception"));
     }
 
+    /**
+     * saiku#2522 — the guard validates one text and the service executes exactly that text, with
+     * JDBC escape processing disabled: the recording connection sees the validated statement —
+     * byte-for-byte the submission when there is nothing to strip, the comment-stripped text
+     * otherwise — never the raw submission with a comment the engine could re-read differently.
+     */
+    @Test
+    public void theValidatedStatementIsTheExecutedStatement_escapeProcessingDisabled() {
+        List<String> statements = new ArrayList<>();
+        List<Boolean> escapeCalls = new ArrayList<>();
+        SqlWorkbenchService guarded = new SqlWorkbenchService(
+                id -> recordingConnection("jdbc:h2:mem:x", statements, escapeCalls, false),
+                new StubDatasourceService(DATA_SOURCE_ID),
+                auditLog);
+
+        guarded.execute("alice", sqlExecRoles, DATA_SOURCE_ID, "SELECT 1 AS a", null);
+        assertEquals(1, statements.size());
+        // Comment-free: what was validated IS what was submitted IS what was executed.
+        assertEquals("SELECT 1 AS a", statements.get(0));
+
+        // With comments: the executed text is the comment-stripped, validated text — an engine
+        // cannot re-interpret a comment the guard has already read past.
+        guarded.execute("alice", sqlExecRoles, DATA_SOURCE_ID, "/* plan */ SELECT 2 -- note\n", null);
+        assertEquals("SELECT 2", statements.get(1));
+
+        // Escape processing was turned OFF before the statement reached the driver.
+        assertEquals(2, escapeCalls.size());
+        assertFalse(escapeCalls.get(0));
+        assertFalse(escapeCalls.get(1));
+    }
+
+    /**
+     * saiku#2522 (integration, real H2) — a line comment ended by {@code \r} is a comment to H2
+     * too, so the executed statement would gain a second column. The guard must reject it before
+     * a connection is opened.
+     */
+    @Test
+    public void crEndedComment_hidingExtraColumns_isRejectedBeforeExecution() {
+        SqlWorkbenchException ex = assertThrows(
+                SqlWorkbenchException.class,
+                () -> service.execute("alice", sqlExecRoles, DATA_SOURCE_ID, "SELECT 1 AS a --\r, 2 AS b", null));
+        assertEquals(SqlWorkbenchException.Code.READ_ONLY_VIOLATION, ex.getCode());
+        assertEquals(
+                SqlWorkbenchAuditEntry.OUTCOME_REJECTED,
+                auditLog.recent(1, 0, null).get(0).outcome);
+    }
+
+    /**
+     * saiku#2522 (integration, real H2) — stacked DDL behind a CR-ended comment, the exact
+     * payload from the issue: the temporary table must never be created.
+     */
+    @Test
+    public void stackedDdl_behindACrEndedComment_neverReachesRealH2() {
+        SqlWorkbenchException ex = assertThrows(
+                SqlWorkbenchException.class,
+                () -> service.execute(
+                        "alice",
+                        sqlExecRoles,
+                        DATA_SOURCE_ID,
+                        "SELECT 1 AS a --\r; CREATE LOCAL TEMPORARY TABLE T(X INT); DROP TABLE T",
+                        null));
+        assertEquals(SqlWorkbenchException.Code.READ_ONLY_VIOLATION, ex.getCode());
+        assertEquals(0, tableCount("T"));
+    }
+
+    /**
+     * saiku#2522 (integration, real H2) — a JDBC function escape must never reach the driver: on
+     * H2 {@code {fn DATABASE_PATH()}} answers 200 today; the guard rejects it first.
+     */
+    @Test
+    public void jdbcEscapeFunction_isRejectedBeforeExecution() {
+        SqlWorkbenchException ex = assertThrows(
+                SqlWorkbenchException.class,
+                () -> service.execute("alice", sqlExecRoles, DATA_SOURCE_ID, "SELECT {fn DATABASE_PATH()} AS p", null));
+        assertEquals(SqlWorkbenchException.Code.READ_ONLY_VIOLATION, ex.getCode());
+        assertEquals(
+                SqlWorkbenchAuditEntry.OUTCOME_REJECTED,
+                auditLog.recent(1, 0, null).get(0).outcome);
+    }
+
+    /**
+     * saiku#2522 (integration, real H2) — the SHOW shortcut cannot carry a second statement
+     * behind a CR-ended comment.
+     */
+    @Test
+    public void showShortcut_carryingStackedDdl_neverReachesRealH2() {
+        SqlWorkbenchException ex = assertThrows(
+                SqlWorkbenchException.class,
+                () -> service.execute(
+                        "alice",
+                        sqlExecRoles,
+                        DATA_SOURCE_ID,
+                        "SHOW TABLES --\r; CREATE LOCAL TEMPORARY TABLE T3(X INT); DROP TABLE T3",
+                        null));
+        assertEquals(SqlWorkbenchException.Code.READ_ONLY_VIOLATION, ex.getCode());
+        assertEquals(0, tableCount("T3"));
+    }
+
     // --- saiku#2550h: byte caps on materialised cells and the result as a whole ---
 
     @Test
@@ -421,8 +533,6 @@ public class SqlWorkbenchServiceTest {
 
     @Test
     public void resultReadingStopsAtTheResultByteCap() {
-        // ~200 rows of a 64 KB-capped cell — reading stops near the 10 MB result cap,
-        // well before all 200 rows, and the result is flagged truncated.
         SqlWorkbenchService.SqlQueryResult result = service.execute(
                 "alice",
                 sqlExecRoles,
@@ -431,6 +541,39 @@ public class SqlWorkbenchServiceTest {
                 null);
         assertTrue("reading stops at the byte cap, not the row cap", result.rowCount() < 200);
         assertTrue(result.truncated());
+        long bytes = result.rows().stream()
+                .flatMap(List::stream)
+                .mapToLong(cell -> String.valueOf(cell).getBytes(java.nio.charset.StandardCharsets.UTF_8).length)
+                .sum();
+        assertTrue("materialised cells stay within the result cap", bytes <= SqlWorkbenchService.MAX_RESULT_BYTES);
+    }
+
+    @Test
+    public void truncationNeverSplitsASurrogatePair() {
+        String input = "x".repeat(SqlWorkbenchService.MAX_CELL_BYTES - 1) + "😀";
+        String cut = SqlWorkbenchService.truncateCell(input);
+        assertEquals(
+                "x".repeat(SqlWorkbenchService.MAX_CELL_BYTES - 1) + SqlWorkbenchService.CELL_TRUNCATION_MARKER, cut);
+    }
+
+    @Test
+    public void wideRowIsNotMaterialisedPastTheResultCap() {
+        String columns = String.join(", ", java.util.Collections.nCopies(165, "REPEAT('x', 70000)"));
+        SqlWorkbenchService.SqlQueryResult result =
+                service.execute("alice", sqlExecRoles, DATA_SOURCE_ID, "SELECT " + columns, null);
+        assertTrue(result.truncated());
+        assertEquals(0, result.rowCount());
+    }
+
+    /** Rows in INFORMATION_SCHEMA.TABLES matching a table name (0 when it was never created). */
+    private long tableCount(String tableName) {
+        SqlWorkbenchService.SqlQueryResult result = service.execute(
+                "alice",
+                sqlExecRoles,
+                DATA_SOURCE_ID,
+                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE UPPER(TABLE_NAME) = '" + tableName + "'",
+                null);
+        return (Long) result.rows().get(0).get(0);
     }
 
     /** Hand-rolled stub (house pattern — saiku-service tests avoid Mockito for DatasourceService). */

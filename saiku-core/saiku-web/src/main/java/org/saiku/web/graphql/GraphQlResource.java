@@ -31,7 +31,7 @@ import org.slf4j.LoggerFactory;
  * <p>Two shapes accepted:
  * <ul>
  *   <li><b>POST /rest/saiku/api/graphql</b> — body {@code {query, variables?, operationName?}}.
- *       The standard GraphQL-over-HTTP surface. Introspection queries work out of the box.</li>
+ *       The standard GraphQL-over-HTTP surface. Introspection requires ROLE_ADMIN.</li>
  *   <li><b>GET /rest/saiku/api/graphql?query=...&variables=...&operationName=...</b> —
  *       shareable, for queries an operator wants to bookmark. Variables come URL-encoded.</li>
  * </ul>
@@ -140,7 +140,7 @@ public class GraphQlResource {
      * Mondrian roles hide schema elements the SDL still names every cube, dimension, hierarchy
      * and level on the server — a non-admin reading it learns element names their role is meant
      * to hide. Execution (the POST/GET query endpoints) still goes through each fetcher's own
-     * role checks; only the STATIC schema dump is restricted. Does not rely on the JAX-RS
+     * role checks; introspection is restricted by the service as well. Does not rely on the JAX-RS
      * RolesAllowed feature — the check is explicit, like the other per-method gates.
      */
     @GET

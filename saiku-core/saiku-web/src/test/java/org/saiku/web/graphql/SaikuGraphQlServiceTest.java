@@ -9,8 +9,12 @@ import static org.junit.Assert.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Map;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 /**
  * Boots the {@code SaikuGraphQlService} with a minimal fetchers bean (no wired services)
@@ -31,6 +35,9 @@ public class SaikuGraphQlServiceTest {
 
     @Before
     public void setUp() {
+        SecurityContextHolder.getContext()
+                .setAuthentication(new UsernamePasswordAuthenticationToken(
+                        "admin", "unused", List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))));
         ObjectMapper mapper = new ObjectMapper();
         SaikuGraphQlFetchers fetchers = new SaikuGraphQlFetchers(mapper);
         fetchers.setServerVersion("4.6.0-test");
@@ -39,6 +46,11 @@ public class SaikuGraphQlServiceTest {
         svc = new SaikuGraphQlService(mapper);
         svc.setFetchers(fetchers);
         svc.afterPropertiesSet();
+    }
+
+    @After
+    public void tearDown() {
+        SecurityContextHolder.clearContext();
     }
 
     @Test
@@ -70,6 +82,39 @@ public class SaikuGraphQlServiceTest {
         boolean hasServerInfo = types.stream().anyMatch(t -> "ServerInfo".equals(t.get("name")));
         assertTrue("Query type missing from introspection", hasQuery);
         assertTrue("ServerInfo type missing from introspection", hasServerInfo);
+    }
+
+    @Test
+    public void nonAdminCannotIntrospectViaAliasFragmentOrPersistedQuery() {
+        String query = "query Inspect { hidden: __schema { types { name } } ...TypeLookup } "
+                + "fragment TypeLookup on Query { type: __type(name: \"Query\") { name } }";
+        String hash = PersistedQueryCache.sha256Hex(query);
+        Map<String, Object> extensions = Map.of("persistedQuery", Map.of("version", 1, "sha256Hash", hash));
+        // An admin may store the persisted document. Access is checked again on each execution.
+        assertNull(svc.execute(query, null, null, extensions).get("errors"));
+        SecurityContextHolder.getContext()
+                .setAuthentication(new UsernamePasswordAuthenticationToken(
+                        "reader", "unused", List.of(new SimpleGrantedAuthority("ROLE_USER"))));
+        Map<String, Object> direct = svc.execute(query, null, null);
+        Map<String, Object> cached = svc.execute(null, null, null, extensions);
+        assertNull(direct.get("data"));
+        assertNull(cached.get("data"));
+        assertEquals("FORBIDDEN", firstErrorCode(direct));
+        assertEquals("FORBIDDEN", firstErrorCode(cached));
+    }
+
+    @Test
+    public void nonAdminCanStillExecuteOrdinaryQuery() {
+        SecurityContextHolder.getContext()
+                .setAuthentication(new UsernamePasswordAuthenticationToken(
+                        "reader", "unused", List.of(new SimpleGrantedAuthority("ROLE_USER"))));
+        assertNull(svc.execute("{ serverInfo { version } }", null, null).get("errors"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static String firstErrorCode(Map<String, Object> result) {
+        List<Map<String, Object>> errors = (List<Map<String, Object>>) result.get("errors");
+        return (String) ((Map<String, Object>) errors.get(0).get("extensions")).get("code");
     }
 
     @Test

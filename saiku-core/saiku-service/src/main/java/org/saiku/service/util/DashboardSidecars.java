@@ -9,7 +9,13 @@ package org.saiku.service.util;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.List;
+import org.saiku.repository.IRepositoryObject;
+import org.saiku.repository.RepositoryFileObject;
+import org.saiku.repository.RepositoryFolderObject;
 import org.saiku.service.datasource.DatasourceService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Flat internal-file names for a dashboard's sidecar files (comments, history).
@@ -20,12 +26,13 @@ import org.saiku.service.datasource.DatasourceService;
  * {@code homes/a/b/x.saikudash} shared one comments file and one history file,
  * and a user who could read the second path could read and write the first
  * path's comments and read its version history. The new key is a SHA-256 of the
- * exact path, so distinct paths get distinct files. Existing sidecars are still
- * found: reads fall back to the legacy sanitised name, and the first write
- * retires the legacy file (its contents were merged into that write, so keeping
- * both would resurrect comments a user already deleted).
+ * exact path, so distinct paths get distinct files. A legacy sidecar is read only
+ * when exactly one existing dashboard has its old flattened name. Ambiguous legacy
+ * files stay untouched for operator recovery; request writes never delete them.
  */
 public final class DashboardSidecars {
+
+    private static final Logger log = LoggerFactory.getLogger(DashboardSidecars.class);
 
     private DashboardSidecars() {}
 
@@ -34,7 +41,7 @@ public final class DashboardSidecars {
         return "saiku-" + kind + "-v2-" + sha256Hex(dashboardPath) + ".jsonl";
     }
 
-    /** Pre-#2550 sanitised sidecar path — reads fall back to it, writes retire it. */
+    /** Pre-#2550 sanitised sidecar path. */
     public static String legacyPath(String kind, String dashboardPath) {
         String flat = dashboardPath == null ? "null" : dashboardPath.replaceAll("[^A-Za-z0-9._-]", "_");
         flat = flat.replace("..", "_");
@@ -44,28 +51,65 @@ public final class DashboardSidecars {
     /** Read the sidecar for a dashboard: the v2 file first, else the legacy file. Null/blank when neither exists. */
     public static String read(DatasourceService datasourceService, String kind, String dashboardPath) {
         String current = datasourceService.getInternalFileData(path(kind, dashboardPath));
-        if (current != null && !current.isBlank()) {
+        if (current != null) {
             return current;
         }
-        return datasourceService.getInternalFileData(legacyPath(kind, dashboardPath));
+        String legacy = datasourceService.getInternalFileData(legacyPath(kind, dashboardPath));
+        if (legacy == null) return null;
+        if (soleLegacyOwner(datasourceService, dashboardPath)) return legacy;
+        log.warn(
+                "Ambiguous dashboard legacy sidecar {}; leaving it for operator recovery",
+                legacyPath(kind, dashboardPath));
+        return null;
     }
 
-    /**
-     * Write the sidecar: always to the v2 file. When the legacy file exists it is
-     * removed — the caller has just merged its contents into {@code content}.
-     */
+    /** Write only the collision-free file. The legacy file is retained for safe recovery. */
     public static void write(DatasourceService datasourceService, String kind, String dashboardPath, String content) {
         datasourceService.saveInternalFile(path(kind, dashboardPath), content, null);
-        String legacy = legacyPath(kind, dashboardPath);
-        if (datasourceService.getInternalFileData(legacy) != null) {
-            datasourceService.removeInternalFile(legacy);
-        }
     }
 
-    /** Delete every version of the sidecar — called when the dashboard itself is removed. */
+    /** Delete only this dashboard's unambiguous v2 sidecar. */
     public static void purge(DatasourceService datasourceService, String kind, String dashboardPath) {
         datasourceService.removeInternalFile(path(kind, dashboardPath));
-        datasourceService.removeInternalFile(legacyPath(kind, dashboardPath));
+    }
+
+    private static boolean soleLegacyOwner(DatasourceService datasourceService, String dashboardPath) {
+        // The internal-file API has no owner metadata. Enumerate the repository with the
+        // service's admin role and fail closed if the listing is incomplete or ambiguous.
+        List<IRepositoryObject> dashboards;
+        try {
+            dashboards = datasourceService.getFiles(List.of("saikudash"), "admin", List.of("ROLE_ADMIN"));
+        } catch (RuntimeException e) {
+            log.warn("Cannot enumerate dashboards for legacy sidecar ownership", e);
+            return false;
+        }
+        if (dashboards == null) return false;
+        String requested = normaliseRepositoryPath(dashboardPath);
+        String flattened = legacyPath("owner", requested);
+        int matches = countMatchingPaths(dashboards, flattened, requested);
+        return matches == 1;
+    }
+
+    private static int countMatchingPaths(List<IRepositoryObject> objects, String flattened, String requested) {
+        if (objects == null) return 0;
+        int matches = 0;
+        for (IRepositoryObject object : objects) {
+            if (object instanceof RepositoryFolderObject folder) {
+                matches += countMatchingPaths(folder.getRepoObjects(), flattened, requested);
+            } else if (object instanceof RepositoryFileObject file) {
+                String path = normaliseRepositoryPath(file.getPath());
+                if (legacyPath("owner", path).equals(flattened)) {
+                    if (!path.equals(requested)) return 2;
+                    matches++;
+                }
+            }
+            if (matches > 1) return matches;
+        }
+        return matches;
+    }
+
+    private static String normaliseRepositoryPath(String path) {
+        return path != null && path.startsWith("/") ? path.substring(1) : path;
     }
 
     static String sha256Hex(String value) {

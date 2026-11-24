@@ -472,6 +472,10 @@ test('neutralise leaves numbers, blank and benign strings alone', () => {
   assert.strictEqual(SaikuQueryModel.neutralise(''), '');
   assert.strictEqual(SaikuQueryModel.neutralise('Food'), 'Food');
   assert.strictEqual(SaikuQueryModel.neutralise('a-b-c'), 'a-b-c');
+  assert.strictEqual(SaikuQueryModel.neutralise('-1,234'), '-1,234');
+  assert.strictEqual(SaikuQueryModel.neutralise('+$1,234.50'), '+$1,234.50');
+  assert.strictEqual(SaikuQueryModel.neutralise('\t=SUM(A1)'), "'\t=SUM(A1)");
+  assert.strictEqual(SaikuQueryModel.neutralise('\r@import'), "'\r@import");
 });
 
 // ---------------------------------------------------------------------------

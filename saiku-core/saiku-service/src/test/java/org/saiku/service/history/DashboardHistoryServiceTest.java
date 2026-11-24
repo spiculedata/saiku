@@ -11,11 +11,14 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.Before;
 import org.junit.Test;
+import org.saiku.repository.IRepositoryObject;
+import org.saiku.repository.RepositoryFileObject;
 import org.saiku.service.datasource.DatasourceService;
 
 /**
@@ -28,6 +31,7 @@ public class DashboardHistoryServiceTest {
 
     private static class FakeDs extends DatasourceService {
         final Map<String, String> internal = new HashMap<>();
+        final List<String> dashboards = new ArrayList<>();
 
         @Override
         public String saveInternalFile(String path, String content, String type) {
@@ -44,6 +48,15 @@ public class DashboardHistoryServiceTest {
         public void removeInternalFile(String path) {
             internal.remove(path);
         }
+
+        @Override
+        public List<IRepositoryObject> getFiles(List<String> type, String username, List<String> roles) {
+            List<IRepositoryObject> files = new ArrayList<>();
+            for (String path : dashboards) {
+                files.add(new RepositoryFileObject("x.saikudash", "#" + path, "saikudash", "/" + path, List.of()));
+            }
+            return files;
+        }
     }
 
     private FakeDs ds;
@@ -53,6 +66,7 @@ public class DashboardHistoryServiceTest {
     @Before
     public void setUp() {
         ds = new FakeDs();
+        ds.dashboards.add(DASH);
         svc = new DashboardHistoryService();
         svc.setDatasourceService(ds);
     }
@@ -123,16 +137,35 @@ public class DashboardHistoryServiceTest {
     }
 
     @Test
-    public void sidecar_from_the_old_naming_is_still_found_and_retired_on_write() {
+    public void unambiguous_legacy_sidecar_is_found_and_preserved_on_write() {
         // saiku#2550d: legacy history files stay readable after upgrade...
         String legacy = "saiku-history-" + DASH.replaceAll("[^A-Za-z0-9._-]", "_") + ".jsonl";
         ds.internal.put(legacy, "{\"version\":\"v1\",\"createdAt\":1,\"author\":\"admin\",\"dashboard\":\"{}\"}\n");
         assertEquals(1, svc.list(DASH).size());
         assertNotNull(svc.getVersion(DASH, "v1"));
 
-        // ...and the next write retires the legacy file into the hashed one.
+        // A request write never destroys the legacy file; the v2 copy takes precedence.
         svc.archive(DASH, "{}", "admin");
-        assertNull(ds.internal.get(legacy));
+        assertNotNull(ds.internal.get(legacy));
         assertEquals(2, svc.list(DASH).size());
+    }
+
+    @Test
+    public void colliding_legacy_history_is_not_read_or_stolen_by_either_dashboard() {
+        String owner = "homes/a_b/x.saikudash";
+        String other = "homes/a/b/x.saikudash";
+        ds.dashboards.clear();
+        ds.dashboards.add(owner);
+        ds.dashboards.add(other);
+        String legacy = "saiku-history-" + owner.replaceAll("[^A-Za-z0-9._-]", "_") + ".jsonl";
+        String original = "{\"version\":\"v1\",\"dashboard\":\"owner\"}\n";
+        ds.internal.put(legacy, original);
+
+        assertTrue(svc.list(owner).isEmpty());
+        assertTrue(svc.list(other).isEmpty());
+        svc.archive(other, "other", "bob");
+        assertEquals(1, svc.list(other).size());
+        assertTrue(svc.list(owner).isEmpty());
+        assertEquals(original, ds.internal.get(legacy));
     }
 }

@@ -95,6 +95,11 @@ public class SqlWorkbenchService {
      * Runs {@code sql} against {@code dataSourceId} and returns up to {@code maxRowsParam} rows
      * (clamped to {@code [1, MAX_MAX_ROWS]}, default {@link #DEFAULT_MAX_ROWS}).
      *
+     * <p>saiku#2522: the statement is validated once by {@link ReadOnlySqlGuard#validatedStatement},
+     * and the VALIDATED text (comments stripped) is what is executed and audited — the checked
+     * statement and the executed statement can never differ. Rejected submissions are audited with
+     * the raw text the caller sent.
+     *
      * <p>saiku#2318: {@code dataSourceId} comes in as a free-text body field, so the target is
      * re-checked against {@link DatasourceService#getDatasources(String[])} for the caller's roles
      * — the same filtered map the picker offers — rather than trusted. A datasource the caller's
@@ -110,8 +115,12 @@ public class SqlWorkbenchService {
         int maxRows = clampMaxRows(maxRowsParam);
         long started = System.nanoTime();
 
+        // saiku#2522: validatedStatement returns the exact text the guard approved — comments
+        // stripped, single statement, no escapes — and that text is what gets executed below, so
+        // the checked statement and the executed statement can never differ.
+        String validated;
         try {
-            ReadOnlySqlGuard.checkReadOnly(sql);
+            validated = ReadOnlySqlGuard.validatedStatement(sql);
         } catch (IllegalArgumentException rejected) {
             audit(
                     username,
@@ -141,16 +150,17 @@ public class SqlWorkbenchService {
             } catch (SQLException notSupported) {
                 LOG.debug("driver for '{}' does not support Connection.setReadOnly", dataSourceId);
             }
-            enforceReadOnlySession(username, dataSourceId, sql, conn, started);
+            enforceReadOnlySession(username, dataSourceId, validated, conn, started);
             try (Statement st = conn.createStatement()) {
                 st.setMaxRows(maxRows);
                 st.setQueryTimeout(QUERY_TIMEOUT_SECONDS);
-                try (ResultSet rs = st.executeQuery(sql)) {
+                disableEscapeProcessing(dataSourceId, st);
+                try (ResultSet rs = st.executeQuery(validated)) {
                     SqlQueryResult result = toResult(rs, maxRows, elapsedMs(started));
                     audit(
                             username,
                             dataSourceId,
-                            sql,
+                            validated,
                             SqlWorkbenchAuditEntry.OUTCOME_SUCCESS,
                             result.rowCount(),
                             null,
@@ -162,7 +172,7 @@ public class SqlWorkbenchService {
             long elapsed = elapsedMs(started);
             String safe = safeMessage(e);
             LOG.warn("SQL workbench query failed for datasource '{}': {}", dataSourceId, e.toString());
-            audit(username, dataSourceId, sql, SqlWorkbenchAuditEntry.OUTCOME_ERROR, null, safe, elapsed);
+            audit(username, dataSourceId, validated, SqlWorkbenchAuditEntry.OUTCOME_ERROR, null, safe, elapsed);
             throw new SqlWorkbenchException(SqlWorkbenchException.Code.QUERY_FAILED, safe);
         }
     }
@@ -225,6 +235,24 @@ public class SqlWorkbenchService {
     }
 
     /**
+     * saiku#2522 — turns JDBC escape processing OFF so the driver runs the raw text the guard
+     * validated, never a driver-rewritten translation of it ({@code {fn FILE_READ(…)}} must not
+     * become a callable function behind the guard's back). {@link ReadOnlySqlGuard} already
+     * rejects any {@code {} outside quotes, so this is a second, engine-side layer: if it cannot
+     * be set, the statement is not executed (fail closed).
+     */
+    private static void disableEscapeProcessing(String dataSourceId, Statement st) throws SQLException {
+        try {
+            st.setEscapeProcessing(false);
+        } catch (SQLException notSupported) {
+            LOG.warn(
+                    "SQL workbench could not disable JDBC escape processing on '{}'; statement not executed",
+                    dataSourceId);
+            throw notSupported;
+        }
+    }
+
+    /**
      * saiku#2318 — dialect-level session read-only, enforced not best-effort. On backends that have
      * a session-level read-only switch, it is applied to the workbench connection and any failure
      * is fatal: the statement is never executed against a session that could write (fail closed).
@@ -232,7 +260,7 @@ public class SqlWorkbenchService {
      * also blocks their file/network built-ins.
      */
     private void enforceReadOnlySession(
-            String username, String dataSourceId, String sql, Connection conn, long started) {
+            String username, String dataSourceId, String validated, Connection conn, long started) {
         String statement = sessionReadOnlyStatement(jdbcUrl(conn, dataSourceId));
         if (statement == null) {
             return;
@@ -244,7 +272,14 @@ public class SqlWorkbenchService {
             String safe = "The datasource could not be placed in read-only mode, so the statement was not executed";
             LOG.warn(
                     "SQL workbench could not enforce a read-only session on '{}': {}", dataSourceId, failed.toString());
-            audit(username, dataSourceId, sql, SqlWorkbenchAuditEntry.OUTCOME_ERROR, null, safe, elapsedMs(started));
+            audit(
+                    username,
+                    dataSourceId,
+                    validated,
+                    SqlWorkbenchAuditEntry.OUTCOME_ERROR,
+                    null,
+                    safe,
+                    elapsedMs(started));
             throw new SqlWorkbenchException(SqlWorkbenchException.Code.QUERY_FAILED, safe);
         }
     }
@@ -288,6 +323,7 @@ public class SqlWorkbenchService {
         List<List<Object>> rows = new ArrayList<>();
         long resultBytes = 0;
         boolean byteCapped = false;
+        rows:
         while (rs.next()) {
             List<Object> row = new ArrayList<>(n);
             for (int i = 1; i <= n; i++) {
@@ -303,26 +339,20 @@ public class SqlWorkbenchService {
                     String s = String.valueOf(cell);
                     byte[] utf8 = s.getBytes(java.nio.charset.StandardCharsets.UTF_8);
                     if (utf8.length > MAX_CELL_BYTES) {
-                        // Cut on a character boundary so no broken multi-byte char ships.
-                        s = s.substring(
-                                        0,
-                                        new String(
-                                                        java.util.Arrays.copyOf(utf8, MAX_CELL_BYTES),
-                                                        java.nio.charset.StandardCharsets.UTF_8)
-                                                .length())
-                                + CELL_TRUNCATION_MARKER;
+                        s = truncateCell(s);
                         utf8 = s.getBytes(java.nio.charset.StandardCharsets.UTF_8);
                         cell = s;
+                    }
+                    // Keep only complete rows. A wide row must not overshoot the result cap.
+                    if (resultBytes > MAX_RESULT_BYTES - utf8.length) {
+                        byteCapped = true;
+                        break rows;
                     }
                     resultBytes += utf8.length;
                 }
                 row.add(cell);
             }
             rows.add(row);
-            if (resultBytes > MAX_RESULT_BYTES) {
-                byteCapped = true;
-                break;
-            }
         }
         // setMaxRows caps the driver at maxRows, so hitting that count exactly means there was
         // very likely more to fetch — a heuristic, not a certainty, but good enough for a "showing
@@ -330,6 +360,20 @@ public class SqlWorkbenchService {
         // certainty: we stopped reading because the materialised result got too big.
         boolean truncated = byteCapped || rows.size() >= maxRows;
         return new SqlQueryResult(columns, rows, rows.size(), truncated, durationMs);
+    }
+
+    /** Keep complete Unicode code points within the UTF-8 budget. */
+    static String truncateCell(String value) {
+        int chars = 0;
+        int bytes = 0;
+        while (chars < value.length()) {
+            int codePoint = value.codePointAt(chars);
+            int nextBytes = codePoint <= 0x7f ? 1 : codePoint <= 0x7ff ? 2 : codePoint <= 0xffff ? 3 : 4;
+            if (bytes + nextBytes > MAX_CELL_BYTES) break;
+            bytes += nextBytes;
+            chars += Character.charCount(codePoint);
+        }
+        return value.substring(0, chars) + CELL_TRUNCATION_MARKER;
     }
 
     private void audit(

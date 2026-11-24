@@ -17,6 +17,11 @@ A promoted entry has the same shape plus `**Status:** promoted`, `**Supersedes:*
 
 ---
 
+## 2026-11-24 — MDX: a member unique name does not start with its level unique name
+Validate the syntax of a client member name before constructing MDX, then resolve its level through metadata or compare it with the members returned for the requested level. A prefix test against the level name rejects valid members such as `[Product].[Product].[Oncology]` on `[Product].[Product].[Therapeutic Class]`.
+**Why:** MDX member names include the hierarchy and ancestor members, while level names describe a different metadata object.
+**Source:** PR #2576 review
+
 ## 2026-10-11 — Async work: session-scoped beans must be settled on the request thread
 **Status:** promoted
 **Supersedes:** 2026-09-28 — Async work: session-scoped beans must be settled on the request thread

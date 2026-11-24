@@ -3649,8 +3649,8 @@ public class AiQueryResource {
         // saiku#2550j: every client-supplied identifier below is CONCATENATED into MDX, so each
         // is validated before it reaches a query — measure and cube as plain names (they are
         // bracketed here), level/member/payerLevel/trendLevel as full MDX unique names, and the
-        // member additionally required to BE a member of the level (unique-name prefix check;
-        // the response's own member-not-found check only runs after the first query executed).
+        // member checked against the level's actual query rows below. MDX member unique names
+        // contain hierarchy and ancestor members, not the level's unique name.
         // A name like "Foo] ON COLUMNS, {[]} --" is now a 400, not a different query.
         String invalid = validateWhatIfNames(
                 cube, level, measure, member, str(body.get("payerLevel")), str(body.get("trendLevel")));
@@ -3658,16 +3658,18 @@ public class AiQueryResource {
             return badRequest(invalid, "not a valid MDX name for this request", null);
         }
 
-        // saiku#2550j: the connection is SHARED across users for datasources without per-user
-        // security, and a scenario is per-connection state — two concurrent what-if calls used
-        // to write into each other's scenario (one caller's cell.setValue could land under
-        // another's WHERE slice). Serialise the whole create/query/write/re- query/restore
-        // sequence per connection so the scenario is always this caller's own while in use.
-        synchronized (scenarioLock(connection)) {
-            org.olap4j.OlapConnection con = null;
+        // A workspace alias can resolve to the same native connection as another name.
+        // Lock the resolved connection itself, so both spellings serialize scenario state.
+        org.olap4j.OlapConnection con;
+        try {
+            con = olapDiscoverService.getNativeConnection(connection);
+        } catch (RuntimeException e) {
+            log.warn("Scenario what-if connection lookup failed", e);
+            return error("what-if failed: " + e.getMessage());
+        }
+        synchronized (con) {
             org.olap4j.Scenario prior = null;
             try {
-                con = olapDiscoverService.getNativeConnection(connection);
                 prior = con.getScenario();
                 org.olap4j.Scenario scenario = con.createScenario();
                 con.setScenario(scenario);
@@ -3756,24 +3758,13 @@ public class AiQueryResource {
                 return error("what-if failed: " + e.getMessage() + " | root: "
                         + root.getClass().getSimpleName() + ": " + root.getMessage());
             } finally {
-                if (con != null) {
-                    try {
-                        con.setScenario(prior);
-                    } catch (Exception ignore) {
-                        // best-effort reset
-                    }
+                try {
+                    con.setScenario(prior);
+                } catch (Exception ignore) {
+                    // best-effort reset
                 }
             }
         }
-    }
-
-    /** One lock per connection name — serialises the what-if scenario sequence so
-     *  concurrent callers cannot interleave scenario state on a shared connection. */
-    private static final java.util.concurrent.ConcurrentHashMap<String, Object> SCENARIO_LOCKS =
-            new java.util.concurrent.ConcurrentHashMap<>();
-
-    private static Object scenarioLock(String connection) {
-        return SCENARIO_LOCKS.computeIfAbsent(connection == null ? "?" : connection, k -> new Object());
     }
 
     /** MDX full unique name: one or more bracketed segments joined by dots, with no
@@ -3792,7 +3783,6 @@ public class AiQueryResource {
         if (measure != null && !MDX_PLAIN_NAME.matcher(measure).matches()) return "measure";
         if (level != null && !MDX_UNIQUE_NAME.matcher(level).matches()) return "level";
         if (member != null && !MDX_UNIQUE_NAME.matcher(member).matches()) return "member";
-        if (level != null && member != null && !member.startsWith(level + ".")) return "member";
         if (payerLevel != null && !MDX_UNIQUE_NAME.matcher(payerLevel).matches()) return "payerLevel";
         if (trendLevel != null && !MDX_UNIQUE_NAME.matcher(trendLevel).matches()) return "trendLevel";
         return null;

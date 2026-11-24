@@ -10,11 +10,14 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.Before;
 import org.junit.Test;
+import org.saiku.repository.IRepositoryObject;
+import org.saiku.repository.RepositoryFileObject;
 import org.saiku.service.datasource.DatasourceService;
 
 /**
@@ -28,6 +31,7 @@ public class CommentServiceTest {
     /** In-memory internal-file store; getFileData controls the canRead gate. */
     private static class FakeDs extends DatasourceService {
         final Map<String, String> internal = new HashMap<>();
+        final List<String> dashboards = new ArrayList<>();
         boolean dashboardReadable = true;
 
         @Override
@@ -50,6 +54,15 @@ public class CommentServiceTest {
         public void removeInternalFile(String path) {
             internal.remove(path);
         }
+
+        @Override
+        public List<IRepositoryObject> getFiles(List<String> type, String username, List<String> roles) {
+            List<IRepositoryObject> files = new ArrayList<>();
+            for (String path : dashboards) {
+                files.add(new RepositoryFileObject("x.saikudash", "#" + path, "saikudash", "/" + path, List.of()));
+            }
+            return files;
+        }
     }
 
     private FakeDs ds;
@@ -60,6 +73,7 @@ public class CommentServiceTest {
     @Before
     public void setUp() {
         ds = new FakeDs();
+        ds.dashboards.add(DASH);
         svc = new CommentService();
         svc.setDatasourceService(ds);
     }
@@ -146,7 +160,7 @@ public class CommentServiceTest {
     }
 
     @Test
-    public void sidecar_from_the_old_naming_is_still_found_and_retired_on_write() {
+    public void unambiguous_legacy_sidecar_is_found_and_preserved_on_write() {
         // saiku#2550d: reads fall back to the pre-#2550 sanitised name, so a
         // dashboard with existing comments keeps them after upgrade.
         String legacy = "saiku-comments-" + DASH.replaceAll("[^A-Za-z0-9._-]", "_") + ".jsonl";
@@ -154,13 +168,31 @@ public class CommentServiceTest {
         assertEquals(1, svc.list(DASH, "t1").size());
         assertEquals("legacy", svc.list(DASH, "t1").get(0).body);
 
-        // The next write moves everything to the hashed file and retires the
-        // legacy one — no resurrecting comments the user deleted.
+        // The v2 copy takes precedence while the legacy file remains for recovery.
         svc.add(DASH, "t1", "admin", "new");
-        assertNull(ds.internal.get(legacy));
+        assertTrue(ds.internal.containsKey(legacy));
         List<Comment> after = svc.list(DASH, "t1");
         assertEquals(2, after.size());
         assertEquals("legacy", after.get(0).body);
         assertEquals("new", after.get(1).body);
+    }
+
+    @Test
+    public void colliding_legacy_comments_are_not_read_or_stolen_by_either_dashboard() {
+        String owner = "homes/a_b/x.saikudash";
+        String other = "homes/a/b/x.saikudash";
+        ds.dashboards.clear();
+        ds.dashboards.add(owner);
+        ds.dashboards.add(other);
+        String legacy = "saiku-comments-" + owner.replaceAll("[^A-Za-z0-9._-]", "_") + ".jsonl";
+        String original = "{\"tileId\":\"t1\",\"author\":\"owner\",\"body\":\"private\"}\n";
+        ds.internal.put(legacy, original);
+
+        assertTrue(svc.list(owner, "t1").isEmpty());
+        assertTrue(svc.list(other, "t1").isEmpty());
+        svc.add(other, "t1", "bob", "new");
+        assertEquals("new", svc.list(other, "t1").get(0).body);
+        assertTrue(svc.list(owner, "t1").isEmpty());
+        assertEquals(original, ds.internal.get(legacy));
     }
 }

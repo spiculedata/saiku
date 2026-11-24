@@ -59,14 +59,16 @@ claim(
   /org\.eclipse\.jetty\.servlet\.Default\.dirAllowed",\s*"false"/.test(launcher),
 );
 
-// d — hashed sidecar names with legacy fallback + retirement
+// d — hashed sidecar names with collision-safe legacy fallback
 claim(
   'C4',
   'DashboardSidecars keys sidecars by SHA-256 of the path and both services use it',
   /sha256Hex/.test(sidecars) &&
     /DashboardSidecars\.(read|write|purge|path)\(/.test(comments) &&
     /DashboardSidecars\.(read|write|purge|path)\(/.test(history) &&
-    /getInternalFileData\(legacyPath/.test(sidecars),
+    /soleLegacyOwner\(datasourceService, dashboardPath\)/.test(sidecars) &&
+    /getInternalFileData\(legacyPath/.test(sidecars) &&
+    !/removeInternalFile\(legacyPath/.test(sidecars),
 );
 
 // e — selfTo is admin-only
@@ -95,14 +97,14 @@ claim(
 claim(
   'C8',
   'SqlWorkbenchService enforces MAX_CELL_BYTES and MAX_RESULT_BYTES in toResult',
-  /MAX_CELL_BYTES/.test(workbench) && /MAX_RESULT_BYTES/.test(workbench) && /resultBytes > MAX_RESULT_BYTES/.test(workbench),
+  /MAX_CELL_BYTES/.test(workbench) && /MAX_RESULT_BYTES/.test(workbench) && /resultBytes > MAX_RESULT_BYTES - utf8.length/.test(workbench),
 );
 
 // i — Sheets formula neutralisation
 claim(
   'C9',
   'toSheetValues neutralises =, +, -, @ leading strings with an apostrophe',
-  /function neutralise\(value\)/.test(sheets) && /\/\^\[=\+\\-@\]\//.test(sheets) &&
+  /function neutralise\(value\)/.test(sheets) && sheets.includes('^[=+\\-@\\t\\r]') &&
     /headers\.map\(neutralise\)/.test(sheets) && /neutralise\(cellValue\(/.test(sheets),
 );
 
@@ -112,7 +114,7 @@ claim(
   'the what-if endpoint validates MDX unique names and serialises the scenario sequence',
   /MDX_UNIQUE_NAME/.test(aiResource) &&
     /validateWhatIfNames/.test(aiResource) &&
-    /synchronized \(scenarioLock\(connection\)\)/.test(aiResource),
+    /synchronized \(con\)/.test(aiResource),
 );
 
 // k — schema.graphql is admin-only
