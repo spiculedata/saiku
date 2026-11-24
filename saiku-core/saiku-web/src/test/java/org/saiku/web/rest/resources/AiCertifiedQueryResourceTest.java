@@ -17,6 +17,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -57,6 +58,7 @@ public class AiCertifiedQueryResourceTest {
 
     @Before
     public void setUp() throws Exception {
+        loginAdmin();
         Path root = tmp.newFolder("certified").toPath();
         Files.write(root.resolve("monthly-net-revenue.json"), ENTRY.getBytes(StandardCharsets.UTF_8));
         // A second, broken file so the ?errors=true surface is exercised too.
@@ -118,6 +120,57 @@ public class AiCertifiedQueryResourceTest {
     @Test
     public void getUnknownIs404() {
         assertEquals(404, resource.getCertified("nope").getStatus());
+    }
+
+    /* ------------------ saiku#2542: catalogue admin gating ------------------ */
+
+    private static void loginAdmin() {
+        login("ROLE_ADMIN");
+    }
+
+    private static void login(String role) {
+        org.springframework.security.core.context.SecurityContext ctx =
+                org.springframework.security.core.context.SecurityContextHolder.createEmptyContext();
+        ctx.setAuthentication(new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                "u", "x", List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority(role))));
+        org.springframework.security.core.context.SecurityContextHolder.setContext(ctx);
+    }
+
+    @After
+    public void clearAuth() {
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    public void nonAdminsAreRefusedOnCertifiedDetailErrorsAndRefresh() {
+        login("ROLE_USER");
+        assertEquals(403, resource.getCertified("monthly-net-revenue").getStatus());
+        assertEquals(403, resource.listCertified(true).getStatus());
+        assertEquals(403, resource.refreshCertified().getStatus());
+        // The open list stays open — summaries only.
+        assertEquals(200, resource.listCertified(false).getStatus());
+    }
+
+    @Test
+    public void runningACertifiedQueryDoesNotMutateTheRegistryInstance() throws Exception {
+        // saiku#2542: the registry hands out ONE shared ThinQuery; the null/slash name fix-up is a
+        // mutation, so it must run against a copy. An unnamed certified query gets a random run
+        // name — the registry instance must still read null after the run.
+        java.nio.file.Path root = tmp.newFolder("certified2").toPath();
+        String unnamed = "{\"id\":\"unnamed\",\"description\":\"d\",\"matchIntent\":[\"x\"],"
+                + "\"query\":{\"cube\":{\"name\":\"Sales\",\"connection\":\"conn\"},"
+                + "\"type\":\"MDX\",\"mdx\":\"SELECT {} ON COLUMNS FROM [Sales]\"}}";
+        java.nio.file.Files.write(root.resolve("unnamed.json"), unnamed.getBytes(StandardCharsets.UTF_8));
+        CertifiedQueryRegistry reg2 = new CertifiedQueryRegistry(root);
+        resource.setCertifiedQueries(reg2);
+
+        resource.runCertified("unnamed", "records");
+        resource.runCertified("unnamed", "records");
+
+        CertifiedQuery fresh = reg2.get("unnamed").orElseThrow();
+        assertNull(
+                "the shared registry instance must keep its null name",
+                fresh.query().getName());
     }
 
     @Test

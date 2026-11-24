@@ -82,6 +82,13 @@ public class McpResourceFuzzTest {
                 // notification-ack; no body allowed per JSON-RPC 2.0
                 continue;
             }
+            if (status == 404) {
+                // saiku#2542: a present-but-invalid session id is a transport-level 404 per the
+                // streamable-http spec — NOT a JSON-RPC envelope over 200. The body must still be
+                // a JSON-serialisable object, but carries no jsonrpc field.
+                assertNotNull("missing entity on 404 iteration " + i, entity);
+                continue;
+            }
             assertNotNull("missing entity on non-202 iteration " + i, entity);
             JsonNode body = MAPPER.valueToTree(entity);
             assertEquals("must be JSON-RPC 2.0", "2.0", body.path("jsonrpc").asText());

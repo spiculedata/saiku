@@ -7,12 +7,13 @@ package org.saiku.service.mcp.outbound;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
-import java.net.URI;
-import java.net.URISyntaxException;
+import java.net.InetAddress;
 import java.util.LinkedHashSet;
+import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Pattern;
 import org.saiku.datasources.connection.encrypt.CryptoUtil;
+import org.saiku.service.schedule.alert.WebhookUrlValidator;
 
 /**
  * Parses a {@link McpOutboundServer} from its on-disk JSON representation.
@@ -38,6 +39,13 @@ import org.saiku.datasources.connection.encrypt.CryptoUtil;
  * <p>{@code authHeaderName} / {@code authHeaderValue} are optional together — a server with no
  * credential (an open internal endpoint) omits both. {@code enabledTools} defaults to empty
  * (nothing enabled — see {@link McpOutboundServer}).
+ *
+ * <p>saiku#2542: {@code url} gets the SAME gate as the alert webhooks (https only, no credentials
+ * in the authority, no loopback / link-local / private / otherwise-internal address — resolved
+ * through an injectable {@link WebhookUrlValidator.HostResolver} so tests stay hermetic), and
+ * {@code authHeaderName} must be a legal, non-restricted HTTP header name: a restricted name
+ * such as {@code Host} is refused at save/parse time instead of throwing on every discovery
+ * attempt.
  */
 public final class McpOutboundServerParser {
 
@@ -46,7 +54,16 @@ public final class McpOutboundServerParser {
 
     private McpOutboundServerParser() {}
 
+    /** Default resolver — live DNS, the same posture the alert-webhook gate uses. */
+    public static final WebhookUrlValidator.HostResolver DNS = InetAddress::getAllByName;
+
     public static McpOutboundServer parse(String source, String json) throws ParseException {
+        return parse(source, json, DNS);
+    }
+
+    /** As {@link #parse(String, String)} but with a pluggable resolver (tests stay hermetic). */
+    public static McpOutboundServer parse(String source, String json, WebhookUrlValidator.HostResolver resolver)
+            throws ParseException {
         if (json == null || json.isBlank()) {
             throw new ParseException("EMPTY_SERVER", source, "file is empty");
         }
@@ -69,7 +86,7 @@ public final class McpOutboundServerParser {
         }
         String name = requireString(root, "name", source);
         String url = requireString(root, "url", source);
-        validateUrl(url, source);
+        validateUrl(url, source, resolver);
 
         String authHeaderName = optionalString(root, "authHeaderName", source);
         String encryptedValue = optionalString(root, "authHeaderValue", source);
@@ -78,6 +95,9 @@ public final class McpOutboundServerParser {
                     "INCOMPLETE_AUTH",
                     source,
                     "authHeaderName and authHeaderValue must be set together, or both omitted");
+        }
+        if (authHeaderName != null) {
+            validateAuthHeaderName(authHeaderName, source);
         }
         String authHeaderValue = null;
         if (encryptedValue != null) {
@@ -114,21 +134,53 @@ public final class McpOutboundServerParser {
         return new McpOutboundServer(id, name, url, authHeaderName, authHeaderValue, enabledTools, source);
     }
 
-    private static void validateUrl(String url, String source) throws ParseException {
-        URI uri;
+    /**
+     * saiku#2542: outbound MCP URLs get the alert-webhook SSRF gate — https only (the credential
+     * header must never travel over plaintext), no credentials in the authority, and no
+     * loopback / link-local / private / otherwise-internal address (an admin-authored URL is
+     * defence-in-depth, not a licence to reach the deployment's own network).
+     */
+    private static void validateUrl(String url, String source, WebhookUrlValidator.HostResolver resolver)
+            throws ParseException {
         try {
-            uri = new URI(url);
-        } catch (URISyntaxException e) {
-            throw new ParseException("INVALID_URL", source, "url is not a valid URI: " + e.getMessage());
-        }
-        String scheme = uri.getScheme();
-        if (scheme == null || !(scheme.equalsIgnoreCase("https") || scheme.equalsIgnoreCase("http"))) {
-            throw new ParseException("INVALID_URL", source, "url must be http(s) — got: " + url);
-        }
-        if (uri.getHost() == null) {
-            throw new ParseException("INVALID_URL", source, "url must include a host: " + url);
+            WebhookUrlValidator.validateResolved(url, resolver);
+        } catch (IllegalArgumentException e) {
+            throw new ParseException("INVALID_URL", source, "url rejected: " + e.getMessage());
         }
     }
+
+    /** Header names JDK HttpClient refuses (or that would corrupt the request framing). */
+    private static final Set<String> RESTRICTED_HEADERS = Set.of(
+            "connection",
+            "content-length",
+            "date",
+            "expect",
+            "from",
+            "host",
+            "transfer-encoding",
+            "upgrade",
+            "via",
+            "warning");
+
+    /**
+     * saiku#2542: validate the credential header's NAME at save/parse time. JDK HttpClient throws
+     * IllegalArgumentException for restricted header names — which surfaced as a discovery failure
+     * on every call instead of a refusal at registration. A credential header must also be a legal
+     * RFC 7230 token.
+     */
+    public static void validateAuthHeaderName(String name, String source) throws ParseException {
+        if (name.isBlank() || !TOKEN.matcher(name).matches()) {
+            throw new ParseException(
+                    "INVALID_HEADER_NAME", source, "authHeaderName is not a legal HTTP header token: " + name);
+        }
+        if (RESTRICTED_HEADERS.contains(name.toLowerCase(Locale.ROOT))) {
+            throw new ParseException(
+                    "RESTRICTED_HEADER_NAME", source, "authHeaderName may not be a restricted header: " + name);
+        }
+    }
+
+    /** RFC 7230 token characters. */
+    private static final Pattern TOKEN = Pattern.compile("[!#$%&'*+\\-.^_`|~0-9A-Za-z]+");
 
     private static String requireString(JsonNode node, String field, String source) throws ParseException {
         JsonNode v = node.get(field);

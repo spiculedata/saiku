@@ -30,6 +30,10 @@ public class McpOutboundToolCatalogTest {
     @Rule
     public TemporaryFolder tmp = new TemporaryFolder();
 
+    /** Hermetic resolver: every host "resolves" to a public address — no live DNS in tests. */
+    private static final org.saiku.service.schedule.alert.WebhookUrlValidator.HostResolver RESOLVER = host ->
+            new java.net.InetAddress[] {java.net.InetAddress.getByAddress(new byte[] {93, (byte) 184, (byte) 216, 34})};
+
     private static final String INIT_OK = "{\"jsonrpc\":\"2.0\",\"id\":\"1\",\"result\":{"
             + "\"protocolVersion\":\"2025-03-26\",\"capabilities\":{\"tools\":{}},"
             + "\"serverInfo\":{\"name\":\"remote\",\"version\":\"1.0\"}}}";
@@ -46,7 +50,7 @@ public class McpOutboundToolCatalogTest {
     @Test
     public void serverWithNoEnabledToolsIsSkippedEntirelyNoNetworkCall() throws Exception {
         McpOutboundServerRegistry registry =
-                new McpOutboundServerRegistry(tmp.newFolder("mcp").toPath());
+                new McpOutboundServerRegistry(tmp.newFolder("mcp").toPath(), RESOLVER);
         registry.save(new McpOutboundServer("srv-a", "A", "https://a.example/mcp", null, null, Set.of(), "x"));
         ScriptedHttpClient http = ScriptedHttpClient.of(); // empty — any send() would fail the test
         McpOutboundToolCatalog catalog = new McpOutboundToolCatalog(registry, new McpOutboundClient(http, TIMEOUT));
@@ -59,7 +63,7 @@ public class McpOutboundToolCatalogTest {
     @Test
     public void enabledToolsAreDiscoveredAndFlattenedWithServerPrefix() throws Exception {
         McpOutboundServerRegistry registry =
-                new McpOutboundServerRegistry(tmp.newFolder("mcp").toPath());
+                new McpOutboundServerRegistry(tmp.newFolder("mcp").toPath(), RESOLVER);
         registry.save(new McpOutboundServer("srv-a", "A", "https://a.example/mcp", null, null, Set.of("tool1"), "x"));
         ScriptedHttpClient http = ScriptedHttpClient.of(Resp.ok(INIT_OK), Resp.ok(toolsList("tool1", "tool2")));
         McpOutboundToolCatalog catalog = new McpOutboundToolCatalog(registry, new McpOutboundClient(http, TIMEOUT));
@@ -77,7 +81,7 @@ public class McpOutboundToolCatalogTest {
     @Test
     public void unreachableServerIsIsolatedFromOthers() throws Exception {
         McpOutboundServerRegistry registry =
-                new McpOutboundServerRegistry(tmp.newFolder("mcp").toPath());
+                new McpOutboundServerRegistry(tmp.newFolder("mcp").toPath(), RESOLVER);
         registry.save(new McpOutboundServer("srv-a", "A", "https://a.example/mcp", null, null, Set.of("tool1"), "x"));
         registry.save(new McpOutboundServer("srv-b", "B", "https://b.example/mcp", null, null, Set.of("tool2"), "x"));
         // registry.list() is sorted by id: srv-a processed first (fails), then srv-b (succeeds).
@@ -94,7 +98,7 @@ public class McpOutboundToolCatalogTest {
     @Test
     public void callToolDispatchesThroughTheDiscoveredDescriptor() throws Exception {
         McpOutboundServerRegistry registry =
-                new McpOutboundServerRegistry(tmp.newFolder("mcp").toPath());
+                new McpOutboundServerRegistry(tmp.newFolder("mcp").toPath(), RESOLVER);
         registry.save(new McpOutboundServer("srv-a", "A", "https://a.example/mcp", null, null, Set.of("tool1"), "x"));
         String callResult =
                 "{\"jsonrpc\":\"2.0\",\"id\":\"2\",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"done\"}]}}";
@@ -113,7 +117,7 @@ public class McpOutboundToolCatalogTest {
     @Test
     public void callToolFailsForUnknownQualifiedNameWithoutAnyNetworkCall() throws Exception {
         McpOutboundServerRegistry registry =
-                new McpOutboundServerRegistry(tmp.newFolder("mcp").toPath());
+                new McpOutboundServerRegistry(tmp.newFolder("mcp").toPath(), RESOLVER);
         ScriptedHttpClient http = ScriptedHttpClient.of();
         McpOutboundToolCatalog catalog = new McpOutboundToolCatalog(registry, new McpOutboundClient(http, TIMEOUT));
 
@@ -126,7 +130,7 @@ public class McpOutboundToolCatalogTest {
     @Test
     public void disablingAToolAfterDiscoveryMakesItUncallable() throws Exception {
         Path root = tmp.newFolder("mcp").toPath();
-        McpOutboundServerRegistry registry = new McpOutboundServerRegistry(root);
+        McpOutboundServerRegistry registry = new McpOutboundServerRegistry(root, RESOLVER);
         registry.save(new McpOutboundServer("srv-a", "A", "https://a.example/mcp", null, null, Set.of("tool1"), "x"));
         ScriptedHttpClient http = ScriptedHttpClient.of(Resp.ok(INIT_OK), Resp.ok(toolsList("tool1")));
         McpOutboundToolCatalog catalog = new McpOutboundToolCatalog(registry, new McpOutboundClient(http, TIMEOUT));
@@ -147,7 +151,7 @@ public class McpOutboundToolCatalogTest {
     @Test
     public void cacheTtlExpiryTriggersRediscovery() throws Exception {
         McpOutboundServerRegistry registry =
-                new McpOutboundServerRegistry(tmp.newFolder("mcp").toPath());
+                new McpOutboundServerRegistry(tmp.newFolder("mcp").toPath(), RESOLVER);
         registry.save(new McpOutboundServer("srv-a", "A", "https://a.example/mcp", null, null, Set.of("tool1"), "x"));
         ScriptedHttpClient http = ScriptedHttpClient.of(
                 Resp.ok(INIT_OK), Resp.ok(toolsList("tool1")), Resp.ok(INIT_OK), Resp.ok(toolsList("tool1")));
@@ -169,7 +173,7 @@ public class McpOutboundToolCatalogTest {
     @Test
     public void forceRefreshBypassesTheCache() throws Exception {
         McpOutboundServerRegistry registry =
-                new McpOutboundServerRegistry(tmp.newFolder("mcp").toPath());
+                new McpOutboundServerRegistry(tmp.newFolder("mcp").toPath(), RESOLVER);
         registry.save(new McpOutboundServer("srv-a", "A", "https://a.example/mcp", null, null, Set.of("tool1"), "x"));
         ScriptedHttpClient http = ScriptedHttpClient.of(
                 Resp.ok(INIT_OK), Resp.ok(toolsList("tool1")), Resp.ok(INIT_OK), Resp.ok(toolsList("tool1")));

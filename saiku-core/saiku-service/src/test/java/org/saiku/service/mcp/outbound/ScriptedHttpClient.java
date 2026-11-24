@@ -27,7 +27,7 @@ import javax.net.ssl.SSLSession;
  * fakes the transport it's built on instead), same pattern as {@code AnthropicNlAskProviderTest}'s
  * {@code StubHttp}.
  */
-final class ScriptedHttpClient extends HttpClient {
+public final class ScriptedHttpClient extends HttpClient {
 
     private final Deque<Resp> queue;
     final List<HttpRequest> requests = new ArrayList<>();
@@ -36,19 +36,19 @@ final class ScriptedHttpClient extends HttpClient {
         this.queue = queue;
     }
 
-    static ScriptedHttpClient of(Resp... responses) {
+    public static ScriptedHttpClient of(Resp... responses) {
         Deque<Resp> q = new ArrayDeque<>();
         for (Resp r : responses) q.add(r);
         return new ScriptedHttpClient(q);
     }
 
     /** The very next {@code send()} throws {@code t}. */
-    static ScriptedHttpClient throwing(Throwable t) {
+    public static ScriptedHttpClient throwing(Throwable t) {
         return of(Resp.throwing(t));
     }
 
     /** One canned response: HTTP status + body + optional extra headers, or a throw. */
-    static final class Resp {
+    public static final class Resp {
         final int status;
         final String body;
         final Map<String, String> headers = new HashMap<>();
@@ -60,19 +60,19 @@ final class ScriptedHttpClient extends HttpClient {
             this.throwOnSend = throwOnSend;
         }
 
-        static Resp ok(String body) {
+        public static Resp ok(String body) {
             return new Resp(200, body, null);
         }
 
-        static Resp status(int status, String body) {
+        public static Resp status(int status, String body) {
             return new Resp(status, body, null);
         }
 
-        static Resp throwing(Throwable t) {
+        public static Resp throwing(Throwable t) {
             return new Resp(0, null, t);
         }
 
-        Resp withHeader(String name, String value) {
+        public Resp withHeader(String name, String value) {
             headers.put(name, value);
             return this;
         }
@@ -91,8 +91,15 @@ final class ScriptedHttpClient extends HttpClient {
             if (r.throwOnSend instanceof RuntimeException re) throw re;
             throw new IOException(r.throwOnSend);
         }
-        @SuppressWarnings("unchecked")
-        HttpResponse<T> resp = (HttpResponse<T>) new StubResponse(request, r.status, r.body, r.headers);
+        // saiku#2542: McpOutboundClient reads its responses through BodyHandlers.ofInputStream
+        // (the response byte cap); hand that handler a stream body, everything else a string.
+        Object payload = handler != null
+                        && handler.getClass()
+                                == HttpResponse.BodyHandlers.ofInputStream().getClass()
+                ? new java.io.ByteArrayInputStream(r.body.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+                : r.body;
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        HttpResponse<T> resp = (HttpResponse<T>) new StubResponse(request, r.status, payload, r.headers);
         return resp;
     }
 
@@ -159,13 +166,14 @@ final class ScriptedHttpClient extends HttpClient {
         return Optional.empty();
     }
 
-    private static final class StubResponse implements HttpResponse<String> {
+    /** Body type is caller-chosen (String, or InputStream for the client's capped read). */
+    private static final class StubResponse<T> implements HttpResponse<T> {
         private final HttpRequest req;
         private final int status;
-        private final String body;
+        private final Object body;
         private final Map<String, String> headers;
 
-        StubResponse(HttpRequest req, int status, String body, Map<String, String> headers) {
+        StubResponse(HttpRequest req, int status, Object body, Map<String, String> headers) {
             this.req = req;
             this.status = status;
             this.body = body;
@@ -183,7 +191,7 @@ final class ScriptedHttpClient extends HttpClient {
         }
 
         @Override
-        public Optional<HttpResponse<String>> previousResponse() {
+        public Optional<HttpResponse<T>> previousResponse() {
             return Optional.empty();
         }
 
@@ -195,8 +203,9 @@ final class ScriptedHttpClient extends HttpClient {
         }
 
         @Override
-        public String body() {
-            return body;
+        @SuppressWarnings("unchecked")
+        public T body() {
+            return (T) body;
         }
 
         @Override

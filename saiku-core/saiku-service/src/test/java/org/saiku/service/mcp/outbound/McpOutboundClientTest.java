@@ -211,6 +211,20 @@ public class McpOutboundClientTest {
         assertTrue(result.resultText().endsWith("(truncated)"));
     }
 
+    /** saiku#2542: an oversized remote response is refused under the byte cap, never buffered. */
+    @Test
+    public void oversizedResponseIsRefused() {
+        String huge = "x".repeat(McpOutboundClient.MAX_RESPONSE_BYTES + 1);
+        ScriptedHttpClient http = ScriptedHttpClient.of(Resp.ok(huge));
+        McpOutboundClient client = new McpOutboundClient(http, Duration.ofSeconds(5));
+
+        McpOutboundClient.DiscoveryResult result = client.discoverTools(PLAIN_SERVER);
+
+        assertFalse(result.ok());
+        assertTrue(result.error().contains("exceeds"));
+        assertTrue("no request is wasted on a capped-out body", http.requests.size() == 1);
+    }
+
     @Test
     public void callToolFailsCleanlyWhenServerUnreachable() {
         ScriptedHttpClient http = ScriptedHttpClient.throwing(new IOException("connection refused"));

@@ -43,9 +43,12 @@ public final class WebhookUrlValidator {
 
     private WebhookUrlValidator() {}
 
-    /** Seam so tests can validate resolving-range logic without live DNS. */
+    /**
+     * Seam so other gates (outbound MCP registration, saiku#2542) and tests can validate
+     * resolving-range logic without live DNS.
+     */
     @FunctionalInterface
-    interface HostResolver {
+    public interface HostResolver {
         InetAddress[] resolve(String host) throws UnknownHostException;
     }
 
@@ -76,13 +79,16 @@ public final class WebhookUrlValidator {
         return validateResolved(url, DNS);
     }
 
-    /** As {@link #validate(String)} but with a pluggable resolver (visible for tests). */
-    static URI validate(String url, HostResolver resolver) {
+    /**
+     * As {@link #validate(String)} but with a pluggable resolver — public so the outbound MCP
+     * registration gate (saiku#2542) applies the SAME rule set rather than re-deriving it.
+     */
+    public static URI validate(String url, HostResolver resolver) {
         return validateResolved(url, resolver).uri();
     }
 
-    /** As {@link #validateResolved(String)} but with a pluggable resolver (visible for tests). */
-    static ValidatedTarget validateResolved(String url, HostResolver resolver) {
+    /** As {@link #validateResolved(String)} but with a pluggable resolver (also for tests). */
+    public static ValidatedTarget validateResolved(String url, HostResolver resolver) {
         if (url == null || url.isBlank()) {
             throw new IllegalArgumentException("webhook url is required");
         }

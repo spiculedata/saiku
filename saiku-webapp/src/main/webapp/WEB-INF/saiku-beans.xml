@@ -579,13 +579,16 @@
     <!-- saiku#909 — Tier-1 tile-title/description suggestion (POST /ai/describe-query).
          Reuses the ask feature's own credentials (saiku.ai.ask.*) rather than a
          separate config namespace — same "off by default (no API key), 503 with a
-         clear message until configured" posture as aiAskServiceBean / cubeDesignerAiService. -->
+         clear message until configured" posture as aiAskServiceBean / cubeDesignerAiService.
+         saiku#2542: the configured provider is passed through so the Anthropic wire-format
+         transport refuses (503) rather than handing the ask API key to a non-Anthropic endpoint. -->
     <bean id="tileDescribeService"
           class="org.saiku.service.olap.ai.describe.TileDescribeService">
         <constructor-arg value="${saiku.ai.ask.apiKey:}"/>
         <constructor-arg value="${saiku.ai.ask.model:}"/>
         <constructor-arg value="${saiku.ai.ask.endpoint:}"/>
         <constructor-arg value="${saiku.ai.ask.timeoutSeconds:60}"/>
+        <constructor-arg value="${saiku.ai.ask.provider:}"/>
     </bean>
 
     <bean id="aiQueryResource" scope="request"
@@ -1625,6 +1628,8 @@
     <!-- Cube/schema designer backend (saiku-ui/src/lib/cube-designer). Reuses the
          schema-generator's JDBC connection provider + the datasource service;
          auto-registered as a JAX-RS resource by SaikuJerseyApplication's @Path scan. -->
+    <!-- saiku#2542: the configured provider is passed through so the Anthropic wire-format
+         transport refuses rather than handing the ask API key to a non-Anthropic endpoint. -->
     <bean id="cubeDesignerAiService"
           class="org.saiku.service.olap.ai.cubedesigner.CubeDesignerAiService">
         <!-- saiku#2489: the Cube Designer picks its AI upstream with the SAME provider
