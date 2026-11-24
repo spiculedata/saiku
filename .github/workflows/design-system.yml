@@ -172,7 +172,9 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-          tarballs=(pkg/*.tgz)
+          # Leading ./ matters: npm reads a bare `pkg/<name>.tgz` as GitHub
+          # shorthand (owner/repo) and tries `git ls-remote` against it.
+          tarballs=(./pkg/*.tgz)
           if [ "${#tarballs[@]}" -ne 1 ]; then
             echo "::error::expected exactly one tarball in pkg/, found ${#tarballs[@]}"
             exit 1

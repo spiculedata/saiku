@@ -64,6 +64,12 @@ updates:
     # and we would be back to never seeing them.
     open-pull-requests-limit: 10
     labels: [dependencies, npm]
+    # prettier-plugin-svelte 4.2 rewraps inline markup (moves text and closing
+    # tags onto their own lines), which adds rendered whitespace across ~70
+    # components. Held at 4.1.x until that reformat is done and checked visually.
+    ignore:
+      - dependency-name: prettier-plugin-svelte
+        versions: [">=4.2.0"]
     groups:
       build-toolchain:
         dependency-type: development
