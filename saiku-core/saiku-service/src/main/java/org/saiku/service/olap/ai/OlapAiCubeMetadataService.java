@@ -208,6 +208,7 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
         // every case/wildcard spelling of one cube collapses onto a single entry
         // instead of each spelling paying a full cold build and a ~40 KB entry.
         SaikuCube cube = findCube(ref);
+        AiCubeRef canonical = canonicalRef(cube);
         String key = cacheKey(cube);
         AiSchema cached = schemaCache.getIfPresent(key);
         if (cached != null) {
@@ -216,12 +217,12 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
         AiSchema fresh = buildSchema(cube);
         if (enrichmentProvider != null) {
             try {
-                AiSchemaEnrichment overlay = enrichmentProvider.apply(ref);
+                AiSchemaEnrichment overlay = enrichmentProvider.apply(canonical);
                 enricher.apply(fresh, overlay);
             } catch (RuntimeException e) {
                 // Enrichment failure must never break the schema endpoint.
                 // The base schema is still valid and the agent can proceed.
-                log.warn("Enrichment provider failed for {} — serving base schema", ref, e);
+                log.warn("Enrichment provider failed for {} — serving base schema", canonical, e);
             }
         }
         schemaCache.put(key, fresh);
@@ -238,7 +239,7 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
             // Scanner failure must never break the schema endpoint. Empty
             // suggestion list is the right fallback — the operator just
             // doesn't see automated hints; explicit annotations still work.
-            log.warn("PII scanner failed for {} — no suggestions surfaced", ref, e);
+            log.warn("PII scanner failed for {} — no suggestions surfaced", canonical, e);
             piiSuggestionsCache.put(key, java.util.Collections.emptyList());
         }
         return fresh;
@@ -262,6 +263,7 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
             List<PiiScanner.Match> cached = piiSuggestionsCache.getIfPresent(cacheKey(cube));
             return cached == null ? java.util.Collections.emptyList() : cached;
         } catch (RuntimeException e) {
+            log.debug("Unable to resolve cube {} for PII suggestions; returning an empty list", ref, e);
             return java.util.Collections.emptyList();
         }
     }

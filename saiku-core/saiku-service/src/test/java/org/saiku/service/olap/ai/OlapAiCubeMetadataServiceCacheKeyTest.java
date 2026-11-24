@@ -100,6 +100,33 @@ public class OlapAiCubeMetadataServiceCacheKeyTest {
         assertEquals("connection case variants share one entry", 1, builds());
     }
 
+    /** The first spelling to fill the shared cache must load enrichment using
+     *  the resolved connection name, as a case-sensitive sidecar store does. */
+    @Test
+    public void caseVariantFirstStillCachesCanonicalEnrichment() {
+        AiSchemaEnrichment overlay = new AiSchemaEnrichment();
+        overlay.getRenames().put("measures.M", "Revenue");
+        AtomicInteger providerCalls = new AtomicInteger();
+        List<AiCubeRef> providerRefs = new ArrayList<>();
+        svc.setEnrichmentProvider(ref -> {
+            providerCalls.incrementAndGet();
+            providerRefs.add(ref);
+            return "foodmart".equals(ref.getConnectionName()) ? overlay : null;
+        });
+
+        AiSchema first = svc.getSchema(new AiCubeRef("FOODMART", "foodmart", "FOODMART", "sales"));
+        AiSchema canonical = svc.getSchema(new AiCubeRef("foodmart", "FoodMart", "FoodMart", "Sales"));
+
+        assertSame("both spellings must share the enriched entry", first, canonical);
+        assertEquals("Revenue", canonical.measures.get(AiSchema.key("M")).displayName);
+        assertEquals(1, builds());
+        assertEquals("the provider runs only for the cold build", 1, providerCalls.get());
+        assertEquals("foodmart", providerRefs.get(0).getConnectionName());
+        assertEquals("FoodMart", providerRefs.get(0).getCatalog());
+        assertEquals("FoodMart", providerRefs.get(0).getSchema());
+        assertEquals("Sales", providerRefs.get(0).getCubeName());
+    }
+
     /**
      * AC 2: the cache is bounded — with a maximum size of 1, describing a
      * second cube must evict the first, and asking for the first again must
