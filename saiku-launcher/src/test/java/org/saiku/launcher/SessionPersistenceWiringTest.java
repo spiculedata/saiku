@@ -72,6 +72,33 @@ public class SessionPersistenceWiringTest {
         assertEquals(7 * 24 * 60 * 60, sessionHandler.getMaxInactiveInterval());
     }
 
+    /**
+     * saiku#2524 — the cache must not pin every session it has ever seen on the heap until its
+     * 7-day idle expiry (Jetty's default NEVER_EVICT, the memory half of the unauthenticated
+     * session fill). Idle sessions leave the cache after 5 minutes and are reloaded from the
+     * file store on their next use — a residency policy, not a persistence one.
+     */
+    @Test
+    public void configureSessionPersistence_evicts_idle_sessions_from_the_cache() throws Exception {
+        SessionHandler sessionHandler = new SessionHandler();
+
+        ServeCommand.configureSessionPersistence(sessionHandler, new File(home.getRoot(), "sessions"));
+
+        DefaultSessionCache cache = (DefaultSessionCache) sessionHandler.getSessionCache();
+        // Jetty's policy constants: NEVER_EVICT = -1, EVICT_ON_SESSION_EXIT = 0, and any value
+        // > 0 is EVICT_ON_INACTIVITY measured in seconds of inactivity.
+        assertTrue(
+                "idle sessions must leave the cache (EVICT_ON_INACTIVITY), never NEVER_EVICT (-1)",
+                cache.getEvictionPolicy() > 0);
+        assertEquals(
+                "the inactivity threshold for eviction is 5 minutes",
+                300,
+                cache.getEvictionPolicy());
+        assertTrue(
+                "a session must be written to the store before it is evicted",
+                cache.isSaveOnInactiveEviction());
+    }
+
     @Test
     public void configureSessionPersistence_is_idempotent_over_a_restarted_home() throws Exception {
         // Second boot against an existing home: re-wiring must not blow away what is already
