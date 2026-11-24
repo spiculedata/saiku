@@ -98,6 +98,30 @@ public class BasicRepositoryResource2DatasourceWriteTest {
     }
 
     @Test
+    public void nonAdmin_cannotSaveSdsWithTrailingSeparatorSpellings() {
+        // saiku#2521: the raw request path does not end in ".sds", but the write still lands on
+        // disk as x.sds. The resource's 403 must decide on the resolved name, like the repository
+        // manager's hard stop does.
+        loginAs("bob", "ROLE_USER");
+        assertEquals(
+                403,
+                resource.saveResource("/homes/bob/evil.sds/", PG_GADGET_SDS).getStatus());
+        assertEquals(
+                403,
+                resource.saveResource("/homes/bob/evil.sds/.", PG_GADGET_SDS).getStatus());
+        assertEquals(
+                403,
+                resource.saveResource("/homes/bob/evil.sds//", PG_GADGET_SDS).getStatus());
+        assertEquals(
+                403,
+                resource.saveResource("/homes/bob/EVIL.SDS/", PG_GADGET_SDS).getStatus());
+        assertEquals(
+                403,
+                resource.saveResource("/homes/bob/evil.sds/./", PG_GADGET_SDS).getStatus());
+        assertEquals(0, files.saves);
+    }
+
+    @Test
     public void nonAdmin_cannotSaveAnythingUnderDatasources() {
         loginAs("bob", "ROLE_USER");
         assertEquals(
@@ -151,6 +175,35 @@ public class BasicRepositoryResource2DatasourceWriteTest {
         loginAs("bob", "ROLE_USER");
         Response r = resource.moveResource("/homes/bob/innocent.txt", "/homes/bob/evil.sds");
         assertEquals(403, r.getStatus());
+        assertEquals(0, files.moves);
+    }
+
+    @Test
+    public void nonAdmin_cannotRenameIntoSdsWithTrailingSeparatorSpellings() {
+        // saiku#2521: the target resolves to the single file evil.sds on disk; every
+        // trailing-separator spelling must 403 like the bare name does.
+        loginAs("bob", "ROLE_USER");
+        assertEquals(
+                403,
+                resource.moveResource("/homes/bob/innocent.txt", "/homes/bob/evil.sds/")
+                        .getStatus());
+        assertEquals(
+                403,
+                resource.moveResource("/homes/bob/innocent.txt", "/homes/bob/evil.sds/.")
+                        .getStatus());
+        assertEquals(
+                403,
+                resource.moveResource("/homes/bob/innocent.txt", "/homes/bob/evil.sds//")
+                        .getStatus());
+        assertEquals(
+                403,
+                resource.moveResource("/homes/bob/innocent.txt", "/homes/bob/EVIL.SDS/")
+                        .getStatus());
+        // moving FROM a descriptor is equally admin-only (on the resolved name).
+        assertEquals(
+                403,
+                resource.moveResource("/homes/bob/evil.sds/", "/homes/bob/renamed.txt")
+                        .getStatus());
         assertEquals(0, files.moves);
     }
 
@@ -215,6 +268,13 @@ public class BasicRepositoryResource2DatasourceWriteTest {
         assertTrue(BasicRepositoryResource2.isDatasourceDescriptorPath("/homes/bob/EVIL.SDS."));
         assertTrue(BasicRepositoryResource2.isDatasourceDescriptorPath("/homes/bob/evil.sds::$DATA"));
         assertTrue(BasicRepositoryResource2.isDatasourceDescriptorPath("/homes/bob/evil.sds:stream"));
+        // saiku#2521: trailing separators and dot segments resolve to the bare file.
+        assertTrue(BasicRepositoryResource2.isDatasourceDescriptorPath("/homes/bob/x.sds/"));
+        assertTrue(BasicRepositoryResource2.isDatasourceDescriptorPath("/homes/bob/x.sds/."));
+        assertTrue(BasicRepositoryResource2.isDatasourceDescriptorPath("/homes/bob/x.sds//"));
+        assertTrue(BasicRepositoryResource2.isDatasourceDescriptorPath("/homes/bob/X.SDS/"));
+        assertTrue(BasicRepositoryResource2.isDatasourceDescriptorPath("datasources/x.xml/"));
+        assertFalse(BasicRepositoryResource2.isDatasourceDescriptorPath("/homes/bob/x.sds/.."));
     }
 
     /* ---------------------------------------------------------------- fixtures */

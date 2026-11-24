@@ -31,6 +31,7 @@ import org.junit.Test;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -39,6 +40,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.security.web.authentication.preauth.PreAuthenticatedAuthenticationToken;
 
 /**
  * Unit coverage for {@link OAuthBearerAuthenticationFilter}. Uses a real RSA-signed JWT + a real
@@ -83,6 +85,7 @@ public class OAuthBearerAuthenticationFilterTest {
     private OAuthBearerAuthenticationFilter enabledFilter() {
         Properties raw = new Properties();
         raw.setProperty(OAuthResourceServerProperties.PROP_ISSUER_URI, "https://idp.example.com");
+        raw.setProperty(OAuthResourceServerProperties.PROP_AUDIENCE, "saiku-mcp");
         OAuthResourceServerProperties properties = OAuthResourceServerProperties.from(raw);
         JwtDecoder decoder = NimbusJwtDecoder.withPublicKey(publicKey).build();
         return new OAuthBearerAuthenticationFilter(properties, decoder, new OAuthRoleMapper(properties));
@@ -182,6 +185,15 @@ public class OAuthBearerAuthenticationFilterTest {
 
     @Test
     public void valid_bearer_token_authenticates_the_request() throws Exception {
+        // saiku#2543: roles are granted only through the explicit mapping table.
+        Properties raw = new Properties();
+        raw.setProperty(OAuthResourceServerProperties.PROP_ISSUER_URI, "https://idp.example.com");
+        raw.setProperty(OAuthResourceServerProperties.PROP_AUDIENCE, "saiku-mcp");
+        raw.setProperty(OAuthResourceServerProperties.PROP_ROLE_MAPPING_PREFIX + "saiku-admin", "ROLE_saiku-admin");
+        OAuthResourceServerProperties properties = OAuthResourceServerProperties.from(raw);
+        OAuthBearerAuthenticationFilter filter = new OAuthBearerAuthenticationFilter(
+                properties, NimbusJwtDecoder.withPublicKey(publicKey).build(), new OAuthRoleMapper(properties));
+
         MockHttpServletRequest req = new MockHttpServletRequest("POST", MCP_PATH);
         req.addHeader(
                 "Authorization",
@@ -193,7 +205,7 @@ public class OAuthBearerAuthenticationFilterTest {
         MockHttpServletResponse resp = new MockHttpServletResponse();
         ContextCapturingChain chain = new ContextCapturingChain();
 
-        enabledFilter().doFilter(req, resp, chain);
+        filter.doFilter(req, resp, chain);
 
         assertTrue(chain.called);
         assertTrue(chain.capturedAuth instanceof JwtAuthenticationToken);
@@ -203,6 +215,84 @@ public class OAuthBearerAuthenticationFilterTest {
         assertNull(
                 "context must not leak past the request",
                 SecurityContextHolder.getContext().getAuthentication());
+    }
+
+    /** saiku#2543: an issuer WITHOUT an audience is fail-closed — the resource server stays
+     *  disabled and every bearer token is rejected, never accepted. */
+    @Test
+    public void issuer_without_audience_rejects_every_token() throws Exception {
+        Properties raw = new Properties();
+        raw.setProperty(OAuthResourceServerProperties.PROP_ISSUER_URI, "https://idp.example.com");
+        OAuthResourceServerProperties properties = OAuthResourceServerProperties.from(raw);
+        JwtDecoder decoder = new LazyIssuerJwtDecoder(properties.getIssuerUri(), "saiku-mcp");
+        OAuthBearerAuthenticationFilter filter =
+                new OAuthBearerAuthenticationFilter(properties, decoder, new OAuthRoleMapper(properties));
+
+        MockHttpServletRequest req = new MockHttpServletRequest("POST", MCP_PATH);
+        req.addHeader(
+                "Authorization",
+                "Bearer "
+                        + signedToken(
+                                "alice", List.of("ROLE_ADMIN"), Instant.now().plusSeconds(600)));
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        TrackingChain chain = new TrackingChain();
+
+        filter.doFilter(req, resp, chain);
+
+        assertFalse("half-configured OAuth mode must accept no token", chain.called);
+        assertEquals(401, resp.getStatus());
+        assertEquals("Bearer error=\"invalid_token\"", resp.getHeader("WWW-Authenticate"));
+    }
+
+    /** saiku#2543: a bearer request that carries a session cookie must leave the session's
+     *  principal unchanged — the JWT identity lives in a fresh context and the pre-request context
+     *  (what the outer SecurityContextPersistenceFilter loaded from the session) is restored, so
+     *  the persistence filter saves the session's own principal back untouched. */
+    @Test
+    public void bearer_request_leaves_the_session_principal_unchanged() throws Exception {
+        PreAuthenticatedAuthenticationToken sessionAuth = new PreAuthenticatedAuthenticationToken(
+                "analyst-cookie", "password", List.of(new SimpleGrantedAuthority("ROLE_USER")));
+        SecurityContextHolder.getContext().setAuthentication(sessionAuth);
+
+        MockHttpServletRequest req = new MockHttpServletRequest("POST", MCP_PATH);
+        req.setSession(new MockHttpSession());
+        req.addHeader(
+                "Authorization",
+                "Bearer "
+                        + signedToken(
+                                "jwt-principal",
+                                List.of("saiku-admin"),
+                                Instant.now().plusSeconds(600)));
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        ContextCapturingChain chain = new ContextCapturingChain();
+
+        enabledFilter().doFilter(req, resp, chain);
+
+        assertTrue(chain.called);
+        // inside the request the JWT identity is authoritative...
+        assertEquals("jwt-principal", chain.capturedAuth.getName());
+        // ...and after the filter returns the holder holds the session's own principal again.
+        assertSame(
+                "session principal must be restored, not cleared or replaced by the JWT",
+                sessionAuth,
+                SecurityContextHolder.getContext().getAuthentication());
+    }
+
+    @Test
+    public void bearer_request_without_a_session_leaves_an_empty_context_behind() throws Exception {
+        MockHttpServletRequest req = new MockHttpServletRequest("POST", MCP_PATH);
+        req.addHeader(
+                "Authorization",
+                "Bearer "
+                        + signedToken(
+                                "alice", List.of("ROLE_USER"), Instant.now().plusSeconds(600)));
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        TrackingChain chain = new TrackingChain();
+
+        enabledFilter().doFilter(req, resp, chain);
+
+        assertTrue(chain.called);
+        assertNull(SecurityContextHolder.getContext().getAuthentication());
     }
 
     /** saiku#2520 — the bearer header rides on a request that also carries a logged-in
