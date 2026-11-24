@@ -42,6 +42,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 import org.saiku.service.PlatformUtilsService;
 import org.saiku.service.olap.ai.ask.NlAskProviderFactory;
+import org.saiku.service.olap.ai.cubedesigner.CubeDesignerAiService;
 import org.saiku.service.schema.generate.enrich.provider.LlmProviderFactory;
 import org.saiku.service.util.dto.Plugin;
 import org.slf4j.Logger;
@@ -60,6 +61,7 @@ public class InfoResource {
     private org.saiku.web.demo.DemoGate demoGate;
     private NlAskProviderFactory askProviderFactory;
     private LlmProviderFactory schemaGenProviderFactory;
+    private CubeDesignerAiService cubeDesignerAiService;
 
     // @Autowired
     public void setPlatformUtilsService(PlatformUtilsService ps) {
@@ -89,6 +91,14 @@ public class InfoResource {
      */
     public void setSchemaGenProviderFactory(LlmProviderFactory schemaGenProviderFactory) {
         this.schemaGenProviderFactory = schemaGenProviderFactory;
+    }
+
+    /**
+     * The bean backing the cube designer's {@code /turn} endpoint (saiku#2489). Optional: null in
+     * unit runs, in which case the cubeDesigner section reports {@code enabled:false}.
+     */
+    public void setCubeDesignerAiService(CubeDesignerAiService cubeDesignerAiService) {
+        this.cubeDesignerAiService = cubeDesignerAiService;
     }
 
     /**
@@ -206,6 +216,9 @@ public class InfoResource {
         demoAnalytics.put("enabled", demoMode && telemetryEnabled());
         demoAnalytics.put("endpoint", demoAnalyticsEndpoint());
         body.put("demoAnalytics", demoAnalytics);
+        // saiku#2577: the SPA shows a small top-bar link to GitHub Sponsors unless the
+        // operator opts out (white-label or locked-down deployments).
+        body.put("sponsorLink", org.saiku.service.util.SponsorLink.enabled());
         return Response.ok(body).build();
     }
 
@@ -236,6 +249,9 @@ public class InfoResource {
                 schemaGenProviderFactory == null
                         ? disabledAiStack()
                         : describeAiStack(schemaGenProviderFactory.describe()));
+        body.put(
+                "cubeDesigner",
+                cubeDesignerAiService == null ? disabledAiStack() : describeAiStack(cubeDesignerAiService.describe()));
         return Response.ok(body).build();
     }
 
@@ -253,6 +269,11 @@ public class InfoResource {
 
     /** Package-visible for unit tests. */
     static Map<String, Object> describeAiStack(LlmProviderFactory.Descriptor d) {
+        return describeAiStack(d.provider(), d.model(), d.endpoint(), d.configured());
+    }
+
+    /** Package-visible for unit tests — saiku#2489, the cube-designer agent stack. */
+    static Map<String, Object> describeAiStack(CubeDesignerAiService.Descriptor d) {
         return describeAiStack(d.provider(), d.model(), d.endpoint(), d.configured());
     }
 

@@ -20,6 +20,7 @@ import java.util.UUID;
 import org.junit.Test;
 import org.saiku.service.olap.ai.AiValidationException;
 import org.saiku.service.util.exception.SaikuAccessDeniedException;
+import org.saiku.service.util.exception.SaikuValidationException;
 
 /**
  * saiku#1165 (audit-3) — pin the global error envelope so a resource can never
@@ -199,5 +200,19 @@ public class GenericExceptionMapperTest {
         assertEquals(500, r.getStatus());
         assertEquals("ERROR", bodyOf(r).get("status"));
         assertNotNull(bodyOf(r).get("ref"));
+    }
+
+    /** saiku#2526 — an unresolvable shelf identifier is the caller's typo: typed 400 with the
+     *  message (which names what they sent), even when it arrives rewrapped. */
+    @Test
+    public void aValidationRejectionIsATyped400WithTheMessage() {
+        Response r = mapper.toResponse(new RuntimeException(
+                "outer", new SaikuValidationException("Unknown field 'customer.C_EMAIL_ADDRESS' in model 'TPCDS'")));
+
+        assertEquals(400, r.getStatus());
+        assertEquals("VALIDATION_ERROR", bodyOf(r).get("status"));
+        assertEquals(
+                "Unknown field 'customer.C_EMAIL_ADDRESS' in model 'TPCDS'",
+                bodyOf(r).get("error"));
     }
 }

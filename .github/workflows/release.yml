@@ -312,7 +312,14 @@ jobs:
         with:
           distribution: temurin
           java-version: "22"
-          cache: maven
+          # saiku#2530: no Maven cache. This job holds `packages: write` behind
+          # the `release` environment, and Maven does not re-verify artifacts
+          # already in ~/.m2 — restoring a cache entry that a less-trusted run
+          # wrote (docker.yml's PR-targeted dispatch executes PR content on the
+          # default-branch ref) would be code execution inside the job that
+          # publishes the org.saikuanalytics:* module jars. Releases are rare;
+          # a cold ~/.m2 is the accepted trade. Pinned by
+          # .github/scripts/cache-hygiene.test.mjs.
 
       - name: Configure Maven settings.xml (publish credentials)
         # Read-scoped PAT for resolving the inbound spiculedata artifacts
@@ -442,7 +449,11 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
+          # saiku#2530: no `cache-from` here — this job builds the released
+          # image on a tag ref, and a type=gha restore would read whatever
+          # BuildKit layers other runs saved in the default-branch scope.
+          # Releases are rare; a cold layer build is the accepted trade.
+          # (The matching cache-to below only WRITES the tag's own scope.)
           cache-to: type=gha,mode=max
           # saiku#1990 + #1992: BuildKit attaches an SBOM + max-detail SLSA
           # provenance attestation manifest to the pushed image index. This
@@ -610,8 +621,9 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
-          cache: npm
-          cache-dependency-path: saiku-ui/package-lock.json
+          # saiku#2530: no `cache: npm` — release.yml restores no Actions
+          # cache at all (see deploy-packages for the rationale); the npm
+          # tarball cache is shared across the default-branch scope.
       - name: Install + build embed bundle
         working-directory: saiku-ui
         # `npm run build` orchestrates build:app + build:embed +

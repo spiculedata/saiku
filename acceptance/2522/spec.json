@@ -1,0 +1,122 @@
+{
+  "issue": 2522,
+  "title": "The read-only check and the executed statement are the same text: CR-ended comments, JDBC escapes and SHOW/DESC shortcut cannot smuggle a second statement or a denied function",
+  "kind": "api",
+  "auth": "session",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "a logged-in ROLE_SQL_EXEC caller posting SELECT 1 AS a --<CR>, 2 AS b (a line comment H2/PostgreSQL end at CR, so the executed statement has two columns)",
+      "then": "the workbench refuses it with 400 READ_ONLY_VIOLATION — the statement that is validated is the statement that would be executed"
+    },
+    {
+      "id": "C2",
+      "given": "the same caller posting a JDBC function escape that a deny-listed function hides inside (SELECT CAST({fn FILE_READ('/tmp/canary.txt', NULL)} AS VARCHAR) AS c)",
+      "then": "the workbench refuses it with 400 READ_ONLY_VIOLATION — JDBC escapes never reach the driver"
+    },
+    {
+      "id": "C3",
+      "given": "the same caller posting a statement starting with SHOW that carries stacked DDL behind a CR-ended comment (SHOW TABLES --<CR>; CREATE LOCAL TEMPORARY TABLE T3(X INT); DROP TABLE T3)",
+      "then": "the workbench refuses it with 400 READ_ONLY_VIOLATION — a SHOW/DESC/DESCRIBE statement cannot carry a second statement"
+    },
+    {
+      "id": "C4",
+      "given": "the same caller posting an ordinary read-only SELECT 1",
+      "then": "the workbench still answers 200 with the row — the guard did not narrow what a legitimate analyst runs"
+    }
+  ],
+  "steps": [
+    {
+      "name": "a CR-terminated line comment hiding extra columns is rejected with READ_ONLY_VIOLATION",
+      "criterion": "C1",
+      "request": {
+        "method": "POST",
+        "path": "/rest/saiku/sql-workbench/query",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "json": {
+          "datasource": "foodmart",
+          "sql": "SELECT 1 AS a --\r, 2 AS b"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "json": {
+          "code": {
+            "equals": "READ_ONLY_VIOLATION"
+          }
+        }
+      }
+    },
+    {
+      "name": "a JDBC function escape hiding a deny-listed function is rejected with READ_ONLY_VIOLATION",
+      "criterion": "C2",
+      "request": {
+        "method": "POST",
+        "path": "/rest/saiku/sql-workbench/query",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "json": {
+          "datasource": "foodmart",
+          "sql": "SELECT {fn DATABASE_PATH()} AS p"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "json": {
+          "code": {
+            "equals": "READ_ONLY_VIOLATION"
+          }
+        }
+      }
+    },
+    {
+      "name": "a SHOW statement stacking DDL behind a CR-ended comment is rejected with READ_ONLY_VIOLATION",
+      "criterion": "C3",
+      "request": {
+        "method": "POST",
+        "path": "/rest/saiku/sql-workbench/query",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "json": {
+          "datasource": "foodmart",
+          "sql": "SHOW TABLES --\r; CREATE LOCAL TEMPORARY TABLE T3(X INT); DROP TABLE T3"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "json": {
+          "code": {
+            "equals": "READ_ONLY_VIOLATION"
+          }
+        }
+      }
+    },
+    {
+      "name": "an ordinary SELECT still answers 200",
+      "criterion": "C4",
+      "request": {
+        "method": "POST",
+        "path": "/rest/saiku/sql-workbench/query",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "json": {
+          "datasource": "foodmart",
+          "sql": "SELECT 1 AS a"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "json": {
+          "rowCount": {
+            "equals": 1
+          }
+        }
+      }
+    }
+  ]
+}

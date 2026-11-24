@@ -1,0 +1,29 @@
+{
+  "issue": 2526,
+  "title": "Ossie field-level saiku.roles is bypassed by naming the physical column; GraphQL and semantic export return the unfiltered model",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "a caller whose roles deny (or do not allow) an Ossie field names the field's physical column in rows, in a filters entry with or without dataset, or in sorts",
+      "then": "the translator (OssieRoleContext.assertShelfVisible, called before SQL emission) resolves every row, filter and sort identifier against the caller's role-filtered model and refuses the request (SaikuAccessDeniedException for a denied known field, SaikuValidationException for a name that is no visible field/metric of the model) — an unresolvable identifier never falls through to a raw quoted column"
+    },
+    {
+      "id": "C2",
+      "given": "an identifier that is not a field or metric of the model is submitted by any caller",
+      "then": "it is rejected as a typed 400 (SaikuValidationException) on /api/query/execute, /preview-sql and the /execute-async path, not a 500 and not a raw SQL column emission"
+    },
+    {
+      "id": "C3",
+      "given": "a caller whose roles hide fields/metrics reads GraphQL ossieModel, GET /ai/ossie/export/{connection}/{tool} or /ai/ossie/ontology/{connection}/{model}",
+      "then": "the response is built from OssieRoleContext.filterHidden (the caller's role-filtered view) and the GraphQL fetcher applies the schema-metadata AI policy guard, same as REST GET /ai/ossie/schema"
+    },
+    {
+      "id": "C4",
+      "given": "regression tests",
+      "then": "unit tests cover OssieRoleContext identifier resolution (unknown/denied for rows, unqualified filters, sorts by field and by metric, values) and one end-to-end test through a real OSSIE datasource proves the physical-column bypass is closed on the execute path"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}
