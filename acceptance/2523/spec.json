@@ -54,9 +54,8 @@
       "criterion": "C3",
       "request": {
         "method": "POST",
-        "path": "/rest/saiku/session",
-        "headers": { "Content-Type": "application/x-www-form-urlencoded" },
-        "json": { "username": "hive-2523-budget-probe", "password": "wrong-password-2523" }
+        "path": "/rest/saiku/session?username=hive-2523-budget-probe&password=wrong-password-2523",
+        "headers": { "Content-Type": "application/x-www-form-urlencoded" }
       },
       "repeat": { "count": 4, "untilStatus": 429 },
       "expect": {
@@ -69,9 +68,8 @@
       "criterion": "C4",
       "request": {
         "method": "POST",
-        "path": "/rest/saiku/session",
-        "headers": { "Content-Type": "application/x-www-form-urlencoded" },
-        "json": { "username": "hive-2523-budget-probe", "password": "wrong-password-2523" }
+        "path": "/rest/saiku/session?username=hive-2523-budget-probe&password=wrong-password-2523",
+        "headers": { "Content-Type": "application/x-www-form-urlencoded" }
       },
       "expect": {
         "status": 401,
@@ -83,9 +81,8 @@
       "criterion": "C4",
       "request": {
         "method": "POST",
-        "path": "/rest/saiku/session",
-        "headers": { "Content-Type": "application/x-www-form-urlencoded" },
-        "json": { "username": "hive-2523-budget-probe", "password": "wrong-password-2523" }
+        "path": "/rest/saiku/session?username=hive-2523-budget-probe&password=wrong-password-2523",
+        "headers": { "Content-Type": "application/x-www-form-urlencoded" }
       },
       "expect": {
         "status": 429,
