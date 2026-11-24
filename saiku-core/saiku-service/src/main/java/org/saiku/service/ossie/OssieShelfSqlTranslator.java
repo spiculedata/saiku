@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Set;
 import org.saiku.olap.query2.OssieQueryModel;
 import org.saiku.service.util.exception.SaikuAccessDeniedException;
+import org.saiku.service.util.exception.SaikuValidationException;
 
 /**
  * Translate an {@link OssieQueryModel} shelf-state payload into the SQL string that the
@@ -54,6 +55,10 @@ public final class OssieShelfSqlTranslator {
      * <ol>
      *   <li>Rejects (via {@link SaikuAccessDeniedException}) a shelf state that references a
      *       field/metric every one of the caller's roles denies.
+     *   <li>Rejects (via {@link SaikuValidationException}, saiku#2526) any shelf identifier that
+     *       does not resolve to a field or metric of the model — a name that used to fall
+     *       through as a quoted physical column, which let a caller denied a semantic field read
+     *       its physical column instead.
      *   <li>Injects each referenced dataset's role-matched row predicates as extra WHERE
      *       conjunctions, ORed together per dataset and ANDed with the shelf's own filters.
      * </ol>
@@ -79,9 +84,6 @@ public final class OssieShelfSqlTranslator {
     private String translate(
             OssieQueryModel model, OssieModelDto semantic, Set<String> callerRoles, boolean backslashIsData) {
         if (semantic == null) throw new IllegalStateException("Ossie semantic model is required");
-        if (model.getFactDataset() == null || model.getFactDataset().isBlank()) {
-            throw new IllegalArgumentException("OssieQueryModel.factDataset is required");
-        }
         String schema = semantic.getName();
         OssieRoleContext roleContext = OssieRoleContext.resolve(callerRoles, semantic);
         roleContext.assertShelfVisible(model);
@@ -92,7 +94,7 @@ public final class OssieShelfSqlTranslator {
         for (OssieQueryModel.FieldRef f : model.getRows()) datasets.add(f.getDataset());
         for (OssieQueryModel.FieldRef f : model.getColumns()) datasets.add(f.getDataset());
         for (OssieQueryModel.FilterExpr f : model.getFilters()) {
-            if (f.getDataset() != null) datasets.add(f.getDataset());
+            datasets.add(f.getDataset() == null ? roleContext.resolveUnqualifiedField(f.getField()) : f.getDataset());
         }
         for (OssieQueryModel.SortRef s : model.getSorts()) {
             if (s.getDataset() != null) datasets.add(s.getDataset());
@@ -142,7 +144,7 @@ public final class OssieShelfSqlTranslator {
         // --- WHERE ---
         List<String> whereClauses = new ArrayList<>();
         for (OssieQueryModel.FilterExpr f : model.getFilters()) {
-            whereClauses.add(filterToSql(f, semantic, backslashIsData));
+            whereClauses.add(filterToSql(f, semantic, roleContext, backslashIsData));
         }
         // saiku#1393 — row-level security: every referenced dataset's role-matched predicates,
         // ORed together per dataset (each role the caller holds opens its own access window),
@@ -269,7 +271,9 @@ public final class OssieShelfSqlTranslator {
      * Look up the ANSI SQL expression the metric maps to. Falls back to referencing the metric by
      * name as a table {@code "<metric>"} on the assumption that the Calcite adapter has exposed
      * the metric as a view; that path only works when the SQL has a single value and no
-     * dimensions, so realistic queries need a real expression.
+     * dimensions, so realistic queries need a real expression. An unknown metric is a typed
+     * validation error (saiku#2526) — {@code assertShelfVisible} normally rejects it first; this
+     * is the defence-in-depth backstop for direct callers of the resolver.
      */
     private String lookupMetricExpression(OssieModelDto semantic, String metricName) {
         for (OssieModelDto.Metric m : semantic.getMetrics()) {
@@ -279,19 +283,19 @@ public final class OssieShelfSqlTranslator {
                         "Ossie metric '" + metricName + "' has no ANSI SQL expression declared in the model");
             }
         }
-        throw new IllegalArgumentException(
-                "Ossie metric '" + metricName + "' not found in semantic model '" + semantic.getName() + "'");
+        throw new SaikuValidationException(
+                "Unknown metric '" + metricName + "' in semantic model '" + semantic.getName() + "'");
     }
 
-    private String filterToSql(OssieQueryModel.FilterExpr f, OssieModelDto semantic, boolean backslashIsData) {
-        String col;
-        if (f.getDataset() != null && !f.getDataset().isBlank()) {
-            String colExpr = lookupFieldExpression(semantic, f.getDataset(), f.getField());
-            String colName = (colExpr != null && !colExpr.isBlank()) ? colExpr : f.getField();
-            col = quoteRef(f.getDataset()) + "." + quoteRef(colName);
-        } else {
-            col = quoteRef(f.getField());
-        }
+    private String filterToSql(
+            OssieQueryModel.FilterExpr f,
+            OssieModelDto semantic,
+            OssieRoleContext roleContext,
+            boolean backslashIsData) {
+        String dataset = f.getDataset() == null ? roleContext.resolveUnqualifiedField(f.getField()) : f.getDataset();
+        String colExpr = lookupFieldExpression(semantic, dataset, f.getField());
+        String colName = (colExpr != null && !colExpr.isBlank()) ? colExpr : f.getField();
+        String col = quoteRef(dataset) + "." + quoteRef(colName);
         String op = f.getOp() == null ? "EQ" : f.getOp().toUpperCase();
         switch (op) {
             case "EQ":

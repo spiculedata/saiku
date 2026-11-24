@@ -104,6 +104,37 @@ See the follow-up on #2320.
 
 ---
 
+## Ossie model path confinement (`saiku.ossie.model.allowedRoots`)
+
+An OSSIE datasource names its semantic-model YAML with a raw host path
+(`ossieYaml`). That path is read back verbatim by
+`GET /rest/saiku/admin/ossie/schema/{datasource}` and overwritten by `PUT` on
+the same URL — so an unrestricted path is an arbitrary file read/write for an
+admin. [#2534](https://github.com/spiculedata/saiku/issues/2534) confines it
+the same way the Mondrian `Catalog=` is confined (#1845): the path must resolve
+(on the real, symlink-resolved target) inside one of
+
+- `<saiku-home>/semantic-models` — where `/rest/saiku/api/ossie/import/save`
+  writes imported models;
+- `<saiku-home>/data` — the launcher-seeded demo models
+  (`flights.ossie.yaml`, `tpcds.ossie.yaml`);
+- any directory an operator adds via `saiku.ossie.model.allowedRoots`
+  (platform path separator, e.g. `/mnt/models:/srv/ossie`).
+
+The check runs when a datasource is saved or updated via the admin datasource
+API and again on every `GET`/`PUT` of `/rest/saiku/admin/ossie/schema/{ds}`, so
+a descriptor written before the check existed is refused too. Unlike the
+Mondrian schema guard (which stays permissive when it cannot anchor a root, to
+keep plain-WAR cube deployments alive), the Ossie model guard **fails closed**:
+with neither `saiku.home` nor `saiku.ossie.model.allowedRoots` set, every Ossie
+model path is refused. The launcher always sets `saiku.home`.
+
+| Property | Default | Meaning |
+|---|---|---|
+| `saiku.ossie.model.allowedRoots` | *(empty)* | Extra directories (platform path separator) an Ossie datasource's model YAML may live in, e.g. `/mnt/models:/srv/ossie`. |
+
+---
+
 ## AI ask cost budget (`saiku.ai.budget.*`)
 
 The AI endpoints that reach the LLM provider used to be capped by call frequency

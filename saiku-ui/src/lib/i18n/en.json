@@ -8,6 +8,8 @@
 	"topbar.admin": "Admin",
 	"topbar.sqlWorkbench": "SQL Workbench",
 	"topbar.signOut": "Sign out",
+	"topbar.sponsor": "Sponsor",
+	"topbar.sponsorTitle": "Saiku is free and open source. Support it on GitHub Sponsors",
 	"topbar.fullscreen.enter": "Enter fullscreen",
 	"topbar.fullscreen.exit": "Exit fullscreen",
 	"toolbar.fullscreen.enter": "Enter fullscreen",

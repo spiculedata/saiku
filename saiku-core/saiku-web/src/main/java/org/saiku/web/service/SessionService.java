@@ -406,10 +406,18 @@ public class SessionService implements ISessionService, AccountStatusFilter.Sess
         return new HashMap<>();
     }
 
-    /** A copy of the session map that can never carry a credential, whatever put it there. */
+    /**
+     * A copy of the session map that can never carry a secret, whatever put it there: the
+     * pass-through password (saiku#2341) and the servlet session id (saiku#2546). The session
+     * cookie is {@code HttpOnly}, so script can never read it — and the same value must not be
+     * readable from {@code GET /rest/saiku/session} either. The id stays in the internal maps
+     * ({@code sessionHolder}, the persisted copy); {@link #httpSessionDestroyed(String)} still
+     * matches on it.
+     */
     private static Map<String, Object> withoutSecrets(Map<String, Object> session) {
         Map<String, Object> copy = new HashMap<>(session);
         copy.remove("password");
+        copy.remove("authid");
         return copy;
     }
 
@@ -498,9 +506,15 @@ public class SessionService implements ISessionService, AccountStatusFilter.Sess
      * minted by someone who already had GRANT.
      */
     public <T> T runAs(String username, List<String> roles, java.util.function.Supplier<T> action) {
-        Authentication prior = SecurityContextHolder.getContext() == null
-                ? null
-                : SecurityContextHolder.getContext().getAuthentication();
+        // saiku#2520: the caller may hold a session-backed SecurityContext (a logged-in
+        // cookie) — getContext() then returns the object stored in the HttpSession, and
+        // mutating it would publish the delegated identity to the session, so every other
+        // request sharing that cookie would act as `username` (and, once the session also
+        // held it, would survive this call entirely). Install the delegated identity in a
+        // FRESH context object and restore the prior context OBJECT afterwards; the
+        // session-stored context is never touched, so a concurrent cookie-only request keeps
+        // its own identity for the whole duration of the delegated call.
+        SecurityContext priorContext = SecurityContextHolder.getContext();
         List<GrantedAuthority> auths = new ArrayList<>();
         if (roles != null) {
             for (String r : roles) {
@@ -511,7 +525,9 @@ public class SessionService implements ISessionService, AccountStatusFilter.Sess
         Object principal = owner.getPrincipal();
         boolean addedSession = false;
         try {
-            SecurityContextHolder.getContext().setAuthentication(owner);
+            SecurityContext ownerContext = SecurityContextHolder.createEmptyContext();
+            ownerContext.setAuthentication(owner);
+            SecurityContextHolder.setContext(ownerContext);
             if (principal != null && !sessionHolder.containsKey(principal)) {
                 Map<String, Object> sess = new HashMap<>();
                 sess.put("username", username);
@@ -527,7 +543,7 @@ public class SessionService implements ISessionService, AccountStatusFilter.Sess
             if (addedSession) {
                 sessionHolder.remove(principal);
             }
-            SecurityContextHolder.getContext().setAuthentication(prior);
+            SecurityContextHolder.setContext(priorContext);
         }
     }
 

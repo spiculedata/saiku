@@ -1,0 +1,46 @@
+{
+  "issue": 2546,
+  "title": "GET /rest/saiku/session must not return the servlet session id (authid) — the session cookie is HttpOnly, so the JSON body must not hand the same value to script",
+  "kind": "api",
+  "auth": "session",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "an authenticated caller of GET /rest/saiku/session",
+      "then": "the response body contains no authid key — and therefore no value equal to the (HttpOnly) JSESSIONID cookie, whose id was the only thing ever stored under that key"
+    },
+    {
+      "id": "C2",
+      "given": "the same authenticated caller",
+      "then": "the session response still identifies the caller (username and sessionid present), so stripping the servlet session id does not empty the session"
+    }
+  ],
+  "steps": [
+    {
+      "name": "the session response carries no authid",
+      "criterion": "C1",
+      "request": { "method": "GET", "path": "/rest/saiku/session" },
+      "expect": {
+        "status": 200,
+        "json": {
+          "authid": {
+            "exists": false,
+            "because": "authid held the servlet session id, the same value the HttpOnly JSESSIONID cookie carries; script must never be able to read it"
+          }
+        }
+      }
+    },
+    {
+      "name": "the session response still identifies the caller",
+      "criterion": "C2",
+      "request": { "method": "GET", "path": "/rest/saiku/session" },
+      "expect": {
+        "status": 200,
+        "json": {
+          "username": { "exists": true },
+          "sessionid": { "exists": true }
+        }
+      }
+    }
+  ]
+}

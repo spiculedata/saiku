@@ -132,8 +132,22 @@ public class SecurityHeadersFilter implements Filter {
      * No inline script runs on those responses (share views and the image endpoint set
      * their own stricter policy, which wins), so {@code script-src 'self'} neutralises
      * injected handlers without touching the SPA.
+     *
+     * <p>Since saiku#2528 the policy is also sealed against the HTML export surface:
+     * {@code default-src 'none'} denies everything not named explicitly, {@code img-src}
+     * keeps a rendered cell property from leaking values to an external host (the export
+     * page only ever loads self-hosted arrow images and {@code data:} URIs),
+     * {@code style-src 'unsafe-inline'} permits the export page's inlined stylesheet and
+     * the cell {@code style} property, and {@code form-action 'self'} stops an injected
+     * element from posting credentials off-origin.
      */
-    static final String NON_SPA_CSP = "script-src 'self'; object-src 'none'; base-uri 'self'";
+    static final String NON_SPA_CSP = "default-src 'none'; "
+            + "script-src 'self'; "
+            + "object-src 'none'; "
+            + "base-uri 'self'; "
+            + "img-src 'self' data:; "
+            + "style-src 'unsafe-inline'; "
+            + "form-action 'self'";
 
     /** Path prefixes whose HTML carries its own hash-pinned {@code <meta>} policy. */
     private static final String[] META_POLICY_PREFIXES = {"/ui/", "/aqvira-demo/", "/embed-demo/"};
