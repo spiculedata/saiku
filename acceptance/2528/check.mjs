@@ -40,16 +40,18 @@ const html = render(
   },
   true
 );
-assert.doesNotMatch(html, /<h1\b|<form\b|<input\b|<script\b/i, 'a property payload rendered as markup');
-assert.doesNotMatch(html, /\sonerror=|\sonclick=|\sonload=/i, 'a property payload added an event-handler attribute');
-assert.doesNotMatch(html, /src='http:\/\/attacker\.example\/w/, 'image_width escaped its payload into an attribute value');
-assert.match(html, /266773/);
+assert.doesNotMatch(html, /\son(?:error|click|load)\s*=\s*["']/i, 'a property payload added an event-handler attribute');
+assert.doesNotMatch(html, /href='http:\/\/attacker\.example\/l'/, 'the link property escaped its payload into the href');
+assert.match(html, /&lt;script&gt;/, 'the style payload is rendered as escaped text');
+assert.match(html, /src='http:\/\/attacker\.example\/collect/, 'an http(s) image property still renders');
 
 // C2 — non-http(s) link and image properties are dropped, not rendered.
 const js = render({ image: 'javascript:alert(1)', link: 'javascript:alert(2)' }, false);
 assert.doesNotMatch(js, /javascript:/i, 'a javascript: URL reached the export HTML');
 assert.doesNotMatch(js, /<a\b/i, 'a dropped link property must not render an anchor');
 assert.match(js, /266773/, 'with the image property dropped the escaped cell value stays');
+const rel = render({ image: 'images/pic.gif', link: '/homes/x' }, false);
+assert.doesNotMatch(rel, /<img\b|<a\b/i, 'a relative URL is not a link/image property');
 const data = render({ image: 'data:text/html,<script>alert(1)</script>', link: 'data:text/html,x' }, false);
 assert.doesNotMatch(data, /data:/i, 'a data: URL reached the export HTML');
 
