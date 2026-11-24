@@ -230,8 +230,12 @@ JAVA_OPTS="-Dsaiku.passthrough.retainCredential=false"
 
 ## Login lockout and running behind a reverse proxy (`saiku.auth.trustedProxyHops`)
 
-Failed logins (form login, HTTP Basic, XMLA and the demo email gate share one limiter) are counted in three
-independent budgets inside a 15-minute window, and any one of them blocks further attempts with `429`:
+Failed logins (the REST session login `POST /rest/saiku/session`, HTTP Basic, XMLA and the demo email gate share
+one limiter) are counted in three independent budgets inside a 15-minute window, and any one of them blocks further
+attempts with `429`. Every failure is counted exactly once, wherever the credential check happens (saiku#2523).
+Spring Security's generated `/login` form endpoint no longer exists — the main security chain does not register
+form login, so `GET`/`POST /login` is answered by the terminal catch-all (`401`, no session, no authentication) and
+there is no second login path to bypass the limiter or CSRF with:
 
 | Budget | Limit | Purpose |
 |---|---|---|
@@ -279,7 +283,7 @@ Saiku has two user stores. The bundled authenticator reads `users.properties` (w
 password and roles); the admin console and SCIM write the H2 `USERS` / `USER_ROLES` tables. For an account
 that exists in **both**, the H2 row now wins for revocation:
 
-- `enabled = false` (SCIM `active:false` or `DELETE`, which deactivates) refuses form login and HTTP Basic
+- `enabled = false` (SCIM `active:false` or `DELETE`, which deactivates) refuses the REST session login and HTTP Basic
   (`/rest/**`, `/xmla/**`) with `401`, and ends an existing session on its next request.
 - Removing `ROLE_ADMIN` from the row removes admin authority from that user's next request (the admin
   endpoints answer `403`, `GET /rest/saiku/session` reports `isadmin:false`) without a re-login.
@@ -306,7 +310,7 @@ revocation is not being enforced and the store needs attention.
   authority. Removing any other role (for example `ROLE_SQL_EXEC` or a data role) from the row changes
   nothing for a user whose authenticator still grants it; revoke those in `users.properties` / the
   directory.
-- **Authentication types covered.** Only credential logins (form login and HTTP Basic) are checked. OAuth
+- **Authentication types covered.** Only credential logins (the REST session login and HTTP Basic) are checked. OAuth
   bearer tokens, SSO/pre-authenticated principals and share/embed principals are exempt and governed by
   their own provider.
 - **Re-enabling.** The admin console has no control to re-enable a deactivated row. Re-enable through SCIM

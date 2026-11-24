@@ -8,14 +8,17 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import org.saiku.service.schedule.alert.WebhookUrlValidator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -52,8 +55,21 @@ public final class McpOutboundClient {
     /** Hard cap on a discovered/echoed tool result body — a misbehaving server can't blow the prompt budget. */
     static final int MAX_RESULT_CHARS = 20_000;
 
+    /**
+     * Hard cap on the bytes read from one outbound HTTP response (saiku#2542). The remote is
+     * admin-registered but still external: its {@code tools/list} / {@code tools/call} answer must
+     * not be able to buffer an unbounded body in memory.
+     */
+    static final int MAX_RESPONSE_BYTES = 1_000_000;
+
+    /** Outcome of one capped POST: status, body (≤ {@link #MAX_RESPONSE_BYTES}), headers. */
+    private record PostResult(int status, String body, java.util.Optional<String> sessionId) {}
+
     private final HttpClient http;
     private final Duration requestTimeout;
+
+    /** DNS seam for the pre-send SSRF gate — tests stay hermetic by injecting a stub. */
+    private final WebhookUrlValidator.HostResolver resolver;
 
     public McpOutboundClient() {
         this(defaultHttpClient(), Duration.ofSeconds(10));
@@ -64,13 +80,53 @@ public final class McpOutboundClient {
     }
 
     /** Package-visible ctor for tests that need to inject a fake client. */
-    McpOutboundClient(HttpClient http, Duration requestTimeout) {
+    public McpOutboundClient(HttpClient http, Duration requestTimeout) {
+        this(http, requestTimeout, java.net.InetAddress::getAllByName);
+    }
+
+    /**
+     * Ctor for tests that inject the pre-send SSRF resolver (public because tests outside
+     * this package — e.g. the ask-service wiring — build clients against non-resolving
+     * hosts and must not touch live DNS, review of PR #2580).
+     */
+    public McpOutboundClient(HttpClient http, Duration requestTimeout, WebhookUrlValidator.HostResolver resolver) {
         this.http = http;
         this.requestTimeout = requestTimeout == null ? Duration.ofSeconds(10) : requestTimeout;
+        this.resolver = resolver == null ? java.net.InetAddress::getAllByName : resolver;
     }
 
     private static HttpClient defaultHttpClient() {
         return HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+    }
+
+    /**
+     * Re-resolve the target's host and fail the send if the result diverges from the addresses
+     * the pre-send validation just approved — the DNS-rebinding signature (mirrors the
+     * alert-webhook sender's guard, saiku#1846/#2542).
+     */
+    private void assertNoRebind(URI target, java.net.InetAddress[] approved) throws McpTransportException {
+        String host = target.getHost();
+        if (host == null) {
+            throw new McpTransportException("outbound url lost its host before send");
+        }
+        java.net.InetAddress[] fresh;
+        try {
+            fresh = resolver.resolve(host);
+        } catch (java.net.UnknownHostException e) {
+            throw new McpTransportException("outbound host no longer resolves before send");
+        }
+        if (fresh == null || fresh.length == 0) {
+            throw new McpTransportException("outbound host no longer resolves before send");
+        }
+        java.util.Set<String> approvedIps = new java.util.LinkedHashSet<>();
+        for (java.net.InetAddress a : approved) {
+            approvedIps.add(a.getHostAddress());
+        }
+        for (java.net.InetAddress addr : fresh) {
+            if (!approvedIps.contains(addr.getHostAddress()) || WebhookUrlValidator.isBlockedAddress(addr)) {
+                throw new McpTransportException("outbound host DNS changed before send (possible rebinding); refusing");
+            }
+        }
     }
 
     /** One tool advertised by {@code tools/list} on the remote server. */
@@ -201,28 +257,40 @@ public final class McpOutboundClient {
         clientInfo.put("version", "1.0");
         ObjectNode req = rpcRequest("initialize", params);
 
-        HttpResponse<String> resp = post(server, req, null);
+        PostResult resp = post(server, req, null);
         JsonNode body = parseEnvelope(resp);
         // The remote's own session id, echoed back on the initialize response header — required by
         // the streamable-http transport for every subsequent call in this short-lived session.
-        String sessionId = resp.headers().firstValue(SESSION_HEADER).orElse(null);
+        String sessionId = resp.sessionId().orElse(null);
         checkRpcError(body);
         return sessionId;
     }
 
     private JsonNode send(McpOutboundServer server, ObjectNode request, String sessionId) throws McpTransportException {
-        HttpResponse<String> resp = post(server, request, sessionId);
+        PostResult resp = post(server, request, sessionId);
         JsonNode body = parseEnvelope(resp);
         checkRpcError(body);
         return body.path("result");
     }
 
-    private HttpResponse<String> post(McpOutboundServer server, ObjectNode request, String sessionId)
+    private PostResult post(McpOutboundServer server, ObjectNode request, String sessionId)
             throws McpTransportException {
+        // saiku#2542 (review of PR #2580): the SSRF gate runs HERE, immediately before every
+        // send — resolve-and-range-check, then a rebinding guard against a fresh resolution.
+        // Parse time only applies the DNS-free checks, so a brief resolver outage can no
+        // longer drop a registration, and a record whose address changed between scan and
+        // send (DNS rebinding) never receives the credential header.
+        WebhookUrlValidator.ValidatedTarget validated;
+        try {
+            validated = WebhookUrlValidator.validateResolved(server.url(), resolver);
+        } catch (IllegalArgumentException e) {
+            throw new McpTransportException("outbound url rejected: " + e.getMessage());
+        }
+        assertNoRebind(validated.uri(), validated.addresses());
         HttpRequest.Builder builder;
         try {
             builder = HttpRequest.newBuilder()
-                    .uri(URI.create(server.url()))
+                    .uri(validated.uri())
                     .timeout(requestTimeout)
                     .header("content-type", "application/json")
                     .header("accept", "application/json")
@@ -238,20 +306,45 @@ public final class McpOutboundClient {
         if (sessionId != null && !sessionId.isBlank()) {
             builder.header(SESSION_HEADER, sessionId);
         }
+        HttpResponse<InputStream> resp;
         try {
-            return http.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+            resp = http.send(builder.build(), HttpResponse.BodyHandlers.ofInputStream());
         } catch (IOException e) {
             throw new McpTransportException("transport error: " + e.getMessage());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new McpTransportException("interrupted");
         }
-    }
-
-    private JsonNode parseEnvelope(HttpResponse<String> resp) throws McpTransportException {
         if (resp.statusCode() / 100 != 2) {
+            drainQuietly(resp.body());
             throw new McpTransportException("HTTP " + resp.statusCode());
         }
+        // saiku#2542: read the body under a hard byte cap instead of materialising whatever the
+        // remote sends.
+        byte[] capped;
+        try (InputStream in = resp.body()) {
+            capped = in.readNBytes(MAX_RESPONSE_BYTES + 1);
+        } catch (IOException e) {
+            throw new McpTransportException("transport error reading response: " + e.getMessage());
+        }
+        if (capped.length > MAX_RESPONSE_BYTES) {
+            throw new McpTransportException("response exceeds " + MAX_RESPONSE_BYTES + " bytes");
+        }
+        return new PostResult(
+                resp.statusCode(),
+                new String(capped, StandardCharsets.UTF_8),
+                resp.headers().firstValue(SESSION_HEADER));
+    }
+
+    private static void drainQuietly(InputStream in) {
+        try {
+            in.close();
+        } catch (IOException ignored) {
+            // best-effort teardown on a non-2xx answer
+        }
+    }
+
+    private JsonNode parseEnvelope(PostResult resp) throws McpTransportException {
         try {
             JsonNode root = MAPPER.readTree(resp.body());
             if (root == null || !root.isObject()) {

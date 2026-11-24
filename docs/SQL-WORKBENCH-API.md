@@ -8,7 +8,7 @@ probes, ad-hoc rollups Mondrian can't express, and a "view raw" companion to
 drillthrough.
 
 All routes require an authenticated session carrying `ROLE_SQL_EXEC` or
-`ROLE_ADMIN` (form login at `POST /rest/saiku/session`, same auth as the
+`ROLE_ADMIN` (login at `POST /rest/saiku/session`, same auth as the
 regular UI). The UI lives at `/ui/sql-workbench`.
 
 ## Endpoints

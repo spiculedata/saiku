@@ -35,6 +35,21 @@ public class TileDescribeServiceTest {
         assertEquals(System.getenv("ANTHROPIC_API_KEY") != null, svc.isConfigured());
     }
 
+    /** saiku#2542: the describe service is Anthropic-only by design; any other provider degrades. */
+    @Test
+    public void nonAnthropicProviderIsNotConfiguredEvenWithAKey() {
+        TileDescribeService openAiSvc =
+                new TileDescribeService("k", "claude-x", "https://example.invalid", 30, "openai");
+        assertFalse("an OpenAI-configured key must not feed the Anthropic wire format", openAiSvc.isConfigured());
+        DescribeQueryResult result = openAiSvc.describe("{\"measures\":[\"Store Sales\"]}");
+        assertTrue(result.degraded());
+        assertTrue(result.reason().contains("Anthropic provider"));
+
+        TileDescribeService anthropicSvc =
+                new TileDescribeService("k", "claude-x", "https://example.invalid", 30, "anthropic");
+        assertTrue(anthropicSvc.isConfigured());
+    }
+
     @Test
     public void isConfigured_trueWhenKeyPresent() {
         TileDescribeService svc = new TileDescribeService("test-key", "claude-x", "https://example.invalid", 30);

@@ -81,10 +81,16 @@ pushed down; normal sessions append and the history stays useful.
 **Watch out:** local Spotless passes, but Maven tests stop before compilation because GitHub Packages returns 401 for private dependencies.
 **Refs:** #2537, PR #2564
 
+## 2026-11-24 — feature/passthrough-cache-identity — PR #2575 identity-key test rework
+**Was doing:** added real `SecurityAwareConnectionManager.identityKey` and `ThinQueryService` call-chain tests for #2538; clarified unresolved-query cache reuse in the PR description.
+**Now:** check PR #2575 CI for the new Java tests; local Maven stops before compilation because GitHub Packages returns 401 for Mondrian and olap4j artifacts.
+**Refs:** #2538, PR #2575, `SecurityAwareConnectionManagerIdentityKeyTest`
+
 ## 2026-11-24 — feature/2524-unauth-401-no-session — PR #2560 formatting rework
 **Was doing:** matched the two launcher test files to Spotless's CI diff; the prior CI run passed both affected test classes but failed at formatting.
 **Now:** check PR #2560 CI for the rework commit; local Java and Maven are unavailable in this workspace.
 **Refs:** #2524, PR #2560
+
 
 ## 2026-11-24 — feature/2526-ossie-role-bypass — PR #2552 review rework
 **Was doing:** fixed the unqualified-filter physical-column collision, typed sort/fact validation, and consistent query-door error bodies on the existing PR branch.
