@@ -75,6 +75,12 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-11-24 — feature/2535-rest-body-size-limits — PR #2566 review rework
+**Was doing:** formatted the REST body filter test and corrected the operator guide; local Spotless, licence, and static acceptance checks pass. Maven service/web tests stop at GitHub Packages 401 before compilation.
+**Now:** check PR #2566 CI on the rework commit for the full build and Java tests.
+**Watch out:** local JDK 22 and Maven are available under `/data/agents/quality/.tools/`, but private package dependencies do not resolve with this workspace's credentials.
+**Refs:** #2535, PR #2566
+
 ## 2026-11-24 — feature/2524-unauth-401-no-session — PR #2560 formatting rework
 **Was doing:** matched the two launcher test files to Spotless's CI diff; the prior CI run passed both affected test classes but failed at formatting.
 **Now:** check PR #2560 CI for the rework commit; local Java and Maven are unavailable in this workspace.

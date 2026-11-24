@@ -379,10 +379,12 @@ refused the moment the cap is exceeded, so nothing is ever fully buffered.
 Stored objects are capped separately, because an operator may raise the body
 cap for a route without unbounding what lands in the repository.
 
-Every value is resolved live: `SAIKU_*` environment variable wins over the
-`-Dsaiku.*` system property, which wins over `saiku.properties`. A missing,
-unparseable or out-of-range value falls back to the default — the caps cannot
-be disabled by a bad config.
+Every value is resolved live. For the three `saiku.http.*` limits, the
+`SAIKU_HTTP_*` environment variable wins over the `-Dsaiku.*` system property,
+which wins over `saiku.properties`. The stored-object limits use the system
+property first, then `saiku.properties`; they have no environment-variable
+override. Missing or unparseable values use the default, and out-of-range
+values are clamped to the floor or ceiling.
 
 | Property (env) | Default | Meaning |
 |---|---|---|
@@ -390,9 +392,14 @@ be disabled by a bad config.
 | `saiku.http.sessionMaxBodyBytes` (`SAIKU_HTTP_SESSION_MAX_BODY_BYTES`) | `16384` (16 KiB) | Ceiling on the pre-authentication login body (`/rest/saiku/session`). Floor 1 KiB, ceiling 64 KiB. |
 | `saiku.http.uploadMaxBodyBytes` (`SAIKU_HTTP_UPLOAD_MAX_BODY_BYTES`) | `52428800` (50 MiB) | Ceiling on the documented upload routes — zip upload, dashboard image upload, Ossie vendor-model import, quickstart upload, admin model diff, email self-send and the SVG chart export — matching the Jersey servlet's 50 MB `multipart-config`. Floor 64 KiB, ceiling 1 GiB. |
 | `saiku.repo.maxObjectBytes` | `10485760` (10 MiB) | One repository object written through the save-file path (`POST /saiku/api/repository/resource` answers `413`; the manager backstop refuses larger zip-upload entries and image assets). Floor 64 KiB, ceiling 512 MiB. |
-| `saiku.history.maxEntryBytes` | `4194304` (4 MiB) | One archived dashboard version. An oversized version is **not archived** (logged) and the save itself still succeeds, so the history JSONL file cannot grow without bound. Floor 1 KiB, ceiling 512 MiB. |
+| `saiku.history.maxEntryBytes` | `4194304` (4 MiB) | One archived dashboard version. An oversized version is **not archived** (logged) and the save itself still succeeds. Floor 1 KiB, ceiling 512 MiB. |
 | `saiku.comments.maxBodyBytes` | `8192` (8 KiB) | One comment body. Oversized comments are refused with `413`. Floor 1 KiB, ceiling 1 MiB. |
 | `saiku.comments.maxCount` | `500` | Live (non-deleted) comments per dashboard. An add beyond the cap is refused with `413`; soft-deleted comments stop counting. Floor 10, ceiling 10,000. |
+
+Dashboard history retains up to 50 versions per dashboard. At the default
+entry cap, its JSONL file can approach 200 MiB plus JSON overhead; history
+operations read the whole file. Lower `saiku.history.maxEntryBytes` if that
+memory and I/O cost is too high for a deployment.
 
 **Raising the body caps.** The first matching route rule wins (session, then
 upload routes, then the default). If a deployment legitimately posts bodies

@@ -106,9 +106,7 @@ public class RestBodySizeFilterTest {
                 "@Path(\"/upload\")"
             },
             new String[] {
-                "/rest/saiku/api/ossie/import",
-                "OssieImportResource.java",
-                "@Path(\"/saiku/api/ossie/import\")"
+                "/rest/saiku/api/ossie/import", "OssieImportResource.java", "@Path(\"/saiku/api/ossie/import\")"
             },
             new String[] {
                 "/rest/saiku/admin/quickstart/upload",
@@ -123,10 +121,7 @@ public class RestBodySizeFilterTest {
                 "@Path(\"/diff\")"
             },
             new String[] {
-                "/rest/saiku/api/email/self",
-                "EmailResource.java",
-                "@Path(\"/saiku/api/email\")",
-                "@Path(\"/self\")"
+                "/rest/saiku/api/email/self", "EmailResource.java", "@Path(\"/saiku/api/email\")", "@Path(\"/self\")"
             }
         };
         for (String[] expectation : expectations) {
@@ -154,7 +149,9 @@ public class RestBodySizeFilterTest {
     private static String readMainSource(String fileName) throws IOException {
         Path module = Paths.get("src", "main", "java");
         try (java.util.stream.Stream<Path> walk = Files.walk(module)) {
-            Path hit = walk.filter(p -> p.getFileName().toString().equals(fileName)).findFirst().orElse(null);
+            Path hit = walk.filter(p -> p.getFileName().toString().equals(fileName))
+                    .findFirst()
+                    .orElse(null);
             assertTrue("resource source not found under saiku-web: " + fileName, hit != null);
             return new String(Files.readAllBytes(hit), StandardCharsets.UTF_8);
         }
