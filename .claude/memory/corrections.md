@@ -22,6 +22,11 @@ When a shared dashboard or app executes a saved-query reference under the minter
 **Why:** a hash of the parent dashboard or app does not detect a collaborator replacing the query at an unchanged reference path.
 **Source:** PR #2565 review of #2536
 
+## 2026-11-24 — SCIM user PUT: validate group grants before any user write
+Check every requested group's role before changing the username, profile, email, or enabled state in a full user replace.
+**Why:** a stale reserved or off-list group otherwise returns 400 after part of the PUT has persisted, leaving the IdP retrying a failed sync against changed data.
+**Source:** PR #2564 review of #2537
+
 ## 2026-11-24 — Result-cache identity: test the real datasource decision
 A stubbed identity fragment and source-text assertions did not test whether pass-through
 datasources resolve to distinct caller identities. Add a Java test of the real

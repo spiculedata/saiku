@@ -3,6 +3,6 @@
   "modules": {
     "saiku-core/saiku-service": 599,
     "saiku-core/saiku-web": 751,
-    "saiku-launcher": 32
+    "saiku-launcher": 36
   }
 }

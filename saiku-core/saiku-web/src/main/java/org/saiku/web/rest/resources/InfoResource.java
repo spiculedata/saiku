@@ -219,6 +219,20 @@ public class InfoResource {
         // saiku#2577: the SPA shows a small top-bar link to GitHub Sponsors unless the
         // operator opts out (white-label or locked-down deployments).
         body.put("sponsorLink", org.saiku.service.util.SponsorLink.enabled());
+        // saiku#2579: the launcher's update check (TelemetryService, same fat-JAR JVM) records the
+        // latest release it learned of under saiku.update.latest — ONLY when that release is newer
+        // than the running build, and only while telemetry is enabled. Surface it so the SPA's
+        // upgrade banner can appear. No record (telemetry opted out, check not run yet or failed,
+        // dev/build-tree runs) means available:false and no version claim — the banner stays off.
+        // Deliberately on the anonymous capabilities probe rather than an admin-only endpoint: a
+        // release version is not sensitive, the SPA already loads this probe once per session, and
+        // the issue names it as the intended surface.
+        Map<String, Object> update = new LinkedHashMap<>();
+        String latestVersion = telemetryEnabled() ? System.getProperty("saiku.update.latest") : null;
+        boolean newVersionAvailable = latestVersion != null && !latestVersion.isBlank();
+        update.put("available", newVersionAvailable);
+        update.put("latestVersion", newVersionAvailable ? latestVersion : null);
+        body.put("update", update);
         return Response.ok(body).build();
     }
 

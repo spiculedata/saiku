@@ -343,6 +343,46 @@ deletion needs a tombstone or a single user store, which is not implemented.
 
 ---
 
+## SCIM group roles (`saiku.scim.grantableRoles`)
+
+A SCIM group's `displayName` **is** the role recorded in `USER_ROLES` for each of its members, so the
+identity provider effectively decides which authorities it can hand out. Two rules bound that
+(saiku#2065, saiku#2537, CWE-269):
+
+- **Reserved roles are always refused.** Creating or renaming a group to `ROLE_SCIM`, `ROLE_ACTUATOR`,
+  `ROLE_ANONYMOUS`, `ROLE_SQL_EXEC` (raw SQL through the workbench with the stored warehouse
+  credentials), `ROLE_TOKEN_PRINCIPAL` (unlocks every `/rest/**` rule), `ROLE_EMBED_AUTHOR`,
+  `ROLE_EMBED_GUEST`, `ROLE_SHARE_GUEST`, or to any role configured as an admin role
+  (`userService`'s `adminRoles` list, `ROLE_ADMIN` by default) answers `400 invalidValue` — including
+  case variants. The admin set is read live from the configuration, so a custom admin role is covered
+  without a code change.
+- **The allow-list narrows what is left.** Set `saiku.scim.grantableRoles` to a comma-separated list
+  (e.g. `saiku.scim.grantableRoles=analysts,report_viewers`) and only those names can be granted
+  through SCIM, matched case-insensitively; anything else answers `400`. Listing a reserved role on
+  the allow-list does not rescue it — the reserved check runs first. The allow-list is an
+  <em>allow-list</em>, not a rename map: a rename to a name outside the list is refused.
+  The policy is enforced at every grant site (member add, create-with-groups, PUT/PATCH
+  membership sync), not only on the group's name — so an existing group record whose
+  displayName is reserved or falls off the configured list stops granting its role to new
+  members after the upgrade (its membership writes answer `400 invalidValue`; renaming the
+  group to a grantable name is the fix).
+
+**Default (allow-list unset): every role that is not reserved is grantable.** That is the documented
+behaviour, not an accident — set the property explicitly on an instance whose IdP should only manage a
+fixed set of data roles.
+
+**Last enabled admin.** SCIM cannot deactivate the only enabled account holding an admin role:
+`DELETE /Users/{id}`, `PATCH` with `active:false` and a `PUT` carrying `active:false` all answer `400`
+while a second enabled admin exists nowhere in the directory. Deactivating other accounts — or an
+admin once a second enabled admin exists — is unchanged. This protects the operator's own recovery
+path; the SCIM token itself is scoped to `ROLE_SCIM` and must never be able to lock every
+administrator out.
+
+The SCIM bearer surface currently answers `401` for every call over plain HTTP (saiku#2449), so verify
+changes to this behaviour through unit tests or a fixed build rather than a live IdP probe.
+
+---
+
 ## OLAP query guardrails (`saiku.olap.*`)
 
 Every execute path applies server-side limits so a single authenticated request

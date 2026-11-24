@@ -1,0 +1,28 @@
+{
+  "issue": 2579,
+  "title": "The capabilities probe exposes the launcher's update check so the upgrade banner can appear",
+  "kind": "api",
+  "auth": "none",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "the launcher's TelemetryService learned of a newer release (or the acceptance harness boots with SAIKU_TELEMETRY=off, so no check has run)",
+      "then": "GET /rest/saiku/info/capabilities carries an update section whose available flag and latestVersion report exactly what the check found — nothing (available:false, latestVersion:null) when the check has not run, failed or is opted out"
+    }
+  ],
+  "steps": [
+    {
+      "name": "capabilities exposes the update-check surface, reporting nothing when no check has run",
+      "criterion": "C1",
+      "request": { "method": "GET", "path": "/rest/saiku/info/capabilities", "headers": { "Accept": "application/json" } },
+      "expect": {
+        "status": 200,
+        "json": {
+          "update": { "type": "object", "because": "the update check rides on the capabilities probe the SPA already loads" },
+          "update.available": { "equals": false, "because": "the acceptance harness boots with SAIKU_TELEMETRY=off, so the launcher's check never ran and no newer-version claim may be made" },
+          "update.latestVersion": { "isNull": true, "because": "no version number without a check result" }
+        }
+      }
+    }
+  ]
+}

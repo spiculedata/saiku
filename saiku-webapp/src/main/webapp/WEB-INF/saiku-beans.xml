@@ -591,13 +591,16 @@
     <!-- saiku#909 — Tier-1 tile-title/description suggestion (POST /ai/describe-query).
          Reuses the ask feature's own credentials (saiku.ai.ask.*) rather than a
          separate config namespace — same "off by default (no API key), 503 with a
-         clear message until configured" posture as aiAskServiceBean / cubeDesignerAiService. -->
+         clear message until configured" posture as aiAskServiceBean / cubeDesignerAiService.
+         saiku#2542: the configured provider is passed through so the Anthropic wire-format
+         transport refuses (503) rather than handing the ask API key to a non-Anthropic endpoint. -->
     <bean id="tileDescribeService"
           class="org.saiku.service.olap.ai.describe.TileDescribeService">
         <constructor-arg value="${saiku.ai.ask.apiKey:}"/>
         <constructor-arg value="${saiku.ai.ask.model:}"/>
         <constructor-arg value="${saiku.ai.ask.endpoint:}"/>
         <constructor-arg value="${saiku.ai.ask.timeoutSeconds:60}"/>
+        <constructor-arg value="${saiku.ai.ask.provider:}"/>
     </bean>
 
     <bean id="aiQueryResource" scope="request"
@@ -976,6 +979,12 @@
              which is request-scoped) — no scoped-proxy needed. -->
         <property name="aiOssieResource" ref="aiOssieResource"/>
         <property name="sessionStore" ref="mcpSessionStore"/>
+        <!-- saiku#2540: MCP tools/calls invoke the AI resources in-process, so
+             the /ai/ AiAuditFilter never sees them — the resource writes its
+             own audit entries (one per tools/call, allowed / denied / failed),
+             stamping the active policy tier off the shared guard. -->
+        <property name="auditLog" ref="aiAuditLog"/>
+        <property name="aiPolicyGuard" ref="aiPolicyGuard"/>
     </bean>
 
     <!-- ====================================================================
@@ -1657,6 +1666,8 @@
     <!-- Cube/schema designer backend (saiku-ui/src/lib/cube-designer). Reuses the
          schema-generator's JDBC connection provider + the datasource service;
          auto-registered as a JAX-RS resource by SaikuJerseyApplication's @Path scan. -->
+    <!-- saiku#2542: the configured provider is passed through so the Anthropic wire-format
+         transport refuses rather than handing the ask API key to a non-Anthropic endpoint. -->
     <bean id="cubeDesignerAiService"
           class="org.saiku.service.olap.ai.cubedesigner.CubeDesignerAiService">
         <!-- saiku#2489: the Cube Designer picks its AI upstream with the SAME provider
@@ -2090,6 +2101,9 @@
         <constructor-arg ref="userServiceBean"/>
         <constructor-arg ref="scimGroupStore"/>
         <constructor-arg value="${saiku.scim.default-workspace:}"/>
+        <!-- saiku#2537: comma-separated allow-list of roles a SCIM group may grant. Unset means
+             every role not in the reserved set is grantable; see docs/operator-hardening.md. -->
+        <constructor-arg value="${saiku.scim.grantableRoles:}"/>
     </bean>
 
     <bean id="scimAuthFilter" class="org.saiku.web.security.scim.ScimAuthFilter">
