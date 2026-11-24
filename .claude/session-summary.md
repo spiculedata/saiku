@@ -250,3 +250,8 @@ the tree first.
 **Was doing:** added `acceptance/2543` to prove the OAuth audience, explicit role mapping, and session-context requirements that the existing PR implements. The command spec passes on the PR head and fails on the current development base; there is no merge conflict.
 **Now:** check CI after the push. Local focused Maven tests stopped before compilation because GitHub Packages returned 401 for private Mondrian and olap4j artifacts.
 **Refs:** #2543, #2574
+
+## 2026-11-24 — feature/2459-ci-secret-lifecycle-gate — PR #2494 review rework
+**Was doing:** covered scalar `on: pull_request`, `github.token`, `permissions: write-all`, explicit Maven settings paths, and `.npmrc` in the credential-lifecycle gate, with fixtures for each review case. The latest development tip merged cleanly in a dry run, so no base merge was needed.
+**Now:** check PR #2494 CI after the push. The Python script suite and acceptance spec passed locally.
+**Refs:** #2459, #2494

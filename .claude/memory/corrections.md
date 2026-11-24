@@ -17,6 +17,11 @@ A promoted entry has the same shape plus `**Status:** promoted`, `**Supersedes:*
 
 ---
 
+## 2026-11-24 — CI security gates: test ordinary workflow and credential spellings
+When a gate parses GitHub Actions, cover scalar and mapping `on:` triggers, both `secrets.GITHUB_TOKEN` and `github.token`, `permissions: write-all`, and credential files supplied through tool flags or `.npmrc`.
+**Why:** a gate that recognizes only one valid spelling can pass while an equivalent credential-bearing PR build runs.
+**Source:** PR #2494 reviews of the #2459 credential-lifecycle gate
+
 ## 2026-11-24 — Ossie filters: resolve semantic names through their dataset and expression
 Checking that an unqualified filter name is visible somewhere in the model is insufficient. Resolve it to one declaring dataset, reject ambiguity, and emit that dataset's mapped column expression.
 **Why:** a bare quoted name can bind to a different table's hidden physical column and disclose values through filter results.

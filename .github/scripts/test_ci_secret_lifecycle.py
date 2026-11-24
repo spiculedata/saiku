@@ -25,11 +25,12 @@ head is the WORSE version of this exact class — review of PR #2494):
 
 1. A `run` job whose steps make the credential readable (an env var mapping
    `secrets.GH_PACKAGES_TOKEN`, an inline `${{ secrets.GH_PACKAGES_TOKEN }}`
-   interpolation in the `run:` script itself, or `secrets.GITHUB_TOKEN` in a
-   job holding `packages: write` — the saiku#1993 shape; the job-level
-   `permissions:` falls back to the workflow-level one) and then execute a
-   Maven/npm lifecycle goal while the credential is still on disk and the
-   checkout is PR content. An `actions/checkout` whose `ref` is not the
+   interpolation in the `run:` script itself, or `secrets.GITHUB_TOKEN` /
+   `github.token` in a job holding `packages: write` or `write-all` — the
+   saiku#1993 shape; job permissions fall back to workflow permissions) and
+   then execute a Maven/npm lifecycle goal while the credential is still in
+   Maven settings or `.npmrc` and the checkout is PR content. An
+   `actions/checkout` whose `ref` is not the
    trusted base SHA also returns the job to PR content (review of PR #2494).
    The repaired model-diff pattern passes: the checkout moves to the trusted
    base SHA (`git checkout ... $BASE_SHA`) before the credential is written,
@@ -69,6 +70,7 @@ WORKFLOWS_DIR = Path(__file__).resolve().parent.parent / "workflows"
 # the ephemeral token when the job holds `packages: write` (saiku#1993).
 CREDENTIAL_SECRETS = ("GH_PACKAGES_TOKEN", "GITHUB_TOKEN")
 SECRET_REF_RE = re.compile(r"secrets\.([A-Z_]+)")
+GITHUB_TOKEN_REF_RE = re.compile(r"\bgithub\.token\b")
 PACKAGES_WRITE_RE = re.compile(r"^\s*packages:\s*write\s*(#.*)?$", re.M)
 
 # Lifecycle goals only: `mvn help:evaluate` and `dependency:build-classpath`
@@ -81,8 +83,13 @@ NPM_LIFECYCLE_RE = re.compile(
     r"|\bnpm\s+run\s+(?:[^\s]+\s+)*(build|test|package)\b"
     r"|\b(?:yarn|pnpm)\s+(?:--?[^\s]+\s+)*(install|build|publish)\b"
 )
-SETTINGS_REMOVE_RE = re.compile(r"\brm\b[^#\n]*settings\.xml")
 GIT_CHECKOUT_RE = re.compile(r"\bgit\s+checkout\b")
+CREDENTIAL_FILE_WRITE_RE = re.compile(
+    r"(?:^|\s)>+\s*(?:\"([^\"]+)\"|'([^']+)'|([^\s;|]+))"
+)
+MAVEN_SETTINGS_ARG_RE = re.compile(
+    r"(?:^|\s)(?:-s|--settings)(?:\s+|=)(?:\"([^\"]+)\"|'([^']+)'|([^\s;|]+))"
+)
 
 # Workflows may parse the trigger key `on:` as a boolean True.
 ON_KEYS = ("on", True)
@@ -100,6 +107,8 @@ def triggers(doc: dict) -> list[str]:
                 return [str(k) for k in value]
             if isinstance(value, list):
                 return [str(k) for k in value]
+            if isinstance(value, str):
+                return [value]
     return []
 
 
@@ -112,7 +121,7 @@ def is_pull_request_workflow(doc: dict) -> bool:
 
 
 def secret_vars(values) -> set[str]:
-    """Env-var names whose value references a watched secret."""
+    """Watched credentials referenced by an environment value or script."""
     found = set()
     for value in values:
         if not isinstance(value, str):
@@ -120,7 +129,14 @@ def secret_vars(values) -> set[str]:
         for name in SECRET_REF_RE.findall(value):
             if name in CREDENTIAL_SECRETS:
                 found.add(name)
+        if GITHUB_TOKEN_REF_RE.search(value):
+            found.add("GITHUB_TOKEN")
     return found
+
+
+def matched_path(match: re.Match[str]) -> str:
+    """Return a shell path from either a quoted or unquoted regex group."""
+    return next(group for group in match.groups() if group is not None)
 
 
 def string_values(node) -> list[str]:
@@ -180,9 +196,12 @@ def run_job_findings(job_id: str, job: dict, doc: dict) -> list[str]:
     if isinstance(permissions, dict):
         packages_write = permissions.get("packages") == "write"
     else:
-        packages_write = bool(PACKAGES_WRITE_RE.search(str(permissions or "")))
+        permission_text = str(permissions or "").strip()
+        packages_write = permission_text == "write-all" or bool(
+            PACKAGES_WRITE_RE.search(permission_text)
+        )
 
-    credential_on_disk = False
+    credential_files: set[str] = set()
     on_trusted_base = False
 
     steps = job.get("steps") or []
@@ -222,20 +241,38 @@ def run_job_findings(job_id: str, job: dict, doc: dict) -> list[str]:
                         f"{goal} lifecycle code runs over PR content while a package "
                         "credential is in the step environment"
                     )
-            if "settings.xml" in line and (
-                step_secrets or any("${" + name + "}" in script for name in step_secrets)
-            ):
-                credential_on_disk = True
+            if step_secrets:
+                credential_files.update(
+                    matched_path(match)
+                    for match in CREDENTIAL_FILE_WRITE_RE.finditer(line)
+                    if matched_path(match) != "/dev/null"
+                )
             if GIT_CHECKOUT_RE.search(line):
                 if "BASE_SHA" in line:
                     on_trusted_base = True
                 else:
                     on_trusted_base = False
-            if SETTINGS_REMOVE_RE.search(line):
-                credential_on_disk = False
-            if credential_on_disk and not on_trusted_base:
-                goal = "Maven" if MAVEN_LIFECYCLE_RE.search(line) else None
-                if goal is None and NPM_LIFECYCLE_RE.search(line):
+            if re.search(r"\brm\b", line):
+                credential_files = {
+                    path for path in credential_files if path not in line
+                }
+            settings_paths = {
+                matched_path(match) for match in MAVEN_SETTINGS_ARG_RE.finditer(line)
+            }
+            maven_credential_on_disk = any(
+                path.endswith("settings.xml") or path in settings_paths
+                for path in credential_files
+            )
+            npm_credential_on_disk = any(
+                path.endswith(".npmrc") for path in credential_files
+            )
+            if not on_trusted_base:
+                goal = (
+                    "Maven"
+                    if maven_credential_on_disk and MAVEN_LIFECYCLE_RE.search(line)
+                    else None
+                )
+                if goal is None and npm_credential_on_disk and NPM_LIFECYCLE_RE.search(line):
                     goal = "npm"
                 if goal:
                     findings.append(
@@ -316,6 +353,19 @@ class RepositoryGateTest(unittest.TestCase):
             doc = yaml.safe_load(path.read_text(encoding="utf-8"))
             if isinstance(doc, dict) and is_pull_request_workflow(doc):
                 self.assertIn("jobs", doc, f"{path.name} has no jobs")
+
+    def test_scalar_pull_request_trigger_is_scanned(self):
+        doc = yaml.safe_load("""
+on: pull_request
+jobs:
+  b:
+    runs-on: ubuntu-latest
+    steps:
+      - env: {T: "${{ secrets.GH_PACKAGES_TOKEN }}"}
+        run: mvn verify
+""")
+        self.assertTrue(is_pull_request_workflow(doc))
+        self.assertEqual(sorted(findings_in_workflow(doc, "scalar.yml")), ["scalar.yml:b"])
 
     def test_every_finding_is_allow_listed(self):
         unexpected = {
@@ -499,6 +549,18 @@ jobs:
 """)
         self.assertEqual(findings_in_workflow(doc, "x.yml"), {})
 
+    def test_npmrc_credential_persists_into_later_step(self):
+        doc = yaml.safe_load("""
+on: pull_request
+jobs:
+  npm:
+    steps:
+      - env: {TOKEN: "${{ secrets.GH_PACKAGES_TOKEN }}"}
+        run: echo "//npm.pkg.github.com/:_authToken=${TOKEN}" > .npmrc
+      - run: npm ci
+""")
+        self.assertEqual(sorted(findings_in_workflow(doc, "npmrc.yml")), ["npmrc.yml:npm"])
+
 
 class TrustedBasePatternTest(unittest.TestCase):
     def test_maven_over_trusted_base_with_credential_passes(self):
@@ -660,6 +722,50 @@ jobs:
 """)
         found = findings_in_workflow(doc, "wlp.yml")
         self.assertEqual(sorted(found), ["wlp.yml:legacy"])
+
+    def test_github_token_expression_is_watched_with_packages_write(self):
+        doc = yaml.safe_load("""
+on: pull_request
+permissions: {packages: write}
+jobs:
+  build:
+    steps:
+      - env: {GITHUB_TOKEN: "${{ github.token }}"}
+        run: mvn verify
+""")
+        self.assertEqual(sorted(findings_in_workflow(doc, "token.yml")), ["token.yml:build"])
+
+        doc["permissions"] = {"packages": "read"}
+        self.assertEqual(findings_in_workflow(doc, "token.yml"), {})
+
+    def test_write_all_permissions_are_watched_at_both_scopes(self):
+        doc = yaml.safe_load("""
+on: pull_request
+permissions: write-all
+jobs:
+  build:
+    steps:
+      - env: {GITHUB_TOKEN: "${{ github.token }}"}
+        run: mvn verify
+""")
+        self.assertEqual(sorted(findings_in_workflow(doc, "all.yml")), ["all.yml:build"])
+        doc["permissions"] = {"contents": "read"}
+        doc["jobs"]["build"]["permissions"] = "write-all"
+        self.assertEqual(sorted(findings_in_workflow(doc, "all.yml")), ["all.yml:build"])
+
+    def test_explicit_maven_settings_file_is_watched(self):
+        doc = yaml.safe_load("""
+on: pull_request
+jobs:
+  build:
+    steps:
+      - env: {TOKEN: "${{ secrets.GH_PACKAGES_TOKEN }}"}
+        run: echo "<settings><password>${TOKEN}</password></settings>" > "$RUNNER_TEMP/s.xml"
+      - run: mvn -B -s "$RUNNER_TEMP/s.xml" verify
+""")
+        self.assertEqual(sorted(findings_in_workflow(doc, "settings.yml")), ["settings.yml:build"])
+        doc["jobs"]["build"]["steps"].insert(1, {"run": 'rm "$RUNNER_TEMP/s.xml"'})
+        self.assertEqual(findings_in_workflow(doc, "settings.yml"), {})
 
     def test_pull_request_target_trigger_is_scanned(self):
         """A pull_request_target job that checks out the PR head with the
