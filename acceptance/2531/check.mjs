@@ -43,7 +43,7 @@ const perms = wf.slice(wf.indexOf('    permissions:'), wf.indexOf('    env:'));
 assert.match(perms, /pull-requests: read/, 'C3: the job must request pull-requests: read');
 assert.ok(!/pull-requests: write/.test(perms), 'C3: the job must not request pull-requests: write (it could approve)');
 const push = wf.slice(wf.indexOf('- name: Push the review commit'));
-assert.match(push, /git push/, 'C3: the push is a separate step after the model run');
+assert.match(push, /push origin "HEAD:\$\{HEAD_REF\}"/, 'C3: the push is a separate step after the model run');
 assert.ok(wf.indexOf('anthropics/claude-code-action@') < wf.indexOf('- name: Push the review commit'), 'C3: push step follows the Claude step');
 
 // C4 — a workflow-shape test pins the filter and the tool list.
