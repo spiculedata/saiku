@@ -81,6 +81,11 @@ pushed down; normal sessions append and the history stays useful.
 **Watch out:** this workspace has no Java or Maven, so local verification is limited to the acceptance script; CI must compile and run the Java tests.
 **Refs:** #2532, PR #2568
 
+## 2026-11-24 — feature/2524-unauth-401-no-session — PR #2560 formatting rework
+**Was doing:** matched the two launcher test files to Spotless's CI diff; the prior CI run passed both affected test classes but failed at formatting.
+**Now:** check PR #2560 CI for the rework commit; local Java and Maven are unavailable in this workspace.
+**Refs:** #2524, PR #2560
+
 ## 2026-11-24 — feature/2526-ossie-role-bypass — PR #2552 review rework
 **Was doing:** fixed the unqualified-filter physical-column collision, typed sort/fact validation, and consistent query-door error bodies on the existing PR branch.
 **Now:** check PR #2552 CI after the push; its JDK 22 build must verify Java compilation and tests.

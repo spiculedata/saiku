@@ -15,6 +15,7 @@
  */
 package org.saiku.repository;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpSession;
 import jakarta.xml.bind.JAXBContext;
@@ -53,6 +54,21 @@ import org.slf4j.LoggerFactory;
 public class FilesystemRepositoryManager implements IRepositoryManager {
     private static final String ORBIS_WORKSPACE_DIR = "workspace";
     private static final Logger log = LoggerFactory.getLogger(FilesystemRepositoryManager.class);
+
+    /**
+     * saiku#2525: the reserved filename of the ACL sidecar that {@link Acl2} persists inside the
+     * folder it protects, keyed by absolute path. The sidecar is infrastructure, not repository
+     * content: nothing may read, write, delete, move or list it through any content door (the
+     * repository resource, dashboards, apps, notebooks, history, embed-authoring, zip-upload),
+     * because an ordinary write to it is a takeover of the folder's ACL and an ordinary read of
+     * it discloses the server's absolute saiku-home path, every grantee and the names of private
+     * files. ACLs change only through {@link #setACL}/{@link #getACL} (which need GRANT).
+     */
+    private static final String ACL_SIDECAR_FILENAME = "acl.json";
+
+    /** saiku#2525: the Jackson type of a sidecar's key→entry map, shared by the sidecar re-key helpers. */
+    private static final TypeReference<Map<String, AclEntry>> ACL_MAP_TYPE =
+            new TypeReference<Map<String, AclEntry>>() {};
 
     /**
      * Opt back in to the legacy {@code <workspace>_<name>} decoration on loaded datasource names
@@ -414,6 +430,8 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
     }
 
     public boolean deleteFolder(String folder) throws RepositoryException {
+        // saiku#2525: a folder named acl.json is the sidecar (any case/spelling), not content.
+        refuseAclSidecarPath(folder);
         if (folder.startsWith(sep)) {
             folder = folder.substring(1, folder.length());
         }
@@ -496,6 +514,52 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
      * caller can't reopen the write half of the saiku#1902 chain by accident. Admin-side writes
      * ({@code saveDataSource}, internal files) don't pass through here and are unaffected.
      */
+    /**
+     * saiku#2525: is {@code path} the reserved ACL sidecar ({@code acl.json})? Judged on the final
+     * segment of the repository path — case-insensitive, after normalising separators, trailing
+     * slashes and the Windows filename tail (alternate-data-stream suffix, trailing dots/spaces)
+     * — so {@code /a/b/ACL.json}, {@code /a/b/acl.json/} and {@code /a/b/acl.json::$DATA} all
+     * count. The resolved-file variant ({@link #isAclSidecarFile}) is what the guards inside this
+     * class use; this path form is public so the REST resource can answer the contracted 403
+     * before the service layer is reached.
+     */
+    public static boolean isAclSidecarPath(String path) {
+        if (path == null) {
+            return false;
+        }
+        String p = path.replace('\\', '/').trim();
+        while (p.startsWith("./")) {
+            p = p.substring(2);
+        }
+        while (p.endsWith("/")) {
+            p = p.substring(0, p.length() - 1);
+        }
+        p = stripWindowsFilenameTail(p);
+        int idx = p.lastIndexOf('/');
+        String name = idx >= 0 ? p.substring(idx + 1) : p;
+        return ACL_SIDECAR_FILENAME.equalsIgnoreCase(name);
+    }
+
+    /** saiku#2525: is {@code f} the reserved ACL sidecar, judged on its resolved name? */
+    private static boolean isAclSidecarFile(File f) {
+        return f != null && ACL_SIDECAR_FILENAME.equalsIgnoreCase(stripWindowsFilenameTail(f.getName()));
+    }
+
+    /**
+     * saiku#2525: refuse every direct read/write/delete of the sidecar. Enforced here — the layer
+     * every content door funnels through — so a new caller cannot reopen the hole by accident, the
+     * same placement as the saiku#1903 descriptor guard. The message is deliberately constant:
+     * it reaches REST error bodies and log lines, and the caller path is attacker input.
+     */
+    private void refuseAclSidecarPath(String path) {
+        if (isAclSidecarPath(path)) {
+            log.warn("Refused direct access to the reserved ACL sidecar (saiku#2525)");
+            throw new SaikuServiceException(
+                    "acl.json is a reserved ACL sidecar: it cannot be read, written or deleted as repository"
+                            + " content; use the ACL API instead");
+        }
+    }
+
     private void requireAdminForDatasourceDescriptor(String path, List<String> roles) {
         if (path == null) {
             return;
@@ -531,6 +595,8 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
 
     public Object saveFile(Object file, String path, String user, String type, List<String> roles)
             throws RepositoryException {
+        // saiku#2525: the sidecar is reserved. An ordinary save onto acl.json is an ACL takeover.
+        refuseAclSidecarPath(path);
         if (file == null) {
             // Create new folder. saiku#895 fix: the canWrite check below was
             // previously INVERTED (`if (canWrite) throw`), denying writes to
@@ -692,6 +758,8 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
     }
 
     public void removeFile(String path, String user, List<String> roles) throws RepositoryException {
+        // saiku#2525: deleting the sidecar wipes every share and private entry in the folder.
+        refuseAclSidecarPath(path);
         // saiku#896: delete used to be gated on canRead — strictly weaker
         // than the operation being performed. canRead is true for every
         // authenticated user on un-ACL'd nodes (the default), which made
@@ -706,10 +774,21 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
             throw new SaikuServiceException("You don't have permission to remove " + path);
         }
 
-        this.getNode(path).delete();
+        File removed = this.getNode(path);
+        removed.delete();
+        // saiku#2525: a deleted node's per-file entry (or a legacy key for it) must not linger in
+        // the parent's sidecar — best-effort, so an unreadable sidecar is left untouched.
+        if (removed.getParentFile() != null) {
+            removeAclKey(removed.getParentFile(), removed.getPath());
+        }
     }
 
     public void moveFile(String source, String target, String user, List<String> roles) throws RepositoryException {
+        // saiku#2525: the sidecar is reserved as both the source and the target — moving it away
+        // strips every entry the folder carries, and moving another file onto it overwrites the
+        // folder's ACL state as ordinary content.
+        refuseAclSidecarPath(source);
+        refuseAclSidecarPath(target);
         // #937: catalogue folder rename/move depends on this. It used to be an
         // empty stub, so RepositoryDatasourceManager.moveFile always returned
         // "Move Okay" while nothing actually moved — the move silently reverted on
@@ -759,17 +838,239 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
         // saiku#1907 N1: never let a non-admin create a NEW direct child of /homes other than
         // their own canonical home (defence-in-depth beyond the ancestor gate above).
         refuseForeignHomeChildCreation(dest, user, roles);
+        // saiku#2525: a move must never become a way to strip or take over the ACL state beneath
+        // the moved node. If the source carries ACL state of its own — a sidecar at or beneath it
+        // (a directory), or a per-file entry for it in its parent's sidecar (a file) — the caller
+        // needs GRANT on the source. A plain WRITE grantee could otherwise relocate another user's
+        // PRIVATE folder into their own home and read it there; the previous check at the top of
+        // this method covered the top node only, so the entries beneath it were dropped by the
+        // move. Whatever IS permitted to move carries its entries along: sidecars inside a moved
+        // directory are re-keyed under the new path, and a moved file's per-file entry migrates to
+        // the destination parent's sidecar (see carryAclStateAfterMove below).
+        if (subtreeHasAclState(src) && !srcAcl.canGrant(src, user, roles)) {
+            throw new SaikuServiceException("You don't have permission to move " + source
+                    + ": it carries ACL entries and you have no GRANT on it");
+        }
         if (destParent != null && !destParent.exists() && !destParent.mkdirs()) {
             throw new RepositoryException("Cannot move: could not create destination folder for " + target);
         }
+        // saiku#2525: capture BEFORE the move — src stops existing once Files.move lands.
+        boolean srcIsDirectory = src.isDirectory();
         try {
             Files.move(src.toPath(), dest.toPath());
         } catch (IOException e) {
             throw new RepositoryException("Failed to move " + source + " to " + target + ": " + e.getMessage());
         }
+        // saiku#2525: carry the ACL state across the move (re-key sidecars under a moved directory;
+        // migrate a moved file's per-file entry to the destination parent's sidecar).
+        carryAclStateAfterMove(srcIsDirectory, src, dest);
+    }
+
+    /**
+     * saiku#2525: does {@code node} hold ACL state that a move would orphan or let the caller
+     * strip? A directory: any sidecar at or beneath it. A file: a per-file entry for it in its
+     * parent's sidecar (the folder's own entry lives in its own sidecar, which travels with it).
+     * An unreadable sidecar counts as present — fail closed.
+     */
+    private boolean subtreeHasAclState(File node) {
+        if (node.isDirectory()) {
+            return containsAclSidecar(node);
+        }
+        if (node.getParentFile() == null || !new File(node.getParentFile(), ACL_SIDECAR_FILENAME).exists()) {
+            return false;
+        }
+        try {
+            return new Acl2(node).getEntry(node.getPath()) != null;
+        } catch (Exception e) {
+            log.debug("Could not read the sidecar state of a node being moved", e);
+            return true;
+        }
+    }
+
+    /** saiku#2525: does any sidecar ({@code acl.json}, any case) exist at or beneath {@code dir}? */
+    private boolean containsAclSidecar(File dir) {
+        if (new File(dir, ACL_SIDECAR_FILENAME).exists()) {
+            return true;
+        }
+        File[] children = dir.listFiles();
+        if (children == null) {
+            return false;
+        }
+        for (File child : children) {
+            if (isAclSidecarFile(child) || (child.isDirectory() && containsAclSidecar(child))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * saiku#2525: after {@code src} was moved to {@code dest}, keep every entry in force at the
+     * new location. A directory's sidecars (its own, and one per subfolder) travel with the tree;
+     * their keys — absolute paths rooted at the old location — are re-keyed under the new one. A
+     * file's per-file entry lives in its parent's sidecar, which does NOT move, so it migrates to
+     * the destination parent's sidecar instead (and the stale key is dropped from the old one).
+     * Best-effort: an unreadable sidecar is left untouched rather than truncated.
+     */
+    private void carryAclStateAfterMove(boolean srcIsDirectory, File src, File dest) {
+        if (srcIsDirectory) {
+            rekeyAclSidecarsUnder(dest, src.getPath(), dest.getPath());
+            return;
+        }
+        File oldParent = src.getParentFile();
+        File newParent = dest.getParentFile();
+        if (oldParent == null || newParent == null) {
+            return;
+        }
+        AclEntry entry = readAclEntry(oldParent, src.getPath());
+        if (entry == null) {
+            return;
+        }
+        removeAclKey(oldParent, src.getPath());
+        addAclEntry(newParent, dest.getPath(), entry);
+    }
+
+    /** saiku#2525: the entry keyed {@code key} in {@code home}'s sidecar, or {@code null}. */
+    private static AclEntry readAclEntry(File home, String key) {
+        Map<String, AclEntry> map = readAclMap(new File(home, ACL_SIDECAR_FILENAME));
+        if (map == null) {
+            return null;
+        }
+        AclEntry entry = map.get(key);
+        return entry != null ? entry : map.get(Acl2.canonicalKey(key));
+    }
+
+    /**
+     * saiku#2525: remove the entry keyed {@code key} (exact or canonical form) from {@code home}'s
+     * sidecar, if any. Best-effort on the write: an unreadable sidecar is left untouched rather
+     * than truncating the surviving entries.
+     */
+    private static void removeAclKey(File home, String key) {
+        File sidecar = new File(home, ACL_SIDECAR_FILENAME);
+        Map<String, AclEntry> map = readAclMap(sidecar);
+        if (map == null) {
+            return;
+        }
+        boolean changed = map.remove(key) != null;
+        changed |= map.remove(Acl2.canonicalKey(key)) != null;
+        if (changed) {
+            try {
+                writeAclMap(sidecar, map);
+            } catch (IOException e) {
+                log.warn("Could not rewrite {} after removing a stale entry", sidecar.getName(), e);
+            }
+        }
+    }
+
+    /** saiku#2525: add or replace an entry in {@code home}'s sidecar, keyed canonically (Acl2's key form). */
+    private static void addAclEntry(File home, String key, AclEntry entry) {
+        File sidecar = new File(home, ACL_SIDECAR_FILENAME);
+        Map<String, AclEntry> map = readAclMap(sidecar);
+        if (map == null) {
+            map = new TreeMap<>();
+        }
+        map.put(Acl2.canonicalKey(key), entry);
+        try {
+            writeAclMap(sidecar, map);
+        } catch (IOException e) {
+            log.warn("Could not write an ACL entry to {}", sidecar.getName(), e);
+        }
+    }
+
+    /** saiku#2525: read a sidecar's key→entry map; {@code null} when absent or unreadable. */
+    private static Map<String, AclEntry> readAclMap(File sidecar) {
+        if (!sidecar.exists()) {
+            return null;
+        }
+        try {
+            return new ObjectMapper().readValue(sidecar, ACL_MAP_TYPE);
+        } catch (Exception e) {
+            log.warn("Could not read {} (saiku#2525)", sidecar.getName(), e);
+            return null;
+        }
+    }
+
+    /** saiku#2525: write a sidecar's key→entry map back. */
+    private static void writeAclMap(File sidecar, Map<String, AclEntry> map) throws IOException {
+        File parent = sidecar.getParentFile();
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            throw new IOException("Could not create the folder for the ACL sidecar");
+        }
+        new ObjectMapper().writeValue(sidecar, map);
+    }
+
+    /**
+     * saiku#2525: re-key every sidecar now rooted at {@code dir}: an entry whose key was written
+     * against the old absolute path ({@code oldPath}, exact or canonical form) is rewritten under
+     * {@code newPath}. Keys carry a path-boundary check, so {@code /old/pathevil} is never
+     * mistaken for a child of {@code /old/path}.
+     */
+    private static void rekeyAclSidecarsUnder(File dir, String oldPath, String newPath) {
+        String oldCanon = Acl2.canonicalKey(oldPath);
+        String newCanon = Acl2.canonicalKey(newPath);
+        rekeySidecar(new File(dir, ACL_SIDECAR_FILENAME), oldPath, newPath, oldCanon, newCanon);
+        File[] children = dir.listFiles();
+        if (children == null) {
+            return;
+        }
+        for (File child : children) {
+            if (child.isDirectory()) {
+                rekeyAclSidecarsUnder(child, oldPath, newPath);
+            } else if (isAclSidecarFile(child)) {
+                rekeySidecar(child, oldPath, newPath, oldCanon, newCanon);
+            }
+        }
+    }
+
+    private static void rekeySidecar(File sidecar, String oldPath, String newPath, String oldCanon, String newCanon) {
+        Map<String, AclEntry> map = readAclMap(sidecar);
+        if (map == null) {
+            return;
+        }
+        Map<String, AclEntry> rekeyed = new TreeMap<>();
+        boolean changed = false;
+        for (Map.Entry<String, AclEntry> e : map.entrySet()) {
+            String key = e.getKey();
+            String replacement = rewriteSidecarKey(key, oldPath, newPath);
+            if (replacement == null) {
+                replacement = rewriteSidecarKey(key, oldCanon, newCanon);
+            }
+            if (replacement == null) {
+                rekeyed.put(key, e.getValue());
+            } else {
+                rekeyed.put(replacement, e.getValue());
+                changed = true;
+            }
+        }
+        if (changed) {
+            try {
+                writeAclMap(sidecar, rekeyed);
+            } catch (IOException ex) {
+                log.warn("Could not re-key {} after a move", sidecar.getName(), ex);
+            }
+        }
+    }
+
+    /** saiku#2525: {@code key} re-rooted from {@code oldPrefix} to {@code newPrefix}, or {@code null} when unrelated. */
+    private static String rewriteSidecarKey(String key, String oldPrefix, String newPrefix) {
+        if (key == null || oldPrefix == null || newPrefix == null || oldPrefix.isEmpty() || newPrefix.isEmpty()) {
+            return null;
+        }
+        if (key.equals(oldPrefix)) {
+            return newPrefix;
+        }
+        String oldPrefixWithSep = oldPrefix.endsWith(File.separator) ? oldPrefix : oldPrefix + File.separator;
+        if (key.startsWith(oldPrefixWithSep)) {
+            String newPrefixWithSep = newPrefix.endsWith(File.separator) ? newPrefix : newPrefix + File.separator;
+            return newPrefixWithSep + key.substring(oldPrefixWithSep.length());
+        }
+        return null;
     }
 
     public Object saveInternalFile(Object file, String path, String type) throws RepositoryException {
+        // saiku#2525: the dashboards/apps/notebooks doors funnel through here; a sidecar write is
+        // an ACL takeover.
+        refuseAclSidecarPath(path);
         File f = null;
         if (file == null) {
             int pos = path.lastIndexOf(sep);
@@ -804,6 +1105,8 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
     }
 
     public Object saveBinaryInternalFile(InputStream file, String path, String type) throws RepositoryException {
+        // saiku#2525: same reservation as the text save above, for the binary door.
+        refuseAclSidecarPath(path);
         if (file == null) {
             // No content: create the directory node at the user-supplied path
             // (createNode resolves the path inside the datadir for us).
@@ -835,6 +1138,9 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
     }
 
     public String getFile(String s, String username, List<String> roles) throws RepositoryException {
+        // saiku#2525: the sidecar's content discloses the server's absolute saiku-home path, every
+        // grantee and the names of private files. It is never served as content.
+        refuseAclSidecarPath(s);
         File node = getFolder(s);
         Acl2 acl2 = new Acl2(node);
         acl2.setAdminRoles(userService.getAdminRoles());
@@ -860,6 +1166,8 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
     }
 
     public String getInternalFile(String s) throws RepositoryException {
+        // saiku#2525: dashboards/apps/notebooks/history/embed reads funnel through here.
+        refuseAclSidecarPath(s);
         byte[] encoded = new byte[0];
         Path resolved = resolveWithinDatadirChecked(s);
         try {
@@ -876,6 +1184,8 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
     }
 
     public InputStream getBinaryInternalFile(String s) throws RepositoryException {
+        // saiku#2525: same reservation as the text read above, for the binary read.
+        refuseAclSidecarPath(s);
         Path path = resolveWithinDatadirChecked(s);
         try {
             byte[] f = Files.readAllBytes(path);
@@ -887,6 +1197,8 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
     }
 
     public void removeInternalFile(String s) throws RepositoryException {
+        // saiku#2525: deleting the sidecar through the internal door wipes every entry in the folder.
+        refuseAclSidecarPath(s);
         this.getNode(s).delete();
     }
 
@@ -943,6 +1255,9 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
     public List<IRepositoryObject> getAllFiles(List<String> type, String username, List<String> roles, String path)
             throws RepositoryException {
 
+        // saiku#2525: the sidecar is not listed as content (it would disclose the server's
+        // absolute paths through the tree).
+        refuseAclSidecarPath(path);
         File file = this.getNode(path);
         if (file.exists()) {
             try {
@@ -958,6 +1273,8 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
     public void deleteFile(String datasourcePath) {
         File n;
         try {
+            // saiku#2525: never delete the sidecar through the datasource path either.
+            refuseAclSidecarPath(datasourcePath);
             n = getFolder(fixPath(datasourcePath));
             n.delete();
 
@@ -987,6 +1304,9 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
     }
 
     public AclEntry getACL(String object, String username, List<String> roles) {
+        // saiku#2525: ACL questions are answered about protected nodes, never about the sidecar
+        // itself; only the ACL API may see ACL state, and only through GRANT.
+        refuseAclSidecarPath(object);
         File node = null;
         try {
             node = getFolder(object);
@@ -1006,6 +1326,9 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
 
     public void setACL(String object, String acl, String username, List<String> roles) throws RepositoryException {
 
+        // saiku#2525: only the ACL API changes ACLs, and it changes the entries of protected nodes,
+        // never the sidecar file itself.
+        refuseAclSidecarPath(object);
         ObjectMapper mapper = new ObjectMapper();
         log.debug("Set ACL to " + object + " : " + acl);
         AclEntry ae = null;
@@ -1221,7 +1544,10 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
 
         } else {
             objects = new ArrayList<>();
-            objects.add(root);
+            // saiku#2525: a listing aimed straight at the sidecar returns nothing, not the sidecar.
+            if (!isAclSidecarFile(root)) {
+                objects.add(root);
+            }
         }
 
         Acl2 acl = new Acl2(root);
@@ -1230,7 +1556,9 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
 
         for (File file : objects) {
             try {
-                if (!file.isHidden()) {
+                // saiku#2525: the ACL sidecar is infrastructure, not content — it never appears in
+                // a listing (its content is a map of the server's absolute paths).
+                if (!file.isHidden() && !isAclSidecarFile(file)) {
                     String filename = file.getName();
                     String relativePath = file.getPath();
                     String datadir = getDatadir();
