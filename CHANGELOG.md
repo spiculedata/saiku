@@ -5,6 +5,19 @@ All notable changes to Saiku are documented here. This project follows
 
 ## Unreleased
 
+### Fixed
+
+- **MCP tool calls are recorded in the AI audit log (saiku#2540).**
+  Every `tools/call` now writes one `ai-audit.jsonl` entry carrying the user,
+  tool name, target cube or Ossie model, policy decision and outcome —
+  including `SAIKU_AI_POLICY` denials, which the MCP endpoint returns as 200
+  tool errors the `/ai/` filter could never see. The three admin endpoints
+  that invoke AI machinery in-process (`/saiku/admin/cube-designer/turn`,
+  `/saiku/admin/ai-evals/run`, `/saiku/admin/ossie-generate`) are audited too,
+  and REST AI entries now carry the cube (`/ai/query`, `/ai/schema/{cube}`,
+  `/ai/members/search`, ...) or model (`/ai/ossie/query`,
+  `/ai/ossie/schema/{connection}/{model}`, ...).
+
 ### Security
 
 - **REST request-body size caps and storage caps (saiku#2535).** A new servlet-level
