@@ -1,0 +1,24 @@
+{
+  "issue": 2547,
+  "title": "Credentials are redacted from datasource connection error logs and admin error responses: a failed connection for a datasource carrying JdbcPassword=/password=/URL user-info logs no password value, and the log still names the datasource and the root cause",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "a failed connection for a datasource whose connect string carries a password (stored, or pass-through with JdbcUser=/JdbcPassword=)",
+      "then": "the connection manager logs the failure with no password value at any level: the logged exception chain has JdbcPassword=, password= and URL user-info values replaced by ***, and a unit test captures the appender output to prove it"
+    },
+    {
+      "id": "C2",
+      "given": "an admin datasource refresh/create/update that fails because the connection failed",
+      "then": "the error text returned to the admin carries the same redaction — JdbcPassword=, password= and user-info values are ***, not the stored or pass-through password"
+    },
+    {
+      "id": "C3",
+      "given": "the same failed connection",
+      "then": "the log still names the datasource and the root cause: non-secret text (Jdbc=, JdbcUser=, host, exception type and message) is left intact"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}
