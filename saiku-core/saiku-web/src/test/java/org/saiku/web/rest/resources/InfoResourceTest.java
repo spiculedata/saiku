@@ -21,6 +21,7 @@ import org.junit.After;
 import org.junit.Test;
 import org.saiku.service.PlatformUtilsService;
 import org.saiku.service.olap.ai.ask.NlAskProviderFactory;
+import org.saiku.service.olap.ai.cubedesigner.CubeDesignerAiService;
 import org.saiku.service.util.dto.Plugin;
 
 public class InfoResourceTest {
@@ -301,6 +302,38 @@ public class InfoResourceTest {
         Map<String, Object> body = (Map<String, Object>) resp.getEntity();
         Map<String, Object> ask = (Map<String, Object>) body.get("ask");
         assertEquals(Boolean.FALSE, ask.get("reachable"));
+    }
+
+    /* ------------------------ saiku#2489 — cube designer ------------------------ */
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void diagnostics_reportsCubeDesignerOllamaStack() {
+        CubeDesignerAiService svc = new CubeDesignerAiService("ollama", null, null, null, 60);
+        InfoResource r = new InfoResource();
+        r.setCubeDesignerAiService(svc);
+
+        Response resp = r.getDiagnostics();
+        Map<String, Object> body = (Map<String, Object>) resp.getEntity();
+        Map<String, Object> cubeDesigner = (Map<String, Object>) body.get("cubeDesigner");
+        assertEquals(Boolean.TRUE, cubeDesigner.get("enabled"));
+        assertEquals("ollama", cubeDesigner.get("provider"));
+        assertEquals(Boolean.TRUE, cubeDesigner.get("configured"));
+        assertEquals(CubeDesignerAiService.DEFAULT_OLLAMA_ENDPOINT, cubeDesigner.get("endpoint"));
+        // Never surfaces a key.
+        for (Object v : cubeDesigner.values()) {
+            assertFalse(String.valueOf(v).contains("sk-"));
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void diagnostics_reportsCubeDesignerDisabledWhenNotWired() {
+        Response resp = new InfoResource().getDiagnostics();
+        Map<String, Object> body = (Map<String, Object>) resp.getEntity();
+        Map<String, Object> cubeDesigner = (Map<String, Object>) body.get("cubeDesigner");
+        assertEquals(Boolean.FALSE, cubeDesigner.get("enabled"));
+        assertFalse(cubeDesigner.containsKey("provider"));
     }
 
     @Test
