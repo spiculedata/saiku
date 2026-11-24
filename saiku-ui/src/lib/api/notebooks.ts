@@ -276,9 +276,10 @@ export async function revokeShareToken(token: string): Promise<void> {
 
 /** Load a notebook via the account-free guest share surface (#1108, mirrors
  *  loadSharedDashboard). Token in the `X-Saiku-Share-Token` header — no
- *  cookie. */
+ *  cookie (`credentials: 'omit'` is defence in depth for saiku#2520). */
 export async function loadSharedNotebook(token: string): Promise<Notebook> {
 	const res = await fetch(`${SHARE_BASE}/view/notebook`, {
+		credentials: 'omit',
 		headers: { 'X-Saiku-Share-Token': token, Accept: 'application/json' }
 	});
 	if (!res.ok) {
@@ -298,6 +299,7 @@ export async function runSharedNotebookCellQuery(
 ): Promise<QueryResult> {
 	const res = await fetch(`${SHARE_BASE}/view/notebook/cell/${encodeURIComponent(cellId)}/query`, {
 		method: 'POST',
+		credentials: 'omit',
 		headers: { 'X-Saiku-Share-Token': token, Accept: 'application/json' }
 	});
 	const body = (await res.json()) as QueryResult;

@@ -120,9 +120,13 @@ public class SessionService implements ISessionService, AccountStatusFilter.Sess
      * @see org.saiku.web.service.ISessionService#login(jakarta.servlet.http.HttpServletRequest, java.lang.String, java.lang.String)
      */
     public Map<String, Object> login(HttpServletRequest req, String username, String password) {
-        HttpSession session = ((HttpServletRequest) req).getSession(true);
-        session.getId();
-
+        // saiku#2524: NO session is created before authentication succeeds. This used to
+        // call req.getSession(true) up front, so every refused login attempt (bad
+        // password, unauthorised user) minted an empty container session that the
+        // launcher then persisted to <saiku-home>/sessions/ for seven days — a
+        // caller-controlled disk/heap filler at the rate-limit floor. The session is
+        // created in the success branch below, after authenticate() has thrown past the
+        // failures and the authorisation predicate has passed.
         if (authenticationManager != null) {
             authenticate(req, username, password);
         }
@@ -139,6 +143,12 @@ public class SessionService implements ISessionService, AccountStatusFilter.Sess
                 // SecurityContext saved during authenticate()) and reissues the
                 // JSESSIONID cookie with the new id. This manual login flow bypasses
                 // Spring Security's SessionAuthenticationStrategy, so we rotate here.
+                // saiku#2524: the container session is created HERE — authentication has
+                // succeeded and the authorisation predicate has passed. (For a real login
+                // authenticate()'s saveContext has already materialised it; for a
+                // manager-less anonymous login this is the first touch.)
+                HttpSession session = ((HttpServletRequest) req).getSession(true);
+                session.getId();
                 try {
                     req.changeSessionId();
                 } catch (IllegalStateException noSession) {
@@ -506,9 +516,15 @@ public class SessionService implements ISessionService, AccountStatusFilter.Sess
      * minted by someone who already had GRANT.
      */
     public <T> T runAs(String username, List<String> roles, java.util.function.Supplier<T> action) {
-        Authentication prior = SecurityContextHolder.getContext() == null
-                ? null
-                : SecurityContextHolder.getContext().getAuthentication();
+        // saiku#2520: the caller may hold a session-backed SecurityContext (a logged-in
+        // cookie) — getContext() then returns the object stored in the HttpSession, and
+        // mutating it would publish the delegated identity to the session, so every other
+        // request sharing that cookie would act as `username` (and, once the session also
+        // held it, would survive this call entirely). Install the delegated identity in a
+        // FRESH context object and restore the prior context OBJECT afterwards; the
+        // session-stored context is never touched, so a concurrent cookie-only request keeps
+        // its own identity for the whole duration of the delegated call.
+        SecurityContext priorContext = SecurityContextHolder.getContext();
         List<GrantedAuthority> auths = new ArrayList<>();
         if (roles != null) {
             for (String r : roles) {
@@ -519,7 +535,9 @@ public class SessionService implements ISessionService, AccountStatusFilter.Sess
         Object principal = owner.getPrincipal();
         boolean addedSession = false;
         try {
-            SecurityContextHolder.getContext().setAuthentication(owner);
+            SecurityContext ownerContext = SecurityContextHolder.createEmptyContext();
+            ownerContext.setAuthentication(owner);
+            SecurityContextHolder.setContext(ownerContext);
             if (principal != null && !sessionHolder.containsKey(principal)) {
                 Map<String, Object> sess = new HashMap<>();
                 sess.put("username", username);
@@ -535,7 +553,7 @@ public class SessionService implements ISessionService, AccountStatusFilter.Sess
             if (addedSession) {
                 sessionHolder.remove(principal);
             }
-            SecurityContextHolder.getContext().setAuthentication(prior);
+            SecurityContextHolder.setContext(priorContext);
         }
     }
 
