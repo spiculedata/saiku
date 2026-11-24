@@ -85,14 +85,14 @@ claim('C3', 'AiQueryResource publishes the cube enrichment', /AiAuditFilter\.P_C
 claim(
   'C3',
   'the cube enrichment is set on the query paths (executeAi / previewAi)',
-  /P_CUBE/.test(between(queryResource, 'public Response executeAi', 'public Response describeQuery')) &&
-    /P_CUBE/.test(between(queryResource, 'public Response previewAi', 'public Response listCubes')),
+  /auditEnrichCube/.test(between(queryResource, 'public Response executeAi', 'public Response describeQuery')) &&
+    /auditEnrichCube/.test(between(queryResource, 'public Response previewAi', 'Phase 2: list available cubes')),
 );
 claim(
   'C3',
   'the cube enrichment is set on the schema and member-search paths',
-  /P_CUBE/.test(between(queryResource, 'public Response getSchema', 'public Response listCubes')) &&
-    /P_CUBE/.test(between(queryResource, 'public Response searchMembers', 'public static AiCubeRef parseCubeId')),
+  /auditEnrichCube/.test(between(queryResource, 'public Response getSchema', 'public Response getPiiSuggestions')) &&
+    /auditEnrichCube/.test(between(queryResource, 'public Response searchMembers', 'public static AiCubeRef parseCubeId')),
 );
 claim('C3', 'AiOssieResource publishes the model enrichment', /AiAuditFilter\.P_MODEL/.test(ossieResource));
 claim('C3', 'the filter folds enrichment published as servlet request attributes', /servletRequestEnrichment|ServletRequestAttributes/.test(filter));

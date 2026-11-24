@@ -29,6 +29,18 @@ import org.slf4j.LoggerFactory;
  * that resources opt into by setting the {@code P_*} request properties below;
  * the filter folds those in if present. A missing enrichment degrades an entry
  * gracefully — it never produces a missing entry, which is the whole point.
+ * Since saiku#2540 a resource that cannot reach the JAX-RS request context (the
+ * Spring-wired singletons, which reach request state via
+ * {@code RequestContextHolder}) may instead set the same {@code P_*} keys as
+ * <em>servlet request attributes</em>; the filter folds those in too.
+ *
+ * <p>The audited surface is widened by saiku#2540 from the {@code /ai/} REST
+ * endpoints to also cover the three admin AI endpoints (cube-designer turn,
+ * eval sweep, ossie-generate), which call AI resources in-process. The MCP
+ * endpoint is deliberately NOT in the filter's surface: it audits itself
+ * ({@link org.saiku.web.rest.resources.mcp.McpResource#auditToolCall}) because
+ * a tools/call's tool name and target are JSON-RPC data, not envelope data —
+ * and putting it in both places would double-count every call.
  *
  * <p>Never throws into the response path: an audit failure is logged, not
  * propagated (though {@link AiAuditLog} logs write failures loudly — they are a
@@ -90,6 +102,7 @@ public class AiAuditFilter implements ContainerRequestFilter, ContainerResponseF
                     enrichment.put(k, v);
                 }
             }
+            foldServletAttributes(enrichment);
             AiAuditEntry e =
                     buildEntry(path, principalName(request), response.getStatus(), latencyMs, enrichment, policyGuard);
             if (e != null) {
@@ -107,6 +120,29 @@ public class AiAuditFilter implements ContainerRequestFilter, ContainerResponseF
     };
 
     /**
+     * saiku#2540 — the enrichment bridge for resources that cannot reach the
+     * JAX-RS request context. This repository's resources are Spring-wired
+     * singletons that reach request state via {@code RequestContextHolder}
+     * (see {@code AiQueryResource.currentRequest()}); such a resource publishes
+     * audit enrichment by setting a {@code P_*} key as a <em>servlet request
+     * attribute</em>, and the filter folds it in here. JAX-RS request-property
+     * values win when a resource sets both.
+     */
+    private static void foldServletAttributes(java.util.Map<String, Object> enrichment) {
+        org.springframework.web.context.request.RequestAttributes attrs =
+                org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+        if (attrs instanceof org.springframework.web.context.request.ServletRequestAttributes sra) {
+            jakarta.servlet.http.HttpServletRequest req = sra.getRequest();
+            for (String k : ENRICH_KEYS) {
+                Object v = req.getAttribute(k);
+                if (v != null && !enrichment.containsKey(k)) {
+                    enrichment.put(k, v);
+                }
+            }
+        }
+    }
+
+    /**
      * Pure core: build the audit entry for a call, or {@code null} if the path
      * is not on the AI surface ({@code /ai/}). Extracted from the filter so it's
      * unit-testable without standing up JAX-RS contexts.
@@ -118,9 +154,14 @@ public class AiAuditFilter implements ContainerRequestFilter, ContainerResponseF
             Long latencyMs,
             java.util.Map<String, Object> enrichment,
             AiPolicyGuard policyGuard) {
-        // Only audit the AI surface. The admin read endpoint is at
-        // /saiku/admin/ai-audit (no "/ai/" segment) so it isn't self-audited.
-        if (path == null || !path.contains("/ai/")) {
+        // saiku#906 audited the /ai/ REST surface; saiku#2540 adds the three
+        // admin AI endpoints, which call AI resources in-process. The admin
+        // audit read endpoint (/saiku/admin/ai-audit) is deliberately absent —
+        // reading the log must not write to it. The MCP endpoint
+        // (/saiku/api/mcp) is also deliberately absent: McpResource audits
+        // itself (its tool name and target are JSON-RPC data, not envelope
+        // data) and would otherwise be counted twice.
+        if (path == null || !isAuditedSurface(path)) {
             return null;
         }
         AiAuditEntry e = new AiAuditEntry();
@@ -149,6 +190,17 @@ public class AiAuditFilter implements ContainerRequestFilter, ContainerResponseF
             e.error = enriched != null ? enriched : ("HTTP " + status);
         }
         return e;
+    }
+
+    /** The audited AI surface. A path is audited when it carries AI data
+     *  ({@code /ai/}) or is one of the admin endpoints that invoke AI
+     *  machinery in-process (saiku#2540). Extracted from the gate so tests can
+     *  assert the surface without standing up JAX-RS contexts. */
+    static boolean isAuditedSurface(String path) {
+        return path.contains("/ai/")
+                || path.startsWith("/saiku/admin/cube-designer/turn")
+                || path.startsWith("/saiku/admin/ai-evals/run")
+                || path.startsWith("/saiku/admin/ossie-generate");
     }
 
     private static String principalName(ContainerRequestContext request) {

@@ -21,6 +21,8 @@ import jakarta.ws.rs.core.Response;
 import org.saiku.service.olap.ai.AiQueryRequest;
 import org.saiku.service.olap.ai.AiSchemaConverter;
 import org.saiku.service.olap.ai.OlapAiCubeMetadataService;
+import org.saiku.service.olap.ai.audit.AiAuditEntry;
+import org.saiku.service.olap.ai.audit.AiAuditLog;
 import org.saiku.web.rest.resources.AiQueryResource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -68,6 +70,12 @@ public class McpResource {
     private AiQueryResource aiQueryResource;
     private org.saiku.web.rest.resources.AiOssieResource aiOssieResource;
     private McpSessionStore sessionStore;
+    /** saiku#2540 — MCP tools/calls call the AI resources in-process, so the
+     *  /ai/ AiAuditFilter never sees them; the resource writes its own audit
+     *  entries. Null-safe in tests (no entry is written when unwired). */
+    private AiAuditLog auditLog;
+    /** Supplies the active policy tier recorded on each MCP entry. */
+    private org.saiku.service.olap.ai.AiPolicyGuard aiPolicyGuard;
 
     public void setAiQueryResource(AiQueryResource r) {
         this.aiQueryResource = r;
@@ -79,6 +87,14 @@ public class McpResource {
 
     public void setSessionStore(McpSessionStore s) {
         this.sessionStore = s;
+    }
+
+    public void setAuditLog(AiAuditLog auditLog) {
+        this.auditLog = auditLog;
+    }
+
+    public void setAiPolicyGuard(org.saiku.service.olap.ai.AiPolicyGuard g) {
+        this.aiPolicyGuard = g;
     }
 
     /**
@@ -169,29 +185,235 @@ public class McpResource {
 
     private Response handleToolsCall(JsonNode idNode, JsonNode params, String sessionId) {
         if (params == null || !params.isObject()) {
+            auditToolCall(
+                    null,
+                    null,
+                    null,
+                    null,
+                    AiAuditEntry.OUTCOME_VALIDATION_ERROR,
+                    AiAuditEntry.DECISION_ALLOW,
+                    "invalid_params");
             return rpcError(
                     idNode, RPC_INVALID_PARAMS, "tools/call requires params.name + params.arguments", sessionId);
         }
         String name = textOrNull(params.get("name"));
         if (name == null) {
+            auditToolCall(
+                    null,
+                    null,
+                    null,
+                    null,
+                    AiAuditEntry.OUTCOME_VALIDATION_ERROR,
+                    AiAuditEntry.DECISION_ALLOW,
+                    "missing_tool_name");
             return rpcError(idNode, RPC_INVALID_PARAMS, "tools/call requires params.name", sessionId);
         }
         JsonNode args = params.get("arguments");
         if (args == null) args = MAPPER.createObjectNode();
+        // saiku#2540: resolve the audit target up front — the raw arguments
+        // are what name the cube / model, and the audit entry must carry it
+        // even when the call fails before dispatch resolves anything.
+        String targetCube = targetCube(name, args);
+        String targetModel = targetModel(name, args);
+        long auditStart = System.nanoTime();
         try {
             JsonNode body = dispatchTool(name, args);
+            auditToolCall(
+                    name,
+                    targetCube,
+                    targetModel,
+                    latencyMs(auditStart),
+                    AiAuditEntry.OUTCOME_SUCCESS,
+                    AiAuditEntry.DECISION_ALLOW,
+                    null);
             return rpcResult(idNode, wrapToolResult(body), sessionId);
         } catch (UnknownToolException e) {
+            auditToolCall(
+                    name,
+                    targetCube,
+                    targetModel,
+                    latencyMs(auditStart),
+                    AiAuditEntry.OUTCOME_ERROR,
+                    AiAuditEntry.DECISION_ALLOW,
+                    "unknown_tool");
             return rpcError(idNode, RPC_METHOD_NOT_FOUND, e.getMessage(), sessionId);
         } catch (InvalidArgsException e) {
+            auditToolCall(
+                    name,
+                    targetCube,
+                    targetModel,
+                    latencyMs(auditStart),
+                    AiAuditEntry.OUTCOME_VALIDATION_ERROR,
+                    AiAuditEntry.DECISION_ALLOW,
+                    "invalid_arguments");
             return rpcError(idNode, RPC_INVALID_PARAMS, e.getMessage(), sessionId);
         } catch (org.saiku.service.olap.ai.AiPolicyViolation e) {
             // saiku#2322: an operator's SAIKU_AI_POLICY denial is not an internal error — it is a
             // tool-level failure the host agent must see as such. MCP models this as a tool
             // result with isError:true (not a -32603 RPC error), carrying the same
             // PERMISSION_DENIED envelope the REST endpoints return via AiPolicyViolationMapper.
+            // saiku#2540: and the audit log must say DENY — the 200 tool-error envelope would
+            // read as "allow + success" to any envelope-only auditor.
+            auditToolCall(
+                    name,
+                    targetCube,
+                    targetModel,
+                    latencyMs(auditStart),
+                    AiAuditEntry.OUTCOME_DENIED,
+                    AiAuditEntry.DECISION_DENY,
+                    "policy:" + e.getRequired().displayName());
             return rpcResult(idNode, wrapPolicyDeniedToolResult(e), sessionId);
+        } catch (RuntimeException e) {
+            auditToolCall(
+                    name,
+                    targetCube,
+                    targetModel,
+                    latencyMs(auditStart),
+                    AiAuditEntry.OUTCOME_ERROR,
+                    AiAuditEntry.DECISION_ALLOW,
+                    "internal_error");
+            // saiku#1920: the message can carry SQL, JDBC URLs or RLS predicates and an MCP host
+            // feeds it to the model. Log it with a ref; return only the ref.
+            String ref = java.util.UUID.randomUUID().toString().substring(0, 8);
+            log.error("MCP request handling failed for method=tools/call tool={} [ref={}]", name, ref, e);
+            return rpcError(idNode, RPC_INTERNAL_ERROR, "Internal error (ref=" + ref + ")", sessionId);
         }
+    }
+
+    /** saiku#2540 — write the one audit entry for a tools/call. MCP calls the
+     *  AI resources in-process (direct Java method calls), so the /ai/
+     *  AiAuditFilter never sees them, and a tools/call's tool name and target
+     *  are JSON-RPC data the envelope cannot carry. Mirrors
+     *  {@code EmbedViewResource.audit()}: a direct {@link AiAuditEntry} with
+     *  the same shape a REST entry has — user, tool, target cube/model, policy
+     *  tier, decision, outcome, latency — and never the arguments or result
+     *  content. Exactly one entry per tools/call, written on every exit path
+     *  (allowed, denied or failed). Never throws: an audit failure is logged,
+     *  not propagated. */
+    void auditToolCall(
+            String tool,
+            String targetCube,
+            String targetModel,
+            Long latencyMs,
+            String outcome,
+            String decision,
+            String errorToken) {
+        if (auditLog == null || !auditLog.isEnabled()) {
+            return;
+        }
+        try {
+            AiAuditEntry e = new AiAuditEntry();
+            e.endpoint = "/saiku/api/mcp";
+            e.tool = tool;
+            e.cube = targetCube;
+            e.model = targetModel;
+            String u = auditUser();
+            e.user = (u == null || u.isBlank()) ? "anonymous" : u;
+            e.outcome = outcome;
+            e.policyDecision = decision;
+            if (aiPolicyGuard != null && aiPolicyGuard.current() != null) {
+                e.policy = aiPolicyGuard.current().displayName();
+            }
+            e.latencyMs = latencyMs;
+            if (!AiAuditEntry.OUTCOME_SUCCESS.equals(e.outcome)) {
+                // Short, leak-safe error token — never the exception message,
+                // which can carry SQL / JDBC URLs / RLS predicates (saiku#1920).
+                e.error = errorToken != null ? errorToken : "error";
+            }
+            auditLog.record(e);
+        } catch (RuntimeException ex) {
+            log.warn("MCP audit entry write failed (tool call still served): {}", ex.toString());
+        }
+    }
+
+    /** Wall-clock latency of the dispatched tool call, in milliseconds. */
+    private static Long latencyMs(long startNanos) {
+        return (System.nanoTime() - startNanos) / 1_000_000L;
+    }
+
+    /** The authenticated caller for the audit entry. Reads the same single
+     *  authoritative identity sources the other resources use — Spring
+     *  Security's context first (the MCP endpoint sits behind its auth chain),
+     *  then the servlet principal. {@code null} falls through to
+     *  "anonymous" in the entry, matching the REST filter's behaviour. */
+    private static String auditUser() {
+        try {
+            org.springframework.security.core.Authentication auth =
+                    org.springframework.security.core.context.SecurityContextHolder.getContext()
+                            .getAuthentication();
+            if (auth != null && auth.getName() != null && !auth.getName().isBlank()) {
+                return auth.getName();
+            }
+        } catch (RuntimeException ignore) {
+            // No Spring context bound (unit tests) — fall through.
+        }
+        try {
+            org.springframework.web.context.request.RequestAttributes attrs =
+                    org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+            if (attrs instanceof org.springframework.web.context.request.ServletRequestAttributes sra) {
+                jakarta.servlet.http.HttpServletRequest req = sra.getRequest();
+                if (req.getUserPrincipal() != null) {
+                    return req.getUserPrincipal().getName();
+                }
+            }
+        } catch (RuntimeException ignore) {
+            // No request bound — fall through.
+        }
+        return null;
+    }
+
+    /** The OLAP cube a tool call targets, for the audit entry — the raw args
+     *  {@code cube} either as the canonical "connection/catalog/schema/cube"
+     *  string or as the structured object joined the same way. Null when the
+     *  tool has no cube target (list_cubes, drillthrough, the Ossie tools). */
+    static String targetCube(String tool, JsonNode args) {
+        if (tool == null || args == null) return null;
+        return switch (tool) {
+            case "describe_cube", "search_members" -> optionalString(args, "cube");
+            case "run_query", "preview_query" -> cubeRefFromArgs(args.get("cube"));
+            default -> null;
+        };
+    }
+
+    /** The Ossie semantic model a tool call targets, for the audit entry —
+     *  "connection/model" when both are named, else whichever is. Null for
+     *  the OLAP tools. */
+    static String targetModel(String tool, JsonNode args) {
+        if (tool == null || args == null) return null;
+        return switch (tool) {
+            case "describe_ossie_model",
+                    "describe_ossie_ontology",
+                    "run_ossie_query",
+                    "preview_ossie_query",
+                    "search_field_values" -> {
+                String connection = optionalString(args, "connection");
+                String model = optionalString(args, "model");
+                yield (connection != null && model != null)
+                        ? connection + "/" + model
+                        : (model != null ? model : connection);
+            }
+            default -> null;
+        };
+    }
+
+    /** Read a tools/call {@code cube} argument as a canonical ref string:
+     *  a textual cube id passes through, the structured
+     *  {@code {connectionName, catalog, schema, cubeName}} object is joined
+     *  with '/' (skipping absent parts), anything else yields null. */
+    private static String cubeRefFromArgs(JsonNode cube) {
+        if (cube == null || cube.isNull()) return null;
+        if (cube.isTextual()) return cube.asText();
+        if (cube.isObject()) {
+            StringBuilder ref = new StringBuilder();
+            for (String part : new String[] {"connectionName", "catalog", "schema", "cubeName"}) {
+                JsonNode v = cube.get(part);
+                if (v == null || v.isNull() || v.asText().isEmpty()) continue;
+                if (ref.length() > 0) ref.append('/');
+                ref.append(v.asText());
+            }
+            return ref.length() > 0 ? ref.toString() : null;
+        }
+        return null;
     }
 
     /** Build the isError CallToolResult for an {@link AiPolicyViolation}: structuredContent is
