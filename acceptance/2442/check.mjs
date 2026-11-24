@@ -143,9 +143,10 @@ claim('C4', () => {
   assert.ok(owns, 'ownsCurrentEvent() was found in SqlCaptureProbe');
   assert.match(owns[0], /catch\s*\(\s*Throwable/, 'ownsCurrentEvent() catches Throwable, not just RuntimeException');
   assert.doesNotMatch(owns[0], /catch\s*\(\s*RuntimeException/, 'the narrower RuntimeException catch is gone');
+  const serviceFloor = floors.modules['saiku-core/saiku-service'];
   assert.ok(
-    Number.isInteger(floors.modules['saiku-core/saiku-service']) && floors.modules['saiku-core/saiku-service'] >= 582,
-    'the saiku-service test-count floor is raised to cover the new tests',
+    Number.isInteger(serviceFloor) && serviceFloor >= 582,
+    'the saiku-service test-count floor is at least 582 to cover the new tests',
   );
 });
 

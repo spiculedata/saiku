@@ -255,16 +255,52 @@ public class OssieShelfSqlTranslatorFuzzTest {
     // Random model builders
     // ------------------------------------------------------------
 
+    /** saiku#2526 — hostile strings valid as identifier content (non-blank). */
+    private static String nameHostile(Random rng) {
+        String s = hostile(rng);
+        return s.isBlank() ? "blank" : s;
+    }
+
+    /**
+     * A hostile identifier name not yet used in the model. saiku#2526 resolves identifiers
+     * case-insensitively, so a model with two same-named datasets would make a reference
+     * ambiguous — the generated models stay unambiguous so the fuzz targets the translator,
+     * not the duplicate-name semantics.
+     */
+    private static String freshNameHostile(Random rng, java.util.Set<String> used) {
+        while (true) {
+            String s = nameHostile(rng);
+            if (used.add(s)) return s;
+        }
+    }
+
     private static OssieModelDto randomSemantic(Random rng) {
         OssieModelDto semantic = new OssieModelDto();
-        semantic.setName(hostile(rng));
+        semantic.setName(nameHostile(rng));
+        // saiku#2526 — every shelf identifier is resolved against the model before SQL is
+        // emitted, so the fuzz model declares real (hostile-named) datasets and fields for the
+        // shelf state to reference. Hostile content still reaches the emitted SQL through
+        // identifier names and filter values; only blank strings can't be identifiers.
+        java.util.Set<String> used = new java.util.HashSet<>();
+        int datasetCount = 1 + rng.nextInt(2);
+        for (int i = 0; i < datasetCount; i++) {
+            OssieModelDto.Dataset ds = new OssieModelDto.Dataset();
+            ds.setName(freshNameHostile(rng, used));
+            int fieldCount = 1 + rng.nextInt(4);
+            for (int j = 0; j < fieldCount; j++) {
+                OssieModelDto.Field f = new OssieModelDto.Field();
+                f.setName(freshNameHostile(rng, used));
+                ds.getFields().add(f);
+            }
+            semantic.getDatasets().add(ds);
+        }
         // Add a small number of legit metrics — expressions come pre-quoted from the YAML, so
         // we don't fuzz the expression content itself (that would test the YAML parser, not
         // the translator).
         int metricCount = 1 + rng.nextInt(4);
         for (int i = 0; i < metricCount; i++) {
             OssieModelDto.Metric m = new OssieModelDto.Metric();
-            m.setName(hostile(rng));
+            m.setName(freshNameHostile(rng, used));
             // Pick a benign expression — SUM(orders.amount) is realistic and doesn't add
             // extra quote content to accidentally validate against.
             m.setExpression("SUM(\"orders\".\"amount\")");
@@ -273,20 +309,52 @@ public class OssieShelfSqlTranslatorFuzzTest {
         return semantic;
     }
 
+    /** Every (dataset, field) pair the model declares — rows/columns/sorts draw from these. */
+    private static List<OssieQueryModel.FieldRef> declaredFieldPairs(OssieModelDto semantic) {
+        List<OssieQueryModel.FieldRef> pairs = new ArrayList<>();
+        for (OssieModelDto.Dataset ds : semantic.getDatasets()) {
+            for (OssieModelDto.Field f : ds.getFields()) {
+                OssieQueryModel.FieldRef ref = new OssieQueryModel.FieldRef();
+                ref.setDataset(ds.getName());
+                ref.setField(f.getName());
+                pairs.add(ref);
+            }
+        }
+        return pairs;
+    }
+
+    /** Every field name the model declares — unqualified filter/sort references draw from these. */
+    private static List<String> declaredFieldNames(OssieModelDto semantic) {
+        List<String> names = new ArrayList<>();
+        for (OssieModelDto.Dataset ds : semantic.getDatasets()) {
+            for (OssieModelDto.Field f : ds.getFields()) names.add(f.getName());
+        }
+        return names;
+    }
+
     private static OssieQueryModel randomModel(Random rng, OssieModelDto semantic) {
         OssieQueryModel m = new OssieQueryModel();
         m.setConnection(hostile(rng));
         m.setModel(semantic.getName());
-        m.setFactDataset(hostile(rng));
+        // The fact dataset is also validated before SQL emission. Keep its name hostile, but
+        // select one declared by this semantic model so successful translations remain sampled.
+        m.setFactDataset(semantic.getDatasets()
+                .get(rng.nextInt(semantic.getDatasets().size()))
+                .getName());
+
+        // saiku#2526 — rows/columns/sorts reference only identifiers the model declares; the
+        // hostile content reaches the emitted SQL through those names (and filter values).
+        List<OssieQueryModel.FieldRef> pairs = declaredFieldPairs(semantic);
+        List<String> fieldNames = declaredFieldNames(semantic);
 
         int rowCount = rng.nextInt(4);
         List<OssieQueryModel.FieldRef> rows = new ArrayList<>();
-        for (int i = 0; i < rowCount; i++) rows.add(fieldRef(rng));
+        for (int i = 0; i < rowCount; i++) rows.add(pairs.get(rng.nextInt(pairs.size())));
         m.setRows(rows);
 
         int colCount = rng.nextInt(3);
         List<OssieQueryModel.FieldRef> cols = new ArrayList<>();
-        for (int i = 0; i < colCount; i++) cols.add(fieldRef(rng));
+        for (int i = 0; i < colCount; i++) cols.add(pairs.get(rng.nextInt(pairs.size())));
         m.setColumns(cols);
 
         // Values must reference declared metrics for the translator to resolve them; pull from
@@ -307,29 +375,31 @@ public class OssieShelfSqlTranslatorFuzzTest {
 
         int filterCount = rng.nextInt(4);
         List<OssieQueryModel.FilterExpr> filters = new ArrayList<>();
-        for (int i = 0; i < filterCount; i++) filters.add(filterExpr(rng));
+        for (int i = 0; i < filterCount; i++) filters.add(filterExpr(rng, semantic, fieldNames));
         m.setFilters(filters);
 
         int sortCount = rng.nextInt(3);
         List<OssieQueryModel.SortRef> sorts = new ArrayList<>();
-        for (int i = 0; i < sortCount; i++) sorts.add(sortRef(rng));
+        for (int i = 0; i < sortCount; i++) sorts.add(sortRef(rng, semantic, pairs, fieldNames));
         m.setSorts(sorts);
 
         if (rng.nextBoolean()) m.setLimit(rng.nextInt(1000));
         return m;
     }
 
-    private static OssieQueryModel.FieldRef fieldRef(Random rng) {
-        OssieQueryModel.FieldRef f = new OssieQueryModel.FieldRef();
-        f.setDataset(hostile(rng));
-        f.setField(hostile(rng));
-        return f;
-    }
-
-    private static OssieQueryModel.FilterExpr filterExpr(Random rng) {
+    private static OssieQueryModel.FilterExpr filterExpr(Random rng, OssieModelDto semantic, List<String> fieldNames) {
         OssieQueryModel.FilterExpr f = new OssieQueryModel.FilterExpr();
-        f.setDataset(hostile(rng));
-        f.setField(hostile(rng));
+        if (rng.nextBoolean()) {
+            // Qualified: a declared dataset + one of its fields.
+            OssieModelDto.Dataset ds = semantic.getDatasets()
+                    .get(rng.nextInt(semantic.getDatasets().size()));
+            f.setDataset(ds.getName());
+            f.setField(ds.getFields().get(rng.nextInt(ds.getFields().size())).getName());
+        } else {
+            // Unqualified: a field name declared somewhere in the model (saiku#2526 resolves
+            // these against the model instead of emitting them raw).
+            f.setField(fieldNames.get(rng.nextInt(fieldNames.size())));
+        }
         String[] ops = {"=", "!=", "<", "<=", ">", ">=", "IN", "NOT_IN", "LIKE", "IS_NULL", "IS_NOT_NULL", "BETWEEN"};
         f.setOp(ops[rng.nextInt(ops.length)]);
         f.setValue(hostile(rng));
@@ -340,11 +410,19 @@ public class OssieShelfSqlTranslatorFuzzTest {
         return f;
     }
 
-    private static OssieQueryModel.SortRef sortRef(Random rng) {
+    private static OssieQueryModel.SortRef sortRef(
+            Random rng, OssieModelDto semantic, List<OssieQueryModel.FieldRef> pairs, List<String> fieldNames) {
         OssieQueryModel.SortRef s = new OssieQueryModel.SortRef();
-        s.setDataset(hostile(rng));
-        s.setField(hostile(rng));
-        if (rng.nextBoolean()) s.setMetric(hostile(rng));
+        if (rng.nextBoolean()) {
+            // By metric — a declared one (saiku#2526 validates the metric name).
+            OssieModelDto.Metric picked =
+                    semantic.getMetrics().get(rng.nextInt(semantic.getMetrics().size()));
+            s.setMetric(picked.getName());
+        } else {
+            OssieQueryModel.FieldRef ref = pairs.get(rng.nextInt(pairs.size()));
+            s.setDataset(ref.getDataset());
+            s.setField(ref.getField());
+        }
         s.setDirection(rng.nextBoolean() ? "DESC" : "ASC");
         return s;
     }
