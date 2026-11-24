@@ -86,6 +86,12 @@ pushed down; normal sessions append and the history stays useful.
 **Now:** use PR #2559 CI for the Maven build and Java tests; local Maven dependency resolution stops at GitHub Packages 401 for Mondrian and olap4j.
 **Watch out:** send only JSESSIONID on the token-seeding GET; echoing the login response's stale XSRF-TOKEN prevents a fresh cookie from being issued.
 **Refs:** #2527, PR #2559
+
+## 2026-11-24 — feature/2524-unauth-401-no-session — PR #2560 formatting rework
+**Was doing:** matched the two launcher test files to Spotless's CI diff; the prior CI run passed both affected test classes but failed at formatting.
+**Now:** check PR #2560 CI for the rework commit; local Java and Maven are unavailable in this workspace.
+**Refs:** #2524, PR #2560
+
 ## 2026-11-24 — feature/2526-ossie-role-bypass — PR #2552 review rework
 **Was doing:** fixed the unqualified-filter physical-column collision, typed sort/fact validation, and consistent query-door error bodies on the existing PR branch.
 **Now:** check PR #2552 CI after the push; its JDK 22 build must verify Java compilation and tests.
