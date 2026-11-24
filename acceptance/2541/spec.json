@@ -1,0 +1,100 @@
+{
+  "issue": 2541,
+  "title": "AI query namedSets expressions are validated, not concatenated verbatim — injection is refused with a typed VALIDATION_ERROR and legitimate named sets still emit",
+  "kind": "api",
+  "auth": "session",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "the issue's injection body — a namedSets[].expression that closes the set (leading '})') and appends its own MEMBER definition — on POST /ai/query/preview",
+      "then": "400 VALIDATION_ERROR pointing at namedSets[0].expression; no generatedMdx containing an injected MEMBER reaches the caller (MCP run_query / preview_query ride the same AiSchemaConverter, so they refuse the same body)"
+    },
+    {
+      "id": "C2",
+      "given": "the same injection body on POST /ai/query (execute)",
+      "then": "400 VALIDATION_ERROR before any MDX is executed — the query is refused, never run"
+    },
+    {
+      "id": "C3",
+      "given": "a legitimate named-set expression over a known Product hierarchy ({[Product].[Products].[Product Family].Members}) on POST /ai/query/preview",
+      "then": "200 PREVIEW with generatedMdx carrying WITH SET and the expression as submitted — no keyword or comment ban trips on ordinary set expressions"
+    }
+  ],
+  "steps": [
+    {
+      "name": "injected named-set expression is refused on preview with a typed validation error",
+      "criterion": "C1",
+      "request": {
+        "method": "POST",
+        "path": "/ai/query/preview",
+        "json": {
+          "cube": "foodmart/FoodMart/FoodMart/Sales",
+          "measures": [{ "name": "Unit Sales" }],
+          "namedSets": [
+            {
+              "name": "S",
+              "expression": "}) MEMBER [Measures].[Unit Sales] AS (Generate(Head([Customer].[Customers].[Name].Members, 5), [Customer].[Customers].CurrentMember.Name, \", \")"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 400,
+        "json": {
+          "status": { "equals": "VALIDATION_ERROR" },
+          "field": { "equals": "namedSets[0].expression" }
+        }
+      }
+    },
+    {
+      "name": "injected named-set expression is refused on execute before any MDX runs",
+      "criterion": "C2",
+      "request": {
+        "method": "POST",
+        "path": "/ai/query",
+        "json": {
+          "cube": "foodmart/FoodMart/FoodMart/Sales",
+          "measures": [{ "name": "Unit Sales" }],
+          "namedSets": [
+            {
+              "name": "S",
+              "expression": "}) MEMBER [Measures].[Unit Sales] AS (Generate(Head([Customer].[Customers].[Name].Members, 5), [Customer].[Customers].CurrentMember.Name, \", \")"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 400,
+        "json": {
+          "status": { "equals": "VALIDATION_ERROR" },
+          "field": { "equals": "namedSets[0].expression" }
+        }
+      }
+    },
+    {
+      "name": "a legitimate named-set expression still emits into the WITH SET clause",
+      "criterion": "C3",
+      "request": {
+        "method": "POST",
+        "path": "/ai/query/preview",
+        "json": {
+          "cube": "foodmart/FoodMart/FoodMart/Sales",
+          "measures": [{ "name": "Unit Sales" }],
+          "rows": [{ "dimension": "Time", "hierarchy": "Time By", "level": "Year" }],
+          "namedSets": [
+            { "name": "Families", "expression": "{[Product].[Products].[Product Family].Members}" }
+          ]
+        }
+      },
+      "expect": {
+        "status": 200,
+        "json": {
+          "status": { "equals": "PREVIEW" },
+          "generatedMdx": {
+            "contains": "SET [Families] AS ({[Product].[Products].[Product Family].Members})"
+          }
+        }
+      }
+    }
+  ]
+}
