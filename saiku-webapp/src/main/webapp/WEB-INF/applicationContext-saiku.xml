@@ -221,7 +221,19 @@
          *.jsp), which re-challenges authentication in the ERROR context → loop → 500.
          Security is unchanged for direct requests: the catch-all blocks all unmapped REQUEST
          dispatches as intended. -->
-    <security:http auto-config='true' use-expressions="true" request-matcher="ant" filter-all-dispatcher-types="false">
+    <!-- saiku#2523: auto-config is GONE (deliberately). It registered Spring's
+         generated form-login — a POST /login filter plus a GET /login page —
+         which authenticated real users OUTSIDE every guard the documented login
+         goes through: no rate limiter (LoginRateLimitFilter only watches
+         Authorization-bearing requests), no CSRF (SaikuCsrfRequestMatcher requires
+         tokens under /rest/ only), and no demo email gate (web.xml maps that to
+         /rest/*). A locked-out account could still sign in at /login, and
+         302 / vs 302 /login?error was an unlimited password oracle. Everything
+         auto-config provided besides form login is declared explicitly below
+         (logout, http-basic, anonymous), so dropping auto-config removes ONLY the
+         second login path. The one login is POST /rest/saiku/session
+         (rate-limited, audited), plus HTTP Basic for stateless clients and XMLA. -->
+    <security:http use-expressions="true" request-matcher="ant" filter-all-dispatcher-types="false">
       <!--access-denied-page="/login.jsp"-->
       <!--
         CSRF: enforced on state-changing /rest/** methods.
