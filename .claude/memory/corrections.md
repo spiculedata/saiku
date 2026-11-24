@@ -25,6 +25,11 @@ principal resolution, and unresolved names, when changing cache isolation.
 **Why:** a refactor could restore cross-user cellset sharing while stub-based tests stay green.
 **Source:** PR #2575 review for #2538
 
+## 2026-11-24 — Ossie filters: resolve semantic names through their dataset and expression
+Checking that an unqualified filter name is visible somewhere in the model is insufficient. Resolve it to one declaring dataset, reject ambiguity, and emit that dataset's mapped column expression.
+**Why:** a bare quoted name can bind to a different table's hidden physical column and disclose values through filter results.
+**Source:** PR #2552 review of #2526
+
 ## 2026-10-11 — Async work: session-scoped beans must be settled on the request thread
 **Status:** promoted
 **Supersedes:** 2026-09-28 — Async work: session-scoped beans must be settled on the request thread
