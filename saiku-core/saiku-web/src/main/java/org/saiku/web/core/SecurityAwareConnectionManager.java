@@ -131,6 +131,11 @@ public class SecurityAwareConnectionManager extends AbstractConnectionManager
 
     @Override
     protected ISaikuConnection getInternalConnection(String name, SaikuDatasource datasource) {
+        // A descriptor may have been removed while a connection with its name remains cached.
+        // Never return that live connection when the datasource lookup no longer succeeds.
+        if (datasource == null) {
+            return null;
+        }
 
         ISaikuConnection con = null;
         if (isDatasourceSecurity(datasource, ISaikuConnection.SECURITY_TYPE_PASSTHROUGH_VALUE)
@@ -183,6 +188,45 @@ public class SecurityAwareConnectionManager extends AbstractConnectionManager
             log.error("Error refreshing connection: " + name, e);
         }
         return null;
+    }
+
+    /**
+     * saiku#2533: evict and close every cached connection the deleted datasource still holds.
+     *
+     * <p>The pool can key one datasource's connections two ways (see {@link #resolveConnectionKey}):
+     * the bare name for a security-disabled datasource, or a per-identity composite key
+     * ({@link #connectionCacheKey}) for a security-enabled one. Evict both shapes: the exact bare
+     * name, and every composite entry whose name field matches. The length-prefixed composite key
+     * makes the prefix match unambiguous — {@code 7:foo<NUL-sep>…} can never collide with another
+     * datasource's entry.
+     */
+    @Override
+    public void removeConnection(String name) {
+        if (name == null || connections == null || connections.isEmpty()) {
+            return;
+        }
+        String compositePrefix = connectionCacheKey(name, null);
+        for (Iterator<Map.Entry<String, ISaikuConnection>> it =
+                        connections.entrySet().iterator();
+                it.hasNext(); ) {
+            Map.Entry<String, ISaikuConnection> entry = it.next();
+            String key = entry.getKey();
+            boolean bare = key.equals(name);
+            boolean perIdentity = key.startsWith(compositePrefix) && key.length() > compositePrefix.length();
+            if (!bare && !perIdentity) {
+                continue;
+            }
+            it.remove();
+            ISaikuConnection con = entry.getValue();
+            try {
+                Connection c = con == null ? null : con.getConnection();
+                if (c != null && !c.isClosed()) {
+                    c.close();
+                }
+            } catch (Exception e) {
+                log.error("Error closing connection of deleted datasource {}", name, e);
+            }
+        }
     }
 
     /**

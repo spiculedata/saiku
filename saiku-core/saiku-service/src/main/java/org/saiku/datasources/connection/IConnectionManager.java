@@ -32,6 +32,19 @@ public interface IConnectionManager {
 
     void refreshAllConnections();
 
+    /**
+     * saiku#2533: drop any cached connection the manager holds for the named datasource.
+     * Called when the datasource is deleted, so the credentials baked into the live
+     * connection do not outlive the descriptor the admin removed. Implementations without
+     * a connection cache (or with nothing cached under this name) simply do nothing — the
+     * default is a no-op so existing implementations stay source-compatible.
+     *
+     * @param name the datasource (or decorated datasource) name the connections were cached
+     *     under; implementations may hold several entries for one datasource (e.g. one per
+     *     caller identity) and should evict them all.
+     */
+    default void removeConnection(String name) {}
+
     OlapConnection getOlapConnection(String name) throws SaikuOlapException;
 
     Map<String, OlapConnection> getAllOlapConnections() throws SaikuOlapException;
