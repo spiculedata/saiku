@@ -5,6 +5,24 @@ All notable changes to Saiku are documented here. This project follows
 
 ## Unreleased
 
+### Security
+
+- **HTML export hardening (saiku#2528, follow-up to #2199/#2430).** The HTML
+  export renderer escaped cell values but concatenated cell *properties* into
+  attributes raw. Those properties are query-author-chosen (they come from
+  `FORMAT_STRING`), and the export link (`GET
+  /rest/saiku/{user}/export/saiku/html?file=`) renders on the Saiku origin for
+  whoever opens it — so an injected property could add elements, event
+  handlers, a credential form posting off-origin, or an image request leaking
+  the victim's data. Every cell property is now HTML-escaped before
+  concatenation, and the `link` and `image` properties are honoured only for
+  absolute `http(s)` URLs (anything else is dropped). The default non-SPA CSP
+  gains `default-src 'none'`, `img-src 'self' data:`, `style-src 'unsafe-inline'`
+  and `form-action 'self'`, so an injected element cannot load from or post to
+  an external host. Exported tables that relied on non-`http(s)` image/link
+  properties, or on external image hosts, need the operator to allow those
+  sources explicitly.
+
 ## 4.9.1 — 2026-11-23
 
 Re-cut of 4.9.0 with the same code, plus a release-pipeline fix. The v4.9.0
