@@ -19,6 +19,7 @@ import org.saiku.web.share.ShareTokenStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.preauth.PreAuthenticatedAuthenticationToken;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -37,10 +38,12 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * reach {@code /ai/query}, drill-through, other dashboards, the repository, or
  * the mint endpoints — escalation is structurally impossible.
  *
- * <p>The context is cleared in a {@code finally} so it is never written to the
- * HttpSession: each guest request re-presents its token and is re-validated
- * from disk, so revocation and expiry take effect on the very next request and
- * there is no guest "session" to hijack.
+ * <p>The guest context is a fresh object swapped in with {@code setContext} and the prior
+ * context object is restored in a {@code finally}, so it is never written to the HttpSession
+ * (saiku#2520): with a logged-in session cookie the loaded context IS the object stored in the
+ * session, and mutating it would rewrite the session's identity. Each guest request re-presents
+ * its token and is re-validated from disk, so revocation and expiry take effect on the very
+ * next request and there is no guest "session" to hijack.
  *
  * <p><b>saiku#1920 — owner identity is re-resolved on every read.</b> The
  * share token's {@code ownerRolesSnapshot} is captured at mint time and goes
@@ -118,12 +121,23 @@ public class ShareTokenAuthFilter extends OncePerRequestFilter {
         // Pin the authorised dashboard to the principal — ShareViewResource
         // reads it from here, never from client input.
         auth.setDetails(new ShareGuestDetails(token.token, token.dashboardPath, token.createdBy, owner.currentRoles()));
+        // saiku#2520: the request may carry a logged-in session cookie, in which case
+        // getContext() returns the SecurityContext object stored in the HttpSession —
+        // setAuthentication() on it rewrites the session's own identity (the viewer acts as
+        // the link owner, and the guest identity survives the request). Install the guest
+        // identity in a FRESH context object and restore the previous context OBJECT in the
+        // finally; the stored context is never mutated, so what the session persists is
+        // exactly what was there before this request.
+        SecurityContext priorContext = SecurityContextHolder.getContext();
+        SecurityContext guestContext = SecurityContextHolder.createEmptyContext();
+        guestContext.setAuthentication(auth);
+        SecurityContextHolder.setContext(guestContext);
         try {
-            SecurityContextHolder.getContext().setAuthentication(auth);
             chain.doFilter(req, resp);
         } finally {
-            // Never persist a guest context to the session.
-            SecurityContextHolder.clearContext();
+            // Never persist a guest context to the session — hand the prior context object
+            // back untouched.
+            SecurityContextHolder.setContext(priorContext);
         }
     }
 
