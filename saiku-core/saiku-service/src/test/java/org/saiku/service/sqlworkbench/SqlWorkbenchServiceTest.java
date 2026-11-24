@@ -27,9 +27,11 @@ import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+import org.saiku.datasources.connection.ISaikuConnection;
 import org.saiku.datasources.datasource.SaikuDatasource;
 import org.saiku.service.datasource.DatasourceService;
 import org.saiku.service.schema.generate.session.SchemaGenOrchestrator;
+import org.saiku.service.user.UserService;
 
 /**
  * Tests {@link SqlWorkbenchService} against a real H2 in-memory database. The JDBC-URL resolution
@@ -400,6 +402,234 @@ public class SqlWorkbenchServiceTest {
         assertEquals(SqlWorkbenchException.Code.QUERY_FAILED, ex.getCode());
         assertFalse(ex.getMessage().contains("org.saiku"));
         assertFalse(ex.getMessage().contains("Exception"));
+    }
+
+    /**
+     * saiku#2532 — a security-enabled datasource whose OLAP-side decision the workbench cannot
+     * reproduce is refused BEFORE a JDBC connection is opened, with the same unknown-datasource
+     * answer as a datasource that does not exist (never a distinguishable "exists but denied").
+     * Covers one2one and passthrough: the connection path would deny a caller with no Mondrian
+     * role / no warehouse credentials — but the workbench opens raw JDBC with the stored
+     * credentials, so over SQL the denial would never fire.
+     */
+    @Test
+    public void execute_refusesOne2OneAndPassthroughSecurityEnabledDatasources() {
+        for (String securityType : new String[] {
+            ISaikuConnection.SECURITY_TYPE_SPRING2MONDRIAN_VALUE, ISaikuConnection.SECURITY_TYPE_PASSTHROUGH_VALUE
+        }) {
+            java.util.Properties props = new java.util.Properties();
+            props.setProperty(ISaikuConnection.SECURITY_ENABLED_KEY, "true");
+            props.setProperty(ISaikuConnection.SECURITY_TYPE_KEY, securityType);
+            SaikuDatasource secured = new SaikuDatasource("secured-ds", SaikuDatasource.Type.OLAP, props);
+            List<String> openedFor = new ArrayList<>();
+            SqlWorkbenchService securedService = new SqlWorkbenchService(
+                    id -> {
+                        openedFor.add(id);
+                        return DriverManager.getConnection(JDBC_URL, "sa", "");
+                    },
+                    new StubDatasourceService("secured-ds") {
+                        @Override
+                        public SaikuDatasource getDatasource(String datasourceName) {
+                            return "secured-ds".equals(datasourceName) ? secured : null;
+                        }
+
+                        @Override
+                        public Map<String, SaikuDatasource> getDatasources(String[] roles) {
+                            // The shared visibility filter leaves one2one/passthrough visible —
+                            // over OLAP the connection path denies. Mirrors that exactly.
+                            return Map.of("secured-ds", secured);
+                        }
+                    },
+                    auditLog);
+
+            SqlWorkbenchException ex = assertThrows(
+                    SqlWorkbenchException.class,
+                    () -> securedService.execute("alice", sqlExecRoles, "secured-ds", "SELECT 1", null));
+            assertEquals(securityType, SqlWorkbenchException.Code.UNKNOWN_DATASOURCE, ex.getCode());
+            assertTrue(openedFor.isEmpty());
+            assertEquals(
+                    SqlWorkbenchAuditEntry.OUTCOME_ERROR,
+                    auditLog.recent(1, 0, null).get(0).outcome);
+        }
+    }
+
+    /** saiku#2532 — an unrecognised security.type applies no role at all: refused, fail-closed. */
+    @Test
+    public void execute_refusesSecurityEnabledDatasourceWithUnrecognisedSecurityType() {
+        java.util.Properties props = new java.util.Properties();
+        props.setProperty(ISaikuConnection.SECURITY_ENABLED_KEY, "true");
+        props.setProperty(ISaikuConnection.SECURITY_TYPE_KEY, "something-else");
+        SaikuDatasource secured = new SaikuDatasource("secured-ds", SaikuDatasource.Type.OLAP, props);
+        SqlWorkbenchService securedService = new SqlWorkbenchService(
+                id -> DriverManager.getConnection(JDBC_URL, "sa", ""),
+                new StubDatasourceService("secured-ds") {
+                    @Override
+                    public SaikuDatasource getDatasource(String datasourceName) {
+                        return "secured-ds".equals(datasourceName) ? secured : null;
+                    }
+
+                    @Override
+                    public Map<String, SaikuDatasource> getDatasources(String[] roles) {
+                        return Map.of("secured-ds", secured);
+                    }
+                },
+                auditLog);
+
+        SqlWorkbenchException ex = assertThrows(
+                SqlWorkbenchException.class,
+                () -> securedService.execute("alice", sqlExecRoles, "secured-ds", "SELECT 1", null));
+        assertEquals(SqlWorkbenchException.Code.UNKNOWN_DATASOURCE, ex.getCode());
+    }
+
+    /**
+     * saiku#2532 — a lookup datasource whose {@code security.mapping} grants the caller's own
+     * authorities at least one Mondrian role IS served: the decision is reproducible without the
+     * OLAP connection. No mapping for the caller is refused, mirroring the visibility filter.
+     */
+    @Test
+    public void execute_servesLookupOnlyWhenTheCallerRolesMapToAMondrianRole() {
+        java.util.Properties mapped = new java.util.Properties();
+        mapped.setProperty(ISaikuConnection.SECURITY_ENABLED_KEY, "true");
+        mapped.setProperty(
+                ISaikuConnection.SECURITY_TYPE_KEY, ISaikuConnection.SECURITY_TYPE_SPRINGLOOKUPMONDRIAN_VALUE);
+        mapped.setProperty(ISaikuConnection.SECURITY_LOOKUP_KEY, "ROLE_SQL_EXEC=Sales;");
+        SaikuDatasource lookupDs = new SaikuDatasource("lookup-ds", SaikuDatasource.Type.OLAP, mapped);
+        DatasourceService lookupService = new StubDatasourceService("lookup-ds") {
+            @Override
+            public SaikuDatasource getDatasource(String datasourceName) {
+                return "lookup-ds".equals(datasourceName) ? lookupDs : null;
+            }
+
+            @Override
+            public Map<String, SaikuDatasource> getDatasources(String[] roles) {
+                return Map.of("lookup-ds", lookupDs);
+            }
+        };
+        SqlWorkbenchService service2 =
+                new SqlWorkbenchService(id -> DriverManager.getConnection(JDBC_URL, "sa", ""), lookupService, auditLog);
+
+        // ROLE_SQL_EXEC maps to Mondrian role "Sales" — the caller is served.
+        assertEquals(
+                1,
+                service2.execute("alice", sqlExecRoles, "lookup-ds", "SELECT 1", null)
+                        .rowCount());
+
+        // A caller with no mapped authority is refused before a connection is opened.
+        List<String> openedFor = new ArrayList<>();
+        SqlWorkbenchService denied = new SqlWorkbenchService(
+                id -> {
+                    openedFor.add(id);
+                    return DriverManager.getConnection(JDBC_URL, "sa", "");
+                },
+                lookupService,
+                auditLog);
+        SqlWorkbenchException ex = assertThrows(
+                SqlWorkbenchException.class,
+                () -> denied.execute("alice", new String[] {"ROLE_OTHER"}, "lookup-ds", "SELECT 1", null));
+        assertEquals(SqlWorkbenchException.Code.UNKNOWN_DATASOURCE, ex.getCode());
+        assertTrue(openedFor.isEmpty());
+    }
+
+    /**
+     * saiku#2532 — the admin exemption mirrors the connection path: a configured admin keeps
+     * access to security-enabled one2one/passthrough datasources on the workbench, while the same
+     * roles without the admin list (or with no UserService wired) fail closed to non-admin.
+     */
+    @Test
+    public void execute_adminExemptionMirrorsTheConnectionPath_andFailsClosedWithoutAdminRoles() {
+        java.util.Properties props = new java.util.Properties();
+        props.setProperty(ISaikuConnection.SECURITY_ENABLED_KEY, "true");
+        props.setProperty(ISaikuConnection.SECURITY_TYPE_KEY, ISaikuConnection.SECURITY_TYPE_PASSTHROUGH_VALUE);
+        SaikuDatasource secured = new SaikuDatasource("secured-ds", SaikuDatasource.Type.OLAP, props);
+        DatasourceService securedService = new StubDatasourceService("secured-ds") {
+            @Override
+            public SaikuDatasource getDatasource(String datasourceName) {
+                return "secured-ds".equals(datasourceName) ? secured : null;
+            }
+
+            @Override
+            public Map<String, SaikuDatasource> getDatasources(String[] roles) {
+                return Map.of("secured-ds", secured);
+            }
+        };
+
+        UserService adminUser = new UserService();
+        adminUser.setAdminRoles(List.of("ROLE_ADMIN"));
+        SqlWorkbenchService admin = new SqlWorkbenchService(
+                id -> DriverManager.getConnection(JDBC_URL, "sa", ""), securedService, auditLog);
+        admin.setUserService(adminUser);
+        assertEquals(
+                1,
+                admin.execute("root", new String[] {"ROLE_ADMIN"}, "secured-ds", "SELECT 1", null)
+                        .rowCount());
+
+        // Same service, a non-admin caller: refused.
+        SqlWorkbenchException ex = assertThrows(
+                SqlWorkbenchException.class,
+                () -> admin.execute("alice", sqlExecRoles, "secured-ds", "SELECT 1", null));
+        assertEquals(SqlWorkbenchException.Code.UNKNOWN_DATASOURCE, ex.getCode());
+
+        // No UserService wired (headless/test wiring): admin roles unknown — fail closed to
+        // non-admin, so the admin role in the authorities alone is NOT enough.
+        SqlWorkbenchService noUserService = new SqlWorkbenchService(
+                id -> DriverManager.getConnection(JDBC_URL, "sa", ""), securedService, auditLog);
+        ex = assertThrows(
+                SqlWorkbenchException.class,
+                () -> noUserService.execute("root", new String[] {"ROLE_ADMIN"}, "secured-ds", "SELECT 1", null));
+        assertEquals(SqlWorkbenchException.Code.UNKNOWN_DATASOURCE, ex.getCode());
+    }
+
+    /**
+     * saiku#2532 — the picker applies the same decision as {@code execute}: a security-enabled
+     * datasource the workbench cannot serve is not offered to a non-admin, and a lookup datasource
+     * is offered only when the caller's roles map to a Mondrian role.
+     */
+    @Test
+    public void listDatasources_omitsSecurityEnabledDatasourcesTheWorkbenchCannotServe() {
+        java.util.Properties one2one = new java.util.Properties();
+        one2one.setProperty(ISaikuConnection.SECURITY_ENABLED_KEY, "true");
+        one2one.setProperty(ISaikuConnection.SECURITY_TYPE_KEY, ISaikuConnection.SECURITY_TYPE_SPRING2MONDRIAN_VALUE);
+        SaikuDatasource one2oneDs = new SaikuDatasource("b-one2one", SaikuDatasource.Type.OLAP, one2one);
+
+        java.util.Properties mapped = new java.util.Properties();
+        mapped.setProperty(ISaikuConnection.SECURITY_ENABLED_KEY, "true");
+        mapped.setProperty(
+                ISaikuConnection.SECURITY_TYPE_KEY, ISaikuConnection.SECURITY_TYPE_SPRINGLOOKUPMONDRIAN_VALUE);
+        mapped.setProperty(ISaikuConnection.SECURITY_LOOKUP_KEY, "ROLE_SQL_EXEC=Sales");
+        SaikuDatasource lookupDs = new SaikuDatasource("c-lookup", SaikuDatasource.Type.OLAP, mapped);
+
+        SaikuDatasource plain = new SaikuDatasource("a-plain", SaikuDatasource.Type.OLAP, null);
+
+        DatasourceService mixed = new StubDatasourceService(DATA_SOURCE_ID) {
+            @Override
+            public Map<String, SaikuDatasource> getDatasources(String[] roles) {
+                Map<String, SaikuDatasource> all = new java.util.LinkedHashMap<>();
+                all.put(plain.getName(), plain);
+                all.put(one2oneDs.getName(), one2oneDs);
+                all.put(lookupDs.getName(), lookupDs);
+                return all;
+            }
+        };
+
+        UserService adminUser = new UserService();
+        adminUser.setAdminRoles(List.of("ROLE_ADMIN"));
+
+        SqlWorkbenchService service2 =
+                new SqlWorkbenchService(id -> DriverManager.getConnection(JDBC_URL, "sa", ""), mixed, auditLog);
+
+        // Non-admin: the one2one datasource is not offered; the mapped lookup and the
+        // security-disabled one are.
+        List<String> names = service2.listDatasources(sqlExecRoles).stream()
+                .map(SqlWorkbenchService.DatasourceView::name)
+                .toList();
+        assertEquals(List.of("a-plain", "c-lookup"), names);
+
+        // Admin: everything is offered, mirroring the connection path's admin exemption.
+        service2.setUserService(adminUser);
+        names = service2.listDatasources(new String[] {"ROLE_ADMIN"}).stream()
+                .map(SqlWorkbenchService.DatasourceView::name)
+                .toList();
+        assertEquals(List.of("a-plain", "b-one2one", "c-lookup"), names);
     }
 
     /** Hand-rolled stub (house pattern — saiku-service tests avoid Mockito for DatasourceService). */

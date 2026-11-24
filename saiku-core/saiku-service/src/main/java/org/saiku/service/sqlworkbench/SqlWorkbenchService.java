@@ -12,6 +12,7 @@ import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
@@ -21,6 +22,8 @@ import org.saiku.datasources.datasource.SaikuDatasource;
 import org.saiku.service.datasource.DatasourceNameDecoration;
 import org.saiku.service.datasource.DatasourceService;
 import org.saiku.service.schema.generate.session.SchemaGenOrchestrator;
+import org.saiku.service.user.UserService;
+import org.saiku.service.util.security.MondrianRolePolicy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,6 +51,10 @@ public class SqlWorkbenchService {
     private final DatasourceService datasourceService;
     private final SqlWorkbenchAuditLog auditLog;
 
+    // saiku#2532: optional (property-injected, same pattern as SqlWorkbenchResource) so the
+    // constructor stays test-friendly. Null means "admin roles unknown" — fail closed, non-admin.
+    private UserService userService;
+
     public SqlWorkbenchService(
             SchemaGenOrchestrator.ConnectionProvider connectionProvider,
             DatasourceService datasourceService,
@@ -57,20 +64,30 @@ public class SqlWorkbenchService {
         this.auditLog = Objects.requireNonNull(auditLog, "auditLog");
     }
 
+    public void setUserService(UserService userService) {
+        this.userService = userService;
+    }
+
     public record DatasourceView(String name, String type) {}
 
     public record SqlQueryResult(
             List<String> columns, List<List<Object>> rows, int rowCount, boolean truncated, long durationMs) {}
 
     /** Datasources visible to {@code userRoles} — the same ACL {@link DatasourceService} already
-     *  applies for cube listing, so the picker never offers a datasource the user couldn't
-     *  otherwise reach. Credentials/properties are never included. */
+     *  applies for cube listing, narrowed by the workbench's own security decision
+     *  ({@link #isWorkbenchAccessible}: saiku#2532 — a security-enabled datasource the OLAP path
+     *  would deny this caller is never offered here, because the workbench opens raw JDBC with the
+     *  stored credentials and no connection-time denial would ever fire). Credentials/properties
+     *  are never included. */
     public List<DatasourceView> listDatasources(String[] userRoles) {
         Map<String, SaikuDatasource> all = datasourceService.getDatasources(userRoles);
+        boolean admin = isAdmin(userRoles);
         List<DatasourceView> out = new ArrayList<>();
         for (SaikuDatasource ds : all.values()) {
-            out.add(new DatasourceView(
-                    ds.getName(), ds.getType() == null ? null : ds.getType().name()));
+            if (isWorkbenchAccessible(ds, userRoles, admin)) {
+                out.add(new DatasourceView(
+                        ds.getName(), ds.getType() == null ? null : ds.getType().name()));
+            }
         }
         out.sort(Comparator.comparing(DatasourceView::name));
         return out;
@@ -84,6 +101,11 @@ public class SqlWorkbenchService {
      * re-checked against {@link DatasourceService#getDatasources(String[])} for the caller's roles
      * — the same filtered map the picker offers — rather than trusted. A datasource the caller's
      * roles cannot see is reported as unknown (never a distinguishable "exists but denied").
+     *
+     * <p>saiku#2532: visibility is not sufficient — the workbench additionally re-derives the OLAP
+     * connection path's datasource security decision ({@code SecurityAwareConnectionManager
+     * .applySecurity}) for the resolved record and refuses a security-enabled datasource whose
+     * decision it cannot reproduce, with the same unknown-datasource answer.
      *
      * @param userRoles the caller's Spring authorities; the datasource must be visible to them
      * @throws SqlWorkbenchException with a message safe to show a {@code ROLE_SQL_EXEC} user —
@@ -176,10 +198,88 @@ public class SqlWorkbenchService {
         if (visible == null) {
             return false;
         }
+        boolean admin = isAdmin(userRoles);
         for (SaikuDatasource ds : visible.values()) {
             if (isSameDatasource(ds, requested)) {
-                return true;
+                // saiku#2532: visible over OLAP is not enough — the workbench must be able to
+                // reproduce the connection path's security decision itself (see
+                // isWorkbenchAccessible); it never opens the connection whose
+                // applySecurity would have denied this caller.
+                return isWorkbenchAccessible(requested, userRoles, admin);
             }
+        }
+        return false;
+    }
+
+    /**
+     * saiku#2532 — the workbench's own reproduction of the OLAP connection path's datasource
+     * security decision ({@code SecurityAwareConnectionManager.applySecurity}, saiku#1968/#2394).
+     *
+     * <p>The role-filtered datasource map deliberately leaves {@code one2one} and {@code
+     * passthrough} visible, because over MDX the connection path itself denies a caller who
+     * resolves to no Mondrian role. The SQL workbench never walks that path: it opens a raw JDBC
+     * connection with the <b>stored</b> credentials, so a caller denied over MDX could read the
+     * same tables over SQL — and on pass-through would connect as the service account. The
+     * workbench therefore refuses every security-enabled mode whose decision it cannot reproduce:
+     * <ul>
+     *   <li>{@code one2one} — deciding it needs the schema's role list, which only an OLAP
+     *       connection can read;</li>
+     *   <li>{@code passthrough} — access is decided by the caller's own warehouse credentials,
+     *       which the workbench does not hold;</li>
+     *   <li>{@code unknown} — an unrecognised {@code security.type} applies no role at all
+     *       (same rule as the connection path's fail-closed handling);</li>
+     *   <li>{@code lookup} is allowed ONLY when the caller's own authorities map to at least one
+     *       Mondrian role in {@code security.mapping} — re-checked here (not just inherited from
+     *       the visibility filter) so the decision does not depend on which
+     *       {@code IDatasourceManager} backs the service.</li>
+     * </ul>
+     *
+     * <p>A configured admin keeps access to every mode, mirroring the connection path's admin
+     * exemption ({@code enforceRoleResolvedOrAdmin}). Fail-closed: when the admin roles are
+     * unavailable the caller is treated as non-admin, never defaulted to full.
+     */
+    private static boolean isWorkbenchAccessible(SaikuDatasource datasource, String[] userRoles, boolean admin) {
+        MondrianRolePolicy.Mode mode = MondrianRolePolicy.modeOf(datasource);
+        if (mode == MondrianRolePolicy.Mode.DISABLED) {
+            return true;
+        }
+        if (admin) {
+            return true;
+        }
+        if (mode != MondrianRolePolicy.Mode.LOOKUP) {
+            return false;
+        }
+        return !MondrianRolePolicy.resolveMondrianRoles(
+                        mode, roleList(userRoles), null, MondrianRolePolicy.mappingOf(datasource))
+                .isEmpty();
+    }
+
+    /** The caller's authorities as a list; null-safe. */
+    private static List<String> roleList(String[] roles) {
+        return roles == null ? List.of() : Arrays.asList(roles);
+    }
+
+    /**
+     * Whether any of {@code roles} is a configured admin role — the same determination
+     * {@code RepositoryDatasourceManager} applies for the visibility filter. Unavailable admin
+     * roles (null service, null/empty list, lookup error) mean non-admin: fail closed.
+     */
+    private boolean isAdmin(String[] roles) {
+        if (roles == null || roles.length == 0 || userService == null) {
+            return false;
+        }
+        try {
+            List<String> adminRoles = userService.getAdminRoles();
+            if (adminRoles == null || adminRoles.isEmpty()) {
+                return false;
+            }
+            for (String role : roles) {
+                if (role != null && adminRoles.contains(role)) {
+                    return true;
+                }
+            }
+        } catch (Exception e) {
+            LOG.debug("saiku#2532: could not read admin roles; treating caller as non-admin", e);
         }
         return false;
     }
