@@ -23,8 +23,10 @@ import java.util.Optional;
 import java.util.Set;
 import org.saiku.service.mcp.outbound.McpOutboundClient;
 import org.saiku.service.mcp.outbound.McpOutboundServer;
+import org.saiku.service.mcp.outbound.McpOutboundServerParser;
 import org.saiku.service.mcp.outbound.McpOutboundServerRegistry;
 import org.saiku.service.mcp.outbound.McpOutboundToolCatalog;
+import org.saiku.service.schedule.alert.WebhookUrlValidator;
 
 /**
  * saiku#1425 — admin CRUD over outbound MCP server registrations, so they can be authored in the
@@ -130,6 +132,15 @@ public class McpOutboundAdminResource {
         if (body.url == null || body.url.isBlank()) {
             return bad("url is required");
         }
+        // saiku#2542: the same SSRF gate the alert webhooks apply — https only, no credentials in
+        // the authority, no loopback / link-local / private / otherwise-internal address. A
+        // credential header is attached to every discovery/call against this URL; it must never
+        // travel over plaintext or to an internal address.
+        try {
+            WebhookUrlValidator.validate(body.url);
+        } catch (IllegalArgumentException e) {
+            return bad("url rejected: " + e.getMessage());
+        }
 
         // "blank means unchanged" for the credential — see the class javadoc. A brand-new server
         // (no prior registration) has nothing to inherit, so a null authHeaderValue there just means
@@ -146,6 +157,15 @@ public class McpOutboundAdminResource {
         }
         if ((authHeaderName == null || authHeaderName.isBlank()) != (authHeaderValue == null)) {
             return bad("authHeaderName and authHeaderValue must be set together, or both omitted");
+        }
+        if (authHeaderName != null && !authHeaderName.isBlank()) {
+            // saiku#2542: refuse restricted / non-token header names at save time, instead of a
+            // discovery failure on every later call against the registration.
+            try {
+                McpOutboundServerParser.validateAuthHeaderName(authHeaderName, id);
+            } catch (McpOutboundServerParser.ParseException e) {
+                return bad(e.getMessage());
+            }
         }
 
         Set<String> enabledTools = body.enabledTools == null ? Set.of() : new LinkedHashSet<>(body.enabledTools);

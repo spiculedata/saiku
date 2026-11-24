@@ -5,6 +5,7 @@
 package org.saiku.web.rest.resources;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 
 import java.util.HashMap;
@@ -71,6 +72,30 @@ public class AiAuditFilterTest {
         // calls must NOT be audited (no "/ai/" segment) -> null entry.
         assertNull(AiAuditFilter.buildEntry("/saiku/admin/ai-audit", "admin", 200, 1L, null, GUARD));
         assertNull(AiAuditFilter.buildEntry("/saiku/session", "admin", 200, 1L, null, GUARD));
+    }
+
+    /** saiku#2540 — the three admin endpoints that invoke AI machinery
+     *  in-process are on the audited surface now. */
+    @Test
+    public void audits_the_admin_ai_endpoints() {
+        assertNotNull(AiAuditFilter.buildEntry("/saiku/admin/cube-designer/turn", "admin", 200, 1L, null, GUARD));
+        assertNotNull(AiAuditFilter.buildEntry("/saiku/admin/ai-evals/run", "admin", 200, 1L, null, GUARD));
+        assertNotNull(AiAuditFilter.buildEntry("/saiku/admin/ossie-generate", "admin", 200, 1L, null, GUARD));
+    }
+
+    /** saiku#2540 — the widened surface is scoped to exactly those endpoints:
+     *  the rest of the admin surface stays out (including the audit read,
+     *  which must never write to its own log). */
+    @Test
+    public void admin_surface_is_scoped_to_the_ai_endpoints() {
+        assertNull(AiAuditFilter.buildEntry("/saiku/admin/cube-designer/schema/x", "admin", 200, 1L, null, GUARD));
+        assertNull(AiAuditFilter.buildEntry("/saiku/admin/ai-evals", "admin", 200, 1L, null, GUARD));
+        assertNull(AiAuditFilter.buildEntry("/saiku/admin/ossie-generate/job-1", "admin", 200, 1L, null, GUARD));
+        assertNull(AiAuditFilter.buildEntry("/saiku/admin/ossie-generate-other", "admin", 200, 1L, null, GUARD));
+        assertNull(AiAuditFilter.buildEntry("/saiku/admin/users", "admin", 200, 1L, null, GUARD));
+        assertNull(
+                "MCP audits itself (tool + target are JSON-RPC data) — the filter must not double it",
+                AiAuditFilter.buildEntry("/saiku/api/mcp", "alice", 200, 1L, null, GUARD));
     }
 
     @Test

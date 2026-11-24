@@ -22,6 +22,7 @@ import org.saiku.olap.dto.resultset.DataCell;
 import org.saiku.olap.query2.ThinQuery;
 import org.saiku.service.cache.SaikuQueryCache;
 import org.saiku.service.olap.OlapDiscoverService;
+import org.saiku.service.olap.QueryCacheIdentityContext;
 import org.saiku.service.olap.QueryCoalescer;
 import org.saiku.service.olap.ThinQueryService;
 import org.saiku.service.olap.ai.AiCubeMetadataService;
@@ -85,7 +86,9 @@ public final class AiMeasureValueReader implements MeasureValueReader {
      * Production constructor — takes the SAME singleton collaborators the {@code thinQueryBean}
      * definition wires, and constructs a fresh {@link ThinQueryService} per run (no scoped proxy).
      * {@code queryCache}, {@code queryCoalescer} and {@code ossieQueryService} are optional (nullable),
-     * matching how {@code ThinQueryService} treats them.
+     * matching how {@code ThinQueryService} treats them. {@code identityContext} (saiku#2538) scopes
+     * the shared result caches per caller — required on pass-through datasources so one owner's
+     * scheduled run can never read another owner's cached cellset; nullable, likewise.
      */
     public AiMeasureValueReader(
             AiCubeMetadataService cubeMetadataService,
@@ -93,10 +96,17 @@ public final class AiMeasureValueReader implements MeasureValueReader {
             SaikuQueryCache queryCache,
             UserService userService,
             QueryCoalescer queryCoalescer,
-            OssieQueryService ossieQueryService) {
+            OssieQueryService ossieQueryService,
+            QueryCacheIdentityContext identityContext) {
         this(
                 cubeMetadataService,
-                defaultFactory(olapDiscoverService, queryCache, userService, queryCoalescer, ossieQueryService));
+                defaultFactory(
+                        olapDiscoverService,
+                        queryCache,
+                        userService,
+                        queryCoalescer,
+                        ossieQueryService,
+                        identityContext));
     }
 
     /** Visible for tests — inject the schema service + a factory that mints a (possibly fake) executor. */
@@ -114,7 +124,8 @@ public final class AiMeasureValueReader implements MeasureValueReader {
             SaikuQueryCache queryCache,
             UserService userService,
             QueryCoalescer queryCoalescer,
-            OssieQueryService ossieQueryService) {
+            OssieQueryService ossieQueryService,
+            QueryCacheIdentityContext identityContext) {
         if (olapDiscoverService == null) {
             throw new IllegalArgumentException("olapDiscoverService is required");
         }
@@ -125,6 +136,8 @@ public final class AiMeasureValueReader implements MeasureValueReader {
             tqs.setUserService(userService);
             tqs.setQueryCoalescer(queryCoalescer);
             tqs.setOssieQueryService(ossieQueryService);
+            // saiku#2538: the shared result caches must be per caller on pass-through datasources.
+            tqs.setIdentityContext(identityContext);
             return tqs;
         };
     }

@@ -23,12 +23,16 @@ public class McpOutboundServerRegistryTest {
     @Rule
     public TemporaryFolder tmp = new TemporaryFolder();
 
+    /** Hermetic resolver: every host "resolves" to a public address — no live DNS in tests. */
+    private static final org.saiku.service.schedule.alert.WebhookUrlValidator.HostResolver RESOLVER = host ->
+            new java.net.InetAddress[] {java.net.InetAddress.getByAddress(new byte[] {93, (byte) 184, (byte) 216, 34})};
+
     private static final String GOLDEN = "{\"id\":\"%s\",\"name\":\"%s\",\"url\":\"https://example.com/mcp\"}";
 
     @Test
     public void emptyRootYieldsEmpty() throws Exception {
         Path root = tmp.newFolder("mcp-servers").toPath();
-        McpOutboundServerRegistry reg = new McpOutboundServerRegistry(root);
+        McpOutboundServerRegistry reg = new McpOutboundServerRegistry(root, RESOLVER);
         assertTrue(reg.list().isEmpty());
         assertTrue(reg.errors().isEmpty());
     }
@@ -36,7 +40,7 @@ public class McpOutboundServerRegistryTest {
     @Test
     public void missingRootYieldsEmpty() {
         McpOutboundServerRegistry reg =
-                new McpOutboundServerRegistry(tmp.getRoot().toPath().resolve("nope"));
+                new McpOutboundServerRegistry(tmp.getRoot().toPath().resolve("nope"), RESOLVER);
         assertTrue(reg.list().isEmpty());
     }
 
@@ -46,7 +50,7 @@ public class McpOutboundServerRegistryTest {
         write(root.resolve("a.json"), String.format(GOLDEN, "server-a", "A"));
         write(root.resolve("b.json"), String.format(GOLDEN, "server-b", "B"));
         write(root.resolve("README.txt"), "ignore me");
-        McpOutboundServerRegistry reg = new McpOutboundServerRegistry(root);
+        McpOutboundServerRegistry reg = new McpOutboundServerRegistry(root, RESOLVER);
         List<McpOutboundServer> servers = reg.list();
         assertEquals(2, servers.size());
         assertEquals("server-a", servers.get(0).id());
@@ -58,7 +62,7 @@ public class McpOutboundServerRegistryTest {
         Path root = tmp.newFolder("mcp-servers").toPath();
         write(root.resolve("ok.json"), String.format(GOLDEN, "ok", "OK"));
         write(root.resolve("bad.json"), "not json at all");
-        McpOutboundServerRegistry reg = new McpOutboundServerRegistry(root);
+        McpOutboundServerRegistry reg = new McpOutboundServerRegistry(root, RESOLVER);
         assertEquals(1, reg.list().size());
         assertEquals(1, reg.errors().size());
         assertEquals("MALFORMED_JSON", reg.errors().get(0).code());
@@ -70,7 +74,7 @@ public class McpOutboundServerRegistryTest {
         write(root.resolve("first.json"), String.format(GOLDEN, "dup", "First"));
         Path sub = Files.createDirectory(root.resolve("nested"));
         write(sub.resolve("second.json"), String.format(GOLDEN, "dup", "Second"));
-        McpOutboundServerRegistry reg = new McpOutboundServerRegistry(root);
+        McpOutboundServerRegistry reg = new McpOutboundServerRegistry(root, RESOLVER);
         assertEquals(1, reg.list().size());
         assertEquals(1, reg.errors().size());
         assertEquals("DUPLICATE_ID", reg.errors().get(0).code());
@@ -80,7 +84,7 @@ public class McpOutboundServerRegistryTest {
     public void getById() throws Exception {
         Path root = tmp.newFolder("mcp-servers").toPath();
         write(root.resolve("a.json"), String.format(GOLDEN, "server-a", "A"));
-        McpOutboundServerRegistry reg = new McpOutboundServerRegistry(root);
+        McpOutboundServerRegistry reg = new McpOutboundServerRegistry(root, RESOLVER);
         assertTrue(reg.get("server-a").isPresent());
         assertFalse(reg.get("nope").isPresent());
         assertFalse(reg.get("").isPresent());
@@ -90,7 +94,7 @@ public class McpOutboundServerRegistryTest {
     @Test
     public void stringPathCtor() {
         McpOutboundServerRegistry reg = new McpOutboundServerRegistry(
-                tmp.getRoot().toPath().resolve("mcp-servers").toString());
+                tmp.getRoot().toPath().resolve("mcp-servers").toString(), RESOLVER);
         assertNotNull(reg);
         assertTrue(reg.list().isEmpty());
     }
@@ -98,7 +102,7 @@ public class McpOutboundServerRegistryTest {
     @Test
     public void saveWritesFileAndRoundTrips() throws Exception {
         Path root = tmp.newFolder("mcp-servers").toPath();
-        McpOutboundServerRegistry reg = new McpOutboundServerRegistry(root);
+        McpOutboundServerRegistry reg = new McpOutboundServerRegistry(root, RESOLVER);
         McpOutboundServer s = new McpOutboundServer(
                 "notion",
                 "Notion",
@@ -121,7 +125,7 @@ public class McpOutboundServerRegistryTest {
     @Test
     public void savePersistsCredentialEncryptedAtRest() throws Exception {
         Path root = tmp.newFolder("mcp-servers").toPath();
-        McpOutboundServerRegistry reg = new McpOutboundServerRegistry(root);
+        McpOutboundServerRegistry reg = new McpOutboundServerRegistry(root, RESOLVER);
         McpOutboundServer s = new McpOutboundServer(
                 "notion",
                 "Notion",
@@ -143,7 +147,7 @@ public class McpOutboundServerRegistryTest {
     @Test
     public void saveWithoutCredentialOmitsAuthFields() throws Exception {
         Path root = tmp.newFolder("mcp-servers").toPath();
-        McpOutboundServerRegistry reg = new McpOutboundServerRegistry(root);
+        McpOutboundServerRegistry reg = new McpOutboundServerRegistry(root, RESOLVER);
         McpOutboundServer s = new McpOutboundServer("open", "Open", "https://e.com/mcp", null, null, Set.of(), "x");
         reg.save(s);
         McpOutboundServer back = reg.get("open").orElseThrow();
@@ -154,7 +158,7 @@ public class McpOutboundServerRegistryTest {
     public void deleteRemovesFileAndRescans() throws Exception {
         Path root = tmp.newFolder("mcp-servers").toPath();
         write(root.resolve("gone.json"), String.format(GOLDEN, "gone", "Gone"));
-        McpOutboundServerRegistry reg = new McpOutboundServerRegistry(root);
+        McpOutboundServerRegistry reg = new McpOutboundServerRegistry(root, RESOLVER);
         assertEquals(1, reg.list().size());
         assertTrue(reg.delete("gone"));
         assertFalse(Files.exists(root.resolve("gone.json")));
@@ -165,7 +169,7 @@ public class McpOutboundServerRegistryTest {
     @Test
     public void saveRejectsUnsafeId() {
         Path root = tmp.getRoot().toPath().resolve("mcp-servers");
-        McpOutboundServerRegistry reg = new McpOutboundServerRegistry(root);
+        McpOutboundServerRegistry reg = new McpOutboundServerRegistry(root, RESOLVER);
         McpOutboundServer evil = new McpOutboundServer("../evil", "x", "https://e.com", null, null, Set.of(), "x.json");
         try {
             reg.save(evil);

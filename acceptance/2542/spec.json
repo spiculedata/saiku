@@ -1,0 +1,44 @@
+{
+  "issue": 2542,
+  "title": "AI and MCP surface follow-ups: bounded MCP sessions bound to their principal, client fields never in the system prompt, full member redaction at schema-only, admin-gated catalogue detail/errors/refresh, and webhook-grade URL checks on outbound MCP registrations",
+  "kind": "ui",
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 180,
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "an authenticated caller POSTs initialize to /rest/saiku/api/mcp with a 300,000-character protocolVersion",
+      "then": "the response is 200 but the oversized string is never echoed: the result's protocolVersion is the server's supported version, and the minted session belongs to the creating principal — a different principal presenting that Mcp-Session-Id gets 404, and an unknown session id gets 404 instead of a JSON-RPC error over HTTP 200"
+    },
+    {
+      "id": "C2",
+      "given": "a caller without ROLE_ADMIN touches the AI catalogue admin surfaces",
+      "then": "POST /ai/skills/refresh, /ai/spaces/refresh and /ai/certified/refresh are refused with 403; GET /ai/certified/{id} (the approved query body), GET /ai/skills/{name} (the skill body + sourcePath) and ?errors=true on /ai/skills, /ai/spaces and /ai/certified are refused with 403; the list endpoints themselves stay open"
+    },
+    {
+      "id": "C3",
+      "given": "an admin registers an outbound MCP server (PUT /saiku/admin/mcp-servers/{id}) whose url is plain http, loopback, link-local or otherwise internal",
+      "then": "the write is refused with 400 — the same https-only, public-address rule the alert-webhook gate enforces — and an authHeaderName that is a restricted header (e.g. Host) is also refused with 400"
+    },
+    {
+      "id": "C4",
+      "given": "the describe-query and cube-designer services are wired with saiku.ai.ask.* credentials while saiku.ai.ask.provider names a non-Anthropic provider",
+      "then": "neither service sends the ask API key to an Anthropic endpoint: the wiring passes the configured provider through (saiku-beans.xml) and the service refuses (degraded result / not configured) unless the provider is Anthropic"
+    },
+    {
+      "id": "C5",
+      "given": "an ask turn carries a cellsetDigest and currentQuery snapshot",
+      "then": "those two client-supplied fields are rendered into a user-role message, never appended to the system prompt, in both the Anthropic and OpenAI providers"
+    },
+    {
+      "id": "C6",
+      "given": "the active egress posture forbids cell data (schema-only) and the currentQuery snapshot is re-gated before send",
+      "then": "the redaction clears every member list — filters[].members as today, plus rows[].members and columns[].members — and every namedSets[].expression, so no member unique name from the client snapshot leaves the server"
+    },
+    {
+      "id": "C7",
+      "given": "an outbound MCP server answers with a very large body",
+      "then": "the client reads the response under a byte cap rather than buffering the whole body unbounded"
+    }
+  ]
+}

@@ -22,6 +22,7 @@ import org.saiku.service.olap.ai.AiCubeRef;
 import org.saiku.service.olap.ai.AiDataKind;
 import org.saiku.service.olap.ai.AiFilterSelection;
 import org.saiku.service.olap.ai.AiMeasureSelection;
+import org.saiku.service.olap.ai.AiNamedSet;
 import org.saiku.service.olap.ai.AiPolicyGuard;
 import org.saiku.service.olap.ai.AiQueryRequest;
 import org.saiku.service.olap.ai.AiRequestJsonSchema;
@@ -248,12 +249,15 @@ public class AiAskService {
     }
 
     /**
-     * Send-time re-gate of the {@code currentQuery} snapshot (saiku#1553). When the active egress
-     * posture forbids aggregated cell data ({@code !permitsCellDataEgress()}), redact a COPY of the
-     * query whose {@code filters[].members} lists (the MDX member unique names like
-     * {@code [Customers].[John Smith]} — a cell-derived selection) are cleared, while KEEPING the
-     * query structure: measures / rows / columns / cube / filter dimension+hierarchy+level refs. The
-     * model still sees what the query is shaped like without seeing which members were picked.
+     * Send-time re-gate of the {@code currentQuery} snapshot (saiku#1553, saiku#2542). When the
+     * active egress posture forbids aggregated cell data ({@code !permitsCellDataEgress()}),
+     * redact a COPY of the query whose EVERY member-bearing list is cleared — {@code
+     * filters[].members}, {@code rows[].members} and {@code columns[].members} all carry MDX
+     * member unique names like {@code [Customers].[John Smith]} (a cell-derived selection), and
+     * {@code namedSets[].expression} is raw MDX that can embed them too — while KEEPING the
+     * query structure: measures / rows / columns / cube / the dimension+hierarchy+level refs
+     * that shape them. The model still sees what the query is shaped like without seeing which
+     * members were picked.
      *
      * <p>Copy-not-mutate (saiku#1553): the redaction is applied to a mapper round-trip copy so the
      * caller-owned {@code currentQuery} object is never touched. Fail-closed: if the copy can't be
@@ -274,6 +278,23 @@ public class AiAskService {
         if (copy.getFilters() != null) {
             for (AiFilterSelection f : copy.getFilters()) {
                 f.setMembers(new ArrayList<>());
+            }
+        }
+        // saiku#2542: rows/columns member lists carry the same kind of names and were previously
+        // left intact; named sets carry raw MDX expressions that can embed member unique names.
+        if (copy.getRows() != null) {
+            for (AiAxisSelection a : copy.getRows()) {
+                a.setMembers(new ArrayList<>());
+            }
+        }
+        if (copy.getColumns() != null) {
+            for (AiAxisSelection a : copy.getColumns()) {
+                a.setMembers(new ArrayList<>());
+            }
+        }
+        if (copy.getNamedSets() != null) {
+            for (AiNamedSet ns : copy.getNamedSets()) {
+                ns.setExpression("");
             }
         }
         return copy;

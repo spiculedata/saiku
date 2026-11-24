@@ -136,28 +136,61 @@ public final class QueryStructureSummarizer {
         return resolved != null && resolved.pii;
     }
 
+    /**
+     * Canonical-or-alias level resolution (saiku#2542). Mirrors {@code AiAskService#resolveLevelQuietly}:
+     * every lookup falls back to the Phase-3 display-alias maps, so a selection written with a
+     * display alias resolves to the same {@link AiSchema.Level} the converter would resolve — and
+     * its {@code pii} flag is honoured. Without the alias fallback, a PII level named by its
+     * display alias was treated as non-PII and its member names left the server unredacted.
+     */
     private static AiSchema.Level resolveLevel(String dimension, String hierarchy, String level, AiSchema schema) {
         if (schema == null || dimension == null || level == null) {
             return null;
         }
         AiSchema.Dimension dim = schema.dimensions.get(AiSchema.key(dimension));
         if (dim == null) {
+            String alias = schema.dimensionAliases.get(AiSchema.key(dimension));
+            if (alias != null) {
+                dim = schema.dimensions.get(alias);
+            }
+        }
+        if (dim == null) {
             return null;
         }
         AiSchema.Hierarchy hier = null;
         if (hierarchy != null && !hierarchy.isBlank()) {
             hier = dim.hierarchies.get(AiSchema.key(hierarchy));
+            if (hier == null) {
+                String alias = dim.hierarchyAliases.get(AiSchema.key(hierarchy));
+                if (alias != null) {
+                    hier = dim.hierarchies.get(alias);
+                }
+            }
         }
         if (hier == null && dim.hierarchies.size() == 1) {
             hier = dim.hierarchies.values().iterator().next();
         }
         if (hier != null) {
-            return hier.levels.get(AiSchema.key(level));
+            AiSchema.Level lvl = hier.levels.get(AiSchema.key(level));
+            if (lvl == null) {
+                String alias = hier.levelAliases.get(AiSchema.key(level));
+                if (alias != null) {
+                    lvl = hier.levels.get(alias);
+                }
+            }
+            return lvl;
         }
         // Hierarchy unresolved/ambiguous — fall back to scanning every hierarchy on the
-        // dimension for a level with this name, same as the axis/filter converter does.
+        // dimension for a level with this name (or one of its aliases), same as the
+        // axis/filter converter does.
         for (AiSchema.Hierarchy h : dim.hierarchies.values()) {
             AiSchema.Level lvl = h.levels.get(AiSchema.key(level));
+            if (lvl == null) {
+                String alias = h.levelAliases.get(AiSchema.key(level));
+                if (alias != null) {
+                    lvl = h.levels.get(alias);
+                }
+            }
             if (lvl != null) {
                 return lvl;
             }

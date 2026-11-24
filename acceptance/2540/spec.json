@@ -1,0 +1,29 @@
+{
+  "issue": 2540,
+  "title": "MCP tool calls are recorded in the AI audit log, admin AI endpoints are audited, and REST AI entries carry the cube or model",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "an authenticated caller invokes MCP tools/call (run_query, drillthrough, search_members, ...) — allowed, denied or failed",
+      "then": "McpResource writes exactly one ai-audit.jsonl entry carrying the user, the tool name, the target cube or model, the policy decision and the outcome — including AiPolicyViolation denials, which the MCP envelope returns as 200 tool errors the /ai/ filter cannot see"
+    },
+    {
+      "id": "C2",
+      "given": "a call to /saiku/admin/cube-designer/turn, /saiku/admin/ai-evals/run or /saiku/admin/ossie-generate",
+      "then": "AiAuditFilter writes an entry for it (the audited surface is no longer only paths containing /ai/), while GET /saiku/admin/ai-audit stays self-audit-exempt"
+    },
+    {
+      "id": "C3",
+      "given": "a REST AI call whose request names a cube or model (POST /ai/query, /ai/query/preview, /ai/query/execute-async, /ai/query/saved, GET /ai/schema/{cubeId}, /ai/members/search, POST /ai/ossie/query and friends)",
+      "then": "the resource publishes the P_CUBE / P_MODEL enrichment the filter folds into the entry — the entry carries the cube or model, not blank"
+    },
+    {
+      "id": "C4",
+      "given": "regression tests",
+      "then": "a unit test asserts the audit entry for an MCP tools/call (user, tool, target, decision, outcome, deny path), and the filter gate tests cover the widened audited surface"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}

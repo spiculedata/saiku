@@ -84,6 +84,29 @@ public final class QueryCacheKey {
      * hitting.
      */
     public static String of(ThinQuery query, String cubeVersion, Collection<String> roles) {
+        return of(query, cubeVersion, roles, null);
+    }
+
+    /**
+     * Hash a {@link ThinQuery} with the role-set AND a per-caller identity fragment
+     * (saiku#2538).
+     *
+     * <p><b>On a {@code security.type=passthrough} datasource the identity must be part of
+     * the key.</b> Role masking aside, every user connects to the warehouse with their own
+     * credentials there, so two users with the SAME Saiku roles can legitimately see
+     * different rows — without the identity in the key they share one cache key and the
+     * second caller receives the first caller's cellset (and the coalescer even registers
+     * the other user's CellSet in the caller's context, so a following drillthrough runs on
+     * the other user's connection). The identity fragment comes from the
+     * {@code QueryCacheIdentityContext} seam — the same per-user rule the AI schema cache
+     * applies (saiku#2326).
+     *
+     * <p>A {@code null} or empty identity is omitted from the canonical JSON, so keys for
+     * datasources where the caller's identity does NOT distinguish results stay
+     * byte-identical to the role-keyed legacy form and existing caches keep hitting
+     * (saiku#2538 acceptance criterion: hit rates unchanged off pass-through).
+     */
+    public static String of(ThinQuery query, String cubeVersion, Collection<String> roles, String identity) {
         if (query == null) {
             throw new IllegalArgumentException("query");
         }
@@ -98,6 +121,7 @@ public final class QueryCacheKey {
             view.queryModel = query.getQueryModel();
             view.cubeVersion = cubeVersion == null ? "" : cubeVersion;
             view.roles = canonicalRoles(roles);
+            view.identity = canonicalIdentity(identity);
 
             // Deliberately do NOT sort measure or hierarchy lists: their order is
             // part of the query (outer-to-inner axis nesting, measure column
@@ -132,6 +156,18 @@ public final class QueryCacheKey {
             }
         }
         return new ArrayList<>(sorted);
+    }
+
+    /**
+     * Normalise the per-caller identity fragment (saiku#2538): trimmed, empty ⇒ null so it
+     * is omitted from the canonical JSON (see {@link CanonicalView}).
+     */
+    private static String canonicalIdentity(String identity) {
+        if (identity == null) {
+            return null;
+        }
+        String trimmed = identity.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     /**
@@ -257,6 +293,13 @@ public final class QueryCacheKey {
         // (existing on-disk caches stay valid); present + sorted once roles are in play.
         @JsonInclude(JsonInclude.Include.NON_EMPTY)
         public List<String> roles;
+
+        // saiku#2538: per-caller identity fragment for pass-through datasources (and
+        // fail-closed unresolvable ones). Omitted when empty so keys for datasources
+        // where identity does not distinguish results stay byte-identical to the
+        // role-keyed legacy forms (hit rates unchanged off pass-through).
+        @JsonInclude(JsonInclude.Include.NON_EMPTY)
+        public String identity;
 
         @JsonIgnore
         public Object getName() {
