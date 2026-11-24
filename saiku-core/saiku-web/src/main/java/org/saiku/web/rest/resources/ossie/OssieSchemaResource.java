@@ -20,6 +20,7 @@ import java.util.Map;
 import org.saiku.datasources.connection.ISaikuConnection;
 import org.saiku.datasources.datasource.SaikuDatasource;
 import org.saiku.service.datasource.DatasourceService;
+import org.saiku.service.datasource.OssieModelPathGuard;
 import org.saiku.service.history.SchemaHistoryService;
 import org.saiku.service.user.UserService;
 import org.saiku.web.service.SessionService;
@@ -177,7 +178,12 @@ public class OssieSchemaResource {
             throw new IllegalArgumentException("Ossie datasource '" + datasourceId + "' has no '"
                     + ISaikuConnection.OSSIE_YAML_KEY + "' property");
         }
-        return java.nio.file.Path.of(yamlPath);
+        java.nio.file.Path yaml = java.nio.file.Path.of(yamlPath);
+        // saiku#2534: re-check on every use, not only at save time — a descriptor written before
+        // this guard existed (or hand-edited into a .sds) must not become an arbitrary file
+        // read/write through GET/PUT here.
+        OssieModelPathGuard.requireWithinRoots(yaml);
+        return yaml;
     }
 
     private Response adminGuard() {
