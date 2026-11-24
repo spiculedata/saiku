@@ -50,7 +50,13 @@ fields:
     of the response entirely, not just marked hidden;
   - gets a `403`-mapped `SaikuAccessDeniedException` if a shelf state
     (`/query/execute`, `/query/preview-sql`, or the AI Query API)
-    references it anyway.
+    references it anyway;
+  - gets a typed `400` if a shelf state names an identifier that resolves
+    to **no** field or metric of the caller's model — including the hidden
+    field's physical column name (saiku#2526: the translator used to emit
+    any unresolvable name as a quoted column, which let a denied caller
+    read `EMAIL_ADDRESS` instead of `email`; every row, filter — with or
+    without `dataset` — sort and metric reference is resolved first).
 
 Role names are matched **case-sensitively**, exactly like a Spring
 `GrantedAuthority` string (`ROLE_ADMIN` ≠ `role_admin`) — document this
@@ -108,13 +114,17 @@ datasets:
 | --- | --- | --- |
 | `GET /discover/{connection}/ossie-model` | ✅ filtered | — (discover doesn't run SQL) |
 | `GET /ai/ossie/schema/{connection}/{model}` | ✅ filtered | ✅ `sampleValues` drawn from the caller's rows only (saiku#2324) |
-| `POST /query/execute` (queryType `OSSIE`) | ✅ 403 on denied reference | ✅ injected |
-| `POST /query/preview-sql` (queryType `OSSIE`) | ✅ 403 on denied reference | ✅ injected |
+| `POST /query/execute` (queryType `OSSIE`) | ✅ 403 on denied reference; 400 on an identifier that resolves to nothing (physical-column bypass, saiku#2526) | ✅ injected |
+| `POST /query/preview-sql` (queryType `OSSIE`) | ✅ 403 on denied reference; 400 on an unresolvable identifier (saiku#2526) | ✅ injected |
+| `POST /query/execute-async` (queryType `OSSIE`) | ✅ 403 on denied reference; 400 on an unresolvable identifier at submit (saiku#2526) | ✅ injected |
 | `POST /ai/ossie/query` | ✅ 403 on denied reference | ✅ injected |
 | `POST /ai/ossie/query/preview` | ✅ 403 on denied reference | ✅ injected |
 | `POST /ai/ossie/query/execute-async` | ✅ 400 `VALIDATION_ERROR` on denied reference at submit; denied references that reach the worker anyway fail the handle with an access-denied error (saiku#2323) | ✅ injected — the caller's Spring `SecurityContext` is captured on the submitting request thread and re-established on the worker |
 | `GET /ai/ossie/values/search` (and MCP `search_field_values`) | ✅ denied field is "unknown" | ✅ injected (saiku#2324) |
 | `POST /ai/ossie/ask` | ✅ filtered, incl. sample values | ✅ sample values scoped (saiku#2324) |
+| GraphQL `ossieModel` | ✅ filtered + schema-metadata policy gate (saiku#2526) | — (discover doesn't run SQL) |
+| `GET /ai/ossie/export/{connection}/{tool}` | ✅ renders the role-filtered model (saiku#2526) | — |
+| `GET /ai/ossie/ontology/{connection}/{model}` | ✅ resolves the role-filtered model (saiku#2526) | — |
 | Other `/ai/ossie/*` endpoints (anomaly, forecast, …) | not yet wired | not yet wired |
 | PG-wire (`saiku-sql serve`) | out of scope — admin surface, own auth story | out of scope |
 
@@ -144,6 +154,10 @@ follow-up phases of saiku#1393:
 - `OssieRoleSecurityIT` (saiku-sql) runs the real `OssieQueryService.execute` path
   against a live H2 warehouse with the caller authenticated the way production does —
   Spring authorities on the `SecurityContextHolder`.
+- `OssieRoleBypassIT` (saiku-sql, saiku#2526) proves the physical-column bypass closed
+  end to end: a caller denied `email` is refused for `EMAIL_ADDRESS` in `rows`, in a
+  filter with and without `dataset`, and in `sorts`, over the live warehouse path,
+  while the `ROLE_ADMIN` window still reads the field.
 - `OssieFuzzIT` carries the fuzz-side half of the acceptance criteria: the Pharma
   fixture's `geography` dataset names two predicate roles, and every fuzz case runs
   twice — unrestricted, then as a caller holding both roles (a window that excludes

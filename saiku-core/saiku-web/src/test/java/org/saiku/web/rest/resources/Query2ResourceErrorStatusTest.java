@@ -21,6 +21,7 @@ import org.saiku.olap.query2.ThinQuery;
 import org.saiku.olap.util.exception.SaikuOlapException;
 import org.saiku.service.olap.ThinQueryService;
 import org.saiku.service.util.exception.SaikuServiceException;
+import org.saiku.service.util.exception.SaikuValidationException;
 import org.saiku.web.rest.objects.resultset.QueryResult;
 
 /**
@@ -124,6 +125,18 @@ public class Query2ResourceErrorStatusTest {
                 new MondrianException("Mondrian Error:MDX object '[Measures].[Nope]' not found in cube 'Sales'"));
 
         assertEquals(400, resp.getStatus());
+    }
+
+    /** saiku#2526 — an identifier that is no field/metric of the model is a typed 400, not a 500
+     *  (and typically an attempt to name a hidden field's physical column). */
+    @Test
+    public void anUnknownShelfIdentifierIsATypedBadRequest() {
+        Response resp = executeFailing(
+                new SaikuValidationException("Unknown field 'customer.C_EMAIL_ADDRESS' in model 'TPCDS'"));
+
+        assertEquals(400, resp.getStatus());
+        QueryResult qr = (QueryResult) resp.getEntity();
+        assertTrue(qr.getError(), qr.getError().contains("C_EMAIL_ADDRESS"));
     }
 
     /** A warehouse failure surfaced through Mondrian is ours, not the caller's. */

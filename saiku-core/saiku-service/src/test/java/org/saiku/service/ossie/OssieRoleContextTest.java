@@ -15,6 +15,7 @@ import java.util.Set;
 import org.junit.Test;
 import org.saiku.olap.query2.OssieQueryModel;
 import org.saiku.service.util.exception.SaikuAccessDeniedException;
+import org.saiku.service.util.exception.SaikuValidationException;
 
 /** Unit tests for {@link OssieRoleContext} (saiku#1393) — row predicates, HIDE, discover filtering. */
 public class OssieRoleContextTest {
@@ -174,5 +175,161 @@ public class OssieRoleContextTest {
 
         assertNull(OssieRoleContext.resolve(Set.of("ROLE_OTHER"), semantic).combinedRowPredicateFor("geography"));
         assertNull(OssieRoleContext.resolve(Set.of("ROLE_APAC"), semantic).combinedRowPredicateFor("nope"));
+    }
+
+    // ---- saiku#2526: unresolvable identifiers are typed rejections, never raw columns ----
+
+    private static OssieModelDto semanticWithEmailField() {
+        OssieModelDto semantic = new OssieModelDto();
+        semantic.setName("TPCDS");
+        OssieModelDto.Dataset ds = new OssieModelDto.Dataset();
+        ds.setName("customer");
+        OssieModelDto.Field email = new OssieModelDto.Field();
+        email.setName("c_email");
+        email.setAllowRoles(List.of("ROLE_ADMIN"));
+        OssieModelDto.Field lastName = new OssieModelDto.Field();
+        lastName.setName("c_last_name");
+        ds.getFields().add(email);
+        ds.getFields().add(lastName);
+        semantic.getDatasets().add(ds);
+        return semantic;
+    }
+
+    private static OssieQueryModel modelWithRows(OssieQueryModel.FieldRef... rows) {
+        OssieQueryModel m = new OssieQueryModel();
+        m.setFactDataset("customer");
+        m.setRows(List.of(rows));
+        return m;
+    }
+
+    @Test
+    public void physicalColumnNameInRowsIsAValidationError() {
+        // c_email is denied; C_EMAIL_ADDRESS is its physical column — naming it must not read
+        // the values through the translator's old raw-column fall-through.
+        OssieRoleContext ctx = OssieRoleContext.resolve(Set.of("ROLE_USER"), semanticWithEmailField());
+        OssieQueryModel.FieldRef ref = new OssieQueryModel.FieldRef();
+        ref.setDataset("customer");
+        ref.setField("C_EMAIL_ADDRESS");
+        try {
+            ctx.assertShelfVisible(modelWithRows(ref));
+            fail("expected SaikuValidationException");
+        } catch (SaikuValidationException e) {
+            assertTrue(e.getMessage(), e.getMessage().contains("C_EMAIL_ADDRESS"));
+        }
+    }
+
+    @Test
+    public void unknownFieldInRowsIsAValidationErrorForEveryCaller() {
+        OssieRoleContext ctx = OssieRoleContext.resolve(Set.of(), semanticWithEmailField());
+        OssieQueryModel.FieldRef ref = new OssieQueryModel.FieldRef();
+        ref.setDataset("customer");
+        ref.setField("not_a_field");
+        try {
+            ctx.assertShelfVisible(modelWithRows(ref));
+            fail("expected SaikuValidationException");
+        } catch (SaikuValidationException e) {
+            assertTrue(e.getMessage(), e.getMessage().contains("not_a_field"));
+        }
+    }
+
+    @Test
+    public void unknownDatasetInRowsIsAValidationError() {
+        OssieRoleContext ctx = OssieRoleContext.resolve(Set.of(), semanticWithEmailField());
+        OssieQueryModel.FieldRef ref = new OssieQueryModel.FieldRef();
+        ref.setDataset("no_such_dataset");
+        ref.setField("c_last_name");
+        try {
+            ctx.assertShelfVisible(modelWithRows(ref));
+            fail("expected SaikuValidationException");
+        } catch (SaikuValidationException e) {
+            assertTrue(e.getMessage(), e.getMessage().contains("no_such_dataset"));
+        }
+    }
+
+    @Test
+    public void filterWithoutDatasetIsResolvedAgainstTheModel() {
+        // A filter naming no dataset used to be skipped entirely by the role check.
+        OssieRoleContext ctx = OssieRoleContext.resolve(Set.of("ROLE_USER"), semanticWithEmailField());
+        OssieQueryModel m = modelWithRows(row("customer", "c_last_name"));
+        OssieQueryModel.FilterExpr f = new OssieQueryModel.FilterExpr();
+        f.setField("C_EMAIL_ADDRESS"); // physical column, no dataset
+        f.setOp("EQ");
+        f.setValue("alice@example.com");
+        m.setFilters(List.of(f));
+        try {
+            ctx.assertShelfVisible(m);
+            fail("expected SaikuValidationException");
+        } catch (SaikuValidationException e) {
+            assertTrue(e.getMessage(), e.getMessage().contains("C_EMAIL_ADDRESS"));
+        }
+
+        // Resolving under the semantic name but denied is an access denial, not a pass.
+        OssieQueryModel denied = modelWithRows(row("customer", "c_last_name"));
+        OssieQueryModel.FilterExpr deniedFilter = new OssieQueryModel.FilterExpr();
+        deniedFilter.setField("c_email");
+        deniedFilter.setOp("EQ");
+        deniedFilter.setValue("alice@example.com");
+        denied.setFilters(List.of(deniedFilter));
+        try {
+            ctx.assertShelfVisible(denied);
+            fail("expected SaikuAccessDeniedException");
+        } catch (SaikuAccessDeniedException expected) {
+            assertTrue(expected.getMessage(), expected.getMessage().contains("c_email"));
+        }
+    }
+
+    @Test
+    public void sortMetricMustResolveAndBeVisible() {
+        // sorts[].metric was never checked — by name or by visibility.
+        OssieModelDto semantic = semanticWithEmailField();
+        OssieModelDto.Metric restricted = new OssieModelDto.Metric();
+        restricted.setName("exec_revenue");
+        restricted.setAllowRoles(List.of("ROLE_ADMIN"));
+        semantic.getMetrics().add(restricted);
+        OssieRoleContext ctx = OssieRoleContext.resolve(Set.of("ROLE_USER"), semantic);
+
+        OssieQueryModel unknown = modelWithRows(row("customer", "c_last_name"));
+        OssieQueryModel.SortRef unknownSort = new OssieQueryModel.SortRef();
+        unknownSort.setMetric("not_a_metric");
+        unknown.setSorts(List.of(unknownSort));
+        try {
+            ctx.assertShelfVisible(unknown);
+            fail("expected SaikuValidationException");
+        } catch (SaikuValidationException e) {
+            assertTrue(e.getMessage(), e.getMessage().contains("not_a_metric"));
+        }
+
+        OssieQueryModel denied = modelWithRows(row("customer", "c_last_name"));
+        OssieQueryModel.SortRef deniedSort = new OssieQueryModel.SortRef();
+        deniedSort.setMetric("exec_revenue");
+        denied.setSorts(List.of(deniedSort));
+        try {
+            ctx.assertShelfVisible(denied);
+            fail("expected SaikuAccessDeniedException");
+        } catch (SaikuAccessDeniedException expected) {
+            assertTrue(expected.getMessage(), expected.getMessage().contains("exec_revenue"));
+        }
+    }
+
+    @Test
+    public void unknownMetricInValuesIsAValidationError() {
+        OssieRoleContext ctx = OssieRoleContext.resolve(Set.of(), semanticWithEmailField());
+        OssieQueryModel m = modelWithRows(row("customer", "c_last_name"));
+        OssieQueryModel.MetricRef v = new OssieQueryModel.MetricRef();
+        v.setMetric("not_a_metric");
+        m.setValues(List.of(v));
+        try {
+            ctx.assertShelfVisible(m);
+            fail("expected SaikuValidationException");
+        } catch (SaikuValidationException e) {
+            assertTrue(e.getMessage(), e.getMessage().contains("not_a_metric"));
+        }
+    }
+
+    private static OssieQueryModel.FieldRef row(String dataset, String field) {
+        OssieQueryModel.FieldRef ref = new OssieQueryModel.FieldRef();
+        ref.setDataset(dataset);
+        ref.setField(field);
+        return ref;
     }
 }

@@ -68,6 +68,7 @@ import org.saiku.service.olap.drillthrough.DrillThroughResult;
 import org.saiku.service.util.exception.SaikuAccessDeniedException;
 import org.saiku.service.util.exception.SaikuQueryRejectedException;
 import org.saiku.service.util.exception.SaikuServiceException;
+import org.saiku.service.util.exception.SaikuValidationException;
 import org.saiku.web.export.JSConverter;
 import org.saiku.web.export.PdfReport;
 import org.saiku.web.rest.objects.resultset.QueryResult;
@@ -348,6 +349,14 @@ public class Query2Resource {
             // text-plain content-type dance.
             String body = "{\"sql\":" + jacksonJsonString(sql) + "}";
             return Response.ok(body).type("application/json").build();
+        } catch (SaikuValidationException e) {
+            // saiku#2526 — an identifier that resolves to no field/metric of the model is the
+            // caller's typo (or an attempt to name a hidden physical column); a typed 400 with
+            // the message, not a 500 and never a raw column emission.
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("{\"error\":" + jacksonJsonString(e.getMessage()) + "}")
+                    .type("application/json")
+                    .build();
         } catch (SaikuAccessDeniedException e) {
             // The denial may name a datasource or field; keep the response information-free.
             return Response.status(Response.Status.FORBIDDEN)
@@ -471,6 +480,15 @@ public class Query2Resource {
         if (isAccessDenied(e)) {
             return accessDenied();
         }
+        // saiku#2526 — a shelf identifier that resolves to no field/metric of the model is a
+        // typed client error about the submitted query (typically an attempt to reach a hidden
+        // field's physical column): 400, not 500.
+        if (isValidation(e)) {
+            return Response.status(Status.BAD_REQUEST)
+                    .entity(new QueryResult(ExceptionUtils.getRootCauseMessage(e)))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
         // saiku#2420: a guardrail rejection is a typed client error about the submitted
         // statement, not a server fault — 400 with a fixed message (never the statement, which
         // stays in the server log).
@@ -588,6 +606,17 @@ public class Query2Resource {
         return false;
     }
 
+    /** saiku#2526 — same cause-chain walk, for the typed unknown-identifier rejection of the
+     *  Ossie shelf translator (which is also a client-fixable 400). */
+    private static boolean isValidation(Throwable t) {
+        for (Throwable c = t; c != null; c = c.getCause() == c ? null : c.getCause()) {
+            if (c instanceof SaikuValidationException) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * True when the cause chain describes something the CALLER got wrong, rather than something
      * that went wrong on our side.
@@ -697,6 +726,27 @@ public class Query2Resource {
             } catch (IllegalStateException ignore) {
                 // No request bound — leave null; submit() falls back to legacy path.
             }
+            // saiku#2526 — validate an OSSIE shelf synchronously at submit. The translation (and
+            // therefore the unknown-identifier / role checks) otherwise runs on the worker, so a
+            // bad identifier would surface later as a FAILED handle instead of the typed 400 the
+            // synchronous execute path answers. previewSql only translates — it touches no
+            // warehouse connection and runs nothing.
+            if (tq != null && "OSSIE".equalsIgnoreCase(tq.getQueryType()) && tq.getOssieQueryModel() != null) {
+                org.saiku.service.ossie.OssieQueryService ossieValidationService =
+                        thinQueryService.getOssieQueryService();
+                if (ossieValidationService != null) {
+                    try {
+                        ossieValidationService.previewSql(tq.getOssieQueryModel());
+                    } catch (SaikuValidationException e) {
+                        // Typed unknown-identifier rejection of the shelf translator.
+                        throw e;
+                    } catch (RuntimeException ignore) {
+                        // Anything else (the model or connection can't even be resolved here,
+                        // the worker will fail the handle with the real error) — keep the
+                        // pre-existing submit semantics, which answer 202 regardless.
+                    }
+                }
+            }
             AsyncQueryHandle h = asyncQueryService.submit(tq, requestAttributes);
             Map<String, Object> body = new java.util.LinkedHashMap<>();
             body.put("queryId", h.getId());
@@ -711,6 +761,14 @@ public class Query2Resource {
             // echoes the root cause message (which names the datasource).
             if (isAccessDenied(e)) {
                 return accessDenied();
+            }
+            // saiku#2526 — an unknown shelf identifier is the caller's typo: typed 400 on the
+            // async door too, so the same payload doesn't read as a server fault here.
+            if (isValidation(e)) {
+                return Response.status(Status.BAD_REQUEST)
+                        .entity(ExceptionUtils.getRootCauseMessage(e))
+                        .type(MediaType.APPLICATION_JSON)
+                        .build();
             }
             return Response.serverError()
                     .entity(ExceptionUtils.getRootCauseMessage(e))

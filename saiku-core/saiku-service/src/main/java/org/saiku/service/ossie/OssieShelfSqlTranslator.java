@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Set;
 import org.saiku.olap.query2.OssieQueryModel;
 import org.saiku.service.util.exception.SaikuAccessDeniedException;
+import org.saiku.service.util.exception.SaikuValidationException;
 
 /**
  * Translate an {@link OssieQueryModel} shelf-state payload into the SQL string that the
@@ -54,6 +55,10 @@ public final class OssieShelfSqlTranslator {
      * <ol>
      *   <li>Rejects (via {@link SaikuAccessDeniedException}) a shelf state that references a
      *       field/metric every one of the caller's roles denies.
+     *   <li>Rejects (via {@link SaikuValidationException}, saiku#2526) any shelf identifier that
+     *       does not resolve to a field or metric of the model — a name that used to fall
+     *       through as a quoted physical column, which let a caller denied a semantic field read
+     *       its physical column instead.
      *   <li>Injects each referenced dataset's role-matched row predicates as extra WHERE
      *       conjunctions, ORed together per dataset and ANDed with the shelf's own filters.
      * </ol>
@@ -269,7 +274,9 @@ public final class OssieShelfSqlTranslator {
      * Look up the ANSI SQL expression the metric maps to. Falls back to referencing the metric by
      * name as a table {@code "<metric>"} on the assumption that the Calcite adapter has exposed
      * the metric as a view; that path only works when the SQL has a single value and no
-     * dimensions, so realistic queries need a real expression.
+     * dimensions, so realistic queries need a real expression. An unknown metric is a typed
+     * validation error (saiku#2526) — {@code assertShelfVisible} normally rejects it first; this
+     * is the defence-in-depth backstop for direct callers of the resolver.
      */
     private String lookupMetricExpression(OssieModelDto semantic, String metricName) {
         for (OssieModelDto.Metric m : semantic.getMetrics()) {
@@ -279,8 +286,8 @@ public final class OssieShelfSqlTranslator {
                         "Ossie metric '" + metricName + "' has no ANSI SQL expression declared in the model");
             }
         }
-        throw new IllegalArgumentException(
-                "Ossie metric '" + metricName + "' not found in semantic model '" + semantic.getName() + "'");
+        throw new SaikuValidationException(
+                "Unknown metric '" + metricName + "' in semantic model '" + semantic.getName() + "'");
     }
 
     private String filterToSql(OssieQueryModel.FilterExpr f, OssieModelDto semantic, boolean backslashIsData) {
