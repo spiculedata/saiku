@@ -110,6 +110,14 @@ Agent Spaces.
   should see, same as any other server-to-server integration.
 - **Nothing is enabled by default.** Registering a server does not, by
   itself, expose anything to the LLM — see `enabledTools` above.
+- **https on a public address only (upgrade note).** Registration accepts
+  only `https://` URLs whose host is not internal, loopback or a private
+  address (the same gate alert webhooks use), and the resolve-and-range
+  check re-runs immediately before every send together with a DNS-rebinding
+  guard. Registrations written with plain `http://` or a private-network
+  address (e.g. an MCP sidecar on the cluster network) answer
+  `400 INVALID_URL` from the next version on — move them to an https URL on
+  a public address before upgrading.
 
 ## Admin REST surface (`/rest/saiku/admin/mcp-servers`, `ROLE_ADMIN`)
 

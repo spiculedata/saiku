@@ -56,25 +56,69 @@ public class ScimService {
     private static final int MAX_ROLE_LENGTH = 45;
 
     /**
-     * Roles a SCIM token holder must never be able to grant via a group displayName (saiku#2065,
-     * CWE-269). The SCIM surface is scoped to ROLE_SCIM; anything in this set would expand that
-     * scope to admin or infrastructure authorities.
+     * Roles a SCIM token holder must never be able to grant via a group displayName, whatever the
+     * configured allow-list says (saiku#2065, saiku#2537, CWE-269). The SCIM surface is scoped to
+     * ROLE_SCIM, so the identity provider must not be able to hand out infrastructure authorities:
+     * raw SQL with stored warehouse credentials ({@code ROLE_SQL_EXEC}), the token-principal
+     * authority that unlocks every {@code /rest/**} rule, the embed/share guest roles, or the
+     * anonymous authority. Admin roles are <b>not</b> hard-coded here — they come from
+     * {@link UserService#getAdminRoles()} at check time, so an operator who configures a different
+     * admin role is covered too.
      */
-    private static final java.util.Set<String> PRIVILEGED_ROLES = java.util.Set.of(
-            "ROLE_ADMIN", "ROLE_SCIM", "ROLE_ACTUATOR", "ROLE_EMBED_GUEST", "ROLE_SHARE_GUEST", "ROLE_ANONYMOUS");
+    private static final java.util.Set<String> RESERVED_ROLES = java.util.Set.of(
+            "ROLE_SCIM",
+            "ROLE_ACTUATOR",
+            "ROLE_ANONYMOUS",
+            "ROLE_SQL_EXEC",
+            "ROLE_TOKEN_PRINCIPAL",
+            "ROLE_EMBED_AUTHOR",
+            "ROLE_EMBED_GUEST",
+            "ROLE_SHARE_GUEST");
+
+    /**
+     * Operator-defined allow-list of grantable roles (saiku.scim.grantableRoles, saiku#2537). When
+     * set, a group displayName must be on the list (case-insensitively) to be granted at all; the
+     * reserved roles above and the configured admin roles are refused on top of it. When unset
+     * (the default), every name that is not reserved is grantable — see
+     * {@code docs/operator-hardening.md}.
+     */
+    private final java.util.Set<String> grantableRoles; // null = unset (default: everything not reserved)
 
     private final UserService userService;
     private final ScimGroupStore groupStore;
     private final String defaultWorkspace;
 
     public ScimService(UserService userService, ScimGroupStore groupStore) {
-        this(userService, groupStore, System.getProperty("saiku.scim.default-workspace", ""));
+        this(userService, groupStore, System.getProperty("saiku.scim.default-workspace", ""), null);
     }
 
     public ScimService(UserService userService, ScimGroupStore groupStore, String defaultWorkspace) {
+        this(userService, groupStore, defaultWorkspace, null);
+    }
+
+    /**
+     * @param grantableRolesCsv comma-separated allow-list from {@code saiku.scim.grantableRoles};
+     *     {@code null} or blank means unset — every non-reserved role is grantable.
+     */
+    public ScimService(
+            UserService userService, ScimGroupStore groupStore, String defaultWorkspace, String grantableRolesCsv) {
         this.userService = userService;
         this.groupStore = groupStore;
         this.defaultWorkspace = defaultWorkspace;
+        this.grantableRoles = parseGrantableRoles(grantableRolesCsv);
+    }
+
+    private static java.util.Set<String> parseGrantableRoles(String csv) {
+        if (csv == null || csv.isBlank()) {
+            return null;
+        }
+        java.util.Set<String> out = new java.util.LinkedHashSet<>();
+        for (String name : csv.split(",")) {
+            if (!name.isBlank()) {
+                out.add(name.trim().toUpperCase(java.util.Locale.ROOT));
+            }
+        }
+        return out.isEmpty() ? null : out;
     }
 
     public String getDefaultWorkspace() {
@@ -135,6 +179,13 @@ public class ScimService {
         applyEmailList(u, in.emails);
         applyProfile(u, in);
         u.setRoles(new String[] {BASE_ROLE});
+        // saiku#2537 (review of PR #2564): the grant policy applies BEFORE the
+        // account exists. Validating only inside grantRole left a half-applied
+        // write: a create with groups [analysts, <stale reserved group>] answered
+        // 400 AFTER the account was created and 'analysts' granted, and the IdP's
+        // retry then hit 409 uniqueness. Resolve and check every named group up
+        // front — fail fast with nothing written.
+        validateGroupRoles(in.groups);
         SaikuUser created = userService.addUser(u);
         if (in.active != null && !in.active) {
             // addUser always inserts enabled=TRUE (the DAO hard-codes it), so an explicit
@@ -152,6 +203,13 @@ public class ScimService {
         if (in == null) {
             throw ScimException.badRequest("invalidSyntax", "A User body is required");
         }
+        if (in.active != null && !in.active && u.isEnabled()) {
+            // The PUT asks for a deactivation: refuse the last enabled admin before any write.
+            assertNotLastEnabledAdmin(u);
+        }
+        // A full replace may rename, change the profile, and deactivate the account before
+        // reconciling groups. Refuse a stale reserved/off-list group before any of those writes.
+        validateGroupRoles(in.groups);
         if (in.userName != null && !in.userName.isBlank()) {
             String requested = Usernames.canonicalize(in.userName.trim());
             if (!Usernames.sameUser(requested, u.getUsername())) {
@@ -216,10 +274,15 @@ public class ScimService {
     /**
      * SCIM DELETE on a user is a deactivation, not a row delete: an IdP routinely re-sends
      * deactivate for a user it has already deactivated, and RFC 7644 §3.6 gives the resource
-     * provider latitude. The account keeps its query history and ACL ownership.
+     * provider latitude. The account keeps its query history and ACL ownership. Deactivating the
+     * <b>last enabled admin</b> is refused (saiku#2537): the IdP must not be able to lock the
+     * operator out of their own instance.
      */
     public void deactivateUser(String id) {
         SaikuUser u = requireUser(id);
+        if (u.isEnabled()) {
+            assertNotLastEnabledAdmin(u);
+        }
         userService.setEnabled(u, false);
         log.info("SCIM deactivated user '{}' (id={})", u.getUsername(), u.getId());
     }
@@ -515,10 +578,32 @@ public class ScimService {
         }
     }
 
+    /** Validates every requested group before a user create or replace writes anything. */
+    private void validateGroupRoles(List<ScimUser.Member> members) {
+        if (members == null) {
+            return;
+        }
+        for (ScimUser.Member m : members) {
+            ScimGroupStore.GroupRecord r = resolveGroupRecord(m == null ? null : m.value);
+            if (r != null) {
+                rejectNonGrantableRoleName(r.displayName);
+            }
+        }
+    }
+
+    /**
+     * Grants {@code role} to {@code u}. The reserved/allow-list policy is enforced
+     * HERE, at the grant site (saiku#2537, review of PR #2564): the displayName
+     * checks on create/rename cannot cover group records that predate this fix,
+     * and such a record keeps granting its displayName to every member the IdP
+     * adds — which is exactly the escalation reserved names close. Fail with
+     * {@code 400 invalidValue} rather than writing the role.
+     */
     private void grantRole(SaikuUser u, String role) {
         if (role == null || role.isBlank()) {
             return;
         }
+        rejectNonGrantableRoleName(role);
         Set<String> roles = new LinkedHashSet<>(rolesOf(u));
         roles.add(role);
         userService.replaceRoles(u, roles.toArray(new String[0]));
@@ -569,6 +654,10 @@ public class ScimService {
         for (ScimUser.Member m : members) {
             String role = resolveGroupRole(m == null ? null : m.value);
             if (role != null) {
+                // Same grant-site policy as grantRole (saiku#2537, review of PR #2564):
+                // refuse BEFORE any role write, so a stale record cannot grant a
+                // reserved or allow-listed-out role through a wholesale reconcile.
+                rejectNonGrantableRoleName(role);
                 desired.add(role);
             }
         }
@@ -643,7 +732,15 @@ public class ScimService {
      */
     private void setMembers(ScimGroupStore.GroupRecord r, Set<String> desired) {
         List<String> current = r.members == null ? new ArrayList<>() : new ArrayList<>(r.members);
+        // saiku#2537 (review of PR #2564): only JOINING members go through the
+        // grant path. Re-granting existing members made the reserved/off-list
+        // check block every member REMOVAL from a stale group — the one path an
+        // operator has to revoke the escalation one member at a time. Members
+        // who stay keep the role they already have; only leavers are revoked.
         for (String username : desired) {
+            if (current.contains(username)) {
+                continue;
+            }
             SaikuUser u = userService.findByUsername(username);
             if (u != null) {
                 grantRole(u, r.displayName);
@@ -675,19 +772,89 @@ public class ScimService {
             throw ScimException.badRequest(
                     "invalidValue", "displayName must be at most " + MAX_ROLE_LENGTH + " characters");
         }
-        rejectPrivilegedRoleName(name);
+        rejectNonGrantableRoleName(name);
         return name;
     }
 
     /**
-     * Reject a displayName that maps to a privileged internal role (saiku#2065, CWE-269). A SCIM
-     * token holds only ROLE_SCIM; being able to set a group's displayName to "ROLE_ADMIN" and then
-     * add members to that group would let the bearer escalate any account to admin.
+     * Reject a displayName that maps to a privileged internal role (saiku#2065, saiku#2537,
+     * CWE-269). A SCIM token holds only ROLE_SCIM; being able to set a group's displayName to
+     * "ROLE_ADMIN" and then add members to that group would let the bearer escalate any account to
+     * admin.
+     *
+     * <p>Two layers, both fail-closed: the reserved set ({@link #RESERVED_ROLES} plus the admin
+     * roles from {@link UserService#getAdminRoles()}) is always refused, and when the operator has
+     * configured {@code saiku.scim.grantableRoles} the name must be on that list too — the
+     * allow-list never rescues a reserved name.
      */
-    private static void rejectPrivilegedRoleName(String name) {
-        if (PRIVILEGED_ROLES.contains(name.toUpperCase(java.util.Locale.ROOT))) {
+    private void rejectNonGrantableRoleName(String name) {
+        String upper = name.toUpperCase(java.util.Locale.ROOT);
+        if (RESERVED_ROLES.contains(upper) || adminRoles().contains(upper)) {
             throw ScimException.badRequest(
                     "invalidValue", "The displayName '" + name + "' is reserved and cannot be used");
+        }
+        if (grantableRoles != null && !grantableRoles.contains(upper)) {
+            throw ScimException.badRequest(
+                    "invalidValue",
+                    "The displayName '"
+                            + name
+                            + "' is not on the SCIM grantable roles allow-list (saiku.scim.grantableRoles)");
+        }
+    }
+
+    /** Admin role names as configured on {@code userService}, upper-cased for a case-insensitive check. */
+    private java.util.Set<String> adminRoles() {
+        List<String> configured = userService.getAdminRoles();
+        if (configured == null) {
+            return java.util.Set.of();
+        }
+        java.util.Set<String> out = new java.util.LinkedHashSet<>();
+        for (String r : configured) {
+            if (r != null && !r.isBlank()) {
+                out.add(r.trim().toUpperCase(java.util.Locale.ROOT));
+            }
+        }
+        return out;
+    }
+
+    /**
+     * True when {@code u} is an enabled account holding one of the configured admin roles and no
+     * other enabled account in the directory holds one — i.e. deactivating {@code u} would leave
+     * the instance with no reachable administrator (saiku#2537).
+     */
+    private boolean isLastEnabledAdmin(SaikuUser u) {
+        java.util.Set<String> admins = adminRoles();
+        if (admins.isEmpty() || !u.isEnabled() || !holdsAdminRole(u, admins)) {
+            return false;
+        }
+        int enabledAdmins = 0;
+        for (SaikuUser candidate : directory()) {
+            if (candidate != null && candidate.isEnabled() && holdsAdminRole(candidate, admins)) {
+                enabledAdmins++;
+            }
+        }
+        return enabledAdmins <= 1;
+    }
+
+    private static boolean holdsAdminRole(SaikuUser u, java.util.Set<String> admins) {
+        String[] roles = u.getRoles();
+        if (roles == null) {
+            return false;
+        }
+        for (String r : roles) {
+            if (r != null && admins.contains(r.trim().toUpperCase(java.util.Locale.ROOT))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Refuse a write that would deactivate the last enabled admin (saiku#2537). */
+    private void assertNotLastEnabledAdmin(SaikuUser u) {
+        if (isLastEnabledAdmin(u)) {
+            throw ScimException.badRequest(
+                    "invalidValue",
+                    "'" + u.getUsername() + "' is the last enabled admin and cannot be deactivated through SCIM");
         }
     }
 
@@ -699,7 +866,13 @@ public class ScimService {
     private boolean applyUserAttribute(SaikuUser u, String path, ScimPatch.Operation op, JsonNode value) {
         switch (path) {
             case "active":
-                u.setEnabled(ScimPatch.readBoolean(op, value));
+                boolean target = ScimPatch.readBoolean(op, value);
+                if (!target && u.isEnabled()) {
+                    // Refuse before the flag is applied: the PATCH must not deactivate the last
+                    // enabled admin (saiku#2537).
+                    assertNotLastEnabledAdmin(u);
+                }
+                u.setEnabled(target);
                 return true;
             case "username":
                 return applyUserName(u, op, value);
@@ -776,7 +949,7 @@ public class ScimService {
                 if (name.isEmpty() || name.length() > MAX_ROLE_LENGTH) {
                     throw ScimException.badRequest("invalidValue", "Invalid displayName");
                 }
-                rejectPrivilegedRoleName(name);
+                rejectNonGrantableRoleName(name);
                 renameGroup(r, name);
                 return;
             case "members":
