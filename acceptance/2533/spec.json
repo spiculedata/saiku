@@ -1,74 +1,14 @@
 {
   "issue": 2533,
-  "title": "Deleting a datasource in the admin API actually removes it: it disappears from the admin list, immediately and after a discover refresh",
-  "kind": "api",
-  "auth": "basic",
+  "title": "Deleting a datasource removes its descriptor, list entry, and live connection",
+  "kind": "ui",
   "criteria": [
     {
       "id": "C1",
       "given": "an admin created a datasource through POST /rest/saiku/admin/datasources",
-      "then": "DELETE /rest/saiku/admin/datasources/{id} removes it: the datasource is absent from the admin datasource list, and stays absent after a discover refresh"
+      "then": "DELETE /rest/saiku/admin/datasources/{id} removes it: the datasource is absent from the parsed admin datasource list, and stays absent after a discover refresh"
     }
   ],
-  "steps": [
-    {
-      "name": "the admin creates a probe datasource with a known id",
-      "criterion": "C1",
-      "request": {
-        "method": "POST",
-        "path": "/rest/saiku/admin/datasources",
-        "json": {
-          "connectionname": "del-probe-2533",
-          "connectiontype": "MONDRIAN",
-          "jdbcurl": "jdbc:h2:mem:delprobe2533;MODE=MySQL",
-          "schema": "del-probe-2533.xml",
-          "driver": "org.h2.Driver",
-          "username": "sa",
-          "password": "",
-          "id": "del-probe-2533"
-        }
-      },
-      "expect": { "status": 200 }
-    },
-    {
-      "name": "deleting the probe datasource by id answers 200",
-      "criterion": "C1",
-      "request": { "method": "DELETE", "path": "/rest/saiku/admin/datasources/del-probe-2533" },
-      "expect": { "status": 200 }
-    },
-    {
-      "name": "the deleted datasource is gone from the admin datasource list",
-      "criterion": "C1",
-      "request": { "method": "GET", "path": "/rest/saiku/admin/datasources" },
-      "expect": {
-        "status": 200,
-        "json": {
-          "$": {
-            "matches": "^(?![\\s\\S]*del-probe-2533)",
-            "because": "the deleted datasource must not be listed any more (not even under its decorated unknown_ key)"
-          }
-        }
-      }
-    },
-    {
-      "name": "the discover refresh runs after the delete",
-      "criterion": "C1",
-      "request": { "method": "GET", "path": "/rest/saiku/admin/discover/refresh" },
-      "expect": { "status": 200 }
-    },
-    {
-      "name": "the deleted datasource has not been resurrected by the refresh",
-      "criterion": "C1",
-      "request": { "method": "GET", "path": "/rest/saiku/admin/datasources" },
-      "expect": {
-        "status": 200,
-        "json": {
-          "$": {
-            "matches": "^(?![\\s\\S]*del-probe-2533)",
-            "because": "the .sds file must be really gone, so a refresh cannot bring the datasource back"
-          }
-        }
-      }
-    }
-  ]
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
 }

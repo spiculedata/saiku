@@ -129,8 +129,8 @@ public class RepositoryDatasourceManagerDeleteTest {
                 rdManager.getDatasources(new String[] {"ROLE_ADMIN"}).containsKey("unknown_del-2533"));
 
         assertEquals(
-                "the cached connection of the deleted datasource must be evicted (by its decorated name)",
-                Collections.singletonList("unknown_del-2533"),
+                "the cached connection of the deleted datasource must be evicted under both names",
+                java.util.Arrays.asList("del-2533", "unknown_del-2533"),
                 connectionManager.removedConnections);
 
         assertFalse("a second delete of the same id must report not found", rdManager.removeDatasource("del-id-2533"));
@@ -159,6 +159,10 @@ public class RepositoryDatasourceManagerDeleteTest {
         assertFalse(
                 "the seeded datasource must be gone from the admin list",
                 rdManager.getDatasources(new String[] {"ROLE_ADMIN"}).containsKey("seeded-2533"));
+        assertEquals(
+                "a seeded connection uses the bare name, which must be evicted too",
+                java.util.Arrays.asList("seeded-2533", "unknown_seeded-2533"),
+                connectionManager.removedConnections);
     }
 
     /**

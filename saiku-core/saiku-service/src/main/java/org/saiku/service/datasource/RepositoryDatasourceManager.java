@@ -481,6 +481,7 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
                     // best-effort: implementations without a pool simply do nothing (default
                     // no-op), and a failure to close is logged by the implementation.
                     if (connectionManager != null) {
+                        connectionManager.removeConnection(data.getName());
                         connectionManager.removeConnection(decoratedName(data.getName()));
                     }
                     return true;

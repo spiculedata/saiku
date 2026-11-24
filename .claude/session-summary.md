@@ -75,12 +75,6 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
-## 2026-11-24 — fix/2533-admin-datasource-delete — PR #2567 acceptance authentication rework
-**Was doing:** changed the datasource-delete acceptance spec to HTTP Basic after the session-authenticated CI run received 403 from every admin endpoint; local spec validation and acceptance tooling tests pass.
-**Now:** check PR #2567 CI for the live acceptance result and Maven build, then address any remaining failure on the same branch.
-**Watch out:** the local environment has no Java or Maven installation, so the live launcher check needs CI.
-**Refs:** #2533, PR #2567, acceptance/2533/spec.json
-
 ## 2026-11-24 — feature/2524-unauth-401-no-session — PR #2560 formatting rework
 **Was doing:** matched the two launcher test files to Spotless's CI diff; the prior CI run passed both affected test classes but failed at formatting.
 **Now:** check PR #2560 CI for the rework commit; local Java and Maven are unavailable in this workspace.

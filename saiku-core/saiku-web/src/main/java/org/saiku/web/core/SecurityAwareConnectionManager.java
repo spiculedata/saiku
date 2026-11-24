@@ -130,6 +130,11 @@ public class SecurityAwareConnectionManager extends AbstractConnectionManager
 
     @Override
     protected ISaikuConnection getInternalConnection(String name, SaikuDatasource datasource) {
+        // A descriptor may have been removed while a connection with its name remains cached.
+        // Never return that live connection when the datasource lookup no longer succeeds.
+        if (datasource == null) {
+            return null;
+        }
 
         ISaikuConnection con = null;
         if (isDatasourceSecurity(datasource, ISaikuConnection.SECURITY_TYPE_PASSTHROUGH_VALUE)
