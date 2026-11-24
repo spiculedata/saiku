@@ -124,7 +124,7 @@ public class RestBodySizeFilter implements Filter {
         "/rest/saiku/api/dashboards/image/upload",
         "/rest/saiku/api/ossie/import",
         "/rest/saiku/admin/quickstart/upload",
-        "/rest/saiku/api/admin/model/diff",
+        "/rest/saiku/admin/model/diff",
         "/rest/saiku/api/email/self"
     };
 
@@ -216,14 +216,27 @@ public class RestBodySizeFilter implements Filter {
     /**
      * The request path with the webapp's context path stripped (so the rules
      * below are written against the paths the REST surface is documented with).
+     *
+     * <p>Built from the container's <em>decoded</em>, path-parameter-stripped
+     * servlet path ({@code getServletPath() + getPathInfo()}), NOT
+     * {@code getRequestURI()}: the raw URI is neither decoded nor normalised, so
+     * an encoded spelling of a route ({@code /rest/saiku/%73ession}) or a path
+     * parameter ({@code /session;x=y}) would slip past the session and upload
+     * caps while still reaching the very same Jersey endpoint (PR #2566
+     * review). The container has already decoded and matched these values when
+     * the filter chain runs.</p>
      */
     static String pathWithinApp(HttpServletRequest req) {
-        String uri = req.getRequestURI();
+        String servletPath = req.getServletPath() == null ? "" : req.getServletPath();
+        String pathInfo = req.getPathInfo() == null ? "" : req.getPathInfo();
+        String path = servletPath + pathInfo;
+        // Defensive: the servlet path is already context-relative, so this only
+        // triggers on containers that report it context-qualified.
         String ctx = req.getContextPath();
-        if (ctx != null && !ctx.isEmpty() && uri != null && uri.startsWith(ctx)) {
-            return uri.substring(ctx.length()).toLowerCase();
+        if (ctx != null && !ctx.isEmpty() && path.startsWith(ctx)) {
+            path = path.substring(ctx.length());
         }
-        return uri == null ? "" : uri.toLowerCase();
+        return path.toLowerCase();
     }
 
     /**

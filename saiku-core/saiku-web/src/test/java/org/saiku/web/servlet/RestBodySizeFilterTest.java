@@ -17,6 +17,9 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.function.Function;
 import org.junit.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -75,11 +78,93 @@ public class RestBodySizeFilterTest {
                 RestBodySizeFilter.capFor("/rest/saiku/admin/quickstart/upload", NO_CONFIG));
         assertEquals(
                 RestBodySizeFilter.DEFAULT_UPLOAD_MAX_BODY_BYTES,
-                RestBodySizeFilter.capFor("/rest/saiku/api/admin/model/diff", NO_CONFIG));
+                RestBodySizeFilter.capFor("/rest/saiku/admin/model/diff", NO_CONFIG));
         // The chart export path carries the username segment.
         assertEquals(
                 RestBodySizeFilter.DEFAULT_UPLOAD_MAX_BODY_BYTES,
                 RestBodySizeFilter.capFor("/rest/saiku/admin/export/saiku/chart", NO_CONFIG));
+    }
+
+    @Test
+    public void uploadPrefixes_matchDeclaredJerseyRoutes() throws Exception {
+        // Drift guard (PR #2566 review): every upload prefix must match a real
+        // @Path on a shipped resource, so a route rename silently demoting an
+        // upload route to the default cap cannot happen again. Each entry maps
+        // the filter's prefix to the resource file and the @Path fragments that
+        // concatenate to it (Jersey is mounted at /rest).
+        String[][] expectations = {
+            {"/rest/saiku/api/repository/zipupload", "BasicRepositoryResource2.java",
+             "@Path(\"/saiku/api/repository\")", "@Path(\"/zipupload\")"},
+            {"/rest/saiku/api/dashboards/image/upload", "DashboardImageResource.java",
+             "@Path(\"/saiku/api/dashboards/image\")", "@Path(\"/upload\")"},
+            {"/rest/saiku/api/ossie/import", "OssieImportResource.java",
+             "@Path(\"/saiku/api/ossie/import\")"},
+            {"/rest/saiku/admin/quickstart/upload", "QuickstartResource.java",
+             "@Path(\"/saiku/admin/quickstart\")", "@Path(\"/upload\")"},
+            {"/rest/saiku/admin/model/diff", "ModelDiffResource.java",
+             "@Path(\"/saiku/admin/model\")", "@Path(\"/diff\")"},
+            {"/rest/saiku/api/email/self", "EmailResource.java",
+             "@Path(\"/saiku/api/email\")", "@Path(\"/self\")"}
+        };
+        for (String[] expectation : expectations) {
+            String source = readMainSource(expectation[1]);
+            for (int i = 2; i < expectation.length; i++) {
+                assertTrue(
+                        expectation[1] + " must declare " + expectation[i] + " (route " + expectation[0] + ")",
+                        source.contains(expectation[i]));
+            }
+        }
+    }
+
+    private static String readMainSource(String fileName) throws IOException {
+        Path module = Paths.get("src", "main", "java");
+        try (java.util.stream.Stream<Path> walk = Files.walk(module)) {
+            Path hit = walk.filter(p -> p.getFileName().toString().equals(fileName)).findFirst().orElse(null);
+            assertTrue("resource source not found under saiku-web: " + fileName, hit != null);
+            return new String(Files.readAllBytes(hit), StandardCharsets.UTF_8);
+        }
+    }
+
+    // ------------------- decoded route matching (PR #2566 review) -------------------
+
+    @Test
+    public void encodedSessionSpelling_stillGetsTheSmallCap() {
+        // Jetty decodes %73 to 's' for servlet matching; the filter must classify
+        // the route from the decoded servlet path, not the raw request URI.
+        MockHttpServletRequest req = new MockHttpServletRequest("POST", "/rest/saiku/session");
+        req.setServletPath("/rest/saiku/session");
+        req.setContextPath("");
+        assertEquals(
+                RestBodySizeFilter.DEFAULT_SESSION_MAX_BODY_BYTES,
+                RestBodySizeFilter.capFor(RestBodySizeFilter.pathWithinApp(req), NO_CONFIG));
+    }
+
+    @Test
+    public void pathParametersAndSuffixes_stillClassify() {
+        // Path parameters are stripped by the container before servlet matching.
+        MockHttpServletRequest session = new MockHttpServletRequest("POST", "/rest/saiku/session");
+        session.setServletPath("/rest/saiku/session");
+        session.setPathInfo(null);
+        assertEquals(
+                RestBodySizeFilter.DEFAULT_SESSION_MAX_BODY_BYTES,
+                RestBodySizeFilter.capFor(RestBodySizeFilter.pathWithinApp(session), NO_CONFIG));
+
+        // A path-info carrying request (servlet prefix + info) classifies as its
+        // full path.
+        MockHttpServletRequest upload = new MockHttpServletRequest("POST", "/rest/saiku/api/repository/zipupload");
+        upload.setServletPath("/rest/saiku/api/repository");
+        upload.setPathInfo("/zipupload");
+        assertEquals(
+                RestBodySizeFilter.DEFAULT_UPLOAD_MAX_BODY_BYTES,
+                RestBodySizeFilter.capFor(RestBodySizeFilter.pathWithinApp(upload), NO_CONFIG));
+
+        // Context path is stripped from the classified path.
+        MockHttpServletRequest ctxd = new MockHttpServletRequest("POST", "/saiku/rest/saiku/session");
+        ctxd.setContextPath("/saiku");
+        ctxd.setServletPath("/rest/saiku/session");
+        assertEquals(
+                RestBodySizeFilter.DEFAULT_SESSION_MAX_BODY_BYTES,
+                RestBodySizeFilter.capFor(RestBodySizeFilter.pathWithinApp(ctxd), NO_CONFIG));
     }
 
     @Test
