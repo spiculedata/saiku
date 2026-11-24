@@ -216,6 +216,9 @@ public class InfoResource {
         demoAnalytics.put("enabled", demoMode && telemetryEnabled());
         demoAnalytics.put("endpoint", demoAnalyticsEndpoint());
         body.put("demoAnalytics", demoAnalytics);
+        // saiku#2577: the SPA shows a small top-bar link to GitHub Sponsors unless the
+        // operator opts out (white-label or locked-down deployments).
+        body.put("sponsorLink", org.saiku.service.util.SponsorLink.enabled());
         return Response.ok(body).build();
     }
 

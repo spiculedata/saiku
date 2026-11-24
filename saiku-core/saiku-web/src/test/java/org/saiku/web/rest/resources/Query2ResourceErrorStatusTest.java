@@ -17,11 +17,18 @@ import mondrian.olap.MondrianException;
 import mondrian.olap.QueryTimeoutException;
 import org.junit.Test;
 import org.saiku.olap.dto.resultset.CellDataSet;
+import org.saiku.olap.query2.OssieQueryModel;
 import org.saiku.olap.query2.ThinQuery;
 import org.saiku.olap.util.exception.SaikuOlapException;
+import org.saiku.service.async.AsyncQueryHandle;
+import org.saiku.service.async.AsyncQueryService;
 import org.saiku.service.olap.ThinQueryService;
+import org.saiku.service.ossie.OssieQueryService;
+import org.saiku.service.util.exception.SaikuAccessDeniedException;
 import org.saiku.service.util.exception.SaikuServiceException;
+import org.saiku.service.util.exception.SaikuValidationException;
 import org.saiku.web.rest.objects.resultset.QueryResult;
+import org.springframework.web.context.request.RequestAttributes;
 
 /**
  * saiku#1865 — {@code /query/execute} used to answer {@code 200 OK} for every failure, with the
@@ -126,6 +133,18 @@ public class Query2ResourceErrorStatusTest {
         assertEquals(400, resp.getStatus());
     }
 
+    /** saiku#2526 — an identifier that is no field/metric of the model is a typed 400, not a 500
+     *  (and typically an attempt to name a hidden field's physical column). */
+    @Test
+    public void anUnknownShelfIdentifierIsATypedBadRequest() {
+        Response resp = executeFailing(
+                new SaikuValidationException("Unknown field 'customer.C_EMAIL_ADDRESS' in model 'TPCDS'"));
+
+        assertEquals(400, resp.getStatus());
+        QueryResult qr = (QueryResult) resp.getEntity();
+        assertTrue(qr.getError(), qr.getError().contains("C_EMAIL_ADDRESS"));
+    }
+
     /** A warehouse failure surfaced through Mondrian is ours, not the caller's. */
     @Test
     public void aMondrianFailureCausedByTheWarehouseIsAServerError() {
@@ -154,5 +173,74 @@ public class Query2ResourceErrorStatusTest {
 
         assertNotNull("media type must be set", resp.getMediaType());
         assertEquals(MediaType.APPLICATION_JSON, resp.getMediaType().toString());
+    }
+
+    private static final class RejectingOssieQueryService extends OssieQueryService {
+        private final RuntimeException rejection;
+
+        RejectingOssieQueryService(RuntimeException rejection) {
+            this.rejection = rejection;
+        }
+
+        @Override
+        public String previewSql(OssieQueryModel model) {
+            throw rejection;
+        }
+    }
+
+    private static final class UnexpectedAsyncQueryService extends AsyncQueryService {
+        @Override
+        public AsyncQueryHandle submit(ThinQuery query, RequestAttributes requestAttributes) {
+            throw new AssertionError("rejected shelf must not reach the async worker");
+        }
+    }
+
+    private static ThinQuery ossieQuery() {
+        ThinQuery tq = new ThinQuery();
+        tq.setName("ossie-error-test");
+        tq.setQueryType("OSSIE");
+        tq.setOssieQueryModel(new OssieQueryModel());
+        return tq;
+    }
+
+    private static Query2Resource ossieResource(RuntimeException rejection) {
+        ThinQueryService service = new ThinQueryService();
+        service.setOssieQueryService(new RejectingOssieQueryService(rejection));
+        Query2Resource resource = new Query2Resource();
+        resource.setThinQueryService(service);
+        return resource;
+    }
+
+    private static void assertQueryError(Response response, int status, String message) {
+        assertEquals(status, response.getStatus());
+        assertEquals(MediaType.APPLICATION_JSON, response.getMediaType().toString());
+        assertTrue(response.getEntity() instanceof QueryResult);
+        assertTrue(((QueryResult) response.getEntity()).getError().contains(message));
+    }
+
+    @Test
+    public void ossieValidationHasTheSameErrorShapeOnPreviewAndAsyncSubmit() {
+        Query2Resource resource = ossieResource(new SaikuValidationException("Ambiguous field 'email'"));
+        UnexpectedAsyncQueryService async = new UnexpectedAsyncQueryService();
+        resource.setAsyncQueryService(async);
+        try {
+            assertQueryError(resource.previewSql(ossieQuery()), 400, "Ambiguous field 'email'");
+            assertQueryError(resource.executeAsync(ossieQuery()), 400, "Ambiguous field 'email'");
+        } finally {
+            async.shutdown();
+        }
+    }
+
+    @Test
+    public void ossieDenialIsForbiddenAndInformationFreeOnPreviewAndAsyncSubmit() {
+        Query2Resource resource = ossieResource(new SaikuAccessDeniedException("hidden field 'customer.email'"));
+        UnexpectedAsyncQueryService async = new UnexpectedAsyncQueryService();
+        resource.setAsyncQueryService(async);
+        try {
+            assertQueryError(resource.previewSql(ossieQuery()), 403, "Access denied");
+            assertQueryError(resource.executeAsync(ossieQuery()), 403, "Access denied");
+        } finally {
+            async.shutdown();
+        }
     }
 }
