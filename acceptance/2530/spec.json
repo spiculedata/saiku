@@ -1,0 +1,29 @@
+{
+  "issue": 2530,
+  "title": "Release publishing jobs restore no Actions cache that a less-trusted workflow run could have written, and docker.yml's PR-dispatch path neither restores nor saves a cache in the default-branch scope",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "every job in release.yml",
+      "then": "it restores no Actions cache: no setup-java/setup-node `cache:` input, no `cache-from` input and no actions/cache restore step (releases are rare; a cold build is the accepted trade)"
+    },
+    {
+      "id": "C2",
+      "given": "docker.yml's build job",
+      "then": "its setup-java `cache:` input is not a plain literal but an expression gated on needs.target.outputs.pr, so a run dispatched with `pr` (PR content executed on the default-branch ref) gets no Maven cache restore or save"
+    },
+    {
+      "id": "C3",
+      "given": "docker.yml's push job",
+      "then": "its BuildKit `cache-from` and `cache-to` inputs are expression-gated on needs.target.outputs.pr, so a PR dispatch neither restores nor saves a type=gha cache in the default-branch scope"
+    },
+    {
+      "id": "C4",
+      "given": "the workflow-shape tests in .github/scripts/",
+      "then": "a test file pins both rules: release.yml restores no cache, and docker.yml's PR-dispatch path is cache-gated"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}
