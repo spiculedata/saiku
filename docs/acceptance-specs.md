@@ -179,7 +179,7 @@ of that repository's `main` (never a branch or a tag): `run-specs.yml`, `base-ch
 `ci.yml`, `thin-caller-gate.yml` in `thin-caller-gate.yml`, and `pin-health.yml` in `acceptance-pin-health.yml`.
 `acceptance-caller.test.mjs` and `ci-wiring.test.mjs` fail if they differ or are not full SHAs, and the
 thin-caller gate reports the same thing. The scripts the shared workflows run are fetched at exactly that SHA
-(`job.workflow_sha`), so there is no second pin to keep in step. Current pin: `e1ee02261986f510ca3be97f09b07546dd0614be`.
+(`job.workflow_sha`), so there is no second pin to keep in step. Current pin: `888e864f0f1641df962e661c9fab1f0b6fa26b30`.
 To bump:
 
 1. Read what changed: `git log <old>..<new> -- scripts .github/workflows` in a checkout of acceptance-spec, and its
