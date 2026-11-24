@@ -8,6 +8,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 import java.nio.charset.StandardCharsets;
@@ -25,7 +26,10 @@ import org.saiku.web.security.embed.EmbedAuthFilter.EmbedGuestDetails;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 /**
@@ -104,6 +108,44 @@ public class EmbedAuthFilterTest {
         assertNull(
                 "no auth was set for an untouched request",
                 SecurityContextHolder.getContext().getAuthentication());
+    }
+
+    /** saiku#2520 — the request carries bob's logged-in session cookie: the thread's
+     *  SecurityContext is the very object stored in the HttpSession. The embed guest swap
+     *  (shared by the view, authoring and public-grant paths) must leave that object, its
+     *  principal and its authorities untouched, while the resource still sees the guest. */
+    @Test
+    public void valid_token_sessionBackedContext_isLeftUntouched() throws Exception {
+        Authentication bobsLogin =
+                new UsernamePasswordAuthenticationToken("bob", "N/A", List.of(new SimpleGrantedAuthority("ROLE_USER")));
+        SecurityContext sessionContext = SecurityContextHolder.createEmptyContext();
+        sessionContext.setAuthentication(bobsLogin);
+        SecurityContextHolder.setContext(sessionContext);
+        Authentication before = sessionContext.getAuthentication();
+
+        EmbedToken t = tokenStore.create(
+                "dashboard", "/homes/admin/exec.saikudash", "admin", List.of("ROLE_ADMIN"), 60_000L, null);
+        MockHttpServletRequest req = new MockHttpServletRequest(
+                "POST", "/rest/saiku/api/embed/dashboard/homes/admin/exec.saikudash/tile/tile-42/query");
+        req.addHeader(EmbedAuthFilter.TOKEN_HEADER, t.token);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        ContextCapturingChain chain = new ContextCapturingChain();
+
+        try {
+            filter.doFilter(req, resp, chain);
+
+            assertTrue(chain.called);
+            assertEquals("embed-guest", chain.capturedAuth.getPrincipal());
+            assertSame(sessionContext, SecurityContextHolder.getContext());
+            assertSame(before, sessionContext.getAuthentication());
+            assertEquals("bob", sessionContext.getAuthentication().getPrincipal());
+            assertFalse(
+                    "the guest authority must not leak into the stored authentication",
+                    sessionContext.getAuthentication().getAuthorities().stream()
+                            .anyMatch(a -> a.getAuthority().equals(EmbedAuthFilter.GUEST_ROLE)));
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
     }
 
     @Test

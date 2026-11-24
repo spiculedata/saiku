@@ -1,0 +1,24 @@
+{
+  "issue": 2539,
+  "title": "Normalise and bound the AI schema cache key (every case variant of a cube id stores a full schema)",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "describe requests for the same cube whose connection/catalog/schema/cube spellings differ only in letter case (or leave catalog/schema as a wildcard)",
+      "then": "the cube is resolved first and the cache is keyed on the resolved cube's canonical identifiers, so all spellings share one entry and the backing discover service's cold build runs once (a unit test counts cold builds)"
+    },
+    {
+      "id": "C2",
+      "given": "OlapAiCubeMetadataService.schemaCache and OlapAiCubeMetadataService.piiSuggestionsCache",
+      "then": "both are bounded caches with a maximum entry count and an expiry (Caffeine), not raw ConcurrentHashMaps; a unit test fills past the bound and the oldest entry is rebuilt"
+    },
+    {
+      "id": "C3",
+      "given": "the saiku#2326 visibility separation",
+      "then": "the per-caller visibility fingerprint still scopes the cache key and every path (hit and miss) still re-resolves the cube under the caller's role-scoped enumeration — the existing OlapAiCubeMetadataServiceVisibilityTest pins stay in place"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}
