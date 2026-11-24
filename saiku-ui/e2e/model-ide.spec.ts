@@ -92,7 +92,7 @@ async function selectOssie(page: Page, name: string): Promise<void> {
 }
 
 async function expectSuggestions(page: Page, present: string, absent: string): Promise<void> {
-	const input = page.locator('.monaco-editor textarea.inputarea');
+	const input = page.getByRole('textbox', { name: 'Editor content' });
 	await input.focus();
 	await input.press('Control+End');
 	await input.press('Control+Space');
@@ -108,7 +108,7 @@ test('Mondrian opens its saved XML and uploads the edited editor content', async
 	await page.getByRole('button', { name: 'Foodmart' }).click();
 	const editor = page.locator('.monaco-editor');
 	await expect(editor).toContainText('Original');
-	const input = editor.locator('textarea.inputarea');
+	const input = editor.getByRole('textbox', { name: 'Editor content' });
 	await input.focus();
 	await input.press('Control+A');
 	await page.keyboard.insertText(EDITED_XML);
