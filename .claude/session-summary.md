@@ -222,3 +222,9 @@ the tree first.
 **Was doing:** made `SqlCaptureProbe` share one raise/restore of the planner logger levels across overlapping probes (first open records and raises, last close restores), with a cleaner releasing a probe that is never closed. Added overlap tests for both close orders and for a logger that only an ancestor configures.
 **Now:** opening fails closed on any `Throwable` (raise, attach, logger update, cleaner registration), and closing restores in a `finally`. Fault-injection tests cover each path, and reflection tests keep the appender and release action static with no path back to the probe, which the cleaner depends on. A logger whose restore fails is retried at the next cycle with its recorded level.
 **Watch out:** an open PR also edits this class's event filter; this change only touches the level lifecycle and the appender's fields.
+
+## 2026-11-24 — feature/2526-ossie-role-bypass — PR #2552 CI rework
+**Was doing:** traced the failing acceptance job to spec #2442, which rejected the new `saiku-service` test floor of 595 solely because its regex accepted floors in the 580s. Updated the spec to parse the floor as a number and require at least 582.
+**Now:** check PR #2552 CI after the push. Acceptance specs #2442 and #2526, all 53 acceptance runner tests, and a lower-floor rejection check passed locally.
+**Watch out:** this workspace has no Java or Maven executable, so the Java build and tests need CI verification.
+**Refs:** #2442, #2526, #2552
