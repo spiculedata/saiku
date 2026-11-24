@@ -22,6 +22,7 @@ import jakarta.ws.rs.core.Response;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 import org.saiku.repository.IRepositoryObject;
 import org.saiku.repository.RepositoryFolderObject;
 import org.saiku.service.datasource.DatasourceService;
@@ -52,6 +53,16 @@ public class AppResource {
 
     /** Repository extension for App Builder documents. */
     private static final String APP_EXTENSION = ".saikuapp";
+
+    /**
+     * The characters an app document's {@code id} may use (saiku#2545). The shell
+     * interpolates the id into a CSS attribute selector — {@code [data-saiku-app="${id}"]}
+     * — so an id that closes the selector would inject arbitrary CSS rules into a
+     * {@code <style>} element that never passes through the UI's custom-CSS
+     * sanitiser. Only the id is constrained; the rest of the document stays an
+     * opaque, UI-owned schema.
+     */
+    private static final Pattern APP_ID_PATTERN = Pattern.compile("^[A-Za-z0-9_-]{1,64}$");
 
     private static final ObjectMapper MAPPER = new ObjectMapper()
             .setSerializationInclusion(JsonInclude.Include.NON_NULL)
@@ -209,6 +220,24 @@ public class AppResource {
         }
         if (node == null || !node.isObject()) {
             return badRequest("body", "app body must be a JSON object");
+        }
+        // saiku#2545: the id reaches the UI as a CSS attribute-selector value, so
+        // it must stay inside [A-Za-z0-9_-]{1,64}. An empty id is the UI's
+        // "preview before the first save" sentinel and stays legal (the UI's
+        // isValidAppId accepts it and the first save relies on it — the server
+        // used to refuse it with 400, which made a NEW app unsavable, review of
+        // PR #2581); an id that could close the selector is refused here rather
+        // than sanitised later.
+        JsonNode id = node.get("id");
+        if (id != null && !id.isNull()) {
+            if (!id.isTextual()) {
+                return badRequest("id", "app id must be a string");
+            }
+            String idText = id.asText();
+            if (!idText.isEmpty() && !APP_ID_PATTERN.matcher(idText).matches()) {
+                return badRequest(
+                        "id", "app id must match ^[A-Za-z0-9_-]{1,64}$ (empty id is the UI preview sentinel)");
+            }
         }
         String username = currentUsername();
         List<String> roles = currentRoles();

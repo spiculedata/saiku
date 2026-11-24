@@ -6,6 +6,7 @@ package org.saiku.service.olap;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNull;
 
 import org.junit.Test;
 import org.saiku.olap.query2.ThinQuery;
@@ -67,9 +68,10 @@ public class ThinQueryServiceCacheKeyTest {
         assertEquals(QueryCacheKey.of(query(), CUBE_VERSION), s.cacheKeyFor(query(), CUBE_VERSION));
     }
 
-    /** A UserService that throws (no security context) must degrade to the legacy key, never fail the query. */
+    /** A UserService that throws (no security context) must FAIL CLOSED (saiku#2538): the key is
+     * unbuildable and the caches are bypassed — never a shared role-less key another caller holds. */
     @Test
-    public void throwingUserServiceDegradesToLegacyKey() {
+    public void throwingUserServiceBypassesCache() {
         ThinQueryService s = new ThinQueryService();
         s.setUserService(new UserService() {
             @Override
@@ -77,6 +79,74 @@ public class ThinQueryServiceCacheKeyTest {
                 throw new IllegalStateException("no security context");
             }
         });
-        assertEquals(QueryCacheKey.of(query(), CUBE_VERSION), s.cacheKeyFor(query(), CUBE_VERSION));
+        assertNull(
+                "an unresolvable role-set must bypass the caches, not degrade to a shared key",
+                s.cacheKeyFor(query(), CUBE_VERSION));
+    }
+
+    // ── saiku#2538: per-caller identity fragment (pass-through datasources) ──
+
+    private static QueryCacheIdentityContext identityFor(final String identity) {
+        return connectionName -> identity == null ? "" : identity;
+    }
+
+    /**
+     * The crux: SAME Saiku roles, DIFFERENT warehouse identity (pass-through datasource) ⇒
+     * DIFFERENT keys — the second user must not receive the first user's cellset, and the
+     * coalescer must not join their executions.
+     */
+    @Test
+    public void passthrough_sameRolesDifferentUsersDifferentKeys() {
+        ThinQueryService alice = serviceWithRoles("reader");
+        alice.setIdentityContext(identityFor("user:alice"));
+        ThinQueryService bob = serviceWithRoles("reader");
+        bob.setIdentityContext(identityFor("user:bob"));
+        assertNotEquals(
+                "two users of a pass-through datasource with equal roles must not share a cache key (saiku#2538)",
+                alice.cacheKeyFor(query(), CUBE_VERSION),
+                bob.cacheKeyFor(query(), CUBE_VERSION));
+    }
+
+    /** Non-pass-through (identity "") keeps the role-keyed behaviour: same roles ⇒ same key. */
+    @Test
+    public void nonPassthrough_sameRolesShareKey() {
+        ThinQueryService alice = serviceWithRoles("reader");
+        alice.setIdentityContext(identityFor(""));
+        ThinQueryService bob = serviceWithRoles("reader");
+        bob.setIdentityContext(identityFor(""));
+        assertEquals(
+                "cache hit rates must be unchanged off pass-through (saiku#2538)",
+                alice.cacheKeyFor(query(), CUBE_VERSION),
+                bob.cacheKeyFor(query(), CUBE_VERSION));
+    }
+
+    /** Non-pass-through key must equal the pre-#2538 role-only key (byte-identical, caches keep hitting). */
+    @Test
+    public void nonPassthroughKeyMatchesLegacyRoleKey() {
+        ThinQueryService s = serviceWithRoles("reader");
+        s.setIdentityContext(identityFor(""));
+        assertEquals(
+                QueryCacheKey.of(query(), CUBE_VERSION, java.util.Collections.singletonList("reader")),
+                s.cacheKeyFor(query(), CUBE_VERSION));
+    }
+
+    /** No seam wired (standalone) ⇒ legacy role-only key, unchanged behaviour. */
+    @Test
+    public void noIdentityContextKeepsRoleKey() {
+        ThinQueryService s = serviceWithRoles("reader"); // identityContext unset
+        assertEquals(
+                QueryCacheKey.of(query(), CUBE_VERSION, java.util.Collections.singletonList("reader")),
+                s.cacheKeyFor(query(), CUBE_VERSION));
+    }
+
+    /** A throwing identity seam (datasource unresolvable) must FAIL CLOSED: bypass the caches. */
+    @Test
+    public void throwingIdentityContextBypassesCache() {
+        ThinQueryService s = serviceWithRoles("reader");
+        s.setIdentityContext(connectionName -> {
+            throw new IllegalStateException("repository hiccup");
+        });
+        assertNull(
+                "an unresolvable datasource must bypass the caches (saiku#2538)", s.cacheKeyFor(query(), CUBE_VERSION));
     }
 }

@@ -22,6 +22,14 @@ When a shared dashboard or app executes a saved-query reference under the minter
 **Why:** a hash of the parent dashboard or app does not detect a collaborator replacing the query at an unchanged reference path.
 **Source:** PR #2565 review of #2536
 
+## 2026-11-24 — Result-cache identity: test the real datasource decision
+A stubbed identity fragment and source-text assertions did not test whether pass-through
+datasources resolve to distinct caller identities. Add a Java test of the real
+`SecurityAwareConnectionManager.identityKey` path, including datasource classification,
+principal resolution, and unresolved names, when changing cache isolation.
+**Why:** a refactor could restore cross-user cellset sharing while stub-based tests stay green.
+**Source:** PR #2575 review for #2538
+
 ## 2026-11-24 — Ossie filters: resolve semantic names through their dataset and expression
 Checking that an unqualified filter name is visible somewhere in the model is insufficient. Resolve it to one declaring dataset, reject ambiguity, and emit that dataset's mapped column expression.
 **Why:** a bare quoted name can bind to a different table's hidden physical column and disclose values through filter results.

@@ -28,6 +28,7 @@ import org.saiku.repository.AclEntry;
 import org.saiku.repository.IRepositoryObject;
 import org.saiku.service.util.exception.SaikuDataSourceException;
 import org.saiku.service.util.exception.SaikuDataSourceNotFoundException;
+import org.saiku.service.util.exception.SaikuServiceException;
 
 public class DatasourceService implements Serializable {
 
@@ -132,8 +133,13 @@ public class DatasourceService implements Serializable {
         datasources.setDatasource(datasource);
     }
 
-    public void removeDatasource(String datasourceId) {
-        datasources.removeDatasource(datasourceId);
+    /**
+     * saiku#2533: surface the removal outcome so the REST layer can answer an unknown id with
+     * 404 instead of a fake 200. A datasource that cannot be removed (descriptor file still
+     * there) raises {@link SaikuServiceException} from the datasource manager.
+     */
+    public boolean removeDatasource(String datasourceId) {
+        return datasources.removeDatasource(datasourceId);
     }
 
     public void removeSchema(String schemaId) {

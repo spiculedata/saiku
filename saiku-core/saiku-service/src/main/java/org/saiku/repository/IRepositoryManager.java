@@ -15,6 +15,7 @@
  */
 package org.saiku.repository;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
@@ -82,7 +83,14 @@ public interface IRepositoryManager {
     List<IRepositoryObject> getAllFiles(List<String> type, String username, List<String> roles, String path)
             throws RepositoryException;
 
-    void deleteFile(String datasourcePath);
+    /**
+     * Delete a file from the repository.
+     *
+     * @return true when the file existed and was removed; false when the delete did not take
+     *     effect (missing file, or {@link File#delete()} refused). saiku#2533: callers that must
+     *     report a delete to an administrator check this instead of assuming success.
+     */
+    boolean deleteFile(String datasourcePath);
 
     AclEntry getACL(String object, String username, List<String> roles);
 

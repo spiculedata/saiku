@@ -88,7 +88,7 @@ public class AiMeasureValueReaderTest {
     @Test(expected = IllegalArgumentException.class)
     public void ctorRejectsNullDiscover() {
         // Production ctor: olapDiscoverService is required (no session-scoped bean anymore).
-        new AiMeasureValueReader(schemaService(), null, null, null, null, null);
+        new AiMeasureValueReader(schemaService(), null, null, null, null, null, null);
     }
 
     @Test(expected = IllegalArgumentException.class)
