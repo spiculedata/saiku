@@ -56,6 +56,7 @@ public class InfoResourceTest {
         System.clearProperty("saiku.version");
         System.clearProperty("saiku.oauth.issuerUri");
         System.clearProperty("saiku.oauth.audience");
+        System.clearProperty("saiku.sponsorLink");
     }
 
     /* ------------------------------ DXT bundle ------------------------------ */
@@ -175,6 +176,25 @@ public class InfoResourceTest {
         // from, MCP reports disabled.
         assertEquals(Boolean.FALSE, mcp.get("enabled"));
         assertEquals(Boolean.FALSE, body.get("demoMode"));
+    }
+
+    /* ------------------------------ sponsor link (saiku#2577) ------------------------------ */
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void capabilities_sponsorLinkOnByDefault() {
+        Map<String, Object> body =
+                (Map<String, Object>) new InfoResource().getCapabilities(null).getEntity();
+        assertEquals(Boolean.TRUE, body.get("sponsorLink"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void capabilities_sponsorLinkOffWhenPropertyOptsOut() {
+        System.setProperty("saiku.sponsorLink", "false");
+        Map<String, Object> body =
+                (Map<String, Object>) new InfoResource().getCapabilities(null).getEntity();
+        assertEquals(Boolean.FALSE, body.get("sponsorLink"));
     }
 
     @Test
