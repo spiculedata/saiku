@@ -75,6 +75,11 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-11-24 — feature/passthrough-cache-identity — PR #2575 identity-key test rework
+**Was doing:** added real `SecurityAwareConnectionManager.identityKey` and `ThinQueryService` call-chain tests for #2538; clarified unresolved-query cache reuse in the PR description.
+**Now:** check PR #2575 CI for the new Java tests; local Maven stops before compilation because GitHub Packages returns 401 for Mondrian and olap4j artifacts.
+**Refs:** #2538, PR #2575, `SecurityAwareConnectionManagerIdentityKeyTest`
+
 ## 2026-11-12 — fix/2322-ossie-ai-policy-gate — PR #2355 formatting rework
 **Was doing:** fixed the async role test fixture's Spotless violation; local Spotless and licence checks pass, but focused Maven tests stop during dependency resolution with GitHub Packages 401.
 **Now:** use the latest PR #2355 CI result to verify the full build and focused tests; no local edits remain after the rework push.

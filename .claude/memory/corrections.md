@@ -17,6 +17,14 @@ A promoted entry has the same shape plus `**Status:** promoted`, `**Supersedes:*
 
 ---
 
+## 2026-11-24 — Result-cache identity: test the real datasource decision
+A stubbed identity fragment and source-text assertions did not test whether pass-through
+datasources resolve to distinct caller identities. Add a Java test of the real
+`SecurityAwareConnectionManager.identityKey` path, including datasource classification,
+principal resolution, and unresolved names, when changing cache isolation.
+**Why:** a refactor could restore cross-user cellset sharing while stub-based tests stay green.
+**Source:** PR #2575 review for #2538
+
 ## 2026-10-11 — Async work: session-scoped beans must be settled on the request thread
 **Status:** promoted
 **Supersedes:** 2026-09-28 — Async work: session-scoped beans must be settled on the request thread
