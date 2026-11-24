@@ -22,6 +22,7 @@ import org.saiku.web.security.audit.AuditLogger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.preauth.PreAuthenticatedAuthenticationToken;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -101,11 +102,18 @@ public class ScimAuthFilter extends OncePerRequestFilter {
                         // saiku#2343: marker so the main chain's real-user rules reject this principal.
                         new SimpleGrantedAuthority(TokenPrincipals.TOKEN_PRINCIPAL_ROLE)));
         auth.setDetails(new ScimPrincipal(token));
+        // saiku#2520: a request may carry both the SCIM bearer and a logged-in session cookie,
+        // so the context handed back by getContext() may be the object stored in the HttpSession.
+        // Swap in a fresh context object instead of mutating the loaded one, and restore the
+        // prior object afterwards — the SCIM principal stays strictly request-scoped.
+        SecurityContext priorContext = SecurityContextHolder.getContext();
+        SecurityContext scimContext = SecurityContextHolder.createEmptyContext();
+        scimContext.setAuthentication(auth);
+        SecurityContextHolder.setContext(scimContext);
         try {
-            SecurityContextHolder.getContext().setAuthentication(auth);
             chain.doFilter(req, resp);
         } finally {
-            SecurityContextHolder.clearContext();
+            SecurityContextHolder.setContext(priorContext);
         }
         // Last-use is stamped after the chain so a failed request still counts as "the IdP used
         // this credential" — that is what an operator reviewing access logs is looking for.
