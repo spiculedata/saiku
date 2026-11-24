@@ -213,9 +213,8 @@ public class ScimServiceTest {
         in.userName = "idp-user";
         in.active = true;
         in.emails = List.of(new ScimUser.Email("idp-user@example.com", "work", true));
-        in.groups = new ArrayList<>(List.of(
-                new ScimUser.Member(good.id, "analysts"),
-                new ScimUser.Member(staleId, "ROLE_SQL_EXEC")));
+        in.groups = new ArrayList<>(
+                List.of(new ScimUser.Member(good.id, "analysts"), new ScimUser.Member(staleId, "ROLE_SQL_EXEC")));
         try {
             scim.createUser(in);
             fail("a non-grantable group must refuse the create outright");
@@ -359,6 +358,38 @@ public class ScimServiceTest {
             assertEquals(409, e.getResponse().getStatus());
             assertEquals("uniqueness", e.getScimType());
         }
+    }
+
+    /** A refused PUT must not apply any of its profile or active changes before checking groups. */
+    @Test
+    public void putWithANonGrantableGroupLeavesTheUserUnchanged() {
+        ScimUser created = create("alice", true);
+        ScimGroupStore.GroupRecord stale = new ScimGroupStore.GroupRecord();
+        stale.id = java.util.UUID.randomUUID().toString();
+        stale.displayName = "ROLE_SQL_EXEC";
+        groups.save(stale);
+
+        ScimUser in = new ScimUser();
+        in.userName = "alice.renamed";
+        in.name = new ScimUser.Name("Changed", "Name");
+        in.emails = List.of(new ScimUser.Email("changed@example.com", "work", true));
+        in.active = false;
+        in.groups = List.of(new ScimUser.Member(stale.id, stale.displayName));
+        try {
+            scim.replaceUser(created.id, in);
+            fail("a non-grantable group must refuse the PUT before any user write");
+        } catch (ScimException e) {
+            assertEquals(400, e.getResponse().getStatus());
+            assertEquals("invalidValue", e.getScimType());
+        }
+
+        SaikuUser stored = users.findByUsername("alice");
+        assertNotNull("the original username must still resolve", stored);
+        assertNull("the requested username must not be stored", users.findByUsername("alice.renamed"));
+        assertEquals("Given", stored.getGivenName());
+        assertEquals("alice@example.com", stored.getEmail());
+        assertTrue("the account must remain enabled", stored.isEnabled());
+        assertEquals(List.of("ROLE_USER"), rolesOf(stored));
     }
 
     /* -------------------------------- patch -------------------------------- */
@@ -776,8 +807,12 @@ public class ScimServiceTest {
                 patch("{\"Operations\":[{\"op\":\"remove\",\"path\":\"members\",\"value\":{\"value\":\""
                         + mallory.getUsername() + "\"}}]}"));
 
-        assertFalse("the removed member must lose the escalated role", rolesOf(mallory).contains("ROLE_SQL_EXEC"));
-        assertTrue("the remaining member keeps the role she already had", rolesOf(alice).contains("ROLE_SQL_EXEC"));
+        assertFalse(
+                "the removed member must lose the escalated role",
+                rolesOf(mallory).contains("ROLE_SQL_EXEC"));
+        assertTrue(
+                "the remaining member keeps the role she already had",
+                rolesOf(alice).contains("ROLE_SQL_EXEC"));
     }
 
     /** saiku#2537: the allow-list never rescues a reserved role. */

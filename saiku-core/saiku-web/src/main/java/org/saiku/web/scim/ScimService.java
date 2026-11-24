@@ -185,14 +185,7 @@ public class ScimService {
         // 400 AFTER the account was created and 'analysts' granted, and the IdP's
         // retry then hit 409 uniqueness. Resolve and check every named group up
         // front — fail fast with nothing written.
-        if (in.groups != null) {
-            for (ScimUser.Member m : in.groups) {
-                ScimGroupStore.GroupRecord r = resolveGroupRecord(m == null ? null : m.value);
-                if (r != null) {
-                    rejectNonGrantableRoleName(r.displayName);
-                }
-            }
-        }
+        validateGroupRoles(in.groups);
         SaikuUser created = userService.addUser(u);
         if (in.active != null && !in.active) {
             // addUser always inserts enabled=TRUE (the DAO hard-codes it), so an explicit
@@ -214,6 +207,9 @@ public class ScimService {
             // The PUT asks for a deactivation: refuse the last enabled admin before any write.
             assertNotLastEnabledAdmin(u);
         }
+        // A full replace may rename, change the profile, and deactivate the account before
+        // reconciling groups. Refuse a stale reserved/off-list group before any of those writes.
+        validateGroupRoles(in.groups);
         if (in.userName != null && !in.userName.isBlank()) {
             String requested = Usernames.canonicalize(in.userName.trim());
             if (!Usernames.sameUser(requested, u.getUsername())) {
@@ -578,6 +574,19 @@ public class ScimService {
             if (!r.members.contains(u.getUsername())) {
                 r.members.add(u.getUsername());
                 groupStore.save(r);
+            }
+        }
+    }
+
+    /** Validates every requested group before a user create or replace writes anything. */
+    private void validateGroupRoles(List<ScimUser.Member> members) {
+        if (members == null) {
+            return;
+        }
+        for (ScimUser.Member m : members) {
+            ScimGroupStore.GroupRecord r = resolveGroupRecord(m == null ? null : m.value);
+            if (r != null) {
+                rejectNonGrantableRoleName(r.displayName);
             }
         }
     }

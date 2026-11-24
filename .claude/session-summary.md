@@ -75,6 +75,12 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-11-24 — feature/scim-grantable-roles — PR #2564 review rework
+**Was doing:** moved user PUT group-policy validation before every user write and fixed the SCIM test file's Spotless violations; added a regression test for unchanged username, email, and enabled state.
+**Now:** check PR #2564 CI after the push for Java compilation and tests.
+**Watch out:** local Spotless passes, but Maven tests stop before compilation because GitHub Packages returns 401 for private dependencies.
+**Refs:** #2537, PR #2564
+
 ## 2026-11-24 — feature/2524-unauth-401-no-session — PR #2560 formatting rework
 **Was doing:** matched the two launcher test files to Spotless's CI diff; the prior CI run passed both affected test classes but failed at formatting.
 **Now:** check PR #2560 CI for the rework commit; local Java and Maven are unavailable in this workspace.
