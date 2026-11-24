@@ -416,10 +416,18 @@ public class SessionService implements ISessionService, AccountStatusFilter.Sess
         return new HashMap<>();
     }
 
-    /** A copy of the session map that can never carry a credential, whatever put it there. */
+    /**
+     * A copy of the session map that can never carry a secret, whatever put it there: the
+     * pass-through password (saiku#2341) and the servlet session id (saiku#2546). The session
+     * cookie is {@code HttpOnly}, so script can never read it — and the same value must not be
+     * readable from {@code GET /rest/saiku/session} either. The id stays in the internal maps
+     * ({@code sessionHolder}, the persisted copy); {@link #httpSessionDestroyed(String)} still
+     * matches on it.
+     */
     private static Map<String, Object> withoutSecrets(Map<String, Object> session) {
         Map<String, Object> copy = new HashMap<>(session);
         copy.remove("password");
+        copy.remove("authid");
         return copy;
     }
 

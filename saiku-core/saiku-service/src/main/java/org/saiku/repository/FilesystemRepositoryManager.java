@@ -447,6 +447,22 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
         while (p.startsWith("./")) {
             p = p.substring(2);
         }
+        // saiku#2521: collapse trailing separators and dot segments before the name checks —
+        // "x.sds/", "x.sds/." and "x.sds//" all resolve to the single file "x.sds" on disk (the
+        // same collapse Paths.get(...).normalize() performs for the manager's own resolved-path
+        // guard), so a trailing "/" or "/." can no longer hide the extension from this check.
+        boolean collapsed;
+        do {
+            collapsed = false;
+            while (p.endsWith("/")) {
+                p = p.substring(0, p.length() - 1);
+                collapsed = true;
+            }
+            if (p.endsWith("/.")) {
+                p = p.substring(0, p.length() - 2);
+                collapsed = true;
+            }
+        } while (collapsed);
         p = stripWindowsFilenameTail(p);
         if (p.endsWith(".sds")) {
             return true;
@@ -481,7 +497,24 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
      * ({@code saveDataSource}, internal files) don't pass through here and are unaffected.
      */
     private void requireAdminForDatasourceDescriptor(String path, List<String> roles) {
-        if (!isDatasourceDescriptorPath(path)) {
+        if (path == null) {
+            return;
+        }
+        // saiku#2521: decide on the RESOLVED file name, not the raw request path. The write and the
+        // move land at resolveWithinDatadir()'s location — Paths.get(...).normalize() collapses
+        // "homes/<u>/x.sds/", "homes/<u>/x.sds/." and "homes/<u>/x.sds//" to the single file
+        // "x.sds" — so only a check made on that resolved name can match what actually lands on
+        // disk. A raw-path check let a trailing separator slip past it while the write still
+        // created the descriptor. Resolution failure (traversal, illegal characters) is refused
+        // fail-closed, like every other caller of resolveWithinDatadir.
+        String resolved;
+        try {
+            resolved = resolveWithinDatadir(path).toString();
+        } catch (RepositoryException | InvalidPathException e) {
+            log.debug("Rejecting path: {}", path);
+            throw new SaikuServiceException("Path traversal attempt rejected", e);
+        }
+        if (!isDatasourceDescriptorPath(resolved)) {
             return;
         }
         List<String> adminRoles = userService != null ? userService.getAdminRoles() : null;
@@ -683,6 +716,10 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
         // reload. Implement a real filesystem move with the same canWrite ACL gate
         // removeFile uses (the node is removed from its old location) plus
         // path-traversal safety via getNode/resolveWithinDatadir on BOTH ends.
+        // saiku#2521: decide on the resolved names of BOTH ends — a move is a descriptor write if
+        // either the source or the target resolves to a *.sds descriptor.
+        requireAdminForDatasourceDescriptor(source, roles);
+        requireAdminForDatasourceDescriptor(target, roles);
         File src = getNode(source);
         if (!src.exists()) {
             throw new RepositoryException("Cannot move: source does not exist (" + source + ")");
@@ -693,8 +730,8 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
         if (!srcAcl.canWrite(src, user, roles)) {
             throw new SaikuServiceException("You don't have permission to move " + source);
         }
-        // saiku#1903: a rename into *.sds (or into /datasources) is a descriptor write.
-        requireAdminForDatasourceDescriptor(target, roles);
+        // saiku#1903: a rename into *.sds (or into /datasources) is a descriptor write; both ends
+        // were already gated above (saiku#2521) on the resolved file names.
         File dest = getNode(target);
         if (dest.exists()) {
             throw new RepositoryException("Cannot move: target already exists (" + target + ")");
@@ -1044,7 +1081,16 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
         // for datasource discovery — every tenant saw every other tenant's
         // SDS files. The fix is a one-line swap to the same path resolver
         // every other read/write method on this class already uses.
-        Collection<File> files = FileUtils.listFiles(new File(getDatadir()), extensions, true);
+        //
+        // saiku#2521: list ONLY the /datasources subtree. The recursive listing used to walk the
+        // whole datadir, so a descriptor planted anywhere else — a user's writable home, dropped
+        // past the write-side guard by a trailing-separator spelling — was loaded at start-up and
+        // on every admin-role discover/refresh, exactly like one an admin placed in
+        // /datasources. Descriptors are admin-managed content that only ever lives there
+        // (saveDataSource writes to /datasources/<name>.sds); getAllSchema already lists only this
+        // subtree. commons-io's listFiles returns an empty collection when the directory does not
+        // exist, so a fresh install without /datasources is unaffected.
+        Collection<File> files = FileUtils.listFiles(new File(getDatadir() + "datasources"), extensions, true);
 
         for (File file : files) {
             JAXBContext jaxbContext = null;

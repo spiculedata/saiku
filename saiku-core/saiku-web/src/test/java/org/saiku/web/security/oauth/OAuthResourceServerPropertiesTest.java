@@ -24,12 +24,37 @@ public class OAuthResourceServerPropertiesTest {
     }
 
     @Test
-    public void enabled_when_issuer_set() {
+    public void enabled_when_issuer_and_audience_set() {
         Properties raw = new Properties();
         raw.setProperty(OAuthResourceServerProperties.PROP_ISSUER_URI, "https://idp.example.com/realms/saiku");
+        raw.setProperty(OAuthResourceServerProperties.PROP_AUDIENCE, "saiku-mcp");
         OAuthResourceServerProperties props = OAuthResourceServerProperties.from(raw);
         assertTrue(props.isEnabled());
         assertEquals("https://idp.example.com/realms/saiku", props.getIssuerUri());
+        assertEquals("saiku-mcp", props.getAudience());
+    }
+
+    /** saiku#2543: an issuer without an audience would accept any token the issuer signed for any
+     *  client — the resource server must stay disabled. */
+    @Test
+    public void disabled_when_issuer_set_without_audience() {
+        Properties raw = new Properties();
+        raw.setProperty(OAuthResourceServerProperties.PROP_ISSUER_URI, "https://idp.example.com/realms/saiku");
+        OAuthResourceServerProperties props = OAuthResourceServerProperties.from(raw);
+        assertFalse("issuer without audience must not enable bearer authentication", props.isEnabled());
+        assertEquals("https://idp.example.com/realms/saiku", props.getIssuerUri());
+    }
+
+    @Test
+    public void disabled_when_audience_blank() {
+        Properties raw = new Properties();
+        raw.setProperty(OAuthResourceServerProperties.PROP_ISSUER_URI, "https://idp.example.com");
+        raw.setProperty(OAuthResourceServerProperties.PROP_AUDIENCE, "   ");
+        assertFalse(propsEnabled(raw));
+    }
+
+    private static boolean propsEnabled(Properties raw) {
+        return OAuthResourceServerProperties.from(raw).isEnabled();
     }
 
     @Test
