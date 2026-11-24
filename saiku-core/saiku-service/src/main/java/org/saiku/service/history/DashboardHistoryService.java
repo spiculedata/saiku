@@ -10,6 +10,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import org.saiku.service.datasource.DatasourceService;
+import org.saiku.service.util.DashboardSidecars;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -83,7 +84,7 @@ public class DashboardHistoryService {
      *  itself is removed so the sidecar JSONL isn't orphaned (#947 cleanup). */
     public void purge(String dashboardPath) {
         try {
-            datasourceService.removeInternalFile(historyPath(dashboardPath));
+            DashboardSidecars.purge(datasourceService, KIND, dashboardPath);
         } catch (RuntimeException e) {
             log.warn("could not purge history for {}", dashboardPath, e);
         }
@@ -91,18 +92,19 @@ public class DashboardHistoryService {
 
     /* --------------------------- internals --------------------------- */
 
-    /** Flat, sanitised internal path at the datadir root (no subdir — the
-     *  internal writer won't mkdir one). Separators collapse to {@code _} and
-     *  {@code ..} is neutralised; resolveWithinDatadir guards the final path. */
+    /** Sidecar kind — the prefix DashboardSidecars names our file with. */
+    static final String KIND = "history";
+
+    /** Sidecar file for a dashboard. saiku#2550d: keyed by a hash of the exact
+     *  path (DashboardSidecars), not the old sanitised flattening that collapsed
+     *  {@code a_b/x} and {@code a/b/x} onto one file. Kept for logging + tests. */
     static String historyPath(String dashboardPath) {
-        String flat = dashboardPath == null ? "null" : dashboardPath.replaceAll("[^A-Za-z0-9._-]", "_");
-        flat = flat.replace("..", "_");
-        return "saiku-history-" + flat + ".jsonl";
+        return DashboardSidecars.path(KIND, dashboardPath);
     }
 
     private List<DashboardVersion> readAll(String dashboardPath) {
         List<DashboardVersion> out = new ArrayList<>();
-        String raw = datasourceService.getInternalFileData(historyPath(dashboardPath));
+        String raw = DashboardSidecars.read(datasourceService, KIND, dashboardPath);
         if (raw == null || raw.isBlank()) {
             return out;
         }
@@ -128,6 +130,6 @@ public class DashboardHistoryService {
                 log.error("Failed to serialise dashboard version {}", v.version, e);
             }
         }
-        datasourceService.saveInternalFile(historyPath(dashboardPath), sb.toString(), null);
+        DashboardSidecars.write(datasourceService, KIND, dashboardPath, sb.toString());
     }
 }

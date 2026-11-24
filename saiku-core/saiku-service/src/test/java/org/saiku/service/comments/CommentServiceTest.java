@@ -6,6 +6,7 @@ package org.saiku.service.comments;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
@@ -125,15 +126,41 @@ public class CommentServiceTest {
     }
 
     @Test
-    public void comments_path_is_flattened_and_namespaced() {
-        // A single flat file at the datadir root; separators / traversal chars
-        // collapse to underscores (the internal writer won't mkdir a subdir).
-        assertEquals(
-                "saiku-comments-dashboards_foo.saikudash.jsonl",
-                CommentService.commentsPath("dashboards/foo.saikudash"));
+    public void comments_path_is_hashed_namespaced_and_flat() {
+        // saiku#2550d: the file key is a hash of the EXACT path, so two different
+        // paths can no longer collapse onto one file the way the old sanitised
+        // flattening let homes/a_b/x and homes/a/b/x do. Still a single flat name
+        // at the datadir root, with no separators or parent-dir hops anywhere in it.
+        String flat = CommentService.commentsPath("dashboards/foo.saikudash");
+        assertTrue(flat.startsWith("saiku-comments-v2-"));
+        assertTrue(flat.endsWith(".jsonl"));
+        assertFalse("no separators survive", flat.contains("/") || flat.contains("\\"));
         String evil = CommentService.commentsPath("../../etc/passwd");
-        assertTrue(evil.startsWith("saiku-comments-"));
+        assertTrue(evil.startsWith("saiku-comments-v2-"));
         assertFalse("no parent-dir hops survive", evil.contains(".."));
         assertFalse("no separators survive", evil.contains("/") || evil.contains("\\"));
+        // Paths differing only by / versus _ map to DIFFERENT files.
+        assertNotEquals(
+                CommentService.commentsPath("homes/a_b/x.saikudash"),
+                CommentService.commentsPath("homes/a/b/x.saikudash"));
+    }
+
+    @Test
+    public void sidecar_from_the_old_naming_is_still_found_and_retired_on_write() {
+        // saiku#2550d: reads fall back to the pre-#2550 sanitised name, so a
+        // dashboard with existing comments keeps them after upgrade.
+        String legacy = "saiku-comments-" + DASH.replaceAll("[^A-Za-z0-9._-]", "_") + ".jsonl";
+        ds.internal.put(legacy, "{\"tileId\":\"t1\",\"author\":\"admin\",\"body\":\"legacy\"}\n");
+        assertEquals(1, svc.list(DASH, "t1").size());
+        assertEquals("legacy", svc.list(DASH, "t1").get(0).body);
+
+        // The next write moves everything to the hashed file and retires the
+        // legacy one — no resurrecting comments the user deleted.
+        svc.add(DASH, "t1", "admin", "new");
+        assertNull(ds.internal.get(legacy));
+        List<Comment> after = svc.list(DASH, "t1");
+        assertEquals(2, after.size());
+        assertEquals("legacy", after.get(0).body);
+        assertEquals("new", after.get(1).body);
     }
 }

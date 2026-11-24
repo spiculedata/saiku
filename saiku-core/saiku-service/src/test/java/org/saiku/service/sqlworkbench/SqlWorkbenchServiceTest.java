@@ -402,6 +402,37 @@ public class SqlWorkbenchServiceTest {
         assertFalse(ex.getMessage().contains("Exception"));
     }
 
+    // --- saiku#2550h: byte caps on materialised cells and the result as a whole ---
+
+    @Test
+    public void anOversizedCellIsTruncatedToTheCellCap() {
+        SqlWorkbenchService.SqlQueryResult result = service.execute(
+                "alice",
+                sqlExecRoles,
+                DATA_SOURCE_ID,
+                "SELECT REPEAT('x', 200000) AS big FROM SYSTEM_RANGE(1, 1)",
+                null);
+        assertEquals(1, result.rowCount());
+        Object cell = result.rows().get(0).get(0);
+        String s = String.valueOf(cell);
+        assertTrue("cell is capped to the cell limit plus marker", s.length() < 70_000);
+        assertTrue("truncated cell is marked", s.endsWith(SqlWorkbenchService.CELL_TRUNCATION_MARKER));
+    }
+
+    @Test
+    public void resultReadingStopsAtTheResultByteCap() {
+        // ~200 rows of a 64 KB-capped cell — reading stops near the 10 MB result cap,
+        // well before all 200 rows, and the result is flagged truncated.
+        SqlWorkbenchService.SqlQueryResult result = service.execute(
+                "alice",
+                sqlExecRoles,
+                DATA_SOURCE_ID,
+                "SELECT REPEAT('x', 70000) AS big FROM SYSTEM_RANGE(1, 200)",
+                null);
+        assertTrue("reading stops at the byte cap, not the row cap", result.rowCount() < 200);
+        assertTrue(result.truncated());
+    }
+
     /** Hand-rolled stub (house pattern — saiku-service tests avoid Mockito for DatasourceService). */
     private static class StubDatasourceService extends DatasourceService {
         private final String id;

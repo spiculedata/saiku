@@ -270,9 +270,17 @@
 	         whether to surface the demo-mode connection panel (saiku#871).
 	         /info itself is the plugin-list endpoint the SPA pings on boot.
 	         Diagnostics contains the configured AI upstream URL and reachability,
-	         so its exact admin-only rule must precede the public wildcard. -->
+	         so its admin-only rule must precede the public wildcard. saiku#2550a:
+	         the rule uses a ** wildcard so the trailing-slash spelling
+	         (/diagnostics/) is covered too — Ant matching treats it as a
+	         different path, and without the wildcard a /diagnostics/ request
+	         fell through to the public /rest/saiku/info/** permitAll rule and
+	         reached Jersey, which only then stopped it at the @RolesAllowed gate
+	         (403, after the filter chain had already passed it as anonymous).
+	         /diagnostics/** still matches the exact path, so one rule covers both
+	         spellings. -->
 	    <security:intercept-url pattern="/rest/saiku/info" access="permitAll" />
-	    <security:intercept-url pattern="/rest/saiku/info/diagnostics" access="hasRole('ADMIN')" />
+	    <security:intercept-url pattern="/rest/saiku/info/diagnostics/**" access="hasRole('ADMIN')" />
 	    <security:intercept-url pattern="/rest/saiku/info/**" access="permitAll" />
 	    <!-- saiku#879: OAuth protected-resource discovery metadata (RFC 9728) for
 	         the MCP endpoint. A client fetches this BEFORE it has any token, so it

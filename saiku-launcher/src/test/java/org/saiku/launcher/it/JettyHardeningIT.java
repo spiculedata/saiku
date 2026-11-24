@@ -5,8 +5,10 @@
 package org.saiku.launcher.it;
 
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import java.net.http.HttpResponse;
+import java.util.List;
 import java.util.Locale;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -43,5 +45,16 @@ public class JettyHardeningIT {
         HttpResponse<String> resp = harness.getAnon("/ui/");
         String xpb = resp.headers().firstValue("X-Powered-By").orElse("");
         assertFalse("X-Powered-By must be suppressed (was: '" + xpb + "')", xpb.length() > 0);
+    }
+
+    @Test
+    public void directoryUrlsAreNotListings() throws Exception {
+        // saiku#2550c: the default servlet's dirAllowed is OFF. A directory URL with
+        // no welcome file must answer 403/404 — never an index of the packaged files.
+        for (String dir : List.of("/images/", "/aqvira-demo/assets/")) {
+            HttpResponse<String> resp = harness.getAnon(dir);
+            int status = resp.statusCode();
+            assertTrue(dir + " must be 403/404, got " + status, status == 403 || status == 404);
+        }
     }
 }

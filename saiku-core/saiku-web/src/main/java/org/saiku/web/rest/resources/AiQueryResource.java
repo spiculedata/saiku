@@ -3646,106 +3646,156 @@ public class AiQueryResource {
             policy = org.olap4j.AllocationPolicy.EQUAL_ALLOCATION;
         }
 
-        org.olap4j.OlapConnection con = null;
-        org.olap4j.Scenario prior = null;
-        try {
-            con = olapDiscoverService.getNativeConnection(connection);
-            prior = con.getScenario();
-            org.olap4j.Scenario scenario = con.createScenario();
-            con.setScenario(scenario);
-            // The query MUST be scoped to the scenario member in the WHERE clause, or it just
-            // reads actuals — the write-back lives on [Scenario].[<id>].
-            String mdx = "SELECT {[Measures].[" + measure + "]} ON COLUMNS, " + level
-                    + ".Members ON ROWS FROM [" + cube + "] WHERE [Scenario].[Scenario].[" + scenario.getId()
-                    + "]";
-            log.info("Scenario what-if MDX: {}", mdx);
-            try (org.olap4j.OlapStatement st = con.createStatement()) {
-                // saiku#1914: server-enforced statement timeout on this execute path too.
-                org.saiku.olap.util.QueryGuardrails.applyQueryTimeout(st);
-                // 1) actuals under the (empty) scenario
-                org.olap4j.CellSet actual = st.executeOlapQuery(mdx);
-                java.util.List<org.olap4j.Position> rows =
-                        actual.getAxes().get(1).getPositions();
-                java.util.List<java.util.Map<String, Object>> out = new java.util.ArrayList<>();
-                int targetRow = -1;
-                for (int i = 0; i < rows.size(); i++) {
-                    org.olap4j.metadata.Member m = rows.get(i).getMembers().get(0);
-                    double a = cellDouble(actual.getCell(
-                            actual.getAxes().get(0).getPositions().get(0), rows.get(i)));
-                    java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
-                    row.put("member", m.getUniqueName());
-                    row.put("caption", m.getCaption());
-                    row.put("actual", a);
-                    out.add(row);
-                    if (m.getUniqueName().equals(member)) targetRow = i;
-                }
-                if (targetRow < 0) {
-                    return badRequest(
-                            "member",
-                            "member not found on the level",
-                            out.stream().map(r -> (String) r.get("member")).toList());
-                }
-                // Secondary breakdowns (payer type + month). Capture the portfolio actuals AND
-                // the changed member's OWN mix now (scenario still empty). Mondrian's scenario
-                // re-allocation reflects in the write-back's own dimension but not in
-                // cross-dimension aggregates, so we distribute the portfolio delta across payer /
-                // month in proportion to the changed member's mix — which is exactly where the
-                // re-allocated value lands.
-                String payerLevel = str(body.get("payerLevel"));
-                String trendLevel = str(body.get("trendLevel"));
-                String memberSlicer = "(" + member + ")";
-                java.util.LinkedHashMap<String, Double> payerAct =
-                        payerLevel == null ? null : queryLevelAgg(st, measure, payerLevel, cube, null);
-                java.util.LinkedHashMap<String, Double> payerMix =
-                        payerLevel == null ? null : queryLevelAgg(st, measure, payerLevel, cube, memberSlicer);
-                java.util.LinkedHashMap<String, Double> trendAct =
-                        trendLevel == null ? null : queryLevelAgg(st, measure, trendLevel, cube, null);
-                java.util.LinkedHashMap<String, Double> trendMix =
-                        trendLevel == null ? null : queryLevelAgg(st, measure, trendLevel, cube, memberSlicer);
+        // saiku#2550j: every client-supplied identifier below is CONCATENATED into MDX, so each
+        // is validated before it reaches a query — measure and cube as plain names (they are
+        // bracketed here), level/member/payerLevel/trendLevel as full MDX unique names, and the
+        // member additionally required to BE a member of the level (unique-name prefix check;
+        // the response's own member-not-found check only runs after the first query executed).
+        // A name like "Foo] ON COLUMNS, {[]} --" is now a 400, not a different query.
+        String invalid = validateWhatIfNames(
+                cube, level, measure, member, str(body.get("payerLevel")), str(body.get("trendLevel")));
+        if (invalid != null) {
+            return badRequest(invalid, "not a valid MDX name for this request", null);
+        }
 
-                // 2) write the new value into the scenario (engine re-allocates the delta)
-                actual.getCell(actual.getAxes().get(0).getPositions().get(0), rows.get(targetRow))
-                        .setValue(newValue, policy);
+        // saiku#2550j: the connection is SHARED across users for datasources without per-user
+        // security, and a scenario is per-connection state — two concurrent what-if calls used
+        // to write into each other's scenario (one caller's cell.setValue could land under
+        // another's WHERE slice). Serialise the whole create/query/write/re- query/restore
+        // sequence per connection so the scenario is always this caller's own while in use.
+        synchronized (scenarioLock(connection)) {
+            org.olap4j.OlapConnection con = null;
+            org.olap4j.Scenario prior = null;
+            try {
+                con = olapDiscoverService.getNativeConnection(connection);
+                prior = con.getScenario();
+                org.olap4j.Scenario scenario = con.createScenario();
+                con.setScenario(scenario);
+                // The query MUST be scoped to the scenario member in the WHERE clause, or it just
+                // reads actuals — the write-back lives on [Scenario].[<id>].
+                String mdx = "SELECT {[Measures].[" + measure + "]} ON COLUMNS, " + level
+                        + ".Members ON ROWS FROM [" + cube + "] WHERE [Scenario].[Scenario].[" + scenario.getId()
+                        + "]";
+                log.info("Scenario what-if MDX: {}", mdx);
+                try (org.olap4j.OlapStatement st = con.createStatement()) {
+                    // saiku#1914: server-enforced statement timeout on this execute path too.
+                    org.saiku.olap.util.QueryGuardrails.applyQueryTimeout(st);
+                    // 1) actuals under the (empty) scenario
+                    org.olap4j.CellSet actual = st.executeOlapQuery(mdx);
+                    java.util.List<org.olap4j.Position> rows =
+                            actual.getAxes().get(1).getPositions();
+                    java.util.List<java.util.Map<String, Object>> out = new java.util.ArrayList<>();
+                    int targetRow = -1;
+                    for (int i = 0; i < rows.size(); i++) {
+                        org.olap4j.metadata.Member m = rows.get(i).getMembers().get(0);
+                        double a = cellDouble(actual.getCell(
+                                actual.getAxes().get(0).getPositions().get(0), rows.get(i)));
+                        java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
+                        row.put("member", m.getUniqueName());
+                        row.put("caption", m.getCaption());
+                        row.put("actual", a);
+                        out.add(row);
+                        if (m.getUniqueName().equals(member)) targetRow = i;
+                    }
+                    if (targetRow < 0) {
+                        return badRequest(
+                                "member",
+                                "member not found on the level",
+                                out.stream().map(r -> (String) r.get("member")).toList());
+                    }
+                    // Secondary breakdowns (payer type + month). Capture the portfolio actuals AND
+                    // the changed member's OWN mix now (scenario still empty). Mondrian's scenario
+                    // re-allocation reflects in the write-back's own dimension but not in
+                    // cross-dimension aggregates, so we distribute the portfolio delta across payer /
+                    // month in proportion to the changed member's mix — which is exactly where the
+                    // re-allocated value lands.
+                    String payerLevel = str(body.get("payerLevel"));
+                    String trendLevel = str(body.get("trendLevel"));
+                    String memberSlicer = "(" + member + ")";
+                    java.util.LinkedHashMap<String, Double> payerAct =
+                            payerLevel == null ? null : queryLevelAgg(st, measure, payerLevel, cube, null);
+                    java.util.LinkedHashMap<String, Double> payerMix =
+                            payerLevel == null ? null : queryLevelAgg(st, measure, payerLevel, cube, memberSlicer);
+                    java.util.LinkedHashMap<String, Double> trendAct =
+                            trendLevel == null ? null : queryLevelAgg(st, measure, trendLevel, cube, null);
+                    java.util.LinkedHashMap<String, Double> trendMix =
+                            trendLevel == null ? null : queryLevelAgg(st, measure, trendLevel, cube, memberSlicer);
 
-                // 3) re-run the main breakdown under the scenario — reflects the write-back
-                org.olap4j.CellSet whatif = st.executeOlapQuery(mdx);
-                java.util.List<org.olap4j.Position> wrows =
-                        whatif.getAxes().get(1).getPositions();
-                double actualTotal = 0, whatifTotal = 0;
-                for (int i = 0; i < wrows.size(); i++) {
-                    double w = cellDouble(whatif.getCell(
-                            whatif.getAxes().get(0).getPositions().get(0), wrows.get(i)));
-                    out.get(i).put("whatif", w);
-                    actualTotal += (double) out.get(i).get("actual");
-                    whatifTotal += w;
+                    // 2) write the new value into the scenario (engine re-allocates the delta)
+                    actual.getCell(actual.getAxes().get(0).getPositions().get(0), rows.get(targetRow))
+                            .setValue(newValue, policy);
+
+                    // 3) re-run the main breakdown under the scenario — reflects the write-back
+                    org.olap4j.CellSet whatif = st.executeOlapQuery(mdx);
+                    java.util.List<org.olap4j.Position> wrows =
+                            whatif.getAxes().get(1).getPositions();
+                    double actualTotal = 0, whatifTotal = 0;
+                    for (int i = 0; i < wrows.size(); i++) {
+                        double w = cellDouble(whatif.getCell(
+                                whatif.getAxes().get(0).getPositions().get(0), wrows.get(i)));
+                        out.get(i).put("whatif", w);
+                        actualTotal += (double) out.get(i).get("actual");
+                        whatifTotal += w;
+                    }
+                    double delta = whatifTotal - actualTotal;
+                    java.util.Map<String, Object> resp = new java.util.LinkedHashMap<>();
+                    resp.put("measure", measure);
+                    resp.put("policy", policy.name());
+                    resp.put("member", member);
+                    resp.put("rows", out);
+                    resp.put("actualTotal", actualTotal);
+                    resp.put("whatifTotal", whatifTotal);
+                    if (payerAct != null) resp.put("payer", distributeDelta(payerAct, payerMix, delta));
+                    if (trendAct != null) resp.put("trend", distributeDelta(trendAct, trendMix, delta));
+                    return Response.ok(resp).type(MediaType.APPLICATION_JSON).build();
                 }
-                double delta = whatifTotal - actualTotal;
-                java.util.Map<String, Object> resp = new java.util.LinkedHashMap<>();
-                resp.put("measure", measure);
-                resp.put("policy", policy.name());
-                resp.put("member", member);
-                resp.put("rows", out);
-                resp.put("actualTotal", actualTotal);
-                resp.put("whatifTotal", whatifTotal);
-                if (payerAct != null) resp.put("payer", distributeDelta(payerAct, payerMix, delta));
-                if (trendAct != null) resp.put("trend", distributeDelta(trendAct, trendMix, delta));
-                return Response.ok(resp).type(MediaType.APPLICATION_JSON).build();
-            }
-        } catch (RuntimeException | java.sql.SQLException e) {
-            log.warn("Scenario what-if failed", e);
-            Throwable root = e;
-            while (root.getCause() != null && root.getCause() != root) root = root.getCause();
-            return error("what-if failed: " + e.getMessage() + " | root: "
-                    + root.getClass().getSimpleName() + ": " + root.getMessage());
-        } finally {
-            if (con != null) {
-                try {
-                    con.setScenario(prior);
-                } catch (Exception ignore) {
-                    // best-effort reset
+            } catch (RuntimeException | java.sql.SQLException e) {
+                log.warn("Scenario what-if failed", e);
+                Throwable root = e;
+                while (root.getCause() != null && root.getCause() != root) root = root.getCause();
+                return error("what-if failed: " + e.getMessage() + " | root: "
+                        + root.getClass().getSimpleName() + ": " + root.getMessage());
+            } finally {
+                if (con != null) {
+                    try {
+                        con.setScenario(prior);
+                    } catch (Exception ignore) {
+                        // best-effort reset
+                    }
                 }
             }
         }
+    }
+
+    /** One lock per connection name — serialises the what-if scenario sequence so
+     *  concurrent callers cannot interleave scenario state on a shared connection. */
+    private static final java.util.concurrent.ConcurrentHashMap<String, Object> SCENARIO_LOCKS =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static Object scenarioLock(String connection) {
+        return SCENARIO_LOCKS.computeIfAbsent(connection == null ? "?" : connection, k -> new Object());
+    }
+
+    /** MDX full unique name: one or more bracketed segments joined by dots, with no
+     *  brackets inside a segment — a client value that doesn't match cannot change the
+     *  structure of the query it is concatenated into. */
+    private static final java.util.regex.Pattern MDX_UNIQUE_NAME =
+            java.util.regex.Pattern.compile("\\[[^\\[\\]]*\\](?:\\.\\[[^\\[\\]]*\\])*");
+
+    /** Plain name (bracketed as-is when the MDX is built): no brackets of its own. */
+    private static final java.util.regex.Pattern MDX_PLAIN_NAME = java.util.regex.Pattern.compile("[^\\[\\]]+");
+
+    /** Null when every name is acceptable; otherwise the offending body field. */
+    private static String validateWhatIfNames(
+            String cube, String level, String measure, String member, String payerLevel, String trendLevel) {
+        if (cube != null && !MDX_PLAIN_NAME.matcher(cube).matches()) return "cube";
+        if (measure != null && !MDX_PLAIN_NAME.matcher(measure).matches()) return "measure";
+        if (level != null && !MDX_UNIQUE_NAME.matcher(level).matches()) return "level";
+        if (member != null && !MDX_UNIQUE_NAME.matcher(member).matches()) return "member";
+        if (level != null && member != null && !member.startsWith(level + ".")) return "member";
+        if (payerLevel != null && !MDX_UNIQUE_NAME.matcher(payerLevel).matches()) return "payerLevel";
+        if (trendLevel != null && !MDX_UNIQUE_NAME.matcher(trendLevel).matches()) return "trendLevel";
+        return null;
     }
 
     private static String str(Object o) {

@@ -49,6 +49,14 @@ public class EmailResourceTest {
         SecurityContextHolder.setContext(ctx);
     }
 
+    private static void loginAdmin() {
+        UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
+                "admin", "x", Collections.singletonList(new SimpleGrantedAuthority("ROLE_ADMIN")));
+        SecurityContext ctx = SecurityContextHolder.createEmptyContext();
+        ctx.setAuthentication(auth);
+        SecurityContextHolder.setContext(ctx);
+    }
+
     private static EmailSelfRequest validBody() {
         EmailSelfRequest r = new EmailSelfRequest();
         r.setSubject("Your analysis");
@@ -115,16 +123,30 @@ public class EmailResourceTest {
 
     /**
      * F1 (open-relay) fix: the recipient is the admin-configured {@code selfTo}, never a client
-     * value. The response echoes the recipient actually used — it must equal {@code selfTo}.
+     * value. saiku#2550e: the response echoes the recipient to an ADMIN only — a non-admin's
+     * successful send no longer reveals the operator's selfTo address.
      */
     @Test
     public void recipient_isServerConfiguredSelfTo_notAClientValue() {
-        login("alice");
+        loginAdmin();
         CountingSender sender = new CountingSender();
         EmailResource r = resource(sender);
         Response resp = r.sendSelf(validBody());
         assertEquals(200, resp.getStatus());
         assertEquals(SELF_TO, ((Map<?, ?>) resp.getEntity()).get("to"));
+        assertEquals(1, sender.sendCount.get());
+    }
+
+    /** saiku#2550e: a non-admin's send succeeds but the response no longer carries the
+     *  operator's selfTo address. */
+    @Test
+    public void nonAdminSend_doesNotEchoTheOperatorAddress() {
+        login("alice");
+        CountingSender sender = new CountingSender();
+        EmailResource r = resource(sender);
+        Response resp = r.sendSelf(validBody());
+        assertEquals(200, resp.getStatus());
+        assertNull(((Map<?, ?>) resp.getEntity()).get("to"));
         assertEquals(1, sender.sendCount.get());
     }
 
