@@ -38,6 +38,23 @@ All notable changes to Saiku are documented here. This project follows
   properties, or on external image hosts, need the operator to allow those
   sources explicitly.
 
+### Fixed
+
+- **The generated Spring `/login` endpoint is gone (saiku#2523).** The main
+  security chain no longer declares `auto-config`, which silently registered
+  Spring's form login: a `GET`/`POST /login` second login path outside the
+  rate limiter, CSRF and the demo email gate (a locked-out account could still
+  sign in there, and the `302` destination was an unlimited password oracle).
+  The one login is `POST /rest/saiku/session`, plus HTTP Basic for stateless
+  clients and XMLA; `GET`/`POST /login` is now answered by the terminal
+  catch-all (`401`, fail-closed, no session).
+- **Login failures count once (saiku#2523).** A wrong password at
+  `POST /rest/saiku/session` was recorded twice — once by the resource and once
+  by `SpringSecurityAuditListener` from the same authentication-failure event —
+  so the lockout tripped after three wrong passwords instead of the documented
+  five. `SessionResource` now marks its requests and is the single recorder for
+  that path; the listener keeps recording the HTTP-Basic / filter-chain path.
+
 ## 4.9.1 — 2026-11-23
 
 Re-cut of 4.9.0 with the same code, plus a release-pipeline fix. The v4.9.0

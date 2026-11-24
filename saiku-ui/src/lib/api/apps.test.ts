@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { emptyApp, appFromDashboard, normaliseApp, type SaikuApp } from './apps';
+import { emptyApp, appFromDashboard, isValidAppId, normaliseApp, type SaikuApp } from './apps';
 
 describe('saikuapp model', () => {
 	test('emptyApp has one blank page and default nav/theme', () => {
@@ -28,5 +28,27 @@ describe('saikuapp model', () => {
 		expect(once.nav.position).toBe('rail');
 		expect(once.theme.mode).toBe('auto');
 		expect(once.pages[0].id).toBeTruthy();
+	});
+
+	// saiku#2545: the id becomes the CSS attribute-selector value the custom-CSS
+	// scope is built under, so only ^[A-Za-z0-9_-]{1,64}$ (or empty = preview)
+	// may reach the shell.
+	test('isValidAppId accepts generated ids and the preview sentinel, nothing else', () => {
+		for (const ok of ['', 'app-1', 'sales', 'a_-0', 'a'.repeat(64)]) {
+			expect(isValidAppId(ok)).toBe(true);
+		}
+		for (const bad of ['x"]{}', 'html{}[x="', 'a b', 'a/b', '.' + 'a'.repeat(64), 'ü', ' ']) {
+			expect(isValidAppId(bad)).toBe(bad === '' ? true : false);
+		}
+	});
+
+	test('normaliseApp rejects a document whose id closes the selector', () => {
+		const hostile = 'x"]{} body::before{content:\'injected\'} [x="';
+		expect(() => normaliseApp({ id: hostile } as unknown as SaikuApp)).toThrow(/Invalid app id/);
+	});
+
+	test('existing apps with generated ids load unchanged', () => {
+		const raw = { id: 'app-1', name: 'FoodMart Ops', pages: [] } as unknown as SaikuApp;
+		expect(normaliseApp(raw)).toMatchObject({ id: 'app-1', name: 'FoodMart Ops' });
 	});
 });

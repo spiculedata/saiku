@@ -11,9 +11,11 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.net.InetAddress;
 import java.util.Random;
 import org.junit.Test;
 import org.saiku.datasources.connection.encrypt.CryptoUtil;
+import org.saiku.service.schedule.alert.WebhookUrlValidator;
 
 /**
  * Golden-path parses succeed, every documented error code has a hand-authored trigger, and a fuzz
@@ -23,13 +25,18 @@ import org.saiku.datasources.connection.encrypt.CryptoUtil;
  */
 public class McpOutboundServerParserTest {
 
+    /** Hermetic resolver: every host "resolves" to a public address — no live DNS in tests.
+     *  Public so other modules' tests (e.g. the admin-resource gates) can reuse it. */
+    public static final WebhookUrlValidator.HostResolver RESOLVER =
+            host -> new InetAddress[] {InetAddress.getByAddress(new byte[] {93, (byte) 184, (byte) 216, 34})};
+
     @Test
     public void parsesGoldenPath() throws Exception {
         String encrypted = CryptoUtil.encrypt("sk-secret");
         String json = "{\"id\":\"notion\",\"name\":\"Notion workspace\",\"url\":\"https://mcp.notion.com/mcp\","
                 + "\"authHeaderName\":\"Authorization\",\"authHeaderValue\":\"" + esc(encrypted) + "\","
                 + "\"enabledTools\":[\"search_docs\",\"get_page\"]}";
-        McpOutboundServer server = McpOutboundServerParser.parse("notion.json", json);
+        McpOutboundServer server = McpOutboundServerParser.parse("notion.json", json, RESOLVER);
         assertEquals("notion", server.id());
         assertEquals("Notion workspace", server.name());
         assertEquals("https://mcp.notion.com/mcp", server.url());
@@ -44,19 +51,44 @@ public class McpOutboundServerParserTest {
     @Test
     public void optionalFieldsAreOptional() throws Exception {
         String json = "{\"id\":\"minimal\",\"name\":\"Minimal\",\"url\":\"https://example.com/mcp\"}";
-        McpOutboundServer server = McpOutboundServerParser.parse("s.json", json);
+        McpOutboundServer server = McpOutboundServerParser.parse("s.json", json, RESOLVER);
         assertNull(server.authHeaderName());
         assertNull(server.authHeaderValue());
         assertFalse(server.hasAuthHeader());
         assertTrue(server.enabledTools().isEmpty());
     }
 
+    /** saiku#2542: the outbound gate is https-only and refuses internal addresses, like the alert
+     * webhooks — a credential header must never travel over plaintext or to an internal host. */
     @Test
-    public void httpUrlIsAccepted() throws Exception {
-        // http:// allowed (local dev servers) — see McpOutboundServerParser#validateUrl.
-        String json = "{\"id\":\"local\",\"name\":\"Local\",\"url\":\"http://localhost:8811/mcp\"}";
-        McpOutboundServer server = McpOutboundServerParser.parse("s.json", json);
-        assertEquals("http://localhost:8811/mcp", server.url());
+    public void unsafeUrlsAreRefused() {
+        assertParseCode("{\"id\":\"x\",\"name\":\"X\",\"url\":\"http://localhost:8811/mcp\"}", "INVALID_URL");
+        assertParseCode("{\"id\":\"x\",\"name\":\"X\",\"url\":\"http://mcp.example.com/mcp\"}", "INVALID_URL");
+        assertParseCode("{\"id\":\"x\",\"name\":\"X\",\"url\":\"https://127.0.0.1:9911/mcp\"}", "INVALID_URL");
+        assertParseCode("{\"id\":\"x\",\"name\":\"X\",\"url\":\"https://10.0.0.5/mcp\"}", "INVALID_URL");
+        assertParseCode("{\"id\":\"x\",\"name\":\"X\",\"url\":\"https://169.254.169.254/latest\"}", "INVALID_URL");
+        assertParseCode("{\"id\":\"x\",\"name\":\"X\",\"url\":\"https://localhost/mcp\"}", "INVALID_URL");
+        // user-info in the authority (the credential would ride the URL).
+        assertParseCode(
+                "{\"id\":\"x\",\"name\":\"X\",\"url\":\"https://user:pass@mcp.example.com/mcp\"}", "INVALID_URL");
+    }
+
+    /** saiku#2542: a restricted or non-token credential header name is refused at parse (save)
+     * time — not on every later discovery call. */
+    @Test
+    public void restrictedHeaderNamesAreRefused() {
+        assertParseCode(
+                "{\"id\":\"x\",\"name\":\"X\",\"url\":\"https://mcp.example.com/mcp\","
+                        + "\"authHeaderName\":\"Host\",\"authHeaderValue\":\"evil\"}",
+                "RESTRICTED_HEADER_NAME");
+        assertParseCode(
+                "{\"id\":\"x\",\"name\":\"X\",\"url\":\"https://mcp.example.com/mcp\","
+                        + "\"authHeaderName\":\"Content-Length\",\"authHeaderValue\":\"1\"}",
+                "RESTRICTED_HEADER_NAME");
+        assertParseCode(
+                "{\"id\":\"x\",\"name\":\"X\",\"url\":\"https://mcp.example.com/mcp\","
+                        + "\"authHeaderName\":\"bad header\",\"authHeaderValue\":\"v\"}",
+                "INVALID_HEADER_NAME");
     }
 
     @Test
@@ -157,7 +189,7 @@ public class McpOutboundServerParserTest {
         for (int i = 0; i < iterations; i++) {
             String text = randomInput(rng, i);
             try {
-                McpOutboundServer server = McpOutboundServerParser.parse("fuzz-" + i + ".json", text);
+                McpOutboundServer server = McpOutboundServerParser.parse("fuzz-" + i + ".json", text, RESOLVER);
                 assertNotNull(server);
                 parsed++;
             } catch (McpOutboundServerParser.ParseException e) {
@@ -199,7 +231,7 @@ public class McpOutboundServerParserTest {
 
     private static void assertParseCode(String json, String expectedCode) {
         try {
-            McpOutboundServer s = McpOutboundServerParser.parse("t.json", json);
+            McpOutboundServer s = McpOutboundServerParser.parse("t.json", json, RESOLVER);
             fail("expected ParseException(" + expectedCode + ") but parsed: " + s);
         } catch (McpOutboundServerParser.ParseException e) {
             assertEquals(expectedCode, e.code());

@@ -38,8 +38,8 @@ Plus the long-tail:
 | `POST /saiku/api/ai/ossie/ask` | Natural-language layer — the LLM composes the query from a prose question (needs an API key) |
 | `GET /saiku/api/ai/ossie/ask/health` | Whether the ask layer is configured on this server |
 
-All routes require an authenticated session (form login at
-`POST /login` on the launcher; same auth as the regular UI).
+All routes require an authenticated session (login at
+`POST /rest/saiku/session`; same auth as the regular UI).
 POST endpoints require the CSRF cookie/header pair.
 
 ---
