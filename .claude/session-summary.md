@@ -75,6 +75,12 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-11-24 — feature/scim-grantable-roles — PR #2564 review rework
+**Was doing:** moved user PUT group-policy validation before every user write and fixed the SCIM test file's Spotless violations; added a regression test for unchanged username, email, and enabled state.
+**Now:** check PR #2564 CI after the push for Java compilation and tests.
+**Watch out:** local Spotless passes, but Maven tests stop before compilation because GitHub Packages returns 401 for private dependencies.
+**Refs:** #2537, PR #2564
+
 ## 2026-11-24 — feature/passthrough-cache-identity — PR #2575 identity-key test rework
 **Was doing:** added real `SecurityAwareConnectionManager.identityKey` and `ThinQueryService` call-chain tests for #2538; clarified unresolved-query cache reuse in the PR description.
 **Now:** check PR #2575 CI for the new Java tests; local Maven stops before compilation because GitHub Packages returns 401 for Mondrian and olap4j artifacts.
