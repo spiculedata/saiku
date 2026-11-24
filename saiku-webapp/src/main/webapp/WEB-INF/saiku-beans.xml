@@ -615,6 +615,10 @@
         <property name="certifiedQueries" ref="certifiedQueryRegistryBean"/>
         <!-- saiku#1913: singleton limiter — a per-request instance never trips. -->
         <property name="askRateLimiter" ref="aiQueryAskRateLimiter"/>
+        <!-- saiku#2529: singleton cost budget — a per-request instance's counters start empty on
+             every request, so no ceiling (calls, tokens, instance tokens, chain concurrency)
+             could ever trip. Same bug #1913 fixed for the limiters. -->
+        <property name="aiCostBudget" ref="aiCostBudget"/>
         <!-- NL email-draft slice, Task 3: same mailSender bean emailResource uses for its
              health check (above), so /ai/ask's EMAIL_DRAFT outcome refuses honestly
              ("Email isn't set up on this server.") whenever mail delivery isn't configured,
@@ -664,6 +668,9 @@
           class="org.saiku.web.rest.resources.AiExplainResource">
         <aop:scoped-proxy/>
         <property name="explainService" ref="cellExplainServiceBean"/>
+        <!-- saiku#2529: the explain narrative is a real provider turn — same shared cost budget
+             as the ask surfaces. -->
+        <property name="aiCostBudget" ref="aiCostBudget"/>
     </bean>
 
     <!-- Ossie AI Query API (#1394) — parallel to aiQueryResource but for semantic-YAML
@@ -685,6 +692,9 @@
         <property name="askService" ref="ossieAiAskServiceBean"/>
         <!-- saiku#1913: singleton limiter — a per-request instance never trips. -->
         <property name="askRateLimiter" ref="aiOssieAskRateLimiter"/>
+        <!-- saiku#2529: the Ossie ask reaches the provider, so it sits behind the shared cost
+             budget too — it was limiter-only. -->
+        <property name="aiCostBudget" ref="aiCostBudget"/>
         <!-- saiku#2322: SAIKU_AI_POLICY / ai.policy gate — same parity contract as aiQueryResource.
              Without this injection the resource would keep its (now fail-closed) schema-only
              pre-wiring default and an operator's configured tier would be ignored for Ossie. -->
@@ -1030,6 +1040,13 @@
           factory-method="shared">
         <constructor-arg value="ai.query.ask"/>
     </bean>
+    <!-- saiku#2529: the daily AI cost budget (#1918) was a per-request field of AiQueryResource,
+         so its counters (calls per user, tokens per user, tokens per instance, chain concurrency)
+         were rebuilt empty on every request and no ceiling could ever trip. One singleton, shared
+         by every endpoint that reaches the provider: aiQueryResource, aiOssieResource and
+         aiExplainResource (the last via its own property above). Ceilings are system properties
+         read in AiCostBudget's constructor; see docs/operator-hardening.md. -->
+    <bean id="aiCostBudget" class="org.saiku.web.security.ratelimit.AiCostBudget"/>
     <bean id="aiOssieAskRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
           factory-method="shared">
         <constructor-arg value="ai.ossie.ask"/>

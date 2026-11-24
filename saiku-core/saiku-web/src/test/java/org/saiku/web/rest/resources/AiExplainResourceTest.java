@@ -9,6 +9,7 @@ import static org.junit.Assert.assertTrue;
 
 import jakarta.ws.rs.core.Response;
 import java.util.Map;
+import org.junit.After;
 import org.junit.Test;
 import org.saiku.service.olap.ai.explain.CellExplainException;
 import org.saiku.service.olap.ai.explain.CellExplainRequest;
@@ -50,6 +51,31 @@ public class AiExplainResourceTest {
     private static Map<String, Object> error(Response response) {
         assertTrue(response.getEntity() instanceof Map);
         return (Map<String, Object>) response.getEntity();
+    }
+
+    @After
+    public void clearSecurityContext() {
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
+    }
+
+    /**
+     * saiku#2529: the explain narrative is a real provider turn, so the endpoint sits behind the
+     * daily cost budget — until now it had no budget at all.
+     */
+    @Test
+    public void exhaustedBudgetIsRejectedWith429() {
+        org.springframework.security.core.context.SecurityContextHolder.getContext()
+                .setAuthentication(new org.springframework.security.authentication.TestingAuthenticationToken(
+                        "explain-budget-user", "pw"));
+        CellExplainResult result = new CellExplainResult();
+        result.setNarrativeSource(CellExplainResult.NarrativeSource.LLM);
+        AiExplainResource resource = resourceReturning(result);
+        resource.setAiCostBudget(new org.saiku.web.security.ratelimit.AiCostBudget(1, 0, 0, 0));
+
+        assertEquals(200, resource.explain(request()).getStatus());
+        Response second = resource.explain(request());
+        assertEquals(429, second.getStatus());
+        assertEquals("RATE_LIMITED", error(second).get("code"));
     }
 
     @Test

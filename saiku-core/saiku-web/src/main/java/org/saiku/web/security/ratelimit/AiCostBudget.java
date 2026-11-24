@@ -110,6 +110,26 @@ public class AiCostBudget {
     }
 
     /**
+     * The client-facing reason for a {@link #tryStartCall} refusal (saiku#2529).
+     *
+     * <p>Lives here rather than in each REST resource so every endpoint that gates on the budget
+     * hands its caller the same wording — the per-user refusals are deliberately specific ("your"
+     * budget) because the user can act on it; the instance-wide refusal is deliberately not (it
+     * would tell a tenant that other tenants are spending). No message carries a token count, so
+     * the endpoint can't be used to read the ceiling back out of the API.
+     */
+    public String clientReason(Denial denial) {
+        if (denial == Denial.DAILY_CALL_LIMIT) {
+            return "Daily AI ask request budget exhausted (limit " + maxCallsPerUserPerDay
+                    + " requests per day). Please retry tomorrow.";
+        }
+        if (denial == Denial.DAILY_TOKEN_LIMIT) {
+            return "Daily AI token budget exhausted. Please retry tomorrow.";
+        }
+        return "The AI service is at its daily capacity. Please retry later.";
+    }
+
+    /**
      * Pre-flight gate for a cost-bearing ask. Counts the call and reports whether the principal is
      * still inside every ceiling.
      *
