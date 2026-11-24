@@ -75,6 +75,12 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-11-24 — fix/2544-csv-header-quote-escape — PR #2573 acceptance gate rework
+**Was doing:** added the missing executable acceptance spec for the CSV header quote-escaping fix; the PR branch merges cleanly with development.
+**Now:** check PR #2573 CI on the pushed commit, especially the acceptance convention and red-on-base proof.
+**Watch out:** this workspace has Node but no Java or Maven, so the launcher build and Java tests require CI.
+**Refs:** #2544, PR #2573, acceptance/2544/spec.json
+
 ## 2026-11-12 — fix/2322-ossie-ai-policy-gate — PR #2355 formatting rework
 **Was doing:** fixed the async role test fixture's Spotless violation; local Spotless and licence checks pass, but focused Maven tests stop during dependency resolution with GitHub Packages 401.
 **Now:** use the latest PR #2355 CI result to verify the full build and focused tests; no local edits remain after the rework push.
