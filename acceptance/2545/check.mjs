@@ -156,7 +156,13 @@ if (!jar.has('XSRF-TOKEN')) {
 async function api(method, path, body) {
   const headers = { Accept: 'application/json', cookie: [...jar.values()].join('; ') };
   if (method !== 'GET' && method !== 'DELETE') headers['Content-Type'] = 'application/json';
-  if (method !== 'GET' && jar.has('XSRF-TOKEN')) headers['x-xsrf-token'] = jar.get('XSRF-TOKEN');
+  // The jar stores whole `name=value` cookie pairs (right for the `cookie`
+  // header); the CSRF header must carry only the raw token VALUE — the server's
+  // plain CsrfTokenRequestAttributeHandler compares it byte-for-byte against the
+  // cookie value, and `XSRF-TOKEN=abc` never equals `abc` (review of PR #2581).
+  if (method !== 'GET' && jar.has('XSRF-TOKEN')) {
+    headers['x-xsrf-token'] = jar.get('XSRF-TOKEN').slice('XSRF-TOKEN='.length);
+  }
   return send(path, { method, headers, body: body ?? undefined });
 }
 

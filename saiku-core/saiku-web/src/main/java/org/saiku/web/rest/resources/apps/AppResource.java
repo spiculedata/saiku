@@ -235,7 +235,8 @@ public class AppResource {
             }
             String idText = id.asText();
             if (!idText.isEmpty() && !APP_ID_PATTERN.matcher(idText).matches()) {
-                return badRequest("id", "app id must match ^[A-Za-z0-9_-]{1,64}$ (empty id is the UI preview sentinel)");
+                return badRequest(
+                        "id", "app id must match ^[A-Za-z0-9_-]{1,64}$ (empty id is the UI preview sentinel)");
             }
         }
         String username = currentUsername();
