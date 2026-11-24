@@ -17,17 +17,24 @@ the credential from the job. Prior instances:
   commit and removing `~/.m2/settings.xml` before returning to PR content.
 
 What the gate checks, per job of every workflow that triggers on
-`pull_request` (fork PRs never receive the repo secret, so the exposure is
-specific to same-repository PRs and trusted automation branches):
+`pull_request`, `pull_request_target` or `workflow_run` (fork PRs never
+receive the repo secret, so the exposure is specific to same-repository PRs
+and trusted automation branches; `pull_request_target` and `workflow_run`
+are scanned too because a job under either trigger that checks out the PR
+head is the WORSE version of this exact class — review of PR #2494):
 
 1. A `run` job whose steps make the credential readable (an env var mapping
-   `secrets.GH_PACKAGES_TOKEN`, or `secrets.GITHUB_TOKEN` in a job holding
-   `packages: write` — the saiku#1993 shape) and then execute a Maven/npm
-   lifecycle goal while the credential is still on disk and the checkout is
-   PR content. The repaired model-diff pattern passes: the checkout moves to
-   the trusted base SHA (`git checkout ... $BASE_SHA`) before the credential
-   is written, `mvn dependency:build-classpath` is not a lifecycle goal, and
-   the settings file is removed before the checkout returns to PR content.
+   `secrets.GH_PACKAGES_TOKEN`, an inline `${{ secrets.GH_PACKAGES_TOKEN }}`
+   interpolation in the `run:` script itself, or `secrets.GITHUB_TOKEN` in a
+   job holding `packages: write` — the saiku#1993 shape; the job-level
+   `permissions:` falls back to the workflow-level one) and then execute a
+   Maven/npm lifecycle goal while the credential is still on disk and the
+   checkout is PR content. An `actions/checkout` whose `ref` is not the
+   trusted base SHA also returns the job to PR content (review of PR #2494).
+   The repaired model-diff pattern passes: the checkout moves to the trusted
+   base SHA (`git checkout ... $BASE_SHA`) before the credential is written,
+   `mvn dependency:build-classpath` is not a lifecycle goal, and the settings
+   file is removed before the checkout returns to PR content.
 2. A reusable-workflow caller that passes a secret mapped from
    `secrets.GH_PACKAGES_TOKEN` alongside a Maven/npm build command — the
    `run-specs` / `spec-first` shape. The called workflow is external, so the
@@ -97,7 +104,11 @@ def triggers(doc: dict) -> list[str]:
 
 
 def is_pull_request_workflow(doc: dict) -> bool:
-    return "pull_request" in triggers(doc)
+    # pull_request_target and workflow_run jobs build PR-supplied content too
+    # (a pull_request_target job commonly checks out the PR head), and a job
+    # under either trigger can hold the package credential — the worse version
+    # of the same class (review of PR #2494).
+    return bool({"pull_request", "pull_request_target", "workflow_run"} & set(triggers(doc)))
 
 
 def secret_vars(values) -> set[str]:
@@ -155,12 +166,17 @@ def watched_secrets(values, packages_write: bool) -> set[str]:
     }
 
 
-def run_job_findings(job_id: str, job: dict) -> list[str]:
+def run_job_findings(job_id: str, job: dict, doc: dict) -> list[str]:
     """Simulate a `run` job's steps in order and flag lifecycle code over PR
     content while the credential is on disk."""
     findings: list[str] = []
     job_env = job.get("env") or {}
     permissions = job.get("permissions")
+    if permissions is None:
+        # The job inherits the workflow-level permissions block (review of PR
+        # #2494): a top-level `permissions: {packages: write}` grants the same
+        # write-scoped GITHUB_TOKEN the job-level form does.
+        permissions = doc.get("permissions")
     if isinstance(permissions, dict):
         packages_write = permissions.get("packages") == "write"
     else:
@@ -173,11 +189,25 @@ def run_job_findings(job_id: str, job: dict) -> list[str]:
     for index, step in enumerate(steps, start=1):
         if not isinstance(step, dict):
             continue
+        # An actions/checkout whose ref is not the trusted base returns the job
+        # to PR content — review of PR #2494: `uses:` steps carry no `run`
+        # script, so the old skip hid this path entirely.
+        uses = step.get("uses")
+        if isinstance(uses, str) and "actions/checkout" in uses:
+            refs = string_values(step.get("with") or {})
+            if not any("BASE_SHA" in v for v in refs):
+                on_trusted_base = False
+            continue
         step_env = {**job_env, **(step.get("env") or {})}
-        step_secrets = watched_secrets(string_values(step_env), packages_write)
         script = step.get("run")
         if not isinstance(script, str):
             continue
+        # The credential may also be interpolated inline in the `run:` script
+        # itself (review of PR #2494: `echo "…<password>${{ secrets.
+        # GH_PACKAGES_TOKEN }}</password>…" > ~/.m2/settings.xml` carries no env
+        # mapping at all) — treat a secret reference in the script as the step
+        # having the credential.
+        step_secrets = watched_secrets(string_values(step_env) + [script], packages_write)
         for line in script.splitlines():
             # The credential in the step's own environment (the npm shape: an
             # auth token beside `npm ci`), or persisted to disk by an earlier
@@ -227,7 +257,7 @@ def findings_in_workflow(doc: dict, filename: str) -> dict[str, list[str]]:
             if reason:
                 out[f"{filename}:{job_id}"] = [reason]
             continue
-        found = run_job_findings(str(job_id), job)
+        found = run_job_findings(str(job_id), job, doc)
         if found:
             out[f"{filename}:{job_id}"] = found
     return out
@@ -536,6 +566,121 @@ jobs:
 """)
         found = findings_in_workflow(doc, "trusted.yml")
         self.assertEqual(sorted(found), ["trusted.yml:diff"])
+
+    def test_inline_secret_in_run_script_is_flagged(self):
+        """The most common way to write the bug: the settings file is built by
+        interpolating `${{ secrets.GH_PACKAGES_TOKEN }}` directly in the
+        `run:` script, with NO env mapping at all (review of PR #2494). The
+        script reference must count as the step having the credential."""
+        doc = yaml.safe_load("""
+on:
+  pull_request:
+jobs:
+  inline:
+    steps:
+      - name: Write settings and build
+        run: |
+          echo "<settings>...<password>${{ secrets.GH_PACKAGES_TOKEN }}</password>...</settings>" > ~/.m2/settings.xml
+          mvn -B verify
+""")
+        found = findings_in_workflow(doc, "inline.yml")
+        self.assertEqual(sorted(found), ["inline.yml:inline"])
+        self.assertIn("package credential", found["inline.yml:inline"][0])
+
+    def test_actions_checkout_back_to_pr_head_is_flagged(self):
+        """A `uses: actions/checkout` with a ref that is not the trusted base
+        SHA returns the job to PR content (review of PR #2494): the
+        `uses:`-step skip used to leave the job "on trusted base"."""
+        doc = yaml.safe_load("""
+on:
+  pull_request:
+jobs:
+  recheck:
+    steps:
+      - name: Build on trusted base
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+        run: |
+          git checkout --detach "$BASE_SHA"
+          cat > ~/.m2/settings.xml <<EOF
+          <server><password>${GH_PACKAGES_TOKEN}</password></server>
+          EOF
+          mvn -B -ntp dependency:build-classpath -Dmdep.outputFile=cp.txt
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          clean: false
+      - name: Build PR content
+        run: mvn -B -ntp verify
+""")
+        found = findings_in_workflow(doc, "recheck.yml")
+        self.assertEqual(sorted(found), ["recheck.yml:recheck"])
+
+    def test_actions_checkout_of_the_trusted_base_keeps_the_job_on_trusted_base(self):
+        """The mirror: a checkout whose ref IS the base SHA (the repaired
+        pattern spelled with the action instead of a git line) stays trusted."""
+        doc = yaml.safe_load("""
+on:
+  pull_request:
+jobs:
+  base:
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+      - name: Build trusted base with credential
+        env:
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+        run: |
+          cat > ~/.m2/settings.xml <<EOF
+          <server><password>${GH_PACKAGES_TOKEN}</password></server>
+          EOF
+          mvn -B -ntp dependency:build-classpath -Dmdep.outputFile=cp.txt
+""")
+        self.assertEqual(findings_in_workflow(doc, "base.yml"), {})
+
+    def test_workflow_level_packages_write_is_watched(self):
+        """A top-level `permissions: {packages: write}` grants the same
+        write-scoped GITHUB_TOKEN as the job-level form — the #1993 shape
+        spelled at workflow level must be flagged too (review of PR #2494)."""
+        doc = yaml.safe_load("""
+on:
+  pull_request:
+permissions:
+  packages: write
+jobs:
+  legacy:
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build with ephemeral token in env
+        env:
+          BUILD_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: mvn -B -ntp verify
+""")
+        found = findings_in_workflow(doc, "wlp.yml")
+        self.assertEqual(sorted(found), ["wlp.yml:legacy"])
+
+    def test_pull_request_target_trigger_is_scanned(self):
+        """A pull_request_target job that checks out the PR head with the
+        credential present is the WORSE version of this class — it is in the
+        gate's scope now (review of PR #2494)."""
+        doc = yaml.safe_load("""
+on:
+  pull_request_target:
+jobs:
+  target:
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Build PR head with the credential
+        env:
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+        run: mvn -B -ntp verify
+""")
+        found = findings_in_workflow(doc, "prt.yml")
+        self.assertEqual(sorted(found), ["prt.yml:target"])
 
 
 class CallerPatternTest(unittest.TestCase):
