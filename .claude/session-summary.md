@@ -75,6 +75,11 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-11-24 — feature/2459-ci-secret-lifecycle-gate — trusted checkout rework
+**Was doing:** tightened PR #2494's trusted-base detection to require the base SHA as the full checkout ref and added regression fixtures for comment, path-only, and checkout-action cases.
+**Now:** check PR #2494 CI after the push; the Python script suite and acceptance check pass locally.
+**Refs:** #2459, #2494
+
 ## 2026-11-24 — feature/2540-mcp-ai-audit — PR #2563 review rework
 **Was doing:** merged current development into the PR branch, retaining both session-summary entries, and added assertions for the MCP validation error's `status`, `field` and `available` fields.
 **Now:** check PR #2563 CI after the push, especially the JDK 22 build and the focused MCP audit tests.

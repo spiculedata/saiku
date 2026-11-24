@@ -58,6 +58,7 @@ Run (the `scripts` job of ci.yml runs exactly this):
 from __future__ import annotations
 
 import re
+import shlex
 import unittest
 from pathlib import Path
 
@@ -139,6 +140,42 @@ def matched_path(match: re.Match[str]) -> str:
     return next(group for group in match.groups() if group is not None)
 
 
+def is_trusted_base_ref(value) -> bool:
+    """A checkout action's ref must name the base SHA, not another input."""
+    if not isinstance(value, str):
+        return False
+    ref = value.strip()
+    return ref in {"$BASE_SHA", "${BASE_SHA}"} or bool(
+        re.fullmatch(r"\$\{\{\s*github\.event\.pull_request\.base\.sha\s*\}\}", ref)
+    )
+
+
+def checks_out_trusted_base(line: str) -> bool:
+    """Recognize a full-tree checkout of BASE_SHA as the command's ref."""
+    match = GIT_CHECKOUT_RE.search(line)
+    if not match or line[:match.start()].strip():
+        return False
+    try:
+        lexer = shlex.shlex(line, posix=True, punctuation_chars=";&|<>")
+        lexer.whitespace_split = True
+        lexer.commenters = "#"
+        tokens = list(lexer)
+    except ValueError:
+        return False
+    if tokens[:2] != ["git", "checkout"]:
+        return False
+    args = []
+    for token in tokens[2:]:
+        if token and all(char in ";&|<>" for char in token):
+            break
+        args.append(token)
+    return bool(
+        args
+        and args[-1] in {"$BASE_SHA", "${BASE_SHA}"}
+        and all(arg in {"--detach", "--force", "-f", "--quiet", "-q"} for arg in args[:-1])
+    )
+
+
 def string_values(node) -> list[str]:
     out = []
     if isinstance(node, str):
@@ -213,9 +250,9 @@ def run_job_findings(job_id: str, job: dict, doc: dict) -> list[str]:
         # script, so the old skip hid this path entirely.
         uses = step.get("uses")
         if isinstance(uses, str) and "actions/checkout" in uses:
-            refs = string_values(step.get("with") or {})
-            if not any("BASE_SHA" in v for v in refs):
-                on_trusted_base = False
+            inputs = step.get("with") or {}
+            ref = inputs.get("ref") if isinstance(inputs, dict) else None
+            on_trusted_base = is_trusted_base_ref(ref)
             continue
         step_env = {**job_env, **(step.get("env") or {})}
         script = step.get("run")
@@ -248,10 +285,7 @@ def run_job_findings(job_id: str, job: dict, doc: dict) -> list[str]:
                     if matched_path(match) != "/dev/null"
                 )
             if GIT_CHECKOUT_RE.search(line):
-                if "BASE_SHA" in line:
-                    on_trusted_base = True
-                else:
-                    on_trusted_base = False
+                on_trusted_base = checks_out_trusted_base(line)
             if re.search(r"\brm\b", line):
                 credential_files = {
                     path for path in credential_files if path not in line
@@ -698,9 +732,54 @@ jobs:
           cat > ~/.m2/settings.xml <<EOF
           <server><password>${GH_PACKAGES_TOKEN}</password></server>
           EOF
-          mvn -B -ntp dependency:build-classpath -Dmdep.outputFile=cp.txt
+          mvn -B -ntp verify
 """)
         self.assertEqual(findings_in_workflow(doc, "base.yml"), {})
+
+    def test_checkout_ref_must_be_the_base_not_another_input(self):
+        doc = yaml.safe_load("""
+on: pull_request
+jobs:
+  build:
+    steps:
+      - env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+        run: |
+          git checkout --detach "$BASE_SHA"
+          echo "<settings><password>${TOKEN}</password></settings>" > ~/.m2/settings.xml
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: BASE_SHA
+          clean: false
+      - run: mvn verify
+""")
+        self.assertEqual(sorted(findings_in_workflow(doc, "ref.yml")), ["ref.yml:build"])
+
+    def test_base_sha_in_checkout_comment_does_not_mark_pr_content_trusted(self):
+        doc = yaml.safe_load("""
+on: pull_request
+jobs:
+  build:
+    steps:
+      - run: 'git checkout "$PR_SHA" # was BASE_SHA'
+      - env: {TOKEN: "${{ secrets.GH_PACKAGES_TOKEN }}"}
+        run: mvn verify
+""")
+        self.assertEqual(sorted(findings_in_workflow(doc, "comment.yml")), ["comment.yml:build"])
+
+    def test_path_limited_base_checkout_does_not_mark_tree_trusted(self):
+        doc = yaml.safe_load("""
+on: pull_request
+jobs:
+  build:
+    steps:
+      - run: git checkout "$BASE_SHA" -- pom.xml
+      - env: {TOKEN: "${{ secrets.GH_PACKAGES_TOKEN }}"}
+        run: mvn verify
+""")
+        self.assertEqual(sorted(findings_in_workflow(doc, "path.yml")), ["path.yml:build"])
 
     def test_workflow_level_packages_write_is_watched(self):
         """A top-level `permissions: {packages: write}` grants the same
