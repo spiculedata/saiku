@@ -152,8 +152,8 @@ if (!cookie) fail('C1: login set no session cookie');
 
 const cubeId = (conn, cat, schema, cube) => `${encodeURIComponent(conn)}/${encodeURIComponent(cat)}/${encodeURIComponent(schema)}/${encodeURIComponent(cube)}`;
 const paths = [
-  `/ai/schema/${cubeId('foodmart', 'FoodMart', 'FoodMart', 'Sales')}`,
-  `/ai/schema/${cubeId('foodMART', 'FoodMart', 'FoodMart', 'sAlEs')}`,
+  `/rest/saiku/api/ai/schema/${cubeId('foodmart', 'FoodMart', 'FoodMart', 'Sales')}`,
+  `/rest/saiku/api/ai/schema/${cubeId('foodMART', 'FoodMart', 'FoodMart', 'sAlEs')}`,
 ];
 const bodies = [];
 for (const p of paths) {
