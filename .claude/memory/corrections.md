@@ -21,6 +21,15 @@ A promoted entry has the same shape plus `**Status:** promoted`, `**Supersedes:*
 Validate the syntax of a client member name before constructing MDX, then resolve its level through metadata or compare it with the members returned for the requested level. A prefix test against the level name rejects valid members such as `[Product].[Product].[Oncology]` on `[Product].[Product].[Therapeutic Class]`.
 **Why:** MDX member names include the hierarchy and ancestor members, while level names describe a different metadata object.
 **Source:** PR #2576 review
+
+## 2026-11-24 — Result-cache identity: test the real datasource decision
+A stubbed identity fragment and source-text assertions did not test whether pass-through
+datasources resolve to distinct caller identities. Add a Java test of the real
+`SecurityAwareConnectionManager.identityKey` path, including datasource classification,
+principal resolution, and unresolved names, when changing cache isolation.
+**Why:** a refactor could restore cross-user cellset sharing while stub-based tests stay green.
+**Source:** PR #2575 review for #2538
+
 ## 2026-11-24 — Ossie filters: resolve semantic names through their dataset and expression
 Checking that an unqualified filter name is visible somewhere in the model is insufficient. Resolve it to one declaring dataset, reject ambiguity, and emit that dataset's mapped column expression.
 **Why:** a bare quoted name can bind to a different table's hidden physical column and disclose values through filter results.

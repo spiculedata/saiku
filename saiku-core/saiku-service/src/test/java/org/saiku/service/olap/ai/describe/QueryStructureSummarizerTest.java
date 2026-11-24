@@ -117,6 +117,34 @@ public class QueryStructureSummarizerTest {
         assertEquals("Store Sales", root.path("measures").get(0).asText());
     }
 
+    /** saiku#2542: a PII level referenced by its display alias must still be redacted. */
+    @Test
+    public void summarize_redactsMembersOnPiiLevelReachedThroughAliases() throws Exception {
+        // Same PII level as the direct-reference test, but every selector uses a display alias.
+        schema.dimensionAliases.put(AiSchema.key("Customer Name"), AiSchema.key("Customer"));
+        schema.dimensions
+                .get(AiSchema.key("Customer"))
+                .hierarchyAliases
+                .put(AiSchema.key("Customer Name"), AiSchema.key("Customer"));
+        schema.dimensions
+                .get(AiSchema.key("Customer"))
+                .hierarchies
+                .get(AiSchema.key("Customer"))
+                .levelAliases
+                .put(AiSchema.key("Customer"), AiSchema.key("Name"));
+
+        AiQueryRequest req = baseRequest();
+        AiFilterSelection filter =
+                new AiFilterSelection("Customer Name", "Customer Name", "Customer", List.of("Jane Doe"));
+        req.setFilters(List.of(filter));
+
+        JsonNode root = MAPPER.readTree(QueryStructureSummarizer.summarize(req, schema));
+        JsonNode members = root.path("filters").get(0).path("members");
+        assertEquals(1, members.size());
+        assertEquals(QueryStructureSummarizer.REDACTED, members.get(0).asText());
+        assertFalse(root.toString().contains("Jane Doe"));
+    }
+
     @Test
     public void summarize_handlesUnresolvableNamesGracefully() throws Exception {
         AiQueryRequest req = baseRequest();
