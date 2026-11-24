@@ -6,6 +6,7 @@
  */
 package org.saiku.service.sqlworkbench;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThrows;
 
 import org.junit.Test;
@@ -306,5 +307,139 @@ public class ReadOnlySqlGuardTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> ReadOnlySqlGuard.checkReadOnly("SELECT * FROM 'http://169.254.169.254/latest/meta-data/'"));
+    }
+
+    // ---- saiku#2522: the validated statement is the statement the engine executes ----
+
+    @Test
+    public void crEndedLineComment_hidingExtraColumns_isRejected() {
+        // H2/PostgreSQL/DuckDB end a -- comment at \r as well as \n, so the executed statement
+        // has TWO columns while a comment-stripped copy shows only "SELECT 1 AS a".
+        assertThrows(
+                IllegalArgumentException.class, () -> ReadOnlySqlGuard.checkReadOnly("SELECT 1 AS a --\r, 2 AS b"));
+    }
+
+    @Test
+    public void stackedDdl_behindACrEndedComment_isRejected() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ReadOnlySqlGuard.checkReadOnly(
+                        "SELECT 1 AS a --\r; CREATE LOCAL TEMPORARY TABLE T(X INT); DROP TABLE T"));
+    }
+
+    @Test
+    public void backtickIdentifier_hidingABlockCommentOpener_withStackedDdl_isRejected() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ReadOnlySqlGuard.checkReadOnly(
+                        "SELECT 1 AS `x/*`; CREATE LOCAL TEMPORARY TABLE T2(X INT); DROP TABLE T2; SELECT 2 AS `*/y`"));
+    }
+
+    @Test
+    public void showShortcut_carryingStackedDdlBehindACrComment_isRejected() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ReadOnlySqlGuard.checkReadOnly(
+                        "SHOW TABLES --\r; CREATE LOCAL TEMPORARY TABLE T3(X INT); DROP TABLE T3"));
+    }
+
+    @Test
+    public void jdbcFunctionEscape_hidingADeniedFunction_isRejected() {
+        // The parsed operator name of a {fn …} escape is not the bare function name the
+        // deny-list matches, and the driver rewrites the escape before executing — so escapes
+        // are rejected outright, before a parse can even bless them.
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ReadOnlySqlGuard.checkReadOnly(
+                        "SELECT CAST({fn FILE_READ('/tmp/canary.txt', NULL)} AS VARCHAR) AS c"));
+    }
+
+    @Test
+    public void jdbcDatabasePathEscape_isRejected() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ReadOnlySqlGuard.checkReadOnly("SELECT {fn DATABASE_PATH()} AS p"));
+    }
+
+    @Test
+    public void mysqlExecutableConditionalComment_isRejected() {
+        // Calcite skips /*! … */ as a comment; MySQL executes it as code.
+        assertThrows(
+                IllegalArgumentException.class, () -> ReadOnlySqlGuard.checkReadOnly("SELECT 1 /*!; DROP TABLE t */"));
+    }
+
+    @Test
+    public void mysqlNumberedExecutableComment_isRejected() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ReadOnlySqlGuard.checkReadOnly("SELECT 1 /*40101 SET NAMES utf8 */"));
+    }
+
+    @Test
+    public void mariaDbExecutableComment_isRejected() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ReadOnlySqlGuard.checkReadOnly("SELECT 1 /*M!100100; DROP TABLE t */"));
+    }
+
+    @Test
+    public void optimizerHintComment_isStillAllowed() {
+        ReadOnlySqlGuard.checkReadOnly("SELECT 1 /*+ USE_HASH_JOIN(t) */");
+    }
+
+    @Test
+    public void showWithATrailingSemicolon_isStillAllowed() {
+        ReadOnlySqlGuard.checkReadOnly("SHOW TABLES; ");
+    }
+
+    @Test
+    public void unterminatedQuoteOnALexicalStatement_isRejected() {
+        assertThrows(IllegalArgumentException.class, () -> ReadOnlySqlGuard.checkReadOnly("DESC customer 'x"));
+    }
+
+    @Test
+    public void showWithAComment_isStrippedAndAllowed() {
+        // A comment is stripped before anything is parsed or executed, so the engine cannot
+        // re-read it differently — the executed text is the clean statement.
+        assertEquals("SHOW TABLES", ReadOnlySqlGuard.validatedStatement("SHOW TABLES -- note"));
+        assertEquals("SHOW TABLES", ReadOnlySqlGuard.validatedStatement("/* ok */ SHOW TABLES"));
+        assertEquals("DESC customer", ReadOnlySqlGuard.validatedStatement("DESC customer -- x\n"));
+    }
+
+    @Test
+    public void backtickQuotedIdentifierContainingCommentMarkers_isAllowedWhenAlone() {
+        // MySQL treats a backtick-quoted identifier as one token: the comment markers inside it
+        // are data, not code — safe on its own (it is the STACKED form above that is rejected).
+        ReadOnlySqlGuard.checkReadOnly("SELECT 1 AS `x/*y`");
+    }
+
+    // ---- the validated statement is the executed statement: validatedStatement returns the text ----
+
+    @Test
+    public void validatedStatement_isTheSubmittedTextWhenThereIsNothingToStrip() {
+        assertEquals("SELECT 1 AS a", ReadOnlySqlGuard.validatedStatement("SELECT 1 AS a"));
+        assertEquals("SELECT 1", ReadOnlySqlGuard.validatedStatement("  SELECT 1 ;  "));
+    }
+
+    @Test
+    public void validatedStatement_stripsComments_soTheEngineCannotReinterpretThem() {
+        assertEquals("SELECT 1", ReadOnlySqlGuard.validatedStatement("/* plan */ SELECT 1 -- note\n"));
+        // A -- comment H2 would end at \r (here as part of a CRLF) is stripped the same way,
+        // so what runs is what was read:
+        assertEquals("SELECT 1", ReadOnlySqlGuard.validatedStatement("SELECT 1 -- c\r\n"));
+    }
+
+    @Test
+    public void validatedStatement_loneCrComment_isRejected() {
+        // H2/PostgreSQL/DuckDB end the comment at \r; other grammars do not — the text cannot be
+        // validated reliably, so it is rejected outright.
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ReadOnlySqlGuard.validatedStatement("SELECT 1 AS a --\r, 2 AS b"));
+    }
+
+    @Test
+    public void validatedStatement_quotedContentIsPreservedVerbatim() {
+        assertEquals("SELECT ';' AS separator", ReadOnlySqlGuard.validatedStatement("SELECT ';' AS separator"));
     }
 }

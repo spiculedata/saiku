@@ -4,7 +4,6 @@ export interface SaikuSession {
 	sessionid: string;
 	language: string;
 	isadmin: boolean;
-	authid?: string;
 }
 
 const REST_BASE = '/rest/saiku';

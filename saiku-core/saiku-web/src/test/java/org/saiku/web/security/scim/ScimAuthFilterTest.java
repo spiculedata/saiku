@@ -7,9 +7,11 @@ package org.saiku.web.security.scim;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 import jakarta.servlet.FilterChain;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.After;
 import org.junit.Before;
@@ -19,7 +21,10 @@ import org.saiku.web.scim.ScimToken;
 import org.saiku.web.scim.ScimTokenStore;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 /**
@@ -88,6 +93,39 @@ public class ScimAuthFilterTest {
         assertNotNull(token.get());
         assertEquals("Okta", token.get().idp);
         assertEquals("Okta production", token.get().label);
+    }
+
+    /** saiku#2520 — a SCIM bearer can ride on a request that also carries a logged-in session
+     *  cookie, so the thread's SecurityContext may be the object stored in the HttpSession. The
+     *  SCIM principal swap must leave that object untouched while the chain sees the SCIM role. */
+    @Test
+    public void validBearer_sessionBackedContext_isLeftUntouched() throws Exception {
+        Authentication bobsLogin =
+                new UsernamePasswordAuthenticationToken("bob", "N/A", List.of(new SimpleGrantedAuthority("ROLE_USER")));
+        SecurityContext sessionContext = SecurityContextHolder.createEmptyContext();
+        sessionContext.setAuthentication(bobsLogin);
+        SecurityContextHolder.setContext(sessionContext);
+        Authentication before = sessionContext.getAuthentication();
+
+        MockHttpServletResponse resp = response();
+        AtomicReference<Authentication> seen = new AtomicReference<>();
+        FilterChain chain =
+                (req, res) -> seen.set(SecurityContextHolder.getContext().getAuthentication());
+
+        try {
+            filter(100).doFilter(request("/rest/scim/v2/Users", secret), resp, chain);
+
+            assertEquals(200, resp.getStatus());
+            assertNotNull(seen.get());
+            assertTrue(
+                    "the principal must be the SCIM bearer handle",
+                    seen.get().getPrincipal().toString().startsWith("scim:"));
+            assertSame(sessionContext, SecurityContextHolder.getContext());
+            assertSame(before, sessionContext.getAuthentication());
+            assertEquals("bob", sessionContext.getAuthentication().getPrincipal());
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
     }
 
     @Test

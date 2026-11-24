@@ -1,0 +1,70 @@
+{
+  "issue": 2534,
+  "title": "An OSSIE datasource's ossieYaml model path is confined to the semantic-models directory",
+  "kind": "api",
+  "auth": "session",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "an admin POSTing an OSSIE datasource whose ossieYaml names a host file outside the model roots (e.g. /etc/hostname)",
+      "then": "the datasource is refused with a typed 400 and is not created — the model path must resolve inside <saiku-home>/semantic-models, the seeded <saiku-home>/data models, or an operator-configured root"
+    },
+    {
+      "id": "C2",
+      "given": "the launcher-seeded demo models",
+      "then": "GET /rest/saiku/admin/ossie/schema/{datasource} still serves both the TPCDS and Flights models — the confinement admits the seeded <saiku-home>/data root"
+    }
+  ],
+  "steps": [
+    {
+      "name": "the seeded TPCDS Ossie model still loads",
+      "criterion": "C2",
+      "request": {
+        "method": "GET",
+        "path": "/rest/saiku/admin/ossie/schema/TPCDS",
+        "headers": {
+          "Accept": "text/plain"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "the seeded Flights Ossie model still loads",
+      "criterion": "C2",
+      "request": {
+        "method": "GET",
+        "path": "/rest/saiku/admin/ossie/schema/Flights",
+        "headers": {
+          "Accept": "text/plain"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "a datasource whose ossieYaml points outside the model roots is refused with 400",
+      "criterion": "C1",
+      "request": {
+        "method": "POST",
+        "path": "/rest/saiku/admin/datasources",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "json": {
+          "connectionname": "yaml-probe",
+          "connectiontype": "OSSIE",
+          "ossieYaml": "/etc/hostname",
+          "schema": "TPCDS",
+          "username": "sa",
+          "password": ""
+        }
+      },
+      "expect": {
+        "status": 400
+      }
+    }
+  ]
+}

@@ -453,7 +453,11 @@ public class AiOssieResource {
             // modelName is currently informational — the ontology block sits at the document
             // level, not the semantic-model level. Kept as a path param for parity with /schema
             // and to leave room for future spec revisions that scope ontologies per model.
-            OssieModelDto semantic = ossieDiscoverService.getModel(connectionName);
+            // saiku#2526 — resolve the caller's role-filtered view first, same as /schema: the
+            // ontology block itself carries concept/relationship metadata with no physical
+            // columns, but this surface must never become a side door to the unfiltered model.
+            OssieModelDto semantic = OssieRoleContext.filterHidden(
+                    ossieDiscoverService.getModel(connectionName), Set.copyOf(SessionRoles.currentRoles()));
             if (semantic.getName() == null || !semantic.getName().equalsIgnoreCase(modelName)) {
                 return badRequest(
                         "model",
@@ -492,11 +496,16 @@ public class AiOssieResource {
     @Produces({MediaType.APPLICATION_XML, "application/zip"})
     public Response exportSemanticModel(
             @PathParam("connection") String connectionName, @PathParam("tool") String tool) {
+        // saiku#2526 — the artefact carries the model's fields/metrics verbatim, so it is schema
+        // metadata: same tier gate as GET /ai/ossie/schema, and the model is rendered through the
+        // caller's role filter so hidden fields and their physical column names stay out.
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.SCHEMA_METADATA);
         if (ossieDiscoverService == null) {
             return error("Ossie discover not wired");
         }
         try {
             OssieModelDto semantic = ossieDiscoverService.getModel(connectionName);
+            semantic = OssieRoleContext.filterHidden(semantic, Set.copyOf(SessionRoles.currentRoles()));
             org.saiku.service.export.semantic.SemanticExportResult result =
                     semanticExportService.export(semantic, tool);
             return Response.ok(result.getContent())
