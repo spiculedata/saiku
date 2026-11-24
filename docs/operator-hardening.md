@@ -325,8 +325,12 @@ identity provider effectively decides which authorities it can hand out. Two rul
   (e.g. `saiku.scim.grantableRoles=analysts,report_viewers`) and only those names can be granted
   through SCIM, matched case-insensitively; anything else answers `400`. Listing a reserved role on
   the allow-list does not rescue it — the reserved check runs first. The allow-list is an
-  <em>allow-list</em>, not a rename map: existing groups whose displayName falls off the list keep
-  working until they are renamed, but a rename to a name outside the list is refused.
+  <em>allow-list</em>, not a rename map: a rename to a name outside the list is refused.
+  The policy is enforced at every grant site (member add, create-with-groups, PUT/PATCH
+  membership sync), not only on the group's name — so an existing group record whose
+  displayName is reserved or falls off the configured list stops granting its role to new
+  members after the upgrade (its membership writes answer `400 invalidValue`; renaming the
+  group to a grantable name is the fix).
 
 **Default (allow-list unset): every role that is not reserved is grantable.** That is the documented
 behaviour, not an accident — set the property explicitly on an instance whose IdP should only manage a

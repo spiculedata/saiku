@@ -661,6 +661,63 @@ public class ScimServiceTest {
         assertNotNull(limited.createGroup(variant));
     }
 
+    /** saiku#2537 (review of PR #2564): the grant policy is enforced where the grant happens —
+     *  a group record that PREDATES the fix and is named ROLE_SQL_EXEC must not be able to
+     *  grant the reserved role to members the IdP adds after an upgrade. */
+    @Test
+    public void patchMembersOnASeededReservedRoleGroupIsRefusedAndGrantsNothing() {
+        ScimGroupStore.GroupRecord seeded = new ScimGroupStore.GroupRecord();
+        seeded.id = "seed-reserved";
+        seeded.displayName = "ROLE_SQL_EXEC";
+        groups.save(seeded);
+
+        SaikuUser victim = users.seed("victim");
+        try {
+            scim.patchGroup(
+                    "seed-reserved",
+                    patch("{\"Operations\":[{\"op\":\"add\",\"path\":\"members\",\"value\":[{\"value\":\""
+                            + victim.getId() + "\"}]}]}"));
+            fail("adding a member to a pre-existing reserved-name group must be refused");
+        } catch (ScimException e) {
+            assertEquals("invalidValue", e.getScimType());
+        }
+        assertEquals("USER_ROLES unchanged", List.of("ROLE_USER"), rolesOf(victim));
+        // The same through a wholesale membership sync (user PUT with groups).
+        try {
+            ScimUser in = new ScimUser();
+            in.userName = "victim";
+            in.groups = new ArrayList<>(List.of(new ScimUser.Member("seed-reserved", "ROLE_SQL_EXEC")));
+            scim.replaceUser(String.valueOf(victim.getId()), in);
+            fail("a wholesale sync granting a reserved role must be refused");
+        } catch (ScimException e) {
+            assertEquals("invalidValue", e.getScimType());
+        }
+        assertEquals("USER_ROLES still unchanged", List.of("ROLE_USER"), rolesOf(victim));
+    }
+
+    /** saiku#2537 (review of PR #2564): a pre-existing group outside the configured
+     *  allow-list stops granting too — the allow-list is enforced on the grant. */
+    @Test
+    public void patchMembersOnAGroupOutsideTheAllowListIsRefusedAndGrantsNothing() {
+        ScimService limited = scimWithAllowList("editors");
+        ScimGroupStore.GroupRecord seeded = new ScimGroupStore.GroupRecord();
+        seeded.id = "seed-offlist";
+        seeded.displayName = "ghosts";
+        groups.save(seeded);
+
+        SaikuUser dana = users.seed("dana");
+        try {
+            limited.patchGroup(
+                    "seed-offlist",
+                    patch("{\"Operations\":[{\"op\":\"add\",\"path\":\"members\",\"value\":[{\"value\":\""
+                            + dana.getId() + "\"}]}]}"));
+            fail("a member add to a group outside the allow-list must be refused");
+        } catch (ScimException e) {
+            assertEquals("invalidValue", e.getScimType());
+        }
+        assertEquals("USER_ROLES unchanged", List.of("ROLE_USER"), rolesOf(dana));
+    }
+
     /** saiku#2537: the allow-list never rescues a reserved role. */
     @Test
     public void allowListDoesNotRescueReservedRoles() {

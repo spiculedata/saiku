@@ -568,10 +568,19 @@ public class ScimService {
         }
     }
 
+    /**
+     * Grants {@code role} to {@code u}. The reserved/allow-list policy is enforced
+     * HERE, at the grant site (saiku#2537, review of PR #2564): the displayName
+     * checks on create/rename cannot cover group records that predate this fix,
+     * and such a record keeps granting its displayName to every member the IdP
+     * adds — which is exactly the escalation reserved names close. Fail with
+     * {@code 400 invalidValue} rather than writing the role.
+     */
     private void grantRole(SaikuUser u, String role) {
         if (role == null || role.isBlank()) {
             return;
         }
+        rejectNonGrantableRoleName(role);
         Set<String> roles = new LinkedHashSet<>(rolesOf(u));
         roles.add(role);
         userService.replaceRoles(u, roles.toArray(new String[0]));
@@ -622,6 +631,10 @@ public class ScimService {
         for (ScimUser.Member m : members) {
             String role = resolveGroupRole(m == null ? null : m.value);
             if (role != null) {
+                // Same grant-site policy as grantRole (saiku#2537, review of PR #2564):
+                // refuse BEFORE any role write, so a stale record cannot grant a
+                // reserved or allow-listed-out role through a wholesale reconcile.
+                rejectNonGrantableRoleName(role);
                 desired.add(role);
             }
         }
