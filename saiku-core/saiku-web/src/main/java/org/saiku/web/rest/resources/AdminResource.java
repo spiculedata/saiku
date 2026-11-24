@@ -175,6 +175,13 @@ public class AdminResource {
         try {
             datasourceService.addDatasource(json.toSaikuDataSource(), true, userService.getCurrentUserRoles());
             return Response.ok().type("application/json").entity(json).build();
+        } catch (IllegalArgumentException validation) {
+            // Typed 400 for request-level rejections (Ossie model path outside the model
+            // directories, JdbcUrlPolicy violations, missing ossieYaml) — saiku#2534.
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(validation.getLocalizedMessage())
+                    .type("text/plain")
+                    .build();
         } catch (Exception e) {
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
                     .entity(e.getLocalizedMessage())
@@ -232,6 +239,13 @@ public class AdminResource {
         try {
             datasourceService.addDatasource(json.toSaikuDataSource(), false, userService.getCurrentUserRoles());
             return Response.ok().entity(json).type("application/json").build();
+        } catch (IllegalArgumentException validation) {
+            // Typed 400 for request-level rejections (Ossie model path outside the model
+            // directories, JdbcUrlPolicy violations, missing ossieYaml) — saiku#2534.
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(validation.getLocalizedMessage())
+                    .type("text/plain")
+                    .build();
         } catch (Exception e) {
             log.error("Error adding data source", e);
             return Response.serverError()

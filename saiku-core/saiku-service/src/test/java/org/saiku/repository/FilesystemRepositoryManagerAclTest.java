@@ -176,6 +176,22 @@ public class FilesystemRepositoryManagerAclTest {
     }
 
     @Test
+    public void isDatasourceDescriptorPath_seesThroughTrailingSeparators() {
+        // saiku#2521: "x.sds/", "x.sds/." and "x.sds//" resolve to the single file "x.sds" on
+        // disk; a check on the raw request path let them through while the write still landed on
+        // the descriptor file.
+        assertTrue(FilesystemRepositoryManager.isDatasourceDescriptorPath("/homes/bob/x.sds/"));
+        assertTrue(FilesystemRepositoryManager.isDatasourceDescriptorPath("/homes/bob/x.sds/."));
+        assertTrue(FilesystemRepositoryManager.isDatasourceDescriptorPath("/homes/bob/x.sds//"));
+        assertTrue(FilesystemRepositoryManager.isDatasourceDescriptorPath("/homes/bob/X.SDS/"));
+        assertTrue(FilesystemRepositoryManager.isDatasourceDescriptorPath("/homes/bob/evil.sds/./"));
+        assertTrue(FilesystemRepositoryManager.isDatasourceDescriptorPath("/datasources/"));
+        assertTrue(FilesystemRepositoryManager.isDatasourceDescriptorPath("datasources/x.xml/"));
+        // "x.sds/.." resolves to the PARENT directory, not the descriptor file — not a descriptor.
+        assertFalse(FilesystemRepositoryManager.isDatasourceDescriptorPath("/homes/bob/x.sds/.."));
+    }
+
+    @Test
     public void isDatasourceDescriptorPath_seesThroughWindowsFilenameNormalisation() {
         // saiku#1903 SEC follow-up: Win32 strips trailing dots/spaces and treats an NTFS ADS suffix
         // as the base file, so these all land on disk as evil.sds and must be recognised.
@@ -199,6 +215,75 @@ public class FilesystemRepositoryManagerAclTest {
         } catch (SaikuServiceException expected) {
             assertTrue(expected.getMessage(), expected.getMessage().contains("administrator"));
         }
+    }
+
+    /**
+     * saiku#2521: the raw request path "x.sds/", "x.sds/." and "x.sds//" does not end in ".sds",
+     * so the pre-fix raw-path check let it through — while the write still landed on disk as
+     * "x.sds". The guard must decide on the RESOLVED file name, so every trailing-separator and
+     * dot-segment spelling is refused and NOTHING is created.
+     */
+    @Test
+    public void saveFile_nonAdmin_cannot_write_sds_with_trailing_separator_spellings() throws Exception {
+        File bobHome = new File(datadir, "unknown/homes/bob");
+        assertTrue(bobHome.mkdirs());
+        writeAclJson(bobHome, bobHome.getPath(), "PRIVATE", "bob");
+        String[] spellings = {
+            "/homes/bob/evil.sds/",
+            "/homes/bob/evil.sds/.",
+            "/homes/bob/evil.sds//",
+            "/homes/bob/evil.SDS/",
+            "/homes/bob/evil.sds/./"
+        };
+        for (String spelling : spellings) {
+            try {
+                manager.saveFile("<dataSource/>", spelling, "bob", "nt:saikufiles", ROLES_USER);
+                fail("non-admin .sds write with spelling " + spelling + " must be refused");
+            } catch (SaikuServiceException expected) {
+                assertTrue(expected.getMessage(), expected.getMessage().contains("administrator"));
+            }
+            assertFalse(
+                    "no descriptor may be written for spelling " + spelling, new File(bobHome, "evil.sds").exists());
+            assertFalse(
+                    "no stray directory may be created for spelling " + spelling,
+                    new File(bobHome, "evil.sds").isDirectory());
+        }
+    }
+
+    /** saiku#2521: a move whose TARGET resolves to a *.sds descriptor is refused the same way. */
+    @Test
+    public void moveFile_nonAdmin_cannot_rename_into_sds_with_trailing_separator() throws Exception {
+        File bobHome = new File(datadir, "unknown/homes/bob");
+        assertTrue(bobHome.mkdirs());
+        writeAclJson(bobHome, bobHome.getPath(), "PRIVATE", "bob");
+        Files.write(new File(bobHome, "innocent.txt").toPath(), "<dataSource/>".getBytes(StandardCharsets.UTF_8));
+        for (String target : new String[] {"/homes/bob/evil.sds/", "/homes/bob/evil.sds/.", "/homes/bob/evil.sds//"}) {
+            try {
+                manager.moveFile("/homes/bob/innocent.txt", target, "bob", ROLES_USER);
+                fail("renaming into " + target + " is a descriptor write and must be refused");
+            } catch (SaikuServiceException expected) {
+                assertTrue(expected.getMessage(), expected.getMessage().contains("administrator"));
+            }
+        }
+        assertFalse(new File(bobHome, "evil.sds").exists());
+        assertTrue(new File(bobHome, "innocent.txt").exists());
+    }
+
+    /** saiku#2521: moving FROM a descriptor is equally admin-only, on the resolved name. */
+    @Test
+    public void moveFile_nonAdmin_cannot_move_from_an_sds_source() throws Exception {
+        File bobHome = new File(datadir, "unknown/homes/bob");
+        assertTrue(bobHome.mkdirs());
+        writeAclJson(bobHome, bobHome.getPath(), "PRIVATE", "bob");
+        Files.write(new File(bobHome, "evil.sds").toPath(), "<dataSource/>".getBytes(StandardCharsets.UTF_8));
+        try {
+            manager.moveFile("/homes/bob/evil.sds", "/homes/bob/renamed.sds", "bob", ROLES_USER);
+            fail("moving an existing descriptor must be refused for non-admins");
+        } catch (SaikuServiceException expected) {
+            assertTrue(expected.getMessage(), expected.getMessage().contains("administrator"));
+        }
+        assertTrue(new File(bobHome, "evil.sds").exists());
+        assertFalse(new File(bobHome, "renamed.sds").exists());
     }
 
     // ---- saiku#895: saveFile authorization ----------------------------
