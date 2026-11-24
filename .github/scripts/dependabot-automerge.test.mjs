@@ -13,6 +13,22 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const pom = [{ filename: 'saiku-core/pom.xml', patch: '-<version>1.0.0</version>\n+<version>1.0.1</version>' }];
 const pkg = [{ filename: 'saiku-ui/package.json', patch: '-    "foo": "^1.2.3",\n+    "foo": "^1.2.4",' }];
 const lock = [{ filename: 'saiku-ui/package-lock.json', patch: '-        "version": "1.2.3"\n+        "version": "1.2.4"' }];
+// GitHub's actual patch for Dependabot PR #2506: <plugin> is outside the hunk, but
+// <artifactId>jacoco-maven-plugin</artifactId> is in its three lines of context.
+const jacocoPatch = [{
+  filename: 'pom.xml',
+  patch: [
+    '@@ -189,7 +189,7 @@',
+    '                      .coverage-thresholds.json via scripts/check-coverage.sh. -->',
+    '                 <groupId>org.jacoco</groupId>',
+    '                 <artifactId>jacoco-maven-plugin</artifactId>',
+    '-                <version>0.8.15</version>',
+    '+                <version>0.8.16</version>',
+    '                 <executions>',
+    '                     <execution>',
+    '                         <id>jacoco-prepare-agent</id>',
+  ].join('\n'),
+}];
 
 const usesFile = (patch) => [{ filename: '.github/workflows/ci.yml', patch }];
 
@@ -65,6 +81,10 @@ test('diffVersions refuses a maven hunk that looks like a build-plugin change', 
     diffVersions([{ filename: 'pom.xml', patch: '-    <maven-shade-plugin.version>3.6.0</maven-shade-plugin.version>\n+    <maven-shade-plugin.version>3.6.1</maven-shade-plugin.version>' }]).ok,
     false
   );
+  assert.deepEqual(diffVersions(jacocoPatch), {
+    ok: false,
+    reason: 'pom.xml looks like a Maven build-plugin change (plugins execute at build time)',
+  });
   // a dependency block whose context names no plugin is fine
   assert.equal(
     diffVersions([{
@@ -73,6 +93,15 @@ test('diffVersions refuses a maven hunk that looks like a build-plugin change', 
     }]).ok,
     true
   );
+});
+
+test('diffVersions refuses every manifest whose patch is missing', () => {
+  const missingLock = [...pkg, { filename: 'saiku-ui/package-lock.json' }];
+  const missingPom = [...pom, { filename: 'saiku-bom/pom.xml' }];
+  assert.deepEqual(diffVersions(missingLock), { ok: false, reason: 'saiku-ui/package-lock.json has no patch to inspect' });
+  assert.deepEqual(diffVersions(missingPom), { ok: false, reason: 'saiku-bom/pom.xml has no patch to inspect' });
+  assert.equal(classify({ title: 'Bump foo from 1.2.3 to 1.2.4', labels: ['npm'], files: missingLock }).eligible, false);
+  assert.equal(classify({ title: 'Bump foo from 1.0.0 to 1.0.1', labels: ['maven'], files: missingPom }).eligible, false);
 });
 
 test('filesAreSafe requires manifests and lockfiles, never workflow files', () => {
@@ -91,6 +120,26 @@ test('filesAreSafe requires manifests and lockfiles, never workflow files', () =
 test('classify auto-merges a single maven patch bump, proven by the diff', () => {
   const result = classify({ title: 'Bump foo from 1.0.0 to 1.0.1', labels: ['dependencies', 'maven'], files: pom });
   assert.equal(result.eligible, true);
+});
+
+test('classify holds Maven build-plugin bumps for a person', () => {
+  assert.equal(classify({
+    title: 'Bump org.jacoco:jacoco-maven-plugin from 0.8.15 to 0.8.16',
+    labels: ['dependencies', 'maven'],
+    files: jacocoPatch,
+  }).eligible, false);
+  // Editing the title cannot hide a plugin artifact that is present in the hunk.
+  assert.equal(classify({
+    title: 'Bump unrelated-artifact from 0.8.15 to 0.8.16',
+    labels: ['maven'],
+    files: jacocoPatch,
+  }).eligible, false);
+  // The title is a second guard when the hunk has no plugin context.
+  assert.equal(classify({
+    title: 'Bump org.apache.maven.plugins:maven-shade-plugin from 1.0.0 to 1.0.1',
+    labels: ['maven'],
+    files: pom,
+  }).eligible, false);
 });
 
 test('classify never auto-merges a github-actions bump, even a patch (#2548)', () => {

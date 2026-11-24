@@ -75,6 +75,12 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-11-24 — feature/dependabot-cooldown-2548 — PR #2582 review rework
+**Was doing:** fixed Maven plugin detection using #2506's patch and rejected manifests with missing patches; added regression tests and clarified the Dependabot docs.
+**Now:** check PR #2582 CI after the rework push, including the Maven build and full script suite.
+**Watch out:** this workspace has Node but no Java or Maven; the full reactor build depends on CI.
+**Refs:** #2548, PR #2582
+
 ## 2026-11-24 — feature/2524-unauth-401-no-session — PR #2560 formatting rework
 **Was doing:** matched the two launcher test files to Spotless's CI diff; the prior CI run passed both affected test classes but failed at formatting.
 **Now:** check PR #2560 CI for the rework commit; local Java and Maven are unavailable in this workspace.

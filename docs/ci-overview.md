@@ -278,9 +278,9 @@ manifests/lockfiles. GitHub Actions updates are never auto-merged: an action exe
 jobs that hold `packages: write`, the package token, the Claude token and release
 `contents: write`, and only `ci` stands between it and `development` (#2548). Maven build
 plugins are likewise left for a human (they execute at build time). Versions are read from the
-diff — every changed manifest must yield a single from→to pair, identical across files — not
-from the title, which a triager can edit. Groups, majors, minors, Docker bumps and anything
-else always wait for a human. The rules are in
+diff — every changed manifest must have an inspectable patch yielding a single from→to pair,
+identical across files — not from the title, which a triager can edit. Groups, majors, minors,
+Docker bumps and anything else always wait for a human. The rules are in
 `.github/scripts/dependabot-automerge.mjs` (tested in `dependabot-automerge.test.mjs`); the
 workflow never checks out PR code. It merges the PR with the `automerge` label applied. To
 disable it, delete the workflow file; no repository setting is involved.

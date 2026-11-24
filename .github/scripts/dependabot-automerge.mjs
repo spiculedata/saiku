@@ -12,8 +12,8 @@
 //     .github/workflows/ changes at all;
 //   - the diff itself yields a single from→to version pair, identical across every changed
 //     file: versions come from the diff, never from the title (a triager can edit a title —
-//     #2548). A maven hunk that looks like a build-plugin bump (a `<plugin>` context line or a
-//     `*.plugin.version` property) is rejected: build plugins execute at build time.
+//     #2548). Maven build-plugin bumps are rejected using hunk context and the title's package
+//     name; build plugins execute at build time. A manifest without a patch is uninspectable.
 //   - the diff pair matches the title pair and is a semver PATCH (maven, npm).
 
 import { appendFileSync, readFileSync } from 'node:fs';
@@ -24,7 +24,7 @@ const GROUP_RE = /\bgroup\b|\bwith\s+\d+\s+updates?\b/i;
 const SEMVER_RE = /^v?(\d+)\.(\d+)\.(\d+)$/;
 const MANIFEST_RE = /(^|\/)(pom\.xml|package\.json|package-lock\.json)$/;
 const WORKFLOW_RE = /^\.github\/workflows\//;
-const PLUGIN_CONTEXT_RE = /<plugin(?:s|Management)?[\s>]|\bplugin\.version\b/i;
+const PLUGIN_CONTEXT_RE = /<plugin(?:s|Management)?[\s>]|<artifactId>[^<]*plugin<\/artifactId>|\bplugin\.version\b/i;
 const MAX_FILES = 100;
 
 export const ECOSYSTEM_LABELS = ['maven', 'npm'];
@@ -79,10 +79,13 @@ export function diffVersions(files) {
   let pair = null;
   for (const file of files) {
     const filename = String(file?.filename ?? '');
-    if (typeof file?.patch !== 'string' || !MANIFEST_RE.test(filename)) continue;
+    if (!MANIFEST_RE.test(filename)) continue;
+    if (typeof file?.patch !== 'string') {
+      return { ok: false, reason: `${filename} has no patch to inspect` };
+    }
     const changed = file.patch.split('\n').filter((line) => /^[+-]/.test(line));
-    // The guard reads context lines too: a dependency version three lines below a <plugin>
-    // sits in the same hunk, and the plugin would otherwise hide behind its own +/- lines.
+    // The guard reads context lines too: <plugin> may be outside GitHub's three context lines,
+    // while the plugin artifactId is still in the hunk (#2506).
     const hunk = file.patch.split('\n').filter((line) => !/^@@/.test(line));
     if (hunk.some((line) => PLUGIN_CONTEXT_RE.test(line.replace(/^[+-]/, '')))) {
       return { ok: false, reason: `${filename} looks like a Maven build-plugin change (plugins execute at build time)` };
@@ -127,6 +130,9 @@ export function classify({ title, labels = [], files }) {
     return { eligible: false, reason: 'PR does not carry exactly one of the maven or npm labels (github-actions, docker, majors and groups are never auto-merged)' };
   }
   const [kind] = ecosystems;
+  if (kind === 'maven' && /plugin/i.test(parsed.name)) {
+    return { eligible: false, reason: 'Maven build-plugin updates wait for a person' };
+  }
   if (!filesAreSafe(files)) return { eligible: false, reason: 'PR changes files other than dependency manifests/lockfiles, or touches .github/workflows/' };
   const diff = diffVersions(files);
   if (!diff.ok) return { eligible: false, reason: diff.reason };

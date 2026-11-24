@@ -17,6 +17,11 @@ A promoted entry has the same shape plus `**Status:** promoted`, `**Supersedes:*
 
 ---
 
+## 2026-11-24 — Dependabot auto-merge: inspect every manifest and detect plugin artifacts
+Do not infer that a Maven version bump is safe from a `<plugin>` tag alone: GitHub's three context lines may omit the tag while retaining the plugin `<artifactId>`. Refuse auto-merge when any changed manifest has no patch to inspect.
+**Why:** a real Jacoco plugin bump in #2506 passed the old guard, and a missing lockfile or pom patch let an unseen change be queued.
+**Source:** PR #2582 review of #2548
+
 ## 2026-11-24 — Ossie filters: resolve semantic names through their dataset and expression
 Checking that an unqualified filter name is visible somewhere in the model is insufficient. Resolve it to one declaring dataset, reject ambiguity, and emit that dataset's mapped column expression.
 **Why:** a bare quoted name can bind to a different table's hidden physical column and disclose values through filter results.
