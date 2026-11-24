@@ -59,6 +59,29 @@ expect bash block "mvn deploy with flags before it" "$(cmd 'mvn -B -ntp deploy -
 expect bash allow "mvn verify" "$(cmd 'mvn -B -ntp -DskipITs=false verify')"
 expect bash allow "mvn spotless:apply" "$(cmd 'mvn spotless:apply')"
 
+# --- refspec destinations and compound lines (issue #2549) -------------------
+expect bash block "push HEAD:development" "$(cmd 'git push origin HEAD:development')"
+expect bash block "push feature/x:main" "$(cmd 'git push origin feature/x:main')"
+expect bash block "push +HEAD:development" "$(cmd 'git push origin +HEAD:development')"
+expect bash block "delete development" "$(cmd 'git push origin :development')"
+expect bash block "push development after cd" "$(cmd 'cd . && git push origin development')"
+expect bash allow "push HEAD onto a feature branch" "$(cmd 'git push origin HEAD:feature/x')"
+
+# --- force in disguise -------------------------------------------------------
+expect bash block "push a +refspec" "$(cmd 'git push origin +branch')"
+expect bash block "force inside combined short flags" "$(cmd 'git push -fu origin branch')"
+expect bash block "push --mirror" "$(cmd 'git push --mirror')"
+
+# --- compound lines are scanned whole ----------------------------------------
+expect bash block "commit without -s after true" "$(cmd 'true; git commit -m x')"
+expect bash block "gh pr merge --admin after cd" "$(cmd 'cd . && gh pr merge 1 --admin')"
+expect bash allow "an unrelated --grep does not trip the DCO rule" "$(cmd 'git log --grep commit')"
+
+# --- fully-qualified deploy goals --------------------------------------------
+expect bash block "fully-qualified deploy plugin goal" "$(cmd 'mvn org.apache.maven.plugins:maven-deploy-plugin:3.1.4:deploy')"
+expect bash block "env mvn deploy" "$(cmd 'env mvn deploy')"
+expect bash block "mvn deploy after cd" "$(cmd 'cd x && mvn deploy')"
+
 # --- write gates -------------------------------------------------------------
 expect bash block "gh pr merge --admin" "$(cmd 'gh pr merge 42 --admin --squash')"
 expect bash allow "gh pr create" "$(cmd 'gh pr create --title x --body y')"
@@ -69,9 +92,17 @@ expect edit block "write under a nested saiku-home" "$(file '/tmp/x/saiku-home/r
 expect edit allow "write the tracked seed schema" "$(file 'saiku-launcher/src/main/resources/seed/FoodMart4.xml')"
 expect edit allow "write a Java source file" "$(file 'saiku-core/saiku-service/src/main/java/org/saiku/Foo.java')"
 
+# --- edit paths are canonicalised (issue #2549) -------------------------------
+expect edit block "absolute settings path" "$(file '/abs/path/to/repo/.claude/settings.json')"
+expect edit block "settings via .." "$(file '.claude/../.claude/settings.json')"
+expect edit allow "absolute path to an ordinary file" "$(file '/abs/path/to/repo/saiku-core/saiku-service/src/main/java/org/saiku/Foo.java')"
+
 # --- the guard cannot widen itself -------------------------------------------
 expect edit block "rewrite its own settings" "$(file '.claude/settings.json')"
 expect edit block "write local settings" "$(file '.claude/settings.local.json')"
+expect edit block "rewrite the guard script itself" "$(file 'scripts/agent-guard.sh')"
+expect edit block "rewrite the guard script by absolute path" "$(file '/abs/path/to/repo/scripts/agent-guard.sh')"
+expect edit allow "an ordinary script beside the guard" "$(file 'scripts/other-tool.sh')"
 
 # --- malformed input must not crash or block ---------------------------------
 expect bash allow "empty command" '{"tool_input":{}}'
