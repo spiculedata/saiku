@@ -44,6 +44,7 @@ import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.glassfish.jersey.media.multipart.FormDataContentDisposition;
 import org.glassfish.jersey.media.multipart.FormDataParam;
 import org.saiku.repository.AclEntry;
+import org.saiku.repository.FilesystemRepositoryManager;
 import org.saiku.repository.IRepositoryObject;
 import org.saiku.service.ISessionService;
 import org.saiku.service.datasource.DatasourceService;
@@ -162,6 +163,27 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
                 return Response.status(Status.FORBIDDEN)
                         .entity("Datasource descriptors (.sds) and the /datasources tree can only be modified by an"
                                 + " administrator")
+                        .type("text/plain")
+                        .build();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * saiku#2525: the ACL sidecar ({@code acl.json}) is reserved — it is never repository content.
+     * The manager refuses it everywhere (the hard stop for every door: dashboards, apps,
+     * notebooks, history, embed-authoring, zip-upload); this resource-level guard turns the
+     * refusals on the REST repository surface into the contracted 403 instead of a 500, before
+     * the service layer is touched. {@code null} when the call may proceed, otherwise the 403.
+     */
+    private Response refuseAclSidecar(String... paths) {
+        for (String p : paths) {
+            if (FilesystemRepositoryManager.isAclSidecarPath(p)) {
+                log.warn("Refused direct access to the reserved ACL sidecar (saiku#2525)");
+                return Response.status(Status.FORBIDDEN)
+                        .entity("acl.json is a reserved ACL sidecar: it cannot be read, written or deleted as"
+                                + " repository content; use the ACL API instead")
                         .type("text/plain")
                         .build();
             }
@@ -289,6 +311,11 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
     @Produces({"text/plain"})
     @Path("/resource")
     public Response getResource(@QueryParam("file") String file) {
+        // saiku#2525: the sidecar is never served as content (the contracted 403).
+        Response sidecarRefused = refuseAclSidecar(file);
+        if (sidecarRefused != null) {
+            return sidecarRefused;
+        }
         String username = sessionService.getAllSessionObjects().get("username").toString();
         // saiku#1752: authoritative SecurityContextHolder read, not the session "roles" map.
         List<String> roles = SessionRoles.currentRoles();
@@ -321,6 +348,11 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
     public Response saveResource(@FormParam("file") String file, @FormParam("content") String content) {
         // saiku#1903: datasource descriptors are admin-only, wherever they would land.
         Response refused = refuseDatasourceDescriptorWrite(file);
+        if (refused != null) {
+            return refused;
+        }
+        // saiku#2525: a sidecar write is an ACL takeover (the contracted 403).
+        refused = refuseAclSidecar(file);
         if (refused != null) {
             return refused;
         }
@@ -363,6 +395,11 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
     @DELETE
     @Path("/resource")
     public Response deleteResource(@QueryParam("file") String file) {
+        // saiku#2525: deleting the sidecar wipes every share and private entry in the folder (403).
+        Response sidecarRefused = refuseAclSidecar(file);
+        if (sidecarRefused != null) {
+            return sidecarRefused;
+        }
         String username = sessionService.getAllSessionObjects().get("username").toString();
         // saiku#1752: authoritative SecurityContextHolder read, not the session "roles" map.
         List<String> roles = SessionRoles.currentRoles();
@@ -390,6 +427,11 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
         // saiku#1903: a rename into *.sds / into /datasources is a descriptor write; moving an
         // existing descriptor is equally admin-only.
         Response refused = refuseDatasourceDescriptorWrite(source, target);
+        if (refused != null) {
+            return refused;
+        }
+        // saiku#2525: the sidecar is reserved as both the source and the target of a move (403).
+        refused = refuseAclSidecar(source, target);
         if (refused != null) {
             return refused;
         }
