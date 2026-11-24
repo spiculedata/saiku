@@ -26,6 +26,7 @@ import org.saiku.web.security.TokenPrincipals;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.preauth.PreAuthenticatedAuthenticationToken;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -304,11 +305,18 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
         PreAuthenticatedAuthenticationToken auth =
                 new PreAuthenticatedAuthenticationToken("embed-guest", details, authorities);
         auth.setDetails(details);
+        // saiku#2520: the request may carry a logged-in session cookie, so getContext() hands
+        // back the object stored in the HttpSession — setAuthentication() on it would rewrite
+        // the session's identity (and keep a revoked token alive on the cookie alone). Swap in
+        // a fresh context object and restore the prior one untouched.
+        SecurityContext priorContext = SecurityContextHolder.getContext();
+        SecurityContext guestContext = SecurityContextHolder.createEmptyContext();
+        guestContext.setAuthentication(auth);
+        SecurityContextHolder.setContext(guestContext);
         try {
-            SecurityContextHolder.getContext().setAuthentication(auth);
             chain.doFilter(req, resp);
         } finally {
-            SecurityContextHolder.clearContext();
+            SecurityContextHolder.setContext(priorContext);
         }
     }
 

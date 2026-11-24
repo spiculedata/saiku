@@ -12,7 +12,8 @@
   <a href="https://saiku.bi"><b>saiku.bi</b></a> ·
   <a href="https://demo.saiku.bi"><b>Live demo</b></a> ·
   <a href="https://github.com/spiculedata/saiku/issues"><b>Issues</b></a> ·
-  <a href="https://github.com/spiculedata/saiku/discussions"><b>Discussions</b></a>
+  <a href="https://github.com/spiculedata/saiku/discussions"><b>Discussions</b></a> ·
+  <a href="https://github.com/sponsors/spiculedata"><b>Sponsor</b></a>
 </p>
 
 <p align="center">
@@ -20,6 +21,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0%20%2B%20EPL--1.0-blue" alt="License: Apache 2.0 + EPL 1.0"></a>
   <a href="https://github.com/spiculedata/saiku/pkgs/container/saiku"><img src="https://img.shields.io/badge/docker-ghcr.io%2Fspiculedata%2Fsaiku-2496ED?logo=docker&logoColor=white" alt="Docker image"></a>
   <a href="https://join.slack.com/t/saikucloud/shared_invite/zt-3yor7kgiv-YUPhqK0pvd4WljctIQVOTA"><img src="https://img.shields.io/badge/slack-Saiku%20Cloud-4A154B?logo=slack&logoColor=white" alt="Slack community"></a>
+  <a href="https://github.com/sponsors/spiculedata"><img src="https://img.shields.io/github/sponsors/spiculedata?label=sponsor&logo=githubsponsors&color=EA4AAA" alt="Sponsor Saiku"></a>
 </p>
 
 ***
@@ -321,6 +323,15 @@ launcher serves the static `dist/` under `/ui/`.
 
 The old `groups.google.com/a/saiku.meteorite.bi` lists and `##saiku` IRC
 channel are no longer monitored.
+
+## Supporting Saiku
+
+Saiku is free and open source, with no paid edition. If it is useful to you or
+your team, you can support its development through
+[GitHub Sponsors](https://github.com/sponsors/spiculedata). Signed-in users see
+a small **Sponsor** link in the top bar, and the launcher prints the same link
+when it starts. Operators who want neither (a white-label or locked-down
+deployment) set `SAIKU_SPONSOR_LINK=false` or `-Dsaiku.sponsorLink=false`.
 
 ## How work flows here
 

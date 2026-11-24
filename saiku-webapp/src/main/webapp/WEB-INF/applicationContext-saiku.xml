@@ -247,6 +247,20 @@
              token to resolve on every request so the XSRF-TOKEN cookie is
              written before the response commits — without it, GET requests
              never seed the cookie. -->
+      <!-- saiku#2524: a refused request saves NOTHING. Spring's default
+           HttpSessionRequestCache stashes the refused request (URL, query
+           string, ALL headers) in a brand-new HTTP session on every 401, so
+           any anonymous caller could mint sessions — persisted to
+           <saiku-home>/sessions/ for seven days and sized by its own headers
+           (an unauthenticated heap + disk filler). This chain answers 401
+           JSON and never redirects back to a saved request (the SPA does its
+           own login at /rest/saiku/session), so the null cache is the right
+           answer: ExceptionTranslationFilter simply has nothing to store.
+           Failed Basic attempts on protected URLs (ExceptionTranslationFilter
+           → sendStartAuthentication → saveRequest) are covered by the same
+           change. Authenticated users are unaffected: nothing reads a saved
+           request on this surface. -->
+      <security:request-cache ref="nullRequestCache"/>
       <security:csrf token-repository-ref="csrfTokenRepository"
                      request-matcher-ref="csrfRequestMatcher"
                      request-handler-ref="csrfTokenRequestHandler"/>
@@ -469,6 +483,11 @@
     <!-- Tier-1 auth hardening: CSRF wiring (saiku#1150). -->
     <!-- saiku#1165 audit-3: XSRF-TOKEN cookie via factory so it carries
          SameSite=Lax (matching JSESSIONID); stays non-HttpOnly for the SPA. -->
+    <!-- saiku#2524: the request cache for the main chain (see the request-cache
+         element above). Spring Security's own NullRequestCache — saveRequest is
+         a no-op, so a refused request never forces a session into existence. -->
+    <bean id="nullRequestCache"
+          class="org.springframework.security.web.savedrequest.NullRequestCache"/>
     <bean id="csrfTokenRepository"
           class="org.saiku.web.security.csrf.SaikuCsrfTokenRepository"
           factory-method="create"/>

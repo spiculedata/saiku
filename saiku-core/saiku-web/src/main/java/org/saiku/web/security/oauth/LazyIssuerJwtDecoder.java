@@ -23,6 +23,10 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
  * Deferring it means: (1) start-up never depends on the IdP, and (2) discovery is retried on the next
  * bearer request if it failed, rather than wedged for the process's lifetime after one boot-time
  * hiccup.
+ *
+ * <p>saiku#2543: the audience is MANDATORY. A resource server that cannot pin tokens to its own
+ * {@code aud} claim accepts any token the issuer signed for any client. The constructor refuses a
+ * missing/blank audience outright, and every built decoder always validates the {@code aud} claim.
  */
 final class LazyIssuerJwtDecoder implements JwtDecoder {
 
@@ -31,6 +35,10 @@ final class LazyIssuerJwtDecoder implements JwtDecoder {
     private volatile NimbusJwtDecoder delegate;
 
     LazyIssuerJwtDecoder(String issuerUri, String audience) {
+        if (audience == null || audience.isBlank()) {
+            throw new IllegalArgumentException(
+                    "OAuth bearer authentication requires saiku.oauth.audience: without an audience check any token the issuer signed for any client would be accepted (saiku#2543)");
+        }
         this.issuerUri = issuerUri;
         this.audience = audience;
     }
@@ -61,14 +69,11 @@ final class LazyIssuerJwtDecoder implements JwtDecoder {
             throw new JwtException("OAuth issuer discovery failed for " + issuerUri, e);
         }
         OAuth2TokenValidator<Jwt> withIssuer = JwtValidators.createDefaultWithIssuer(issuerUri);
-        if (audience == null) {
-            decoder.setJwtValidator(withIssuer);
-        } else {
-            OAuth2TokenValidator<Jwt> withAudience =
-                    new JwtClaimValidator<java.util.List<String>>("aud", aud -> aud != null && aud.contains(audience));
-            decoder.setJwtValidator(new org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator<>(
-                    withIssuer, withAudience));
-        }
+        // saiku#2543: the audience check is unconditional — never optional.
+        OAuth2TokenValidator<Jwt> withAudience =
+                new JwtClaimValidator<java.util.List<String>>("aud", aud -> aud != null && aud.contains(audience));
+        decoder.setJwtValidator(new org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator<>(
+                withIssuer, withAudience));
         return decoder;
     }
 }
