@@ -21,6 +21,7 @@ import org.junit.After;
 import org.junit.Test;
 import org.saiku.service.PlatformUtilsService;
 import org.saiku.service.olap.ai.ask.NlAskProviderFactory;
+import org.saiku.service.olap.ai.cubedesigner.CubeDesignerAiService;
 import org.saiku.service.util.dto.Plugin;
 
 public class InfoResourceTest {
@@ -54,6 +55,7 @@ public class InfoResourceTest {
         System.clearProperty("saiku.mcp.url");
         System.clearProperty("saiku.version");
         System.clearProperty("saiku.oauth.issuerUri");
+        System.clearProperty("saiku.oauth.audience");
     }
 
     /* ------------------------------ DXT bundle ------------------------------ */
@@ -198,11 +200,27 @@ public class InfoResourceTest {
     public void capabilities_reportsOauthAuthModeWhenIssuerConfigured() {
         System.setProperty("saiku.mcp.url", "https://demo.saiku.bi/rest/saiku/api/mcp");
         System.setProperty("saiku.oauth.issuerUri", "https://idp.example.com/realms/saiku");
+        System.setProperty("saiku.oauth.audience", "saiku-mcp");
 
         Response resp = new InfoResource().getCapabilities(null);
         Map<String, Object> body = (Map<String, Object>) resp.getEntity();
         Map<String, Object> mcp = (Map<String, Object>) body.get("mcp");
         assertEquals("oauth", mcp.get("authMode"));
+    }
+
+    /** saiku#2543: an issuer without an audience stays fail-closed — capabilities must not
+     *  advertise OAuth for a half-configured deployment. */
+    @Test
+    @SuppressWarnings("unchecked")
+    public void capabilities_issuerWithoutAudience_reportsBasic() {
+        System.setProperty("saiku.mcp.url", "https://demo.saiku.bi/rest/saiku/api/mcp");
+        System.setProperty("saiku.oauth.issuerUri", "https://idp.example.com/realms/saiku");
+        System.clearProperty("saiku.oauth.audience");
+
+        Response resp = new InfoResource().getCapabilities(null);
+        Map<String, Object> body = (Map<String, Object>) resp.getEntity();
+        Map<String, Object> mcp = (Map<String, Object>) body.get("mcp");
+        assertEquals("basic", mcp.get("authMode"));
     }
 
     @Test
@@ -284,6 +302,38 @@ public class InfoResourceTest {
         Map<String, Object> body = (Map<String, Object>) resp.getEntity();
         Map<String, Object> ask = (Map<String, Object>) body.get("ask");
         assertEquals(Boolean.FALSE, ask.get("reachable"));
+    }
+
+    /* ------------------------ saiku#2489 — cube designer ------------------------ */
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void diagnostics_reportsCubeDesignerOllamaStack() {
+        CubeDesignerAiService svc = new CubeDesignerAiService("ollama", null, null, null, 60);
+        InfoResource r = new InfoResource();
+        r.setCubeDesignerAiService(svc);
+
+        Response resp = r.getDiagnostics();
+        Map<String, Object> body = (Map<String, Object>) resp.getEntity();
+        Map<String, Object> cubeDesigner = (Map<String, Object>) body.get("cubeDesigner");
+        assertEquals(Boolean.TRUE, cubeDesigner.get("enabled"));
+        assertEquals("ollama", cubeDesigner.get("provider"));
+        assertEquals(Boolean.TRUE, cubeDesigner.get("configured"));
+        assertEquals(CubeDesignerAiService.DEFAULT_OLLAMA_ENDPOINT, cubeDesigner.get("endpoint"));
+        // Never surfaces a key.
+        for (Object v : cubeDesigner.values()) {
+            assertFalse(String.valueOf(v).contains("sk-"));
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void diagnostics_reportsCubeDesignerDisabledWhenNotWired() {
+        Response resp = new InfoResource().getDiagnostics();
+        Map<String, Object> body = (Map<String, Object>) resp.getEntity();
+        Map<String, Object> cubeDesigner = (Map<String, Object>) body.get("cubeDesigner");
+        assertEquals(Boolean.FALSE, cubeDesigner.get("enabled"));
+        assertFalse(cubeDesigner.containsKey("provider"));
     }
 
     @Test

@@ -81,6 +81,12 @@ pushed down; normal sessions append and the history stays useful.
 **Watch out:** local focused Maven tests stop before compilation because private GitHub Packages dependencies return 401; Spotless and acceptance checks pass.
 **Refs:** #2526, PR #2552
 
+## 2026-11-24 — fix/2544-csv-header-quote-escape — PR #2573 acceptance gate rework
+**Was doing:** added the missing executable acceptance spec for the CSV header quote-escaping fix; the PR branch merges cleanly with development.
+**Now:** check PR #2573 CI on the pushed commit, especially the acceptance convention and red-on-base proof.
+**Watch out:** this workspace has Node but no Java or Maven, so the launcher build and Java tests require CI.
+**Refs:** #2544, PR #2573, acceptance/2544/spec.json
+
 ## 2026-11-12 — fix/2322-ossie-ai-policy-gate — PR #2355 formatting rework
 **Was doing:** fixed the async role test fixture's Spotless violation; local Spotless and licence checks pass, but focused Maven tests stop during dependency resolution with GitHub Packages 401.
 **Now:** use the latest PR #2355 CI result to verify the full build and focused tests; no local edits remain after the rework push.
@@ -234,3 +240,8 @@ the tree first.
 **Now:** check PR #2552 CI after the push. Acceptance specs #2442 and #2526, all 53 acceptance runner tests, and a lower-floor rejection check passed locally.
 **Watch out:** this workspace has no Java or Maven executable, so the Java build and tests need CI verification.
 **Refs:** #2442, #2526, #2552
+
+## 2026-11-24 — fix/2543-oauth-audience-role-mapping — acceptance proof for PR #2574
+**Was doing:** added `acceptance/2543` to prove the OAuth audience, explicit role mapping, and session-context requirements that the existing PR implements. The command spec passes on the PR head and fails on the current development base; there is no merge conflict.
+**Now:** check CI after the push. Local focused Maven tests stopped before compilation because GitHub Packages returned 401 for private Mondrian and olap4j artifacts.
+**Refs:** #2543, #2574
