@@ -3,6 +3,7 @@
   "title": "An account whose H2 row was written the way the admin console and SCIM always write it (the same role listed twice) is still found and enforced: a demoted admin is refused, not left to the authenticator",
   "kind": "api",
   "auth": "session",
+  "mutatesServer": true,
   "criteria": [
     {
       "id": "C1",
