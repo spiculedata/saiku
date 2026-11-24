@@ -8,6 +8,8 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Properties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Configuration for the MCP OAuth 2.0 resource-server surface (saiku#879). Inert by default — every
@@ -20,18 +22,24 @@ import java.util.Properties;
  *   <li>{@code saiku.oauth.issuerUri} — the IdP's OIDC issuer (Keycloak realm URL, Auth0 domain,
  *       Okta/Entra tenant). Required to turn the resource server on; JWKS + issuer/signature
  *       validation are discovered from this via OIDC discovery on first use.
- *   <li>{@code saiku.oauth.audience} — optional. When set, a token's {@code aud} claim must contain
- *       this value or the token is rejected.
+ *   <li>{@code saiku.oauth.audience} — required whenever {@code issuerUri} is set (saiku#2543,
+ *       RFC 8707 §5: a resource server must identify itself). A token's {@code aud} claim must
+ *       contain this value or the token is rejected. Without it the resource server refuses to
+ *       enable bearer authentication at all and rejects every bearer token — without an audience
+ *       check any token the issuer signed for ANY client would be accepted.
  *   <li>{@code saiku.oauth.resource} — optional. The canonical resource identifier advertised in the
  *       protected-resource metadata ({@code resource} field). Defaults to the request's own URL.
  *   <li>{@code saiku.oauth.roleClaim} — which claim carries the caller's groups/roles. Supports a
  *       dotted path for nested claims (Keycloak's {@code realm_access.roles}). Defaults to {@code
  *       "roles"}.
  *   <li>{@code saiku.oauth.roleMapping.<claimValue>=<saikuRole>} — maps one claim value to a Saiku
- *       role name. Unmapped claim values are used verbatim (the issue's stated default behaviour).
+ *       role name. Only mapped values are granted: an unmapped claim value yields no authority at
+ *       all (saiku#2543 — an unmapped value must never be able to mint {@code ROLE_ADMIN}).
  * </ul>
  */
 public final class OAuthResourceServerProperties {
+
+    private static final Logger log = LoggerFactory.getLogger(OAuthResourceServerProperties.class);
 
     public static final String PROP_ISSUER_URI = "saiku.oauth.issuerUri";
     public static final String PROP_AUDIENCE = "saiku.oauth.audience";
@@ -53,6 +61,13 @@ public final class OAuthResourceServerProperties {
         this.resource = blankToNull(resource);
         this.roleClaim = (roleClaim == null || roleClaim.isBlank()) ? DEFAULT_ROLE_CLAIM : roleClaim.trim();
         this.roleMapping = roleMapping == null ? Collections.emptyMap() : Map.copyOf(roleMapping);
+        // saiku#2543: fail closed on a half-configured OAuth mode. Without an audience check every
+        // token the issuer signed for any client would be accepted, so an issuer WITHOUT an audience
+        // must not enable bearer authentication — say so once, at bean-creation time.
+        if (this.issuerUri != null && this.audience == null) {
+            log.warn(
+                    "saiku.oauth.issuerUri is set but saiku.oauth.audience is missing: OAuth bearer authentication stays DISABLED and every bearer token is rejected. Set saiku.oauth.audience to the audience your IdP puts in the token's aud claim for this Saiku deployment.");
+        }
     }
 
     /** Reads the current process's system properties. Called once at bean-creation time; the
@@ -80,10 +95,13 @@ public final class OAuthResourceServerProperties {
                 mapping);
     }
 
-    /** Whether the OAuth resource-server path is configured at all. False leaves every #878
-     *  HTTP-Basic behaviour byte-for-byte unchanged. */
+    /** Whether the OAuth resource-server path is properly configured and enabled. Requires BOTH
+     *  {@code saiku.oauth.issuerUri} and {@code saiku.oauth.audience} (saiku#2543): an issuer
+     *  without an audience would accept tokens minted for any client, so such a deployment stays
+     *  disabled — every #878 HTTP-Basic behaviour byte-for-byte unchanged, every bearer token
+     *  rejected. */
     public boolean isEnabled() {
-        return issuerUri != null;
+        return issuerUri != null && audience != null;
     }
 
     public String getIssuerUri() {

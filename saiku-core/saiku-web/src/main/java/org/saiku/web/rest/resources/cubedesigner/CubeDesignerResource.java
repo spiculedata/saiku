@@ -531,7 +531,8 @@ public class CubeDesignerResource {
         }
         if (aiService == null || !aiService.isConfigured()) {
             return Response.status(Response.Status.SERVICE_UNAVAILABLE)
-                    .entity("The schema-authoring AI is not configured on this server.")
+                    .entity("AI upstream not configured: set saiku.ai.ask.provider "
+                            + "(anthropic|openai|ollama) and its API key.")
                     .build();
         }
         try {
@@ -542,7 +543,8 @@ public class CubeDesignerResource {
             return Response.ok(out).build();
         } catch (IllegalStateException e) {
             return Response.status(Response.Status.SERVICE_UNAVAILABLE)
-                    .entity("The schema-authoring AI is not configured on this server.")
+                    .entity("AI upstream not configured: set saiku.ai.ask.provider "
+                            + "(anthropic|openai|ollama) and its API key.")
                     .build();
         } catch (IOException e) {
             LOG.warn("cube-designer AI turn failed", e);
