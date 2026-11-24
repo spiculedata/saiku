@@ -90,13 +90,8 @@ public class SessionPersistenceWiringTest {
         assertTrue(
                 "idle sessions must leave the cache (EVICT_ON_INACTIVITY), never NEVER_EVICT (-1)",
                 cache.getEvictionPolicy() > 0);
-        assertEquals(
-                "the inactivity threshold for eviction is 5 minutes",
-                300,
-                cache.getEvictionPolicy());
-        assertTrue(
-                "a session must be written to the store before it is evicted",
-                cache.isSaveOnInactiveEviction());
+        assertEquals("the inactivity threshold for eviction is 5 minutes", 300, cache.getEvictionPolicy());
+        assertTrue("a session must be written to the store before it is evicted", cache.isSaveOnInactiveEviction());
     }
 
     @Test

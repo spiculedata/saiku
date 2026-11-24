@@ -76,10 +76,7 @@ public class SessionRefusalIT {
         HttpResponse<String> resp = harness.getAnon(PROTECTED);
         assertEquals("an unauthenticated request must be refused", 401, resp.statusCode());
         assertNoJsessionid("anonymous 401", resp);
-        assertEquals(
-                "a refused request must not create a session file",
-                before,
-                sessionFiles());
+        assertEquals("a refused request must not create a session file", before, sessionFiles());
     }
 
     @Test
