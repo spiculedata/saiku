@@ -54,6 +54,7 @@ public class InfoResourceTest {
         System.clearProperty("saiku.mcp.url");
         System.clearProperty("saiku.version");
         System.clearProperty("saiku.oauth.issuerUri");
+        System.clearProperty("saiku.oauth.audience");
     }
 
     /* ------------------------------ DXT bundle ------------------------------ */
@@ -198,11 +199,27 @@ public class InfoResourceTest {
     public void capabilities_reportsOauthAuthModeWhenIssuerConfigured() {
         System.setProperty("saiku.mcp.url", "https://demo.saiku.bi/rest/saiku/api/mcp");
         System.setProperty("saiku.oauth.issuerUri", "https://idp.example.com/realms/saiku");
+        System.setProperty("saiku.oauth.audience", "saiku-mcp");
 
         Response resp = new InfoResource().getCapabilities(null);
         Map<String, Object> body = (Map<String, Object>) resp.getEntity();
         Map<String, Object> mcp = (Map<String, Object>) body.get("mcp");
         assertEquals("oauth", mcp.get("authMode"));
+    }
+
+    /** saiku#2543: an issuer without an audience stays fail-closed — capabilities must not
+     *  advertise OAuth for a half-configured deployment. */
+    @Test
+    @SuppressWarnings("unchecked")
+    public void capabilities_issuerWithoutAudience_reportsBasic() {
+        System.setProperty("saiku.mcp.url", "https://demo.saiku.bi/rest/saiku/api/mcp");
+        System.setProperty("saiku.oauth.issuerUri", "https://idp.example.com/realms/saiku");
+        System.clearProperty("saiku.oauth.audience");
+
+        Response resp = new InfoResource().getCapabilities(null);
+        Map<String, Object> body = (Map<String, Object>) resp.getEntity();
+        Map<String, Object> mcp = (Map<String, Object>) body.get("mcp");
+        assertEquals("basic", mcp.get("authMode"));
     }
 
     @Test

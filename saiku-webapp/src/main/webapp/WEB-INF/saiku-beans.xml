@@ -965,8 +965,9 @@
     <!-- ====================================================================
          MCP OAuth 2.0 resource-server — bearer-token passthrough auth
          (saiku#879, long-term follow-up to #878's HTTP Basic passthrough).
-         Inert unless -Dsaiku.oauth.issuerUri is set; see
-         OAuthResourceServerProperties for the full config surface.
+         Inert unless -Dsaiku.oauth.issuerUri AND -Dsaiku.oauth.audience are
+         set (saiku#2543: an issuer without an audience stays fail-closed);
+         see OAuthResourceServerProperties for the full config surface.
 
          - oauthResourceServerProperties: reads the saiku.oauth.* system
            properties once at context start-up.

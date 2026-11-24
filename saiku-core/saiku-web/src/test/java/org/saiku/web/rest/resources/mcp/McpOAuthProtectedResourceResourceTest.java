@@ -31,10 +31,25 @@ public class McpOAuthProtectedResourceResourceTest {
         assertEquals(404, response.getStatus());
     }
 
+    /** saiku#2543: an issuer without an audience is fail-closed — the metadata endpoint must treat
+     *  such a half-configured deployment as "OAuth off" (404), never advertise it. */
+    @Test
+    public void returns_404_when_issuer_set_but_no_audience() {
+        Properties raw = new Properties();
+        raw.setProperty(OAuthResourceServerProperties.PROP_ISSUER_URI, "https://idp.example.com/realms/saiku");
+        McpOAuthProtectedResourceResource resource = new McpOAuthProtectedResourceResource();
+        resource.setProperties(OAuthResourceServerProperties.from(raw));
+
+        Response response = resource.metadata(null);
+
+        assertEquals(404, response.getStatus());
+    }
+
     @Test
     public void returns_metadata_when_oauth_configured() {
         Properties raw = new Properties();
         raw.setProperty(OAuthResourceServerProperties.PROP_ISSUER_URI, "https://idp.example.com/realms/saiku");
+        raw.setProperty(OAuthResourceServerProperties.PROP_AUDIENCE, "saiku-mcp");
         raw.setProperty(OAuthResourceServerProperties.PROP_RESOURCE, "https://saiku.example.com/rest/saiku/api/mcp");
 
         McpOAuthProtectedResourceResource resource = new McpOAuthProtectedResourceResource();
