@@ -81,14 +81,16 @@ For live counts, read the reports the build itself writes: `<module>/target/sure
 
 ## CI
 
-`.github/workflows/ci.yml` runs **`mvn -B -ntp -DskipITs=false verify`** on **Ubuntu**
+`.github/workflows/ci.yml` runs **`mvn -B -ntp -DskipITs=false verify`** (plus further flags on the
+wrapped line — see `ci.yml` itself) on **Ubuntu**
 (`ubuntu-latest`) against **JDK 22** (Temurin). Main artifacts still compile at `release 21`, so the
 shipped runtime is unchanged — JDK 22 is required to build the full reactor because
 `saiku-proptest` uses Java-22 bytecode. A PR is green only when, on Ubuntu:
 
 1. Compile + **surefire unit tests** pass.
 2. **failsafe integration tests** (`saiku-launcher/**/*IT`) pass (CI sets `-DskipITs=false`).
-3. **Spotless** (`spotless-maven-plugin` 3.10.4 / Palantir Java Format 2.71.0) reports clean — bound to the
+3. **Spotless** (`spotless-maven-plugin`, version pinned in the root `pom.xml` / Palantir Java
+   Format 2.71.0) reports clean — bound to the
    `verify` phase, so it runs *after* tests; `mvn spotless:apply` fixes violations.
 4. **Per-module test-count floors** (`.github/test-floors.json`) are met — CI fails if a gated
    module's surefire total (`saiku-core/saiku-service`, `saiku-core/saiku-web`, `saiku-launcher`)
