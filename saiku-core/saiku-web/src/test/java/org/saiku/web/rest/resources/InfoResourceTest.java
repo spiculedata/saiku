@@ -57,6 +57,8 @@ public class InfoResourceTest {
         System.clearProperty("saiku.oauth.issuerUri");
         System.clearProperty("saiku.oauth.audience");
         System.clearProperty("saiku.sponsorLink");
+        System.clearProperty("saiku.update.latest");
+        System.clearProperty("saiku.telemetry.enabled");
     }
 
     /* ------------------------------ DXT bundle ------------------------------ */
@@ -195,6 +197,56 @@ public class InfoResourceTest {
         Map<String, Object> body =
                 (Map<String, Object>) new InfoResource().getCapabilities(null).getEntity();
         assertEquals(Boolean.FALSE, body.get("sponsorLink"));
+    }
+
+    /* ---------------------------- update check (saiku#2579) ---------------------------- */
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void capabilities_updateReportsNothingWhenNoCheckHasRun() {
+        Map<String, Object> body =
+                (Map<String, Object>) new InfoResource().getCapabilities(null).getEntity();
+        Map<String, Object> update = (Map<String, Object>) body.get("update");
+        assertEquals(Boolean.FALSE, update.get("available"));
+        assertNull(update.get("latestVersion"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void capabilities_updateSurfacesTheLauncherCheckFinding() {
+        // What TelemetryService.noteLatest writes when the check finds a newer release.
+        System.setProperty("saiku.update.latest", "4.10.0");
+        Map<String, Object> body =
+                (Map<String, Object>) new InfoResource().getCapabilities(null).getEntity();
+        Map<String, Object> update = (Map<String, Object>) body.get("update");
+        assertEquals(Boolean.TRUE, update.get("available"));
+        assertEquals("4.10.0", update.get("latestVersion"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void capabilities_updateReportsNothingWhenTelemetryIsOptedOut() {
+        // Even a recorded finding must not surface once telemetry is off — the check that
+        // produced it never ran on an opted-out deployment.
+        System.setProperty("saiku.update.latest", "4.10.0");
+        System.setProperty("saiku.telemetry.enabled", "false");
+        Map<String, Object> body =
+                (Map<String, Object>) new InfoResource().getCapabilities(null).getEntity();
+        Map<String, Object> update = (Map<String, Object>) body.get("update");
+        assertEquals(Boolean.FALSE, update.get("available"));
+        assertNull(update.get("latestVersion"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void capabilities_updateIgnoresABlankRecord() {
+        // A defensive edge: a blank record is no record.
+        System.setProperty("saiku.update.latest", "   ");
+        Map<String, Object> body =
+                (Map<String, Object>) new InfoResource().getCapabilities(null).getEntity();
+        Map<String, Object> update = (Map<String, Object>) body.get("update");
+        assertEquals(Boolean.FALSE, update.get("available"));
+        assertNull(update.get("latestVersion"));
     }
 
     @Test

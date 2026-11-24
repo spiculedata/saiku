@@ -39,6 +39,19 @@ public class SessionResource {
 
     private static final Logger log = LoggerFactory.getLogger(SessionResource.class);
 
+    /**
+     * saiku#2523: request attribute marking this request as a login whose outcome
+     * {@link SessionResource} records itself (rate limiter + audit log). It is set
+     * BEFORE the authentication manager is touched, so {@code SpringSecurityAuditListener}
+     * — which otherwise records the same failure twice on this path (once from the
+     * Spring Security authentication-failure event the manager publishes inside
+     * {@code sessionService.login}, once from the resource's own catch) — skips the
+     * request entirely. The resource is the single recorder here because it owns the
+     * real {@link HttpServletRequest} and the actual failure. Without the mark the
+     * listener stays the recorder for the HTTP-Basic / filter-chain path.
+     */
+    public static final String LOGIN_RECORDED_ATTRIBUTE = "org.saiku.web.login.recordedByResource";
+
     private ISessionService sessionService;
     private UserService userService;
     private LoginRateLimiter rateLimiter = new LoginRateLimiter();
@@ -73,6 +86,10 @@ public class SessionResource {
             @Context HttpServletRequest req,
             @FormParam("username") String username,
             @FormParam("password") String password) {
+        // saiku#2523: mark the request BEFORE the authentication manager runs, so the
+        // failure/success events it publishes are recognised (and skipped) by
+        // SpringSecurityAuditListener instead of being counted a second time.
+        req.setAttribute(LOGIN_RECORDED_ATTRIBUTE, Boolean.TRUE);
         // Rate-limit BEFORE touching the auth manager so attackers can't hammer it.
         if (rateLimiter.isBlocked(req, username)) {
             AuditLogger.rateLimitTriggered(req, username);

@@ -63,6 +63,43 @@ public class QueryCacheKeyTest {
         assertNotEquals(legacy, QueryCacheKey.of(query(), CUBE_VERSION, Collections.singletonList("reader")));
     }
 
+    // ── saiku#2538: per-caller identity fragment (pass-through datasources) ──
+
+    /**
+     * The security crux: SAME roles, DIFFERENT warehouse identity (pass-through credentials) ⇒
+     * different cache key, so the second caller never receives the first caller's cellset.
+     */
+    @Test
+    public void differentIdentitiesProduceDifferentKeysAtSameRoles() {
+        String alice = QueryCacheKey.of(query(), CUBE_VERSION, Collections.singletonList("reader"), "user:alice");
+        String bob = QueryCacheKey.of(query(), CUBE_VERSION, Collections.singletonList("reader"), "user:bob");
+        assertNotEquals(
+                "two users of a pass-through datasource with equal roles must not share a cache key", alice, bob);
+    }
+
+    /** Same identity + same roles ⇒ same key (the second execution still hits cache). */
+    @Test
+    public void sameIdentitySameRolesAreStable() {
+        String a = QueryCacheKey.of(query(), CUBE_VERSION, Collections.singletonList("reader"), "user:alice");
+        String b = QueryCacheKey.of(query(), CUBE_VERSION, Collections.singletonList("reader"), "user:alice ");
+        assertEquals("the identity fragment must be trimmed", a, b);
+    }
+
+    /**
+     * A null/empty identity must be omitted from the canonical JSON, so the key stays
+     * byte-identical to the role-only form — cache hit rates unchanged off pass-through.
+     */
+    @Test
+    public void emptyIdentityMatchesRoleOnlyKey() {
+        String roleOnly = QueryCacheKey.of(query(), CUBE_VERSION, Collections.singletonList("reader"));
+        assertEquals(roleOnly, QueryCacheKey.of(query(), CUBE_VERSION, Collections.singletonList("reader"), null));
+        assertEquals(roleOnly, QueryCacheKey.of(query(), CUBE_VERSION, Collections.singletonList("reader"), ""));
+        assertEquals(roleOnly, QueryCacheKey.of(query(), CUBE_VERSION, Collections.singletonList("reader"), "  "));
+        // and an identity-bearing key must differ from the identity-less form
+        assertNotEquals(
+                roleOnly, QueryCacheKey.of(query(), CUBE_VERSION, Collections.singletonList("reader"), "user:alice"));
+    }
+
     // ── saiku#1483: cubeVersion must change when the connection's metadata epoch bumps ──
 
     private static ThinQuery cubeQuery(String connection) {

@@ -4,6 +4,8 @@
  */
 package org.saiku.service.datasource;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import org.olap4j.OlapConnection;
 import org.saiku.datasources.connection.IConnectionManager;
@@ -11,6 +13,14 @@ import org.saiku.datasources.connection.ISaikuConnection;
 import org.saiku.olap.util.exception.SaikuOlapException;
 
 public class MockConnectionManager implements IConnectionManager {
+    /** saiku#2533: names passed to {@link #removeConnection(String)}, for eviction assertions. */
+    public final List<String> removedConnections = new ArrayList<>();
+
+    @Override
+    public void removeConnection(String name) {
+        removedConnections.add(name);
+    }
+
     @Override
     public void init() throws SaikuOlapException {}
 
