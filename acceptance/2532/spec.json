@@ -1,0 +1,29 @@
+{
+  "issue": 2532,
+  "title": "the SQL workbench applies the same datasource security decision as the OLAP connection path: security-enabled datasources whose decision it cannot reproduce (one2one, passthrough, unrecognised type, lookup with no mapping for the caller) are neither offered nor opened",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "a datasource with security.enabled=true and security.type=one2one or passthrough, visible in the role-filtered map but denied over MDX to a caller with no Mondrian role",
+      "then": "the workbench neither offers it (GET /sql-workbench/datasources) nor opens it (POST /sql-workbench/query): the same unknown-datasource answer as a datasource that does not exist, rejected BEFORE a raw JDBC connection is opened with the stored credentials — the workbench re-derives the connection path's SecurityAwareConnectionManager.applySecurity decision itself instead of deferring to a denial that would never fire (saiku#2532, CWE-863)"
+    },
+    {
+      "id": "C2",
+      "given": "a datasource with security.enabled=true and an unrecognised security.type",
+      "then": "the workbench refuses it fail-closed — an unrecognised type applies no role at all, the same rule the connection path enforces (saiku#1972)"
+    },
+    {
+      "id": "C3",
+      "given": "a lookup datasource (security.type=lookup) whose security.mapping grants the caller's own authorities at least one Mondrian role",
+      "then": "the workbench serves it; a lookup datasource with no mapping for the caller is refused — the mapping decision is re-checked by the workbench itself, not only inherited from the shared visibility filter"
+    },
+    {
+      "id": "C4",
+      "given": "the regression tests in SqlWorkbenchServiceTest and the admin exemption",
+      "then": "a configured admin keeps access to every mode (mirroring the connection path's enforceRoleResolvedOrAdmin exemption), unavailable admin roles fail closed to non-admin, and the JUnit regressions assert the one2one/passthrough/unknown refusals, the lookup mapping check and the picker filter"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}
