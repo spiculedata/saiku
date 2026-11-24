@@ -478,6 +478,8 @@
              resolves the dependency graph regardless of declaration order. -->
         <property name="askProviderFactory" ref="aiAskProviderFactory"/>
         <property name="schemaGenProviderFactory" ref="llmProviderFactory"/>
+        <!-- saiku#2489: the diagnostics report the Cube Designer's resolved provider + model too. -->
+        <property name="cubeDesignerAiService" ref="cubeDesignerAiService"/>
     </bean>
 
     <!-- saiku#1868: per-user preferences (/saiku/api/preferences). Gives the UI an account-level
@@ -965,8 +967,9 @@
     <!-- ====================================================================
          MCP OAuth 2.0 resource-server — bearer-token passthrough auth
          (saiku#879, long-term follow-up to #878's HTTP Basic passthrough).
-         Inert unless -Dsaiku.oauth.issuerUri is set; see
-         OAuthResourceServerProperties for the full config surface.
+         Inert unless -Dsaiku.oauth.issuerUri AND -Dsaiku.oauth.audience are
+         set (saiku#2543: an issuer without an audience stays fail-closed);
+         see OAuthResourceServerProperties for the full config surface.
 
          - oauthResourceServerProperties: reads the saiku.oauth.* system
            properties once at context start-up.
@@ -1624,6 +1627,12 @@
          auto-registered as a JAX-RS resource by SaikuJerseyApplication's @Path scan. -->
     <bean id="cubeDesignerAiService"
           class="org.saiku.service.olap.ai.cubedesigner.CubeDesignerAiService">
+        <!-- saiku#2489: the Cube Designer picks its AI upstream with the SAME provider
+             setting NL-ask uses. Default is anthropic — the pre-#2489 behaviour (key via
+             saiku.ai.ask.apiKey / ANTHROPIC_API_KEY env) — so an operator who only sets
+             ANTHROPIC_API_KEY keeps working, while provider=ollama (keyless) or openai
+             flips both stacks to their OpenAI-compatible transport. noop = off. -->
+        <constructor-arg value="${saiku.ai.ask.provider:anthropic}"/>
         <constructor-arg value="${saiku.ai.ask.apiKey:}"/>
         <constructor-arg value="${saiku.ai.ask.model:}"/>
         <constructor-arg value="${saiku.ai.ask.endpoint:}"/>

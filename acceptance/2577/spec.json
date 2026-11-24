@@ -1,0 +1,24 @@
+{
+  "issue": 2577,
+  "title": "The capabilities probe tells the SPA to show the GitHub Sponsors link by default",
+  "kind": "api",
+  "auth": "none",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "a default deployment with no -Dsaiku.sponsorLink / SAIKU_SPONSOR_LINK opt-out",
+      "then": "GET /rest/saiku/info/capabilities reports sponsorLink: true, the flag the SPA reads before rendering the top-bar Sponsor link"
+    }
+  ],
+  "steps": [
+    {
+      "name": "capabilities reports sponsorLink true on a default deployment",
+      "criterion": "C1",
+      "request": { "method": "GET", "path": "/rest/saiku/info/capabilities", "headers": { "Accept": "application/json" } },
+      "expect": {
+        "status": 200,
+        "json": { "sponsorLink": { "equals": true, "because": "the sponsor link is on unless the operator opts out" } }
+      }
+    }
+  ]
+}
