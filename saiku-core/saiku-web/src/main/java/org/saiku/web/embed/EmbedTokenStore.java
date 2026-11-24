@@ -136,6 +136,23 @@ public class EmbedTokenStore {
             String label,
             EmbedToken.RedactionPolicy redactionPolicy,
             String tenantId) {
+        return create(
+                resourceKind, resourcePath, createdBy, ownerRoles, ttlMillis, label, redactionPolicy, tenantId, null);
+    }
+
+    /** saiku#2536 — mint with the mint-time content binding: {@code
+     *  contentSha256} is the hash of the pinned content as read under the
+     *  minter's scope (null for cube-pinned kinds — nothing to bind). */
+    public EmbedToken create(
+            String resourceKind,
+            String resourcePath,
+            String createdBy,
+            List<String> ownerRoles,
+            long ttlMillis,
+            String label,
+            EmbedToken.RedactionPolicy redactionPolicy,
+            String tenantId,
+            String contentSha256) {
         if (resourceKind == null || !ALLOWED_KINDS.contains(resourceKind)) {
             // ALLOWED_KINDS.contains(null) throws NPE on Set.of immutables, so
             // null-check first — defends both the API and the runtime.
@@ -162,8 +179,53 @@ public class EmbedTokenStore {
         t.revoked = false;
         t.label = label;
         t.tenantId = "authoring".equals(resourceKind) ? tenantId : null;
+        t.contentSha256 = contentSha256;
         persist(t);
         return t;
+    }
+
+    /** saiku#2536 — bind (or re-arm) a record's content hash. Used by the guest
+     *  read path to bind a legacy unbound record on first use. No-op when the
+     *  id is unknown. */
+    public void bindContentSha256(String id, String sha256Hex) {
+        EmbedToken t = load(id);
+        if (t == null) {
+            return;
+        }
+        t.contentSha256 = sha256Hex;
+        t.contentChangedByOther = false;
+        persist(t);
+    }
+
+    /** saiku#2536 — repository save hook (called by
+     *  {@code SharedContentBindingListener} after every successful
+     *  {@code saveFile}). Cube-pinned kinds ({@code ai}, {@code authoring})
+     *  are skipped — their resourcePath names a cube, not a file. When the
+     *  writer is the minter, re-arm the binding to the freshly written
+     *  content; when anyone else wrote, poison the record. */
+    public void onContentSaved(String path, String newSha256Hex, String writer) {
+        if (path == null) {
+            return;
+        }
+        for (EmbedToken t : listAll()) {
+            if ("authoring".equals(t.resourceKind) || "ai".equals(t.resourceKind) || !path.equals(t.resourcePath)) {
+                continue;
+            }
+            if (Usernames.sameUser(writer, t.createdBy)) {
+                t.contentSha256 = newSha256Hex;
+                t.contentChangedByOther = false;
+                persist(t);
+            } else {
+                t.contentChangedByOther = true;
+                persist(t);
+                log.warn(
+                        "Embedded content {} was written by '{}' but its token was minted by '{}' — the token is"
+                                + " refused until re-minted (saiku#2536)",
+                        path,
+                        writer,
+                        t.createdBy);
+            }
+        }
     }
 
     /** Load a token by id, or null if the id is malformed / not found / unreadable. */

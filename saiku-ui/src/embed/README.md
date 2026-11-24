@@ -518,6 +518,15 @@ An embed with none of these set renders exactly as before (ECharts defaults).
   `.saikuapp` document as a unit — the doc + every page's tile query is
   served under that single pin, so a token for app A can't read app B or
   any arbitrary repository path.
+- **Content binding (saiku#2536).** A token (and a public grant) pins WHAT
+  was shared, not only its path: Saiku records a SHA-256 of the pinned file
+  at mint/grant time, and the guest read is refused with
+  `409 CONTENT_CHANGED` when the file no longer matches, or was written by
+  anyone other than the minter after minting — because guest queries
+  execute under the minter's data scope, so a collaborator's tile swap must
+  never be executed for them. The minter's own writes re-arm the binding
+  (iterating on an embedded dashboard keeps its embeds working); records
+  minted before this binding existed bind to current content on first read.
 - **RLS / PII stay fail-closed on every kind.** App-page tile queries run
   through the exact same guarded execution as dashboard tiles: forced
   row-level-security filters from the token are applied **last** and fail

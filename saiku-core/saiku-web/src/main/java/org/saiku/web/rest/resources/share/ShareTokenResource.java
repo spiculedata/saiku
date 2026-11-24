@@ -23,6 +23,7 @@ import org.saiku.service.datasource.DatasourceService;
 import org.saiku.service.user.UserService;
 import org.saiku.service.util.security.Usernames;
 import org.saiku.web.service.SessionService;
+import org.saiku.web.share.ContentBinding;
 import org.saiku.web.share.ShareToken;
 import org.saiku.web.share.ShareTokenStore;
 import org.slf4j.Logger;
@@ -134,7 +135,8 @@ public class ShareTokenResource {
                     .build();
         }
 
-        ShareToken t = store.create(path, username, roles, ttlHours * 3600_000L, body.label);
+        ShareToken t = store.create(
+                path, username, roles, ttlHours * 3600_000L, body.label, mintedContentSha256(path, username, roles));
         log.info(
                 "share-link minted token=<redacted:{}> dashboard={} by={} ttlHours={}",
                 t.token.length(),
@@ -205,6 +207,23 @@ public class ShareTokenResource {
     }
 
     /* --------------------------- helpers ---------------------------- */
+
+    /**
+     * saiku#2536 — the mint-time content binding: SHA-256 of the shared
+     * content as read under the minter's scope. The link is then bound to
+     * WHAT was shared, not only to its path — content written by anyone else
+     * is refused at the guest read instead of executed under the minter's
+     * roles. Unreadable content binds null (the record behaves like a legacy
+     * token: it binds on first use); the guest read would 404 anyway.
+     */
+    private String mintedContentSha256(String path, String username, List<String> roles) {
+        try {
+            return ContentBinding.sha256Hex(datasourceService.getFileData(path, username, roles));
+        } catch (RuntimeException e) {
+            log.warn("could not read {} at share mint — token starts unbound", path, e);
+            return null;
+        }
+    }
 
     private boolean stillCanGrant(String path, String username, List<String> roles) {
         try {

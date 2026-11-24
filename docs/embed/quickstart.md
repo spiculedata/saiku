@@ -132,8 +132,20 @@ saiku-embed {
    token at mint time are applied server-side and **fail closed**; PII
    redaction likewise. See the README's
    [security model](../../saiku-ui/src/embed/README.md#security-model).
+
+   **Content binding (saiku#2536).** The token also pins the content that
+   was minted: Saiku records a SHA-256 of the pinned file at mint time and
+   refuses the embed read with `409 CONTENT_CHANGED` if the file was later
+   written by anyone other than the minter — even if it was edited back —
+   because guest queries execute under the minter's data scope. Your own
+   edits as the minter re-arm the binding, so iterating on a shared query or
+   dashboard never breaks the embed. Tokens minted before this binding
+   existed bind to current content on their first read; re-mint (or revoke
+   + re-mint) to bind immediately.
 2. **Public grant (no token at all)** — for a public blog post, mark the
-   resource publicly embeddable server-side and omit `token`. See
+   resource publicly embeddable server-side and omit `token`. Public grants
+   carry the same content binding: a write by anyone other than the grantor
+   invalidates the grant until it is re-granted. See
    [public grants](../../saiku-ui/src/embed/README.md#server-side-public-grants).
 
 ## Cross-origin setup (CORS)

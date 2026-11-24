@@ -25,12 +25,17 @@ import org.saiku.service.olap.ai.AiSavedQueryRequest;
 import org.saiku.service.olap.ai.SavedQueryFilterScope;
 import org.saiku.service.olap.ai.audit.AiAuditEntry;
 import org.saiku.service.olap.ai.audit.AiAuditLog;
+import org.saiku.web.embed.EmbedPublicGrant;
+import org.saiku.web.embed.EmbedPublicRegistry;
+import org.saiku.web.embed.EmbedToken;
+import org.saiku.web.embed.EmbedTokenStore;
 import org.saiku.web.rest.resources.AiQueryResource;
 import org.saiku.web.rest.resources.dashboards.Dashboard;
 import org.saiku.web.rest.resources.dashboards.DashboardTile;
 import org.saiku.web.rest.resources.dashboards.TileQuery;
 import org.saiku.web.security.embed.EmbedAuthFilter.EmbedGuestDetails;
 import org.saiku.web.service.SessionService;
+import org.saiku.web.share.ContentBinding;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
@@ -71,6 +76,11 @@ public class EmbedViewResource {
     private AiQueryResource aiQueryResource;
     private AiAuditLog auditLog;
     private TilePluginRegistry pluginRegistry;
+    /** saiku#2536 — resolves the minted record a token / public grant names,
+     *  for the content binding (and the legacy first-use binding). */
+    private EmbedTokenStore tokenStore;
+
+    private EmbedPublicRegistry publicRegistry;
 
     public void setDatasourceService(DatasourceService s) {
         this.datasourceService = s;
@@ -90,6 +100,14 @@ public class EmbedViewResource {
 
     public void setPluginRegistry(TilePluginRegistry pluginRegistry) {
         this.pluginRegistry = pluginRegistry;
+    }
+
+    public void setTokenStore(EmbedTokenStore s) {
+        this.tokenStore = s;
+    }
+
+    public void setPublicRegistry(EmbedPublicRegistry r) {
+        this.publicRegistry = r;
     }
 
     /* ---------------------------- query ---------------------------- */
@@ -146,6 +164,13 @@ public class EmbedViewResource {
         // though mint validated it.
         if (g.resourcePath == null || !g.resourcePath.endsWith(".saiku")) {
             return invalid();
+        }
+        // saiku#2536: refuse when the saved query's content no longer matches the
+        // mint-time binding, or when a non-minter has written it since minting.
+        Response conflict = contentBindingError(g);
+        if (conflict != null) {
+            audit(g, "/saiku/api/embed/query", AiAuditEntry.OUTCOME_DENIED);
+            return withPolicyHeader(harden(conflict), g);
         }
         // saiku#1104: forced RLS filters from the token's JWT claims. They ride the saved query's
         // forcedFilters channel and executeSaved fails closed (RLS_UNAPPLIED 403) if any can't be
@@ -210,6 +235,10 @@ public class EmbedViewResource {
         if (g == null || !"dashboard".equals(g.resourceKind)) {
             return invalid();
         }
+        Response conflict = contentBindingError(g);
+        if (conflict != null) {
+            return withPolicyHeader(harden(conflict), g);
+        }
         Dashboard dash = loadDashboard(g);
         if (dash == null) {
             return harden(Response.status(Response.Status.NOT_FOUND)
@@ -236,6 +265,10 @@ public class EmbedViewResource {
         EmbedGuestDetails g = guest();
         if (g == null || !"dashboard".equals(g.resourceKind)) {
             return invalid();
+        }
+        Response conflict = contentBindingError(g);
+        if (conflict != null) {
+            return withPolicyHeader(harden(conflict), g);
         }
         Dashboard dash = loadDashboard(g);
         if (dash == null || dash.layout == null || dash.layout.tiles == null) {
@@ -280,6 +313,10 @@ public class EmbedViewResource {
                     .type(MediaType.APPLICATION_JSON)
                     .build());
         }
+        Response conflict = contentBindingError(g);
+        if (conflict != null) {
+            return withPolicyHeader(harden(conflict), g);
+        }
         try {
             JsonNode node = MAPPER.readTree(raw);
             if (node == null || !node.isObject()) {
@@ -319,6 +356,10 @@ public class EmbedViewResource {
         if (g == null || !"app".equals(g.resourceKind)) {
             return invalid();
         }
+        Response conflict = contentBindingError(g);
+        if (conflict != null) {
+            return withPolicyHeader(harden(conflict), g);
+        }
         final java.util.List<AiFilterSelection> filterOverrides =
                 overrides == null || overrides.filters == null ? java.util.Collections.emptyList() : overrides.filters;
         DashboardTile tile = findAppTile(g, pageId, tileId);
@@ -342,6 +383,10 @@ public class EmbedViewResource {
         EmbedGuestDetails g = guest();
         if (g == null || !"app".equals(g.resourceKind)) {
             return invalid();
+        }
+        Response conflict = contentBindingError(g);
+        if (conflict != null) {
+            return withPolicyHeader(harden(conflict), g);
         }
         return runTileMembers(g, findAppTile(g, pageId, tileId), q, limit, "/saiku/api/embed/app/tile/members");
     }
@@ -377,6 +422,10 @@ public class EmbedViewResource {
         // Reject a slug-invalid id at the door (the registry re-checks, but fail fast).
         if (pluginRegistry == null || !TilePluginParser.isValidId(pluginId)) {
             return pluginNotFound(pluginId);
+        }
+        Response conflict = contentBindingError(g);
+        if (conflict != null) {
+            return withPolicyHeader(harden(conflict), g);
         }
         // A guest may only fetch a plugin the PINNED app actually references — never an arbitrary
         // installed plugin. Scan the pinned app doc for a type:"custom" plugin tile using this id.
@@ -579,6 +628,10 @@ public class EmbedViewResource {
         EmbedGuestDetails g = guest();
         if (g == null || !"dashboard".equals(g.resourceKind)) {
             return invalid();
+        }
+        Response conflict = contentBindingError(g);
+        if (conflict != null) {
+            return withPolicyHeader(harden(conflict), g);
         }
         Dashboard dash = loadDashboard(g);
         if (dash == null || dash.layout == null || dash.layout.tiles == null) {
@@ -1015,6 +1068,109 @@ public class EmbedViewResource {
     private static boolean eqIgnoreCase(String x, String y) {
         if (x == null) return y == null;
         return x.equalsIgnoreCase(y);
+    }
+
+    /**
+     * saiku#2536 — enforce the mint-time content binding BEFORE anything from
+     * the pinned resource is served or executed. Reads the pinned file once
+     * (as the owner) and compares it against the record's binding:
+     * <ul>
+     *   <li>{@code contentChangedByOther} — a non-minter has saved the pinned
+     *       object since minting → 409, even if the bytes now match the
+     *       pinned hash again;</li>
+     *   <li>{@code contentSha256} set and the hash differs → 409;</li>
+     *   <li>{@code contentSha256} null (a legacy record, minted/granted before
+     *       the binding existed) → bind it to the current content once, then
+     *       serve;</li>
+     *   <li>no resolvable record at all (the embed-JWT path — the resource is
+     *       asserted by the embedder, not minted from a server record) →
+     *       nothing to bind; the path-pin remains the only scope there.</li>
+     * </ul>
+     * Returns null when the read may proceed (or when the content itself is
+     * unreadable — the caller's existing not-found handling applies).
+     */
+    private Response contentBindingError(EmbedGuestDetails g) {
+        String pinned = null;
+        boolean poisoned = false;
+        if (g.token != null && tokenStore != null) {
+            EmbedToken t = tokenStore.load(g.token);
+            if (t == null) {
+                // Not a store record: the embed-JWT path carries the raw
+                // compact JWT here, so load() never resolves. No server
+                // record exists to bind; the path pin from the JWT target is
+                // the only scope. (A record revoked between the filter and
+                // this point also lands here — same millisecond window the
+                // pre-#2536 code had; the next request is refused at the
+                // filter.) Proceed.
+                return null;
+            }
+            poisoned = t.contentChangedByOther;
+            pinned = t.contentSha256;
+            if (pinned == null && !poisoned) {
+                // Legacy unbound token — bind it to the content this read sees.
+                String legacyRaw = readPinnedRaw(g);
+                if (legacyRaw == null) {
+                    return null; // unreadable → the caller's not-found handling applies.
+                }
+                pinned = ContentBinding.sha256Hex(legacyRaw);
+                tokenStore.bindContentSha256(g.token, pinned);
+                return null;
+            }
+        } else if (g.token == null && publicRegistry != null) {
+            // Public-grant read — the grant is the record.
+            EmbedPublicGrant grant = publicRegistry.lookup(g.resourceKind, g.resourcePath);
+            if (grant == null) {
+                // The filter admitted this read via the grant a moment ago; a
+                // concurrent revoke must not let the read complete anyway.
+                return ContentBinding.conflict();
+            }
+            poisoned = grant.contentChangedByOther;
+            pinned = grant.contentSha256;
+            if (pinned == null && !poisoned) {
+                // Legacy unbound grant — bind it to the content this read sees.
+                String legacyRaw = readPinnedRaw(g);
+                if (legacyRaw == null) {
+                    return null; // unreadable → the caller's not-found handling applies.
+                }
+                pinned = ContentBinding.sha256Hex(legacyRaw);
+                publicRegistry.bindContentSha256(g.resourceKind, g.resourcePath, pinned);
+                return null;
+            }
+        } else {
+            // No store for the token and no registry wired — nothing to bind
+            // against; the path pin remains the only scope. Proceed.
+            return null;
+        }
+        if (poisoned) {
+            log.warn(
+                    "refusing embed read of {} — content was written by someone other than the minter (saiku#2536)",
+                    g.resourcePath);
+            return ContentBinding.conflict();
+        }
+        String raw = readPinnedRaw(g);
+        if (raw == null) {
+            return null; // unreadable → the caller's not-found handling applies.
+        }
+        if (!ContentBinding.matches(pinned, raw)) {
+            log.warn(
+                    "refusing embed read of {} — content no longer matches the minted binding (saiku#2536)",
+                    g.resourcePath);
+            return ContentBinding.conflict();
+        }
+        return null;
+    }
+
+    /** The pinned resource's raw content, as the owner — by suffix. Null when
+     *  the path isn't a content-bearing suffix or the read fails. */
+    private String readPinnedRaw(EmbedGuestDetails g) {
+        if (g.resourcePath == null) {
+            return null;
+        }
+        try {
+            return datasourceService.getFileData(g.resourcePath, g.ownerUser, g.ownerRoles);
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     /**

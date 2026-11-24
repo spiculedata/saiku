@@ -28,6 +28,7 @@ import org.saiku.web.embed.EmbedPublicRegistry;
 import org.saiku.web.embed.EmbedToken;
 import org.saiku.web.embed.EmbedTokenStore;
 import org.saiku.web.service.SessionService;
+import org.saiku.web.share.ContentBinding;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -188,7 +189,15 @@ public class EmbedTokenResource {
             }
         }
         EmbedToken t = tokenStore.create(
-                kind, path, username, roles, ttlHours * 3600_000L, body.label, redaction, body.tenantId);
+                kind,
+                path,
+                username,
+                roles,
+                ttlHours * 3600_000L,
+                body.label,
+                redaction,
+                body.tenantId,
+                mintedContentSha256(kind, path, username, roles));
         log.info(
                 "embed-token minted token=<redacted:{}> kind={} path={} by={} ttlHours={} redaction={}",
                 t.token.length(),
@@ -347,7 +356,8 @@ public class EmbedTokenResource {
                     .build();
         }
 
-        EmbedPublicGrant g = publicRegistry.grant(kind, path, username, roles, body.label);
+        EmbedPublicGrant g = publicRegistry.grant(
+                kind, path, username, roles, body.label, mintedContentSha256(kind, path, username, roles));
         log.info("embed-public granted kind={} path={} by={}", kind, path, username);
         return Response.ok(Map.of(
                         "status", "OK",
@@ -405,6 +415,27 @@ public class EmbedTokenResource {
     }
 
     /* --------------------------- helpers ---------------------------- */
+
+    /**
+     * saiku#2536 — the mint-time content binding: SHA-256 of the pinned
+     * content as read under the minter's scope. The token/grant is then bound
+     * to WHAT was shared, not only to its path — content written by anyone
+     * else is refused at the guest read instead of executed under the
+     * minter's roles. Cube-pinned kinds ({@code ai}, {@code authoring}) have
+     * no file content to bind; unreadable content binds null (the record
+     * behaves like a legacy one: it binds on first use).
+     */
+    private String mintedContentSha256(String kind, String path, String username, List<String> roles) {
+        if ("ai".equals(kind) || "authoring".equals(kind)) {
+            return null;
+        }
+        try {
+            return ContentBinding.sha256Hex(datasourceService.getFileData(path, username, roles));
+        } catch (RuntimeException e) {
+            log.warn("could not read {} at embed mint — record starts unbound", path, e);
+            return null;
+        }
+    }
 
     /** Common kind+path validation for mint, grant, revoke. */
     private static Response validateKindAndPath(String kind, String path) {

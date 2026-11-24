@@ -54,6 +54,20 @@ public class ShareToken {
     /** Optional human label shown in the owner's share list. */
     public String label;
 
+    /** saiku#2536 — lowercase SHA-256 hex of the shared content (as read
+     *  under the minter's scope) at mint time. Binds the link to WHAT was
+     *  shared, not only to its path: a later edit by a collaborator changes
+     *  the hash and the guest read is refused instead of executing the new
+     *  content under the minter's roles. Null on tokens minted before this
+     *  binding existed — those bind to current content on first use. */
+    public String contentSha256;
+
+    /** saiku#2536 — set once a user other than the minter has saved the
+     *  shared content since minting. Refuses the guest read even if the
+     *  bytes were later restored to match the pinned hash: the link must be
+     *  re-minted. Cleared only by the minter writing again. */
+    public boolean contentChangedByOther;
+
     public ShareToken() {}
 
     /** True when the token is past its expiry relative to {@code nowMs}. */

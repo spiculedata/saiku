@@ -230,6 +230,23 @@ public class DatasourceServiceTest {
         svc.saveFile("body", "/repo/file.saiku", "tom", List.of("R"));
         assertEquals("body", manager.savedFiles.get("/repo/file.saiku"));
 
+        // saiku#2536 — the save-file listener fires with path/content/writer,
+        // and a failing listener never fails the save.
+        List<String> observed = new ArrayList<>();
+        List<String> blows = new ArrayList<>();
+        svc.setRepositoryFileListeners(java.util.List.of(
+                (path, content, writer) -> observed.add(path + "/" + content + "/" + writer),
+                (path, content, writer) -> {
+                    blows.add(path);
+                    throw new RuntimeException("listener boom");
+                }));
+        svc.saveFile("content", "d.saikudash", "alice", List.of("R"));
+        assertEquals(1, observed.size());
+        assertEquals("d.saikudash/content/alice", observed.get(0));
+        assertEquals(1, blows.size());
+        // The second listener threw, yet the file was saved.
+        assertEquals("content", manager.savedFiles.get("d.saikudash"));
+
         svc.removeFile("/repo/file.saiku", "tom", List.of("R"));
         assertTrue(manager.removedFiles.contains("/repo/file.saiku"));
 

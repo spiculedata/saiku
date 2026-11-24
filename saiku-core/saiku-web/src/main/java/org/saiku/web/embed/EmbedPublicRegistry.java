@@ -124,9 +124,24 @@ public class EmbedPublicRegistry {
 
     /** Mark a resource publicly embeddable. Idempotent — repeating a grant
      *  overwrites the owner snapshot (useful when the original grantor's
-     *  roles change and they want public reads to track the new scope). */
+     *  roles change and they want public reads to track the new scope).
+     *  Legacy overload: no content binding (the grant binds to current
+     *  content on first use). */
     public synchronized EmbedPublicGrant grant(
             String resourceKind, String resourcePath, String grantedBy, List<String> ownerRoles, String label) {
+        return grant(resourceKind, resourcePath, grantedBy, ownerRoles, label, null);
+    }
+
+    /** saiku#2536 — grant with the mint-time content binding: {@code
+     *  contentSha256} is the hash of the granted content as read under the
+     *  grantor's scope. */
+    public synchronized EmbedPublicGrant grant(
+            String resourceKind,
+            String resourcePath,
+            String grantedBy,
+            List<String> ownerRoles,
+            String label,
+            String contentSha256) {
         EmbedPublicGrant g = new EmbedPublicGrant();
         g.resourceKind = resourceKind;
         g.resourcePath = resourcePath;
@@ -134,9 +149,49 @@ public class EmbedPublicRegistry {
         g.ownerRolesSnapshot = ownerRoles == null ? List.of() : new ArrayList<>(ownerRoles);
         g.grantedAt = System.currentTimeMillis();
         g.label = label;
+        g.contentSha256 = contentSha256;
         grants.put(key(resourceKind, resourcePath), g);
         persist();
         return g;
+    }
+
+    /** saiku#2536 — bind (or re-arm) a grant's content hash. Used by the guest
+     *  read path to bind a legacy unbound grant on first use. No-op when no
+     *  grant exists for the kind+path. */
+    public synchronized void bindContentSha256(String resourceKind, String resourcePath, String sha256Hex) {
+        EmbedPublicGrant g = lookup(resourceKind, resourcePath);
+        if (g == null) {
+            return;
+        }
+        g.contentSha256 = sha256Hex;
+        g.contentChangedByOther = false;
+        persist();
+    }
+
+    /** saiku#2536 — repository save hook (called by
+     *  {@code SharedContentBindingListener} after every successful
+     *  {@code saveFile}). When the writer is the grantor, re-arm the binding
+     *  to the freshly written content; when anyone else wrote, poison the
+     *  grant. */
+    public synchronized void onContentSaved(String resourceKind, String path, String newSha256Hex, String writer) {
+        EmbedPublicGrant g = lookup(resourceKind, path);
+        if (g == null) {
+            return;
+        }
+        if (Usernames.sameUser(writer, g.grantedBy)) {
+            g.contentSha256 = newSha256Hex;
+            g.contentChangedByOther = false;
+            persist();
+        } else {
+            g.contentChangedByOther = true;
+            persist();
+            log.warn(
+                    "Publicly embedded content {} was written by '{}' but its grant was made by '{}' — the grant"
+                            + " is refused until re-granted (saiku#2536)",
+                    path,
+                    writer,
+                    g.grantedBy);
+        }
     }
 
     /** Remove the public grant. Returns true if a grant existed and was

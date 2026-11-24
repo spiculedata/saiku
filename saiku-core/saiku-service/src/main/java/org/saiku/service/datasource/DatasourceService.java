@@ -20,6 +20,7 @@ import java.io.ObjectInputStream;
 import java.io.Serializable;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import org.saiku.database.dto.MondrianSchema;
 import org.saiku.datasources.connection.IConnectionManager;
 import org.saiku.datasources.datasource.SaikuDatasource;
@@ -32,9 +33,17 @@ public class DatasourceService implements Serializable {
 
     private static final long serialVersionUID = -4407446633148181669L;
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(DatasourceService.class);
+
     private transient IDatasourceManager datasources;
 
     private IConnectionManager connectionManager;
+
+    /** saiku#2536 — callbacks fired after every successful repository file
+     *  save. Copy-on-write so a listener can be added while saves are in
+     *  flight. Listener failures are logged, never propagated to the saver. */
+    private final transient CopyOnWriteArrayList<RepositoryFileListener> repositoryFileListeners =
+            new CopyOnWriteArrayList<>();
 
     public void setConnectionManager(IConnectionManager ic) {
         connectionManager = ic;
@@ -214,7 +223,29 @@ public class DatasourceService implements Serializable {
     }
 
     public String saveFile(String content, String path, String name, List<String> roles) {
-        return datasources.saveFile(path, content, name, roles);
+        String resp = datasources.saveFile(path, content, name, roles);
+        notifyFileSaved(path, content, name);
+        return resp;
+    }
+
+    /** saiku#2536 — setter for Spring wiring
+     *  ({@code <property name="repositoryFileListeners">}). */
+    public void setRepositoryFileListeners(List<RepositoryFileListener> listeners) {
+        if (listeners != null) {
+            repositoryFileListeners.addAll(listeners);
+        }
+    }
+
+    /** Fire the saiku#2536 save listeners. A listener failure never fails the
+     *  save that triggered it. */
+    private void notifyFileSaved(String path, String content, String writer) {
+        for (RepositoryFileListener l : repositoryFileListeners) {
+            try {
+                l.onFileSaved(path, content, writer);
+            } catch (RuntimeException e) {
+                log.warn("RepositoryFileListener {} failed after saving {} by {}", l, path, writer, e);
+            }
+        }
     }
 
     public String removeFile(String path, String name, List<String> roles) {

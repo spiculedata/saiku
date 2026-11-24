@@ -75,9 +75,24 @@ public class ShareTokenStore {
         this.dir = d;
     }
 
-    /** Mint a new token for {@code dashboardPath}, owned by {@code createdBy}. */
+    /** Mint a new token for {@code dashboardPath}, owned by {@code createdBy}.
+     *  Legacy overload: no content binding (the token binds to current content
+     *  on first use). */
     public ShareToken create(
             String dashboardPath, String createdBy, List<String> ownerRoles, long ttlMillis, String label) {
+        return create(dashboardPath, createdBy, ownerRoles, ttlMillis, label, null);
+    }
+
+    /** saiku#2536 — mint with the mint-time content binding: {@code
+     *  contentSha256} is the hash of the shared content as read under the
+     *  minter's scope. */
+    public ShareToken create(
+            String dashboardPath,
+            String createdBy,
+            List<String> ownerRoles,
+            long ttlMillis,
+            String label,
+            String contentSha256) {
         ShareToken t = new ShareToken();
         t.token = generateId();
         t.dashboardPath = dashboardPath;
@@ -87,8 +102,54 @@ public class ShareTokenStore {
         t.expiresAt = t.createdAt + ttlMillis;
         t.revoked = false;
         t.label = label;
+        t.contentSha256 = contentSha256;
         persist(t);
         return t;
+    }
+
+    /** saiku#2536 — bind (or re-arm) a record's content hash. Used by the guest
+     *  read path to bind a legacy unbound record on first use. No-op when the
+     *  id is unknown. */
+    public void bindContentSha256(String id, String sha256Hex) {
+        ShareToken t = load(id);
+        if (t == null) {
+            return;
+        }
+        t.contentSha256 = sha256Hex;
+        t.contentChangedByOther = false;
+        persist(t);
+    }
+
+    /** saiku#2536 — repository save hook (called by
+     *  {@code SharedContentBindingListener} after every successful
+     *  {@code saveFile}). When the writer is the minter, re-arm the binding to
+     *  the freshly written content — the link keeps serving the owner's own
+     *  edits. When anyone else wrote, poison the record: the guest read is
+     *  refused until the link is re-minted, even if the bytes are later
+     *  restored. */
+    public void onContentSaved(String path, String newSha256Hex, String writer) {
+        if (path == null) {
+            return;
+        }
+        for (ShareToken t : listAll()) {
+            if (!path.equals(t.dashboardPath)) {
+                continue;
+            }
+            if (Usernames.sameUser(writer, t.createdBy)) {
+                t.contentSha256 = newSha256Hex;
+                t.contentChangedByOther = false;
+                persist(t);
+            } else {
+                t.contentChangedByOther = true;
+                persist(t);
+                log.warn(
+                        "Shared content {} was written by '{}' but its share link was minted by '{}' —"
+                                + " the link is refused until re-minted (saiku#2536)",
+                        path,
+                        writer,
+                        t.createdBy);
+            }
+        }
     }
 
     /** Load a token by id, or null if the id is malformed / not found / unreadable. */

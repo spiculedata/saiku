@@ -43,5 +43,21 @@ public class EmbedPublicGrant {
     /** Optional human label shown in the owner's public-grants list. */
     public String label;
 
+    /** saiku#2536 — lowercase SHA-256 hex of the granted content (as read
+     *  under the grantor's scope) at grant time. Binds the grant to WHAT
+     *  was shared, not only to its path: a later edit by a collaborator
+     *  changes the hash and the anonymous read is refused instead of
+     *  executing the new content under the grantor's roles. Null on grants
+     *  made before this binding existed — those bind to current content on
+     *  first use. */
+    public String contentSha256;
+
+    /** saiku#2536 — set once a user other than the grantor has saved the
+     *  granted content since the grant was made. Refuses the public read
+     *  even if the bytes were later restored to match the pinned hash: the
+     *  grant must be revoked and re-granted. Cleared only by the grantor
+     *  writing again. */
+    public boolean contentChangedByOther;
+
     public EmbedPublicGrant() {}
 }
