@@ -428,7 +428,11 @@ public class McpResourceTest {
         AiAuditLog auditLog = wireAuditLog();
         String sid = initSession();
         stubAi.executeResponse = Response.status(400)
-                .entity(Map.of("error", "validation failed"))
+                .entity(Map.of(
+                        "status", "VALIDATION_ERROR",
+                        "error", "validation failed",
+                        "field", "measures[].name",
+                        "available", List.of("Unit Sales")))
                 .build();
 
         ObjectNode args = MAPPER.createObjectNode();
@@ -446,6 +450,19 @@ public class McpResourceTest {
                 "the VALIDATION_ERROR envelope reaches the agent",
                 "validation failed",
                 body.path("result").path("structuredContent").path("error").asText());
+        assertEquals(
+                "VALIDATION_ERROR",
+                body.path("result").path("structuredContent").path("status").asText());
+        assertEquals(
+                "measures[].name",
+                body.path("result").path("structuredContent").path("field").asText());
+        assertEquals(
+                "Unit Sales",
+                body.path("result")
+                        .path("structuredContent")
+                        .path("available")
+                        .path(0)
+                        .asText());
 
         List<AiAuditEntry> entries = auditLog.recent(10, 0, null, null);
         assertEquals(1, entries.size());

@@ -24,6 +24,10 @@ export interface PlatformCapabilities {
 	demoAnalytics?: { enabled: boolean; endpoint: string };
 	/** saiku#2577: show the top-bar GitHub Sponsors link (operator opt-out via SAIKU_SPONSOR_LINK=false). */
 	sponsorLink?: boolean;
+	/** saiku#2579: the launcher's update check rides on the same probe. `available` is true only
+	 *  when the check ran (telemetry enabled) and found a release newer than the running build;
+	 *  `latestVersion` is null whenever available is false — no check, no claim. */
+	update?: { available: boolean; latestVersion: string | null };
 }
 
 class PlatformStore {
@@ -31,6 +35,9 @@ class PlatformStore {
 	/** Version info from /rest/saiku/info + /rest/saiku/admin/version. */
 	version = $state<string | null>(null);
 	newVersionAvailable = $state<boolean>(false);
+	/** saiku#2579: the newest release the server's update check found, or null when it hasn't
+	 *  run / found nothing / is opted out. Drives the upgrade banner's version + dismiss key. */
+	latestVersion = $state<string | null>(null);
 	/** Capabilities probe — populated lazily by loadCapabilities. Null
 	 *  until the first successful fetch so callers can show a loading state. */
 	capabilities = $state<PlatformCapabilities | null>(null);
@@ -77,6 +84,11 @@ class PlatformStore {
 			});
 			if (res.ok) {
 				this.capabilities = (await res.json()) as PlatformCapabilities;
+				// saiku#2579: the update check rides on the same probe — populate the upgrade
+				// banner's flags. Reset on every probe so a stale claim never survives one.
+				const upd = this.capabilities.update;
+				this.newVersionAvailable = upd?.available === true;
+				this.latestVersion = upd?.available === true ? (upd.latestVersion ?? null) : null;
 			}
 		} catch {
 			// Capability probe failures are non-fatal — the rest of the UI
