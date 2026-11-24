@@ -35,6 +35,16 @@ import org.slf4j.LoggerFactory;
  * ANTHROPIC_API_KEY} env — the same upstream credentials the ask feature
  * already uses.
  *
+ * <p>saiku#2542: the transport speaks the Anthropic Messages wire contract
+ * (tool-forced JSON, {@code x-api-key} + {@code anthropic-version} headers),
+ * so it may only be pointed at an Anthropic endpoint. When the configured
+ * ask provider is NOT Anthropic, the service refuses: the configured ask
+ * API key belongs to that other provider and would otherwise be handed to
+ * whatever {@code saiku.ai.ask.endpoint} names — with the default endpoint
+ * being Anthropic, an OpenAI key would go to api.anthropic.com. A blank
+ * provider keeps the legacy posture (this slice predates the multi-provider
+ * ask config and its endpoint default is already Anthropic).
+ *
  * <p>Never throws: transport, non-2xx, and parse failures all return a
  * {@link DescribeQueryResult#degraded(String)} — callers map that to a clean
  * HTTP error rather than propagating an upstream stack trace.
@@ -61,27 +71,51 @@ public class TileDescribeService implements TileDescriber {
     private final String apiKey;
     private final String model;
     private final String endpoint;
+    private final String provider;
     private final Duration timeout;
     private final HttpClient http;
 
+    /** Back-compatible ctor (pre-#2542 wiring): no explicit provider — Anthropic wire format. */
     public TileDescribeService(String apiKey, String model, String endpoint, int timeoutSeconds) {
-        this(apiKey, model, endpoint, timeoutSeconds, HttpClient.newHttpClient());
+        this(apiKey, model, endpoint, timeoutSeconds, null, HttpClient.newHttpClient());
+    }
+
+    /** Wiring ctor: the provider the ask feature is configured with (blank/null = legacy Anthropic). */
+    public TileDescribeService(String apiKey, String model, String endpoint, int timeoutSeconds, String provider) {
+        this(apiKey, model, endpoint, timeoutSeconds, provider, HttpClient.newHttpClient());
     }
 
     /** Package-visible ctor for tests that need to inject a fake client. */
     TileDescribeService(String apiKey, String model, String endpoint, int timeoutSeconds, HttpClient http) {
+        this(apiKey, model, endpoint, timeoutSeconds, null, http);
+    }
+
+    private TileDescribeService(
+            String apiKey, String model, String endpoint, int timeoutSeconds, String provider, HttpClient http) {
         this.apiKey = notBlank(apiKey) ? apiKey.trim() : System.getenv("ANTHROPIC_API_KEY");
         this.model = notBlank(model) ? model.trim() : DEFAULT_MODEL;
         this.endpoint = notBlank(endpoint) ? endpoint.trim() : DEFAULT_ENDPOINT;
+        this.provider = notBlank(provider) ? provider.trim() : "anthropic";
         int t = timeoutSeconds <= 0 ? 60 : Math.min(Math.max(timeoutSeconds, 5), 900);
         this.timeout = Duration.ofSeconds(t);
         this.http = http;
     }
 
-    /** True only when an API key is configured — callers should 503 when this is false. */
+    /**
+     * True when this service's Anthropic Messages wire format is what the configured ask provider
+     * speaks (saiku#2542). Only exact Anthropic — anything else (openai, azure-openai, noop) uses
+     * a different endpoint contract, and sending it this service's Anthropic-shaped request plus
+     * the ask key would leak that key to the wrong vendor.
+     */
+    private boolean providerIsAnthropic() {
+        return "anthropic".equalsIgnoreCase(provider);
+    }
+
+    /** True only when an API key is configured AND the configured provider speaks this wire format
+     * — callers should 503 when this is false. */
     @Override
     public boolean isConfigured() {
-        return notBlank(apiKey);
+        return notBlank(apiKey) && providerIsAnthropic();
     }
 
     /**
@@ -93,6 +127,10 @@ public class TileDescribeService implements TileDescriber {
     @Override
     public DescribeQueryResult describe(String querySummaryJson) {
         if (!isConfigured()) {
+            if (!providerIsAnthropic()) {
+                return DescribeQueryResult.degraded(
+                        "describe-query requires the Anthropic provider; configured: " + provider);
+            }
             return DescribeQueryResult.degraded("AI describe-query is not configured (no API key)");
         }
         try {

@@ -17,6 +17,7 @@ import org.saiku.service.datasource.DatasourceService;
 import org.saiku.service.export.destination.ExportArtifact;
 import org.saiku.service.export.destination.ExportDeliveryException;
 import org.saiku.service.olap.OlapDiscoverService;
+import org.saiku.service.olap.QueryCacheIdentityContext;
 import org.saiku.service.olap.QueryCoalescer;
 import org.saiku.service.olap.ThinQueryService;
 import org.saiku.service.ossie.OssieQueryService;
@@ -56,14 +57,20 @@ public final class SavedQueryCsvArtifactProducer implements ExportArtifactProduc
     private final DatasourceService datasourceService;
     private final ThinQueryServiceFactory thinQueryServiceFactory;
 
-    /** Production constructor — the collaborators {@code thinQueryBean} is wired with. */
+    /**
+     * Production constructor — the collaborators {@code thinQueryBean} is wired with.
+     * {@code identityContext} (saiku#2538) scopes the shared result caches per caller — required
+     * on pass-through datasources so one owner's scheduled export can never read another owner's
+     * cached cellset. Nullable, like the other optional collaborators.
+     */
     public SavedQueryCsvArtifactProducer(
             DatasourceService datasourceService,
             OlapDiscoverService olapDiscoverService,
             SaikuQueryCache queryCache,
             UserService userService,
             QueryCoalescer queryCoalescer,
-            OssieQueryService ossieQueryService) {
+            OssieQueryService ossieQueryService,
+            QueryCacheIdentityContext identityContext) {
         this(datasourceService, () -> {
             ThinQueryService tqs = new ThinQueryService();
             tqs.setOlapDiscoverService(olapDiscoverService);
@@ -71,6 +78,8 @@ public final class SavedQueryCsvArtifactProducer implements ExportArtifactProduc
             tqs.setUserService(userService);
             tqs.setQueryCoalescer(queryCoalescer);
             tqs.setOssieQueryService(ossieQueryService);
+            // saiku#2538: the shared result caches must be per caller on pass-through datasources.
+            tqs.setIdentityContext(identityContext);
             return tqs;
         });
     }

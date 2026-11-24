@@ -43,9 +43,12 @@ public final class WebhookUrlValidator {
 
     private WebhookUrlValidator() {}
 
-    /** Seam so tests can validate resolving-range logic without live DNS. */
+    /**
+     * Seam so other gates (outbound MCP registration, saiku#2542) and tests can validate
+     * resolving-range logic without live DNS.
+     */
     @FunctionalInterface
-    interface HostResolver {
+    public interface HostResolver {
         InetAddress[] resolve(String host) throws UnknownHostException;
     }
 
@@ -76,13 +79,24 @@ public final class WebhookUrlValidator {
         return validateResolved(url, DNS);
     }
 
-    /** As {@link #validate(String)} but with a pluggable resolver (visible for tests). */
-    static URI validate(String url, HostResolver resolver) {
+    /**
+     * As {@link #validate(String)} but with a pluggable resolver — public so the outbound MCP
+     * registration gate (saiku#2542) applies the SAME rule set rather than re-deriving it.
+     */
+    public static URI validate(String url, HostResolver resolver) {
         return validateResolved(url, resolver).uri();
     }
 
-    /** As {@link #validateResolved(String)} but with a pluggable resolver (visible for tests). */
-    static ValidatedTarget validateResolved(String url, HostResolver resolver) {
+    /**
+     * saiku#2542 (review of PR #2580): every check that needs NO DNS — https scheme, no
+     * userinfo, host present, non-canonical numeric IPv4 encoding, blocked internal names,
+     * and the byte-level range check on IP literals. Returns the parsed target; the
+     * returned {@code addresses} is non-null ONLY for an IP literal (which never needs
+     * DNS) and {@code null} when the host still needs resolution. Registration-time gates
+     * use this so a parse failure means the config is wrong, not that DNS was briefly
+     * down; the resolve-and-range check re-runs immediately before every send.
+     */
+    public static ValidatedTarget validateSyntax(String url) {
         if (url == null || url.isBlank()) {
             throw new IllegalArgumentException("webhook url is required");
         }
@@ -131,6 +145,18 @@ public final class WebhookUrlValidator {
             }
             return new ValidatedTarget(uri, new InetAddress[] {literal});
         }
+        return new ValidatedTarget(uri, null);
+    }
+
+    /** As {@link #validateResolved(String)} but with a pluggable resolver (also for tests). */
+    public static ValidatedTarget validateResolved(String url, HostResolver resolver) {
+        ValidatedTarget syntax = validateSyntax(url);
+        if (syntax.addresses() != null) {
+            // An IP literal never needs DNS — the byte-level check already ran in validateSyntax.
+            return syntax;
+        }
+        URI uri = syntax.uri();
+        String host = uri.getHost();
         // Resolve and reject any address in a loopback / link-local / site-local / private / wildcard range.
         InetAddress[] addresses;
         try {
