@@ -14,6 +14,7 @@ import org.saiku.web.security.RequestPaths;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
@@ -99,11 +100,18 @@ public class OAuthBearerAuthenticationFilter extends OncePerRequestFilter {
 
         List<GrantedAuthority> authorities = roleMapper.mapAuthorities(jwt);
         JwtAuthenticationToken authentication = new JwtAuthenticationToken(jwt, authorities, jwt.getSubject());
+        // saiku#2520: the request may also carry a logged-in session cookie, so the context
+        // handed back by getContext() may be the object stored in the HttpSession. Swap in a
+        // fresh context object instead of mutating the loaded one, and restore the prior
+        // object afterwards — the bearer identity stays strictly request-scoped.
+        SecurityContext priorContext = SecurityContextHolder.getContext();
+        SecurityContext bearerContext = SecurityContextHolder.createEmptyContext();
+        bearerContext.setAuthentication(authentication);
+        SecurityContextHolder.setContext(bearerContext);
         try {
-            SecurityContextHolder.getContext().setAuthentication(authentication);
             chain.doFilter(request, response);
         } finally {
-            SecurityContextHolder.clearContext();
+            SecurityContextHolder.setContext(priorContext);
         }
     }
 

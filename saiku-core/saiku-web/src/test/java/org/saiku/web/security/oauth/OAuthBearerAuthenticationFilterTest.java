@@ -7,6 +7,7 @@ package org.saiku.web.security.oauth;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 import com.nimbusds.jose.JWSAlgorithm;
@@ -30,7 +31,10 @@ import org.junit.Test;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
@@ -199,6 +203,42 @@ public class OAuthBearerAuthenticationFilterTest {
         assertNull(
                 "context must not leak past the request",
                 SecurityContextHolder.getContext().getAuthentication());
+    }
+
+    /** saiku#2520 — the bearer header rides on a request that also carries a logged-in
+     *  session cookie, so the thread's SecurityContext is the object stored in the HttpSession.
+     *  The bearer swap must leave that object untouched while the chain sees the JWT identity. */
+    @Test
+    public void valid_bearer_sessionBackedContext_isLeftUntouched() throws Exception {
+        Authentication bobsLogin =
+                new UsernamePasswordAuthenticationToken("bob", "N/A", List.of(new SimpleGrantedAuthority("ROLE_USER")));
+        SecurityContext sessionContext = SecurityContextHolder.createEmptyContext();
+        sessionContext.setAuthentication(bobsLogin);
+        SecurityContextHolder.setContext(sessionContext);
+        Authentication before = sessionContext.getAuthentication();
+
+        MockHttpServletRequest req = new MockHttpServletRequest("POST", MCP_PATH);
+        req.addHeader(
+                "Authorization",
+                "Bearer "
+                        + signedToken(
+                                "analyst-usa",
+                                List.of("saiku-admin"),
+                                Instant.now().plusSeconds(600)));
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        ContextCapturingChain chain = new ContextCapturingChain();
+
+        try {
+            enabledFilter().doFilter(req, resp, chain);
+
+            assertTrue(chain.called);
+            assertEquals("analyst-usa", chain.capturedAuth.getName());
+            assertSame(sessionContext, SecurityContextHolder.getContext());
+            assertSame(before, sessionContext.getAuthentication());
+            assertEquals("bob", sessionContext.getAuthentication().getPrincipal());
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
     }
 
     private static class TrackingChain extends MockFilterChain {
