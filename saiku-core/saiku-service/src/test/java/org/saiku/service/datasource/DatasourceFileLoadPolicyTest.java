@@ -6,6 +6,7 @@ package org.saiku.service.datasource;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -87,27 +88,30 @@ public class DatasourceFileLoadPolicyTest {
     }
 
     @Test
-    public void descriptorInAUserHome_isDiscoveredByTheLoader() throws Exception {
-        // Documents WHY the write-side block matters: the loader does not confine itself to
-        // /datasources — anything ending in .sds anywhere under the datadir is a datasource.
+    public void descriptorInAUserHome_isNotLoadedAnymore() throws Exception {
+        // saiku#2521: the loader is confined to the /datasources tree. A descriptor planted in a
+        // user's writable home — however it got there — is no longer listed at start-up or on an
+        // admin-role discover/refresh; it is dead weight on disk.
         writeSds(
                 new File(datadir, "unknown/homes/bob/evil.sds"),
                 "evil",
                 "mondrian.olap4j.MondrianOlap4jDriver",
                 mondrian(PG_GADGET));
-        boolean found = false;
         for (DataSource d : frm.getAllDataSources()) {
             if ("evil".equals(d.getName())) {
-                found = true;
+                fail("a *.sds outside /datasources must NOT be listed by getAllDataSources()");
             }
         }
-        assertTrue("a *.sds in /homes/bob must be listed by getAllDataSources()", found);
+        assertNull("a descriptor in /homes/bob must not be loaded as a datasource", rdm.getDatasource("evil"));
     }
 
     @Test
     public void gadgetDescriptorLoadedFromDisk_isNeverConnected() throws Exception {
+        // A descriptor that reached the /datasources tree by any route short of the admin write
+        // path is still loaded (validation lives at connect time, not load time) — and is refused
+        // at that chokepoint.
         writeSds(
-                new File(datadir, "unknown/homes/bob/evil.sds"),
+                new File(datadir, "unknown/datasources/evil.sds"),
                 "evil",
                 "mondrian.olap4j.MondrianOlap4jDriver",
                 mondrian(PG_GADGET));

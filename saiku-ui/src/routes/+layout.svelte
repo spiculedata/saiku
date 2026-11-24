@@ -10,6 +10,7 @@
 	import { presentation } from '$lib/stores/presentation.svelte';
 	import ToastStack from '$lib/components/ToastStack.svelte';
 	import UpgradeBanner from '$lib/components/UpgradeBanner.svelte';
+	import SponsorLink from '$lib/components/SponsorLink.svelte';
 	import {
 		LogOut,
 		Shield,
@@ -240,6 +241,7 @@
 							<item.icon size={14} /><span>{item.label}</span>
 						</a>
 					{/each}
+					<SponsorLink />
 					<Button
 						variant="outline"
 						size="sm"

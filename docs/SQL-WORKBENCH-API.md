@@ -27,9 +27,12 @@ banner without a second `COUNT(*)` round-trip.
 ## Read-only enforcement
 
 Every submitted statement passes through `ReadOnlySqlGuard` before a
-connection is even opened. The guard is **parse-enforced** (saiku#2318): the
-statement is parsed with Apache Calcite and the parse tree is walked, so the
-leading keyword can no longer lie:
+connection is even opened. The guard is **parse-enforced** (saiku#2318) and
+**parses exactly the text that is executed** (saiku#2522): the statement is
+parsed with Apache Calcite from the raw submitted string — never a
+comment-stripped copy, which could silently disagree with the engine about
+where a comment ends — so the leading keyword can no longer lie, and neither
+can the text around it:
 
 - only a top-level pure query is accepted — `SELECT`, set operations,
   `VALUES`, `TABLE`, `DESCRIBE`, optionally wrapped in `WITH` or `ORDER BY`;
@@ -41,12 +44,27 @@ leading keyword can no longer lie:
   H2 `FILE_WRITE`/`FILE_READ`/`CSVREAD`/`CSVWRITE`/`LINK_SCHEMA`, DuckDB
   `read_csv`/`read_json`/`read_text`/`read_xlsx`/`read_blob`/`query()`,
   MySQL `LOAD_FILE`;
+- **JDBC escapes are rejected outright** — any `{` outside a quote or
+  comment (`{fn FILE_READ(…)}`, `{ts …}`, `{oj …}`). A parsed `{fn …}` is not
+  the operator name the deny-list matches, and the driver rewrites the escape
+  before executing, so the validated statement and the executed one would
+  differ; the workbench statement is also opened with
+  `Statement.setEscapeProcessing(false)` (fail closed) as an engine-side
+  second layer;
+- **executable conditional comments are rejected** — MySQL `/*!…*/` and
+  `/*NNNNN…*/`, MariaDB `/*M!…*/`: Calcite skips them as comments, the engine
+  runs them as code. Optimizer hints (`/*+ … */`) remain allowed;
+- MySQL backtick identifiers are treated as quoted text by the lexical scan,
+  so a backtick-quoted identifier cannot hide a block-comment opener;
 - statements no available grammar can read at all are rejected (fail closed),
   including MySQL `SELECT … INTO OUTFILE` and bare network-scan targets
   (`SELECT * FROM 'http://…'`). The two mainstream introspection forms with
-  no parser grammar — `SHOW …` and `DESC <table>` — are read-only in every
-  dialect Saiku ships a driver for and keep the single-statement check only.
-- statements may not be `;`-stacked (unchanged).
+  no parser grammar — `SHOW …` and `DESC <table>` — keep a **strict**
+  allowance (saiku#2522): a single, comment-free, `;`-free, quote-balanced
+  statement starting with the keyword. A `SHOW`/`DESC` statement carrying a
+  comment or a second statement is rejected;
+- statements may not be `;`-stacked — the parser demands EOF after the first
+  statement (unchanged).
 
 This is one layer of a few:
 
@@ -73,10 +91,20 @@ This is one layer of a few:
 A rejected statement returns `400` with `{code: "READ_ONLY_VIOLATION",
 message}` and never reaches a connection.
 
-**Dedicated read-only credentials.** The strongest layer remains the
-warehouse's own: where possible, register the datasource's workbench access
-through a principal that lacks write and `FILE` privileges, distinct from the
-write principal used for ETL/Mondrian.
+**Dedicated read-only credentials — and the trust that remains in
+`ROLE_SQL_EXEC`.** The strongest layer remains the warehouse's own, and it is
+the one that makes the rest advisory: register the datasource's workbench
+access through a principal that lacks write and `FILE` privileges, distinct
+from the write principal used for ETL/Mondrian, and treat `ROLE_SQL_EXEC` as
+a grant to run that principal's queries — **not** as a guarantee that every
+statement a user submits is harmless. The deny-list of side-effecting
+functions cannot describe every engine's primitives (PostgreSQL
+`pg_read_file`/`lo_export`, DuckDB `read_csv_auto`/`glob`/`read_parquet`,
+ClickHouse `url()`/`file()` are not on it), and the guard does not model
+dialects Saiku does not ship a driver for. A `ROLE_SQL_EXEC` holder can read
+everything the workbench principal can read and, on a permissive warehouse
+account, attempt to reach host files and network — the guard narrows that
+surface, it does not close it. Use a read-only database account.
 
 **Phase 3 of the issue** (an admin-configurable per-datasource read/write
 toggle) is not implemented yet — every datasource is read-only today. DuckDB
