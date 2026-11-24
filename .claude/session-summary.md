@@ -80,6 +80,12 @@ pushed down; normal sessions append and the history stays useful.
 **Now:** check PR #2567 CI for the live acceptance result and Maven build, then address any remaining failure on the same branch.
 **Watch out:** the local environment has no Java or Maven installation, so the live launcher check needs CI.
 **Refs:** #2533, PR #2567, acceptance/2533/spec.json
+
+## 2026-11-24 — feature/2524-unauth-401-no-session — PR #2560 formatting rework
+**Was doing:** matched the two launcher test files to Spotless's CI diff; the prior CI run passed both affected test classes but failed at formatting.
+**Now:** check PR #2560 CI for the rework commit; local Java and Maven are unavailable in this workspace.
+**Refs:** #2524, PR #2560
+
 ## 2026-11-24 — feature/2526-ossie-role-bypass — PR #2552 review rework
 **Was doing:** fixed the unqualified-filter physical-column collision, typed sort/fact validation, and consistent query-door error bodies on the existing PR branch.
 **Now:** check PR #2552 CI after the push; its JDK 22 build must verify Java compilation and tests.
