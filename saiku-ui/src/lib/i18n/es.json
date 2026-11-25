@@ -129,6 +129,7 @@
 	"upgrade.available": "Hay una versión más reciente de Saiku disponible",
 	"upgrade.current": "actual",
 	"upgrade.releaseNotes": "Notas de la versión",
+	"upgrade.sponsor": "Apoya a Saiku",
 	"admin.addUser": "+ Añadir usuario",
 	"admin.addDatasource": "+ Añadir fuente",
 	"admin.uploadSchema": "+ Subir esquema",

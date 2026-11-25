@@ -16,16 +16,23 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import jakarta.ws.rs.core.Response;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.saiku.service.olap.ai.AiCubeSummary;
+import org.saiku.service.olap.ai.AiPolicy;
+import org.saiku.service.olap.ai.AiPolicyGuard;
 import org.saiku.service.olap.ai.AiQueryRequest;
 // Stub helper builder defined below — avoids depending on the AiCubeSummary
 // constructor shape (POJO with setters).
 import org.saiku.service.olap.ai.AiQueryResponse;
+import org.saiku.service.olap.ai.audit.AiAuditEntry;
+import org.saiku.service.olap.ai.audit.AiAuditLog;
 import org.saiku.web.rest.resources.AiQueryResource;
 
 /**
@@ -179,6 +186,16 @@ public class McpResourceTest {
         assertEquals(0, sessionStore.size());
     }
 
+    @Test
+    public void toolsCallWithoutSessionIsRejectedBeforeToolAudit() throws Exception {
+        AiAuditLog auditLog = wireAuditLog();
+        Response resp =
+                resource.handle(rpc("tools/call", 1, callParams("list_cubes", MAPPER.createObjectNode())), null);
+        JsonNode body = MAPPER.valueToTree(resp.getEntity());
+        assertEquals(-32600, body.path("error").path("code").asInt());
+        assertEquals(0, auditLog.recent(10, 0, null, null).size());
+    }
+
     /* ----------------------------- notifications ------------------------- */
 
     @Test
@@ -327,6 +344,235 @@ public class McpResourceTest {
         assertFalse("must not echo the exception text: " + message, message.contains("jdbc:"));
         assertFalse("must not echo the exception text: " + message, message.contains("hunter2"));
         assertTrue("must carry a log correlation ref: " + message, message.contains("ref="));
+    }
+
+    /* ----------------- saiku#2540: tools/call audit entries ---------------- */
+
+    /** Wire a real audit log over a temp file and return it for reading back. */
+    private AiAuditLog wireAuditLog() throws Exception {
+        Path file = Files.createTempFile("mcp-audit-", ".jsonl");
+        file.toFile().deleteOnExit();
+        AiAuditLog auditLog = new AiAuditLog(file, true);
+        resource.setAuditLog(auditLog);
+        resource.setAiPolicyGuard(new AiPolicyGuard(AiPolicy.AGGREGATED));
+        return auditLog;
+    }
+
+    /** saiku#2540: every tools/call produces exactly one ai-audit entry carrying
+     *  user, tool, target cube, decision and outcome — the REST /ai/ filter
+     *  never sees the in-process call, so this is the only entry. */
+    @Test
+    public void toolsCallRunQueryWritesOneAuditEntryWithToolAndCube() throws Exception {
+        AiAuditLog auditLog = wireAuditLog();
+        String sid = initSession();
+        stubAi.executeResponse = Response.ok(cannedQueryResponse()).build();
+
+        ObjectNode args = MAPPER.createObjectNode();
+        args.put("cube", "foodmart/FoodMart/FoodMart/Sales");
+        args.set(
+                "measures",
+                MAPPER.createArrayNode().add(MAPPER.createObjectNode().put("name", "Unit Sales")));
+        resource.handle(rpc("tools/call", 7, callParams("run_query", args)), sid);
+
+        List<AiAuditEntry> entries = auditLog.recent(10, 0, null, null);
+        assertEquals("exactly one entry for one tools/call", 1, entries.size());
+        AiAuditEntry e = entries.get(0);
+        assertEquals("/saiku/api/mcp", e.endpoint);
+        assertEquals("run_query", e.tool);
+        assertEquals("foodmart/FoodMart/FoodMart/Sales", e.cube);
+        assertEquals("no principal bound in a unit test — anonymous, like the REST filter", "anonymous", e.user);
+        assertEquals(AiAuditEntry.OUTCOME_SUCCESS, e.outcome);
+        assertEquals(AiAuditEntry.DECISION_ALLOW, e.policyDecision);
+        assertEquals("aggregated", e.policy);
+        assertNotNull(e.latencyMs);
+        assertNull("no error on success", e.error);
+    }
+
+    /** saiku#2540: a policy denial must be audited as DENIED — the MCP envelope
+     *  returns it as a 200 tool error, which an envelope-only auditor would
+     *  misread as allow + success. */
+    @Test
+    public void policyDeniedToolCallIsAuditedAsDenied() throws Exception {
+        AiAuditLog auditLog = wireAuditLog();
+        // A real resource behind a schema-only guard: executeAi throws
+        // AiPolicyViolation before touching any service.
+        AiQueryResource guarded = new AiQueryResource();
+        guarded.setAiPolicyGuard(new AiPolicyGuard(AiPolicy.SCHEMA_ONLY));
+        resource.setAiQueryResource(guarded);
+        String sid = initSession();
+
+        ObjectNode args = MAPPER.createObjectNode();
+        args.put("cube", "foodmart/FoodMart/FoodMart/Sales");
+        args.set(
+                "measures",
+                MAPPER.createArrayNode().add(MAPPER.createObjectNode().put("name", "Unit Sales")));
+        Response resp = resource.handle(rpc("tools/call", 8, callParams("run_query", args)), sid);
+        assertEquals("the denial still surfaces as a 200 tool error", 200, resp.getStatus());
+
+        List<AiAuditEntry> entries = auditLog.recent(10, 0, null, null);
+        assertEquals(1, entries.size());
+        AiAuditEntry e = entries.get(0);
+        assertEquals("run_query", e.tool);
+        assertEquals("foodmart/FoodMart/FoodMart/Sales", e.cube);
+        assertEquals(AiAuditEntry.OUTCOME_DENIED, e.outcome);
+        assertEquals(AiAuditEntry.DECISION_DENY, e.policyDecision);
+        assertEquals("the deployment's active tier, read off the guard", "aggregated", e.policy);
+        assertEquals("short leak-safe token naming the required tier, never the message", "policy:aggregated", e.error);
+    }
+
+    /** saiku#2540 (review): a tool call that fails through a non-2xx Response
+     *  (badRequest / NOT_FOUND / 5xx from the in-process AI resource) must NOT
+     *  be audited as allow + success — 400 maps to validation_error. */
+    @Test
+    public void badRequestResponseIsAuditedAsValidationErrorNotSuccess() throws Exception {
+        AiAuditLog auditLog = wireAuditLog();
+        String sid = initSession();
+        stubAi.executeResponse = Response.status(400)
+                .entity(Map.of(
+                        "status", "VALIDATION_ERROR",
+                        "error", "validation failed",
+                        "field", "measures[].name",
+                        "available", List.of("Unit Sales")))
+                .build();
+
+        ObjectNode args = MAPPER.createObjectNode();
+        args.put("cube", "foodmart/FoodMart/FoodMart/Sales");
+        Response resp = resource.handle(rpc("tools/call", 11, callParams("run_query", args)), sid);
+        JsonNode body = MAPPER.valueToTree(resp.getEntity());
+        // saiku#2540 (second review): the VALIDATION_ERROR body is the
+        // self-correction contract — a 400 comes back as a TOOL RESULT with
+        // isError:true carrying field/available, never a bare -32602.
+        assertEquals("a 400 is a 200 tool error, not an RPC error", 200, resp.getStatus());
+        assertTrue(
+                "isError marks the tool failure",
+                body.path("result").path("isError").asBoolean(false));
+        assertEquals(
+                "the VALIDATION_ERROR envelope reaches the agent",
+                "validation failed",
+                body.path("result").path("structuredContent").path("error").asText());
+        assertEquals(
+                "VALIDATION_ERROR",
+                body.path("result").path("structuredContent").path("status").asText());
+        assertEquals(
+                "measures[].name",
+                body.path("result").path("structuredContent").path("field").asText());
+        assertEquals(
+                "Unit Sales",
+                body.path("result")
+                        .path("structuredContent")
+                        .path("available")
+                        .path(0)
+                        .asText());
+
+        List<AiAuditEntry> entries = auditLog.recent(10, 0, null, null);
+        assertEquals(1, entries.size());
+        AiAuditEntry e = entries.get(0);
+        assertEquals("run_query", e.tool);
+        assertEquals(
+                "a non-2xx Response is a validation failure, not success",
+                AiAuditEntry.OUTCOME_VALIDATION_ERROR,
+                e.outcome);
+        assertEquals(AiAuditEntry.DECISION_ALLOW, e.policyDecision);
+        assertEquals("http_400", e.error);
+    }
+
+    /** saiku#2540 (review): a 404 — e.g. the owner-scoped drillthrough IDOR
+     *  guard on a foreign queryId — is audited as an error, never as success. */
+    @Test
+    public void notFoundDrillthroughIsAuditedAsErrorNotSuccess() throws Exception {
+        AiAuditLog auditLog = wireAuditLog();
+        String sid = initSession();
+        stubAi.drillthroughResponse =
+                Response.status(404).entity(Map.of("error", "unknown queryId")).build();
+
+        ObjectNode args = MAPPER.createObjectNode();
+        args.put("queryId", "someone-elses-query");
+        Response resp = resource.handle(rpc("tools/call", 12, callParams("drillthrough", args)), sid);
+        JsonNode body = MAPPER.valueToTree(resp.getEntity());
+        // saiku#2540 (second review): per the spec table a 404 (unknown queryId)
+        // is a TOOL RESULT the agent can act on, not a -32603 RPC error.
+        assertEquals("a 404 is a 200 tool error", 200, resp.getStatus());
+        assertTrue(
+                "isError marks the tool failure",
+                body.path("result").path("isError").asBoolean(false));
+        assertEquals(
+                "unknown queryId",
+                body.path("result").path("structuredContent").path("error").asText());
+
+        List<AiAuditEntry> entries = auditLog.recent(10, 0, null, null);
+        assertEquals(1, entries.size());
+        AiAuditEntry e = entries.get(0);
+        assertEquals("drillthrough", e.tool);
+        assertEquals(AiAuditEntry.OUTCOME_ERROR, e.outcome);
+        assertEquals(AiAuditEntry.DECISION_ALLOW, e.policyDecision);
+        assertEquals("http_404", e.error);
+    }
+
+    /** saiku#2540: failures are audited too — an unknown tool records the tool
+     *  name it was given and an error outcome, still exactly one entry. */
+    @Test
+    public void unknownToolIsAuditedAsError() throws Exception {
+        AiAuditLog auditLog = wireAuditLog();
+        String sid = initSession();
+        resource.handle(rpc("tools/call", 9, callParams("no_such_tool", MAPPER.createObjectNode())), sid);
+
+        List<AiAuditEntry> entries = auditLog.recent(10, 0, null, null);
+        assertEquals(1, entries.size());
+        AiAuditEntry e = entries.get(0);
+        assertEquals("no_such_tool", e.tool);
+        assertEquals(AiAuditEntry.OUTCOME_ERROR, e.outcome);
+        assertEquals(AiAuditEntry.DECISION_ALLOW, e.policyDecision);
+        assertEquals("unknown_tool", e.error);
+    }
+
+    /** saiku#2540: the Ossie tools carry the model, not a cube — including on
+     *  the denial path (real guarded resource, schema-only). */
+    @Test
+    public void ossieToolCallAuditCarriesTheModel() throws Exception {
+        AiAuditLog auditLog = wireAuditLog();
+        org.saiku.web.rest.resources.AiOssieResource guarded = new org.saiku.web.rest.resources.AiOssieResource();
+        guarded.setAiPolicyGuard(new AiPolicyGuard(AiPolicy.SCHEMA_ONLY));
+        resource.setAiOssieResource(guarded);
+        String sid = initSession();
+
+        ObjectNode args = MAPPER.createObjectNode();
+        args.put("connection", "Flights");
+        args.putArray("values").addObject().put("metric", "flight_count");
+        resource.handle(rpc("tools/call", 10, callParams("run_ossie_query", args)), sid);
+
+        List<AiAuditEntry> entries = auditLog.recent(10, 0, null, null);
+        assertEquals(1, entries.size());
+        AiAuditEntry e = entries.get(0);
+        assertEquals("run_ossie_query", e.tool);
+        assertNull("no cube target on an Ossie tool", e.cube);
+        assertEquals("Flights", e.model);
+        assertEquals(AiAuditEntry.OUTCOME_DENIED, e.outcome);
+        assertEquals(AiAuditEntry.DECISION_DENY, e.policyDecision);
+    }
+
+    /** saiku#2540: the audit target comes from the raw arguments — the
+     *  structured cube object is joined to the canonical ref the entry carries. */
+    @Test
+    public void targetCubeJoinsTheStructuredCubeObject() {
+        ObjectNode cube = MAPPER.createObjectNode();
+        cube.put("connectionName", "foodmart");
+        cube.put("catalog", "FoodMart");
+        cube.put("schema", "FoodMart");
+        cube.put("cubeName", "Sales");
+        ObjectNode args = MAPPER.createObjectNode();
+        args.set("cube", cube);
+        assertEquals("foodmart/FoodMart/FoodMart/Sales", McpResource.targetCube("run_query", args));
+        assertEquals(
+                "Flights", McpResource.targetCube("describe_cube", searchArgs().put("cube", "Flights")));
+        assertNull("list_cubes has no cube target", McpResource.targetCube("list_cubes", searchArgs()));
+        assertNull("drillthrough has no cube target", McpResource.targetCube("drillthrough", searchArgs()));
+    }
+
+    private static AiQueryResponse cannedQueryResponse() {
+        AiQueryResponse resp = new AiQueryResponse();
+        resp.setQueryId("query-audit-1");
+        resp.setStatus(AiQueryResponse.Status.SUCCESS);
+        return resp;
     }
 
     /* ------------------------------ helpers ------------------------------ */
@@ -568,6 +814,16 @@ public class McpResourceTest {
 
         final AtomicReference<Integer> searchLimit = new AtomicReference<>();
 
+        Response drillthroughResponse;
+
+        @Override
+        public Response drillthrough(
+                String queryId, int maxrows, Integer firstRowset, String position, String returns) {
+            return drillthroughResponse == null
+                    ? super.drillthrough(queryId, maxrows, firstRowset, position, returns)
+                    : drillthroughResponse;
+        }
+
         @Override
         public Response listCubes() {
             if (listCubesFailure != null) {
@@ -589,7 +845,10 @@ public class McpResourceTest {
             executeFormat.set(format);
             // Defensive copy of the underlying entity to make sure the
             // resource isn't mutating its return value in flight — if it
-            // does, the assertions above catch it.
+            // does, the assertions above catch it. The stub must PRESERVE the
+            // stubbed status: a non-2xx is the whole point of the error-mapping
+            // tests (review of PR #2563 — Response.ok(entity) dropped the 400
+            // and the failure never reached unwrap).
             Response orig = executeResponse;
             assertNotSame(orig, null);
             Object entity = orig.getEntity();
@@ -598,9 +857,9 @@ public class McpResourceTest {
                 AiQueryResponse copy = new AiQueryResponse();
                 copy.setQueryId(src.getQueryId());
                 copy.setStatus(src.getStatus());
-                return Response.ok(copy).build();
+                return Response.status(orig.getStatus()).entity(copy).build();
             }
-            return Response.ok(entity).build();
+            return Response.status(orig.getStatus()).entity(entity).build();
         }
     }
 }

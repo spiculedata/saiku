@@ -43,8 +43,13 @@ public class AiAuditEntry {
      *  so the trail shows WHO the embedder asserted, not just the run-as owner.
      *  Null for non-embed-JWT calls. */
     public String sub;
-    /** REST path hit, e.g. {@code /saiku/api/ai/query}. */
+    /** REST path hit, e.g. {@code /saiku/api/ai/query} — or {@code /saiku/api/mcp}
+     *  for an MCP call (saiku#2540). */
     public String endpoint;
+    /** MCP tool name when the call came through the MCP endpoint (saiku#2540):
+     *  {@code run_query}, {@code list_cubes}, ... Null for REST calls, which
+     *  carry the tool-equivalent identity in {@link #endpoint}. */
+    public String tool;
     /** Active data-exposure policy tier (#903): schema-only | aggregated | full. */
     public String policy;
     /** {@code allow} or {@code deny} — whether the policy permitted this call. */
