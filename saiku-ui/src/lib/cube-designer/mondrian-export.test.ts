@@ -471,6 +471,35 @@ describe('exportToMondrianXml — cubes-based', () => {
 		);
 	});
 
+	it('emits defaultMeasure on <Cube> when set to a measure the cube exposes (#2302)', () => {
+		const doc = cubeDoc();
+		const c = doc.cubes![0];
+		c.defaultMeasure = 'amount';
+		const xml = exportToMondrianXml(doc);
+		expect(xml).toContain('<Cube name="Sales" defaultMeasure="amount">');
+	});
+
+	it('omits defaultMeasure when unset (#2302)', () => {
+		const doc = cubeDoc();
+		doc.cubes![0].defaultMeasure = undefined;
+		const xml = exportToMondrianXml(doc);
+		expect(xml).toContain('<Cube name="Sales">');
+		expect(xml).not.toContain('defaultMeasure');
+	});
+
+	it('omits defaultMeasure when the named measure no longer exists on the cube (#2302)', () => {
+		const doc = cubeDoc();
+		const c = doc.cubes![0];
+		c.defaultMeasure = 'amount';
+		// The measure column is removed from every measure group.
+		for (const mg of c.measureGroups) {
+			mg.measureColumns = mg.measureColumns.filter((col) => col !== 'amount');
+		}
+		const xml = exportToMondrianXml(doc);
+		expect(xml).toContain('<Cube name="Sales">');
+		expect(xml).not.toContain('defaultMeasure');
+	});
+
 	it('emits <Annotations> (saiku.semantic.*) on a measure', () => {
 		const doc: SchemaCanvasState = {
 			...baseDoc(),

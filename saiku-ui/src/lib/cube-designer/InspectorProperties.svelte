@@ -276,6 +276,16 @@
 			class="grid grid-cols-1 gap-3 @[500px]:grid-cols-2 @[800px]:grid-cols-3 @[1100px]:grid-cols-4"
 		>
 			{@render propField('name', treeCube.name, (v) => renameCube(treeCube.id, v))}
+			<!-- Default measure (#2302) — Mondrian 4's `defaultMeasure`
+			     attribute. Empty = unset (engine falls back to the first
+			     measure on the cube). -->
+			{@render columnSelect(
+				'default measure',
+				docCube?.defaultMeasure ?? '',
+				cubeMeasures.map((m) => ({ name: m })),
+				(v) => store.setDefaultMeasure(treeCube.id, v ?? null),
+				'inspector-cube-default-measure'
+			)}
 			<div class="flex flex-col gap-1">
 				<span
 					class="text-[10px] tracking-wide uppercase"

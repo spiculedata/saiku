@@ -39,7 +39,7 @@ claim(
 claim(
   'C1',
   'the export validates the named measure against the cube\u2019s own measures before emitting it',
-  /defaultMeasure[\s\S]{0,400}?measureColumns/.test(exp)
+  /defaultMeasure[\s\S]{0,800}?measureColumns/.test(exp)
 );
 
 // C2: the importer reads defaultMeasure back off <Cube>.

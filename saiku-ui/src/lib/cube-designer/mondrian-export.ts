@@ -549,7 +549,20 @@ function exportCubesBased(state: SchemaCanvasState, cubes: SchemaCanvasCube[]): 
 	// ── Cubes ──
 	for (const cube of cubes) {
 		const cubeFact = cubeFactOf(cube);
-		out.push(`  <Cube name="${escape(cube.name || 'Untitled')}">`);
+		// Mondrian 4 `defaultMeasure` (#2302) — emit only when it names a
+		// measure the cube still exposes; a removed measure must not leak a
+		// dangling attribute into the schema (the engine then fails to load).
+		// Note the designer's measure names ARE the columns it emits, so a
+		// default measure imported by display name (e.g. FoodMart's
+		// 'Unit Sales' over column unit_sales) has no matching designer
+		// measure and is dropped on re-export.
+		const cubeMeasureNames = new Set(cube.measureGroups.flatMap((mg) => mg.measureColumns));
+		const defaultMeasureName = (cube.defaultMeasure ?? '').trim();
+		const defaultMeasureAttr = attr(
+			'defaultMeasure',
+			defaultMeasureName && cubeMeasureNames.has(defaultMeasureName) ? defaultMeasureName : null
+		);
+		out.push(`  <Cube name="${escape(cube.name || 'Untitled')}"${defaultMeasureAttr}>`);
 		if (dims.length > 0) {
 			out.push('    <Dimensions>');
 			for (const dim of dims) out.push(`      <Dimension source="${escape(dim.name)}" />`);

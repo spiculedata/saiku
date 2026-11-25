@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
 import { importFromMondrianXml } from './mondrian-import';
+import { exportToMondrianXml } from './mondrian-export';
 
 /**
  * Self-contained M4 import round-trip guards for the designer's importer.
@@ -86,6 +87,64 @@ describe('M4 import reads <TimeCalcs> back onto the cube', () => {
 			window: 3,
 			function: 'avg'
 		});
+	});
+});
+
+describe('M4 import reads <Cube defaultMeasure> back onto the workbench cube (#2302)', () => {
+	// The designer's measure names ARE the columns it exports, so the fixture
+	// names the measure after its column — that is also the value the
+	// inspector's select offers (the measure columns of the cube).
+	const XML = `<Schema name="t" metamodelVersion="4.0">
+  <PhysicalSchema><Table name="fact"/></PhysicalSchema>
+  <Cube name="Revenue" defaultMeasure="rev">
+    <MeasureGroups>
+      <MeasureGroup name="G" table="fact">
+        <Measures><Measure name="rev" column="rev" aggregator="sum"/></Measures>
+      </MeasureGroup>
+    </MeasureGroups>
+  </Cube>
+  <Cube name="NoDefault">
+    <MeasureGroups>
+      <MeasureGroup name="G" table="fact">
+        <Measures><Measure name="rev" column="rev" aggregator="sum"/></Measures>
+      </MeasureGroup>
+    </MeasureGroups>
+  </Cube>
+</Schema>`;
+
+	it('reads the default measure onto the imported cube; an absent attribute stays unset', () => {
+		const res = importFromMondrianXml(XML, { connectionId: 'test', sourceTables: [] });
+		expect(res.workbenchCubes.find((c) => c.name === 'Revenue')?.defaultMeasure).toBe('rev');
+		expect(res.workbenchCubes.find((c) => c.name === 'NoDefault')?.defaultMeasure).toBeUndefined();
+	});
+
+	it('round-trips through export: the re-emitted <Cube> carries the same attribute', () => {
+		const res = importFromMondrianXml(XML, { connectionId: 'test', sourceTables: [] });
+		// Map the imported workbench cubes onto doc cubes the way
+		// mapWorkbenchDocCubes does (its own test pins that mapping); then
+		// re-export and check the attribute survives.
+		const doc = res.workbenchCubes.map((c) => ({
+			id: c.id,
+			name: c.name,
+			measureGroups: c.measureGroups.map((mg) => ({
+				id: mg.id,
+				name: mg.name,
+				measureColumns: [...mg.measureColumns],
+				factTableId: mg.factTableId,
+				dimensionLinks: mg.dimensionLinks.map((l) => ({ ...l })),
+				measureCaptions: {}
+			})),
+			calcs: c.factsCalcs.map((cc) => ({
+				id: cc.id,
+				name: cc.name,
+				tokens: [],
+				formula: cc.formula
+			})),
+			defaultMeasure: c.defaultMeasure
+		}));
+		const xml = exportToMondrianXml({ ...res.state, cubes: doc });
+		expect(xml).toContain('<Cube name="Revenue" defaultMeasure="rev">');
+		expect(xml).toContain('<Cube name="NoDefault">');
 	});
 });
 

@@ -42,6 +42,8 @@ export function mapWorkbenchDocCubes(cubes: WorkbenchImportCubes): SchemaCanvasC
 		})),
 		// Carry declarative time-intelligence metrics onto the doc cube so they
 		// survive import (and setCubes preserves them across workbench syncs).
-		timeCalcs: c.timeCalcs
+		timeCalcs: c.timeCalcs,
+		// Same for the Mondrian 4 default measure (#2302).
+		defaultMeasure: c.defaultMeasure
 	}));
 }

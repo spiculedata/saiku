@@ -362,6 +362,10 @@ export interface SchemaCanvasCube {
 	name: string;
 	measureGroups: SchemaCanvasMeasureGroup[];
 	calcs: SchemaCanvasCalc[];
+	/** Mondrian 4 `defaultMeasure` — the measure new queries start with
+	 *  (#2302). Cleared (absent) means the engine falls back to the first
+	 *  measure on the cube. */
+	defaultMeasure?: string | null;
 	/** Declarative time-intelligence metrics (yoy/pop/ytd/rolling), #time-intel. */
 	timeCalcs?: SchemaCanvasTimeCalc[];
 }
