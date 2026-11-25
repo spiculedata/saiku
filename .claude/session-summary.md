@@ -75,12 +75,6 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
-## 2026-11-24 — fix/2550-security-hygiene — PR #2576 rework
-**Was doing:** merged development into PR #2576 and repaired what-if validation, GraphQL introspection, legacy sidecar ownership, and the review's smaller correctness notes.
-**Now:** check PR #2576 CI after the push; local Java tests stopped before compilation on GitHub Packages 401. The acceptance check and Sheets tests pass locally.
-**Watch out:** ambiguous pre-#2550 sidecars are deliberately left untouched for operator recovery; request writes never delete a legacy file.
-**Refs:** #2550, PR #2576
-
 ## 2026-11-24 — feature/2535-rest-body-size-limits — PR #2566 review rework
 **Was doing:** formatted the REST body filter test and corrected the operator guide; local Spotless, licence, and static acceptance checks pass. Maven service/web tests stop at GitHub Packages 401 before compilation.
 **Now:** check PR #2566 CI on the rework commit for the full build and Java tests.
