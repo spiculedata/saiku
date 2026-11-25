@@ -26,6 +26,10 @@ When tracking credential files by path, include `tee`, in-place edits, and scrip
 When a gate parses GitHub Actions, cover scalar and mapping `on:` triggers, both `secrets.GITHUB_TOKEN` and `github.token`, `permissions: write-all`, and credential files supplied through tool flags or `.npmrc`.
 **Why:** a gate that recognizes only one valid spelling can pass while an equivalent credential-bearing PR build runs.
 **Source:** PR #2494 reviews of the #2459 credential-lifecycle gate
+## 2026-11-24 — Model IDE: exercise the page's buffer and completion paths
+Use one buffer-key function at every page read and write site, and only offer live Ossie completions for the currently selected datasource. Test the actual editor-to-upload path and datasource switches, including late model responses.
+**Why:** a self-contained key helper test can pass while the page uploads stale XML, and a shared completion catalogue can show another datasource's names.
+**Source:** PR #2490 review of #1428
 
 ## 2026-11-24 — SCIM user PUT: validate group grants before any user write
 Check every requested group's role before changing the username, profile, email, or enabled state in a full user replace.
