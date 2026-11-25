@@ -24,9 +24,9 @@ mvn -P integration verify                                              # run the
 > fail surefire with *"No tests matching pattern"*. Add `-Dsurefire.failIfNoSpecifiedTests=false`.
 > (PowerShell: quote `-D` args, e.g. `"-Dtest=Foo"`.)
 
-`mvn` needs `~/.m2/settings.xml` with a GitHub PAT (`read:packages`) for the four Spicule
-GitHub-Packages artifacts (`mondrian-saiku`, `olap4j`, `olap4j-xmlaserver`, `saiku-query`) — see
-`CLAUDE.md`. Locally pass `-s "<settings.xml>"` if it isn't at the default path.
+`mvn` needs `~/.m2/settings.xml` with a GitHub PAT (`read:packages`) for the five Spicule
+GitHub-Packages repositories (`mondrian-saiku`, `olap4j`, `olap4j-xmlaserver`, `saiku-query`,
+`ossie`) — see `CLAUDE.md`. Locally pass `-s "<settings.xml>"` if it isn't at the default path.
 
 ### UI end-to-end (Playwright)
 
@@ -41,17 +41,28 @@ npm run e2e                       # mocked backend: builds, then serves on :4173
 npm run e2e:live                  # live backend on :8080 (RUN_LIVE_E2E=1)
 ```
 
-## Current coverage
+## What is covered
 
-Roughly **990 `@Test` methods across ~155 test classes** (a long way past the Phase-0 baseline of 10).
+This page deliberately does not copy test-count totals — snapshots here drift the moment a test is
+added or removed. The authoritative numbers live in two checked-in floor files, which CI enforces:
 
-| Module | Test classes | ~`@Test` | What it covers |
-|---|---|---|---|
-| `saiku-core/saiku-service` | ~94 | ~609 | OLAP query/AI-query conversion + MDX-injection defense (`olap/ai/`), AI anomaly/forecast detectors (`olap/ai/anomaly`, `olap/ai/forecast`), schema generation/inference (`schema/generate/`), cellset formatters, cache (`SaikuQueryCache`, `QueryCacheKey`), repository/ACL/path-traversal, datasource/crypto, comments/history, CSV/Excel export hardening, `SecureXml`. |
-| `saiku-core/saiku-web` | ~37 | ~268 | JAX-RS REST resources (`AiQueryResource`, `Query2Resource`, `DataSourceResource`, `AdminResource`, `InfoResource`, demo gate, error-leak), serialization, `JdbcUrlValidator`. |
-| `saiku-core/saiku-semantic` | 1 | ~14 | YAML semantic layer. |
-| `saiku-launcher` | ~22 (all `*IT`) | ~99 | End-to-end integration: boots an in-process Jetty via `SaikuItHarness.shared()` and exercises the live REST surface (`/ai/*`, query2, drillthrough, datasources, repository, exporter). Run by failsafe; **skipped unless** `-DskipITs=false` (CI) or `-P integration` (local). |
-| `saiku-core/saiku-olap-util` | 0 | 0 | No tests (olap4j helpers). |
+- `.github/test-floors.json` — per-module **surefire test-count floors**. The gated modules are
+  `saiku-core/saiku-service`, `saiku-core/saiku-web` and `saiku-launcher`; read the file for the
+  current floor values. Floors are ratchets — bump one explicitly when you add tests.
+- `.coverage-thresholds.json` — per-module **JaCoCo line-coverage floors** (saiku#2011), same
+  ratchet rule.
+
+For live counts, read the reports the build itself writes: `<module>/target/surefire-reports/`
+(unit tests), `<module>/target/failsafe-reports/` (launcher ITs) and
+`<module>/target/site/jacoco/index.html` (coverage HTML, `jacoco.csv` feeds the floor check).
+
+| Module | What it covers |
+|---|---|
+| `saiku-core/saiku-service` | OLAP query/AI-query conversion + MDX-injection defense (`olap/ai/`), AI anomaly/forecast detectors (`olap/ai/anomaly`, `olap/ai/forecast`), schema generation/inference (`schema/generate/`), cellset formatters, cache (`SaikuQueryCache`, `QueryCacheKey`), repository/ACL/path-traversal, datasource/crypto, comments/history, CSV/Excel export hardening, `SecureXml`. |
+| `saiku-core/saiku-web` | JAX-RS REST resources (`AiQueryResource`, `Query2Resource`, `DataSourceResource`, `AdminResource`, `InfoResource`, demo gate, error-leak), serialization, `JdbcUrlValidator`. |
+| `saiku-core/saiku-semantic` | YAML semantic layer. |
+| `saiku-launcher` | End-to-end integration: boots an in-process Jetty via `SaikuItHarness.shared()` and exercises the live REST surface (`/ai/*`, query2, drillthrough, datasources, repository, exporter). Run by failsafe; **skipped unless** `-DskipITs=false` (CI) or `-P integration` (local). |
+| `saiku-core/saiku-olap-util` | No tests (olap4j helpers). |
 
 ### Test categories & conventions
 
@@ -70,16 +81,21 @@ Roughly **990 `@Test` methods across ~155 test classes** (a long way past the Ph
 
 ## CI
 
-`.github/workflows/ci.yml` runs **`mvn -B -ntp -DskipITs=false verify`** on **Ubuntu and macOS**
-against **JDK 21**. A PR is green only when, on both OSes:
+`.github/workflows/ci.yml` runs **`mvn -B -ntp -DskipITs=false verify`** on **Ubuntu**
+(`ubuntu-latest`) against **JDK 22** (Temurin), with further flags on the wrapped line in `ci.yml`
+itself. Main artifacts still compile at `release 21`, so the
+shipped runtime is unchanged — JDK 22 is required to build the full reactor because
+`saiku-proptest` uses Java-22 bytecode. A PR is green only when, on Ubuntu:
 
 1. Compile + **surefire unit tests** pass.
 2. **failsafe integration tests** (`saiku-launcher/**/*IT`) pass (CI sets `-DskipITs=false`).
-3. **Spotless** (`spotless-maven-plugin` 2.46.1 / Palantir Java Format) reports clean — bound to the
+3. **Spotless** (`spotless-maven-plugin`, version pinned in the root `pom.xml` / Palantir Java
+   Format 2.71.0) reports clean — bound to the
    `verify` phase, so it runs *after* tests; `mvn spotless:apply` fixes violations.
-4. **Per-module test-count floors** (`.github/test-floors.json`) are met — CI fails if a module's
-   surefire total drops below its floor (`saiku-core/saiku-service`: 252, `saiku-core/saiku-web`: 44),
-   catching accidental test deletions. Bump the floor when you add tests.
+4. **Per-module test-count floors** (`.github/test-floors.json`) are met — CI fails if a gated
+   module's surefire total (`saiku-core/saiku-service`, `saiku-core/saiku-web`, `saiku-launcher`)
+   drops below its floor in that file, catching accidental test deletions. Bump the floor when you
+   add tests.
 5. **Per-module line-coverage floors** (`.coverage-thresholds.json`, saiku#2011) are met. JaCoCo
    (bound in the root pom) writes `<module>/target/site/jacoco/jacoco.csv` during `verify`;
    `./scripts/check-coverage.sh` compares each module's line coverage to its floor. Run it locally
@@ -91,8 +107,8 @@ A separate `docker` workflow builds the launcher image and does **not** gate the
 
 ## Quarantined / flaky tests
 
-None are quarantined. Two sets fail **only on local Windows** (environment, not code) — **CI on
-Linux/macOS is authoritative**, do not chase them locally:
+None are quarantined. Two sets fail **only on local Windows** (environment, not code) — **CI on Linux is authoritative**
+(CI has no Windows or macOS lane), do not chase them locally:
 
 - **`*GoldenTest`** (e.g. `MdxEchoGoldenTest`): goldens are LF; Windows CRLF checkouts produce
   line-ending-only diffs. A `.gitattributes eol=lf` on the golden resources would remove the noise.
@@ -101,10 +117,13 @@ Linux/macOS is authoritative**, do not chase them locally:
 
 ## Environment prerequisites
 
-- JDK 21 (Temurin, Corretto, Zulu).
+- JDK 22 (Temurin, Corretto, Zulu) — required to build the full reactor (`saiku-proptest` is
+  Java-22 bytecode); main artifacts still compile at `release 21`. Without JDK 22 you can build
+  everything else with `mvn -pl '!saiku-proptest' verify`.
 - Maven 3.9+.
-- `~/.m2/settings.xml` with a GitHub PAT (`read:packages`) — required to resolve the four Spicule
-  GitHub-Packages artifacts even though they are public. One PAT covers all four. Local forks of
-  `mondrian-saiku` / `olap4j` / `olap4j-xmlaserver` / `saiku-query` in `~/.m2` are preferred over the
-  remote.
+- `~/.m2/settings.xml` with a GitHub PAT (`read:packages`) — required to resolve the Spicule
+  GitHub-Packages artifacts even though they are public, from all **five** registered repositories
+  (`github-mondrian-saiku`, `github-olap4j`, `github-olap4j-xmlaserver`, `github-saiku-query`,
+  `github-ossie`). One PAT covers all five. Local forks of `mondrian-saiku` / `olap4j` /
+  `olap4j-xmlaserver` / `saiku-query` in `~/.m2` are preferred over the remote.
 - First build populates `~/.m2` (needs Maven Central + Apache + Atlassian + GitHub Packages).

@@ -10,6 +10,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import org.saiku.service.datasource.DatasourceService;
+import org.saiku.service.util.StorageLimits;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,9 +42,22 @@ public class DashboardHistoryService {
     }
 
     /** Archive {@code dashboardJson} as the latest version, pruning to the most
-     *  recent {@link #RETENTION}. No-op for null/blank content. */
+     *  recent {@link #RETENTION}. No-op for null/blank content. An oversized
+     *  version (over {@code saiku.history.maxEntryBytes}, #2535) is not archived
+     *  — the save itself still succeeds; only the historical snapshot is
+     *  skipped, so the history file cannot grow without bound. */
     public DashboardVersion archive(String dashboardPath, String dashboardJson, String author) {
         if (dashboardJson == null || dashboardJson.isBlank()) {
+            return null;
+        }
+        long maxEntryBytes = StorageLimits.historyEntryBytes();
+        long entryBytes = dashboardJson.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+        if (entryBytes > maxEntryBytes) {
+            log.warn(
+                    "Not archiving dashboard version for {} ({} bytes > cap {} bytes, saiku.history.maxEntryBytes)",
+                    dashboardPath,
+                    entryBytes,
+                    maxEntryBytes);
             return null;
         }
         DashboardVersion v = new DashboardVersion();

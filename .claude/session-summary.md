@@ -75,11 +75,11 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
-## 2026-11-24 — feature/1428-model-ide-ossie-yaml — PR #2490 page regression tests
-**Was doing:** integrated the concurrent review-fix commit and added browser tests for Mondrian editor uploads and Ossie completion when switching files or receiving a late response.
-**Now:** check PR #2490 CI on the pushed head, especially the new Playwright spec.
-**Watch out:** local Chromium cannot launch because the host lacks `libglib-2.0.so.0` and other shared libraries; UI unit tests, type check, and build ran locally.
-**Refs:** #1428, PR #2490, `saiku-ui/e2e/model-ide.spec.ts`
+## 2026-11-24 — feature/2535-rest-body-size-limits — PR #2566 review rework
+**Was doing:** formatted the REST body filter test and corrected the operator guide; local Spotless, licence, and static acceptance checks pass. Maven service/web tests stop at GitHub Packages 401 before compilation.
+**Now:** check PR #2566 CI on the rework commit for the full build and Java tests.
+**Watch out:** local JDK 22 and Maven are available under `/data/agents/quality/.tools/`, but private package dependencies do not resolve with this workspace's credentials.
+**Refs:** #2535, PR #2566
 
 ## 2026-11-24 — feature/2540-mcp-ai-audit — PR #2563 review rework
 **Was doing:** merged current development into the PR branch, retaining both session-summary entries, and added assertions for the MCP validation error's `status`, `field` and `available` fields.
