@@ -17,10 +17,10 @@ A promoted entry has the same shape plus `**Status:** promoted`, `**Supersedes:*
 
 ---
 
-## 2026-11-24 — Java method moves: check the destination class boundary
-When moving a method so tests can call it through a different class, place it inside that class's braces and compile both main and test sources where dependencies are available.
-**Why:** moving `runBounded` out of `BatikConverter` left it at file scope, where Java cannot compile it, and the earlier location did not satisfy `ConverterTest`'s call.
-**Source:** PR #2559 reviews of #2527
+## 2026-11-24 — Model IDE: exercise the page's buffer and completion paths
+Use one buffer-key function at every page read and write site, and only offer live Ossie completions for the currently selected datasource. Test the actual editor-to-upload path and datasource switches, including late model responses.
+**Why:** a self-contained key helper test can pass while the page uploads stale XML, and a shared completion catalogue can show another datasource's names.
+**Source:** PR #2490 review of #1428
 
 ## 2026-11-24 — SCIM user PUT: validate group grants before any user write
 Check every requested group's role before changing the username, profile, email, or enabled state in a full user replace.
