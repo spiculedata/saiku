@@ -75,11 +75,11 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
-## 2026-11-24 — feature/dependabot-cooldown-2548 — PR #2582 review rework
-**Was doing:** fixed Maven plugin detection using #2506's patch and rejected manifests with missing patches; added regression tests and clarified the Dependabot docs.
-**Now:** check PR #2582 CI after the rework push, including the Maven build and full script suite.
-**Watch out:** this workspace has Node but no Java or Maven; the full reactor build depends on CI.
-**Refs:** #2548, PR #2582
+## 2026-11-24 — feature/2535-rest-body-size-limits — PR #2566 review rework
+**Was doing:** formatted the REST body filter test and corrected the operator guide; local Spotless, licence, and static acceptance checks pass. Maven service/web tests stop at GitHub Packages 401 before compilation.
+**Now:** check PR #2566 CI on the rework commit for the full build and Java tests.
+**Watch out:** local JDK 22 and Maven are available under `/data/agents/quality/.tools/`, but private package dependencies do not resolve with this workspace's credentials.
+**Refs:** #2535, PR #2566
 
 ## 2026-11-24 — feature/2540-mcp-ai-audit — PR #2563 review rework
 **Was doing:** merged current development into the PR branch, retaining both session-summary entries, and added assertions for the MCP validation error's `status`, `field` and `available` fields.
