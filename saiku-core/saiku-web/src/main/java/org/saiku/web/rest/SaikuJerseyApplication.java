@@ -70,6 +70,13 @@ public class SaikuJerseyApplication extends ResourceConfig {
         // to the self-send path internally and leaves every other endpoint untouched.
         register(org.saiku.web.email.EmailRequestSizeFilter.class);
 
+        // #2535: the counted-stream layer of the REST body cap throws this
+        // exception when a body exceeds its route cap (chunked bodies, lying
+        // Content-Length); map it to the same clean 413 the header pre-check
+        // produces instead of a generic 500. The most-specific-mapper rule wins
+        // over GenericExceptionMapper's ExceptionMapper<Throwable>.
+        register(org.saiku.web.servlet.RestBodyTooLargeMapper.class);
+
         ApplicationContext ctx = WebApplicationContextUtils.getRequiredWebApplicationContext(servletContext);
         for (String name : ctx.getBeanNamesForAnnotation(Path.class)) {
             if (name.startsWith("scopedTarget.")) {

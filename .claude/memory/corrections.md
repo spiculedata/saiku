@@ -21,6 +21,10 @@ A promoted entry has the same shape plus `**Status:** promoted`, `**Supersedes:*
 Mondrian's connection error writes parsed values without Saiku's connect-string quoting. Treat `JdbcPassword=` as a raw value ending at the next `; Key=` field boundary; spaces, `;` without a following key, `&`, and quotes can all be part of the password.
 **Why:** stopping at the first whitespace or punctuation leaks the remainder of a supported password.
 **Source:** PR #2594 review of #2547
+## 2026-11-24 — Model IDE: exercise the page's buffer and completion paths
+Use one buffer-key function at every page read and write site, and only offer live Ossie completions for the currently selected datasource. Test the actual editor-to-upload path and datasource switches, including late model responses.
+**Why:** a self-contained key helper test can pass while the page uploads stale XML, and a shared completion catalogue can show another datasource's names.
+**Source:** PR #2490 review of #1428
 
 ## 2026-11-24 — SCIM user PUT: validate group grants before any user write
 Check every requested group's role before changing the username, profile, email, or enabled state in a full user replace.
