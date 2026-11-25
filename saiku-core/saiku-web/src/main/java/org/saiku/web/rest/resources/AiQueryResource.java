@@ -393,6 +393,16 @@ public class AiQueryResource {
             tq.setName(java.util.UUID.randomUUID().toString());
         }
 
+        // saiku#2540: the audit entry for this call carries the cube.
+        auditEnrichCube(
+                tq.getCube() == null
+                        ? null
+                        : new AiCubeRef(
+                                tq.getCube().getConnection(),
+                                tq.getCube().getCatalog(),
+                                tq.getCube().getSchema(),
+                                tq.getCube().getName()));
+
         // saiku#1911: a client/dashboard filter on the SAME hierarchy as a forced RLS filter must
         // never ride alongside it — merged together, saiku-query UNIONs the member sets and widens
         // the RLS slice (exploit (a), even via a different level of the hierarchy). Strip such client
@@ -511,6 +521,8 @@ public class AiQueryResource {
             if (req.getCube() == null) {
                 return badRequest("cube", "cube ref required", null);
             }
+            // saiku#2540: the audit entry for this call carries the cube.
+            auditEnrichCube(req.getCube());
             schema = cubeMetadataService.getSchema(req.getCube());
             tq = converter.convert(req, schema);
         } catch (AiValidationException e) {
@@ -687,6 +699,8 @@ public class AiQueryResource {
             if (req.getCube() == null) {
                 return badRequest("cube", "cube ref required", null);
             }
+            // saiku#2540: the audit entry for this call carries the cube.
+            auditEnrichCube(req.getCube());
             schema = cubeMetadataService.getSchema(req.getCube());
             // Validates every name resolves against the live schema — same check
             // /ai/query runs before execution. The returned ThinQuery is discarded:
@@ -2335,6 +2349,8 @@ public class AiQueryResource {
             if (req.getCube() == null) {
                 return badRequest("cube", "cube ref required", null);
             }
+            // saiku#2540: the audit entry for this call carries the cube.
+            auditEnrichCube(req.getCube());
             AiSchema schema = cubeMetadataService.getSchema(req.getCube());
             ThinQuery tq = converter.convert(req, schema);
             Map<String, Object> body = new LinkedHashMap<>();
@@ -2384,6 +2400,8 @@ public class AiQueryResource {
         if (ref == null) {
             return badRequest("cubeId", "cubeId must be connection/catalog/schema/cube", null);
         }
+        // saiku#2540: the audit entry for this call carries the cube.
+        auditEnrichCube(ref);
         try {
             AiSchema schema = cubeMetadataService.getSchema(ref);
             // saiku#902: project to the redacted agent view before serializing.
@@ -2439,6 +2457,8 @@ public class AiQueryResource {
         if (ref == null) {
             return badRequest("cubeId", "cubeId must be connection/catalog/schema/cube", null);
         }
+        // saiku#2540: the audit entry for this call carries the cube.
+        auditEnrichCube(ref);
         try {
             // Warm the schema cache first so a fresh suggestions request
             // doesn't return empty just because the cube hadn't been
@@ -2479,6 +2499,8 @@ public class AiQueryResource {
         if (dimension == null || dimension.isEmpty() || level == null || level.isEmpty()) {
             return badRequest("dimension/level", "dimension and level query params required", null);
         }
+        // saiku#2540: the audit entry for this call carries the cube.
+        auditEnrichCube(ref);
         if (!(cubeMetadataService instanceof OlapAiCubeMetadataService)) {
             return error("Member search requires an olap4j-backed metadata service");
         }
@@ -2524,6 +2546,8 @@ public class AiQueryResource {
             if (req == null || req.getCube() == null) {
                 return badRequest("cube", "cube ref required", null);
             }
+            // saiku#2540: the audit entry for this call carries the cube.
+            auditEnrichCube(req.getCube());
             schema = cubeMetadataService.getSchema(req.getCube());
             tq = converter.convert(req, schema);
         } catch (AiValidationException e) {
@@ -4348,5 +4372,30 @@ public class AiQueryResource {
             return ((org.springframework.web.context.request.ServletRequestAttributes) attrs).getRequest();
         }
         return null;
+    }
+
+    /**
+     * saiku#2540 — publish the cube this call targeted as AI-audit enrichment.
+     * {@link AiAuditFilter} folds it into the entry it writes for this request,
+     * so the audit trail names the cube, not just the endpoint. The resource is
+     * a Spring singleton and cannot reach the JAX-RS request context, so the
+     * enrichment crosses as a servlet request attribute (the filter reads the
+     * {@code P_*} keys off the {@code RequestContextHolder}-bound request).
+     * Never throws — a missing enrichment degrades the entry gracefully, it
+     * must never break the call being audited.
+     */
+    private static void auditEnrichCube(org.saiku.service.olap.ai.AiCubeRef cube) {
+        if (cube != null) {
+            auditEnrich(AiAuditFilter.P_CUBE, cube.toString());
+        }
+    }
+
+    /** saiku#2540 companion to {@link #auditEnrichCube}: set any audit
+     *  enrichment key on the bound request. */
+    private static void auditEnrich(String key, String value) {
+        jakarta.servlet.http.HttpServletRequest req = currentRequest();
+        if (req != null) {
+            req.setAttribute(key, value);
+        }
     }
 }

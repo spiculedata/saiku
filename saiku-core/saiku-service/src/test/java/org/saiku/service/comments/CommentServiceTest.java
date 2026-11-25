@@ -9,6 +9,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import java.util.ArrayList;
@@ -21,6 +22,7 @@ import org.saiku.repository.IRepositoryObject;
 import org.saiku.repository.RepositoryFileObject;
 import org.saiku.service.datasource.DatasourceService;
 import org.saiku.service.util.DashboardSidecars;
+import org.saiku.service.util.StorageLimits;
 
 /**
  * Unit coverage for {@link CommentService} (issue #942) — append/list/soft-delete
@@ -261,5 +263,44 @@ public class CommentServiceTest {
         assertEquals("new", svc.list(other, "t1").get(0).body);
         assertTrue(svc.list(owner, "t1").isEmpty());
         assertEquals(original, ds.internal.get(legacy));
+    }
+
+    // ----------------------- #2535 storage caps -----------------------
+
+    @Test
+    public void oversized_body_is_refused() {
+        System.setProperty(StorageLimits.KEY_COMMENT_BODY_BYTES, "1024"); // the clamp floor
+        try {
+            CommentLimitExceededException e = assertThrows(
+                    CommentLimitExceededException.class, () -> svc.add(DASH, "t1", "admin", "x".repeat(2048)));
+            assertEquals(CommentLimitExceededException.Kind.BODY_TOO_LARGE, e.getKind());
+            assertTrue(e.getMessage().contains("saiku.comments.maxBodyBytes"));
+            // Nothing was written.
+            assertEquals(0, svc.list(DASH, "t1").size());
+        } finally {
+            System.clearProperty(StorageLimits.KEY_COMMENT_BODY_BYTES);
+        }
+    }
+
+    @Test
+    public void count_cap_refuses_and_deleted_comments_do_not_count() {
+        System.setProperty(StorageLimits.KEY_COMMENT_MAX_COUNT, "10"); // the clamp floor
+        try {
+            for (int i = 0; i < 10; i++) {
+                svc.add(DASH, "t1", "admin", "c" + i);
+            }
+            CommentLimitExceededException e = assertThrows(
+                    CommentLimitExceededException.class, () -> svc.add(DASH, "t1", "admin", "one too many"));
+            assertEquals(CommentLimitExceededException.Kind.COUNT_REACHED, e.getKind());
+            assertTrue(e.getMessage().contains("saiku.comments.maxCount"));
+
+            // A soft-deleted comment no longer counts towards the cap.
+            assertTrue(svc.softDelete(DASH, svc.list(DASH, "t1").get(0).id));
+            Comment c = svc.add(DASH, "t1", "admin", "fits again");
+            assertNotNull(c);
+            assertEquals(10, svc.list(DASH, "t1").size());
+        } finally {
+            System.clearProperty(StorageLimits.KEY_COMMENT_MAX_COUNT);
+        }
     }
 }

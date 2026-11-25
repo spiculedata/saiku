@@ -81,6 +81,18 @@ pushed down; normal sessions append and the history stays useful.
 **Watch out:** ambiguous pre-#2550 sidecars are deliberately left untouched for operator recovery; request writes never delete a legacy file.
 **Refs:** #2550, PR #2576
 
+## 2026-11-24 — feature/2535-rest-body-size-limits — PR #2566 review rework
+**Was doing:** formatted the REST body filter test and corrected the operator guide; local Spotless, licence, and static acceptance checks pass. Maven service/web tests stop at GitHub Packages 401 before compilation.
+**Now:** check PR #2566 CI on the rework commit for the full build and Java tests.
+**Watch out:** local JDK 22 and Maven are available under `/data/agents/quality/.tools/`, but private package dependencies do not resolve with this workspace's credentials.
+**Refs:** #2535, PR #2566
+
+## 2026-11-24 — feature/2540-mcp-ai-audit — PR #2563 review rework
+**Was doing:** merged current development into the PR branch, retaining both session-summary entries, and added assertions for the MCP validation error's `status`, `field` and `available` fields.
+**Now:** check PR #2563 CI after the push, especially the JDK 22 build and the focused MCP audit tests.
+**Watch out:** the local Maven test run stops before Java compilation because GitHub Packages returns 401 for Mondrian and olap4j; the acceptance script and Spotless pass.
+**Refs:** #2540, PR #2563
+
 ## 2026-11-24 — feature/scim-grantable-roles — PR #2564 review rework
 **Was doing:** moved user PUT group-policy validation before every user write and fixed the SCIM test file's Spotless violations; added a regression test for unchanged username, email, and enabled state.
 **Now:** check PR #2564 CI after the push for Java compilation and tests.

@@ -14,6 +14,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.saiku.service.datasource.DatasourceService;
 import org.saiku.service.util.DashboardSidecars;
+import org.saiku.service.util.StorageLimits;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -70,8 +71,35 @@ public class CommentService {
         return out;
     }
 
-    /** Append a comment authored by {@code author}; @-mentions parsed from body. */
+    /** Append a comment authored by {@code author}; @-mentions parsed from body.
+     *
+     *  <p>#2535: an oversized body ({@code saiku.comments.maxBodyBytes}) or a
+     *  dashboard that already holds the configured maximum of live comments
+     *  ({@code saiku.comments.maxCount}) raises {@link CommentLimitExceededException}
+     *  instead of letting the per-dashboard JSONL file grow without bound.
+     *
+     *  @throws CommentLimitExceededException when either cap is breached. */
     public Comment add(String dashboardPath, String tileId, String author, String body) {
+        long maxBodyBytes = StorageLimits.commentBodyBytes();
+        long bodyBytes = body == null ? 0 : body.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+        if (bodyBytes > maxBodyBytes) {
+            throw new CommentLimitExceededException(
+                    CommentLimitExceededException.Kind.BODY_TOO_LARGE,
+                    "comment exceeds the " + maxBodyBytes + "-byte limit (saiku.comments.maxBodyBytes)");
+        }
+        List<Comment> existing = readAll(dashboardPath);
+        int liveCount = 0;
+        for (Comment c : existing) {
+            if (!c.deleted) {
+                liveCount++;
+            }
+        }
+        int maxCount = StorageLimits.commentMaxCount();
+        if (liveCount >= maxCount) {
+            throw new CommentLimitExceededException(
+                    CommentLimitExceededException.Kind.COUNT_REACHED,
+                    "comment count limit reached for this dashboard (" + maxCount + ", saiku.comments.maxCount)");
+        }
         Comment c = new Comment();
         c.id = UUID.randomUUID().toString();
         c.tileId = tileId;
@@ -81,9 +109,8 @@ public class CommentService {
         c.createdAt = System.currentTimeMillis();
         c.deleted = false;
 
-        List<Comment> all = readAll(dashboardPath);
-        all.add(c);
-        writeAll(dashboardPath, all);
+        existing.add(c);
+        writeAll(dashboardPath, existing);
         return c;
     }
 

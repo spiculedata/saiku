@@ -12,6 +12,7 @@ import org.junit.*;
 import org.saiku.datasources.connection.ISaikuConnection;
 import org.saiku.datasources.datasource.SaikuDatasource;
 import org.saiku.repository.ScopedRepo;
+import org.saiku.service.util.StorageLimits;
 import org.springframework.security.web.session.HttpSessionCreatedEvent;
 
 public class RepositoryDatasourceManagerTest {
@@ -36,6 +37,21 @@ public class RepositoryDatasourceManagerTest {
         assertEquals("/opt/saikurepo/", rdManager.cleanse("/opt/saikurepo"));
         assertEquals("c:/temp/data/", rdManager.cleanse("c:\\temp/data////"));
         assertEquals("/opt/saikurepo/home/", rdManager.cleanse("//opt/saikurepo//home"));
+    }
+
+    /** #2535: an oversized repository object is refused before it reaches the
+     *  repository manager (and before an uninitialised irm could even NPE). */
+    @Test
+    public void testSaveFileRefusesOversizedObject() {
+        System.setProperty(StorageLimits.KEY_REPO_OBJECT_BYTES, String.valueOf(64L * 1024)); // the clamp floor
+        try {
+            String big = "x".repeat((int) (128L * 1024));
+            String out = rdManager.saveFile("homes/admin/big.txt", big, "admin", null);
+            assertTrue("oversized object refused", out.startsWith("Save Failed:"));
+            assertTrue(out.contains("saiku.repo.maxObjectBytes"));
+        } finally {
+            System.clearProperty(StorageLimits.KEY_REPO_OBJECT_BYTES);
+        }
     }
 
     @Test
