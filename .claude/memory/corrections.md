@@ -17,10 +17,10 @@ A promoted entry has the same shape plus `**Status:** promoted`, `**Supersedes:*
 
 ---
 
-## 2026-11-24 — MDX: a member unique name does not start with its level unique name
-Validate the syntax of a client member name before constructing MDX, then resolve its level through metadata or compare it with the members returned for the requested level. A prefix test against the level name rejects valid members such as `[Product].[Product].[Oncology]` on `[Product].[Product].[Therapeutic Class]`.
-**Why:** MDX member names include the hierarchy and ancestor members, while level names describe a different metadata object.
-**Source:** PR #2576 review
+## 2026-11-24 — Model IDE: exercise the page's buffer and completion paths
+Use one buffer-key function at every page read and write site, and only offer live Ossie completions for the currently selected datasource. Test the actual editor-to-upload path and datasource switches, including late model responses.
+**Why:** a self-contained key helper test can pass while the page uploads stale XML, and a shared completion catalogue can show another datasource's names.
+**Source:** PR #2490 review of #1428
 
 ## 2026-11-24 — SCIM user PUT: validate group grants before any user write
 Check every requested group's role before changing the username, profile, email, or enabled state in a full user replace.
