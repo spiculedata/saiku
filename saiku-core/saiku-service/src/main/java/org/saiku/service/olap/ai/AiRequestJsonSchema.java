@@ -71,9 +71,10 @@ public final class AiRequestJsonSchema {
                                 + "Names contain 1-64 letters, digits, spaces, underscores or hyphens, with one "
                                 + "optional surrounding bracket pair. Reference a set by its name. The MDX set "
                                 + "expression is validated server-side: no statement keywords (MEMBER, SET, "
-                                + "SELECT, WITH, FROM, WHERE, CREATE, DROP, DIMENSION), StrTo* functions, MDX "
-                                + "comments (--, /*, //), or unbalanced parentheses and braces. Every bracketed "
-                                + "reference must resolve against the cube or an earlier named set. References "
+                                + "SELECT, WITH, FROM, WHERE, CREATE, DROP, DIMENSION), StrTo* functions, global "
+                                + "Dimensions/Levels lookups, MDX comments (--, /*, //), or unbalanced parentheses "
+                                + "and braces. Every bracketed or bare identifier reference must resolve against "
+                                + "the cube or an earlier named set. References "
                                 + "to a hierarchy containing any PII level, or to a PII measure, are refused."));
         root.put("properties", properties);
 

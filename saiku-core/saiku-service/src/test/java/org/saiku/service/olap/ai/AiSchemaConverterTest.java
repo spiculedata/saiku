@@ -1263,10 +1263,12 @@ public class AiSchemaConverterTest {
         AiQueryRequest req = baseReq();
         req.setNamedSets(Arrays.asList(
                 new AiNamedSet("First", "{[Product].[Product].[Department].Members}"),
-                new AiNamedSet("Second", "Head([First], 3)")));
+                new AiNamedSet("Second", "Head([First], 3)"),
+                new AiNamedSet("Third", "Head(First, 2)")));
         ThinQuery tq = converter.convert(req, schema);
         String mdx = tq.getMdx();
         assertTrue("earlier set referenced by name", mdx.contains("Head([First], 3)"));
+        assertTrue("bare earlier set referenced by name", mdx.contains("Head(First, 2)"));
     }
 
     /** A named set referencing a PII level is refused like the same level
@@ -1322,7 +1324,14 @@ public class AiSchemaConverterTest {
             "Generate([Customer].[Customers].[City].Members, [Customer].[Customers].CurrentMember.Children)",
             "[Customer].[Customers].Levels(1).Members",
             "{[Customer].Members}",
-            "{[Customer].[Customers].[City].Members}"
+            "{[Customer].[Customers].[City].Members}",
+            "{Customer.Customers.Name.Members}",
+            "{Customers.Name.Members}",
+            "Customer.Customers.Members",
+            "{Customer.Members}",
+            "Generate({[Product].[Product].[Department].Members}, Head(Customer.Customers.Name.Members, 5))",
+            "{Customer.[Customers].Name.Members}",
+            "{[Customer].Customers.[Name].Members}"
         };
         for (String expression : expressions) {
             AiQueryRequest req = baseReq();
@@ -1368,13 +1377,57 @@ public class AiSchemaConverterTest {
     @Test
     public void unqualifiedMeasuresReferenceCannotEnumeratePiiMeasure() {
         schema.measures.get(AiSchema.key("Unit Sales")).pii = true;
+        for (String expression : new String[] {"[Measures].Members", "Measures.Members", "Measures.AllMembers"}) {
+            AiQueryRequest req = baseReq();
+            req.setNamedSets(Collections.singletonList(new AiNamedSet("S", expression)));
+            try {
+                converter.convert(req, schema);
+                fail("expected PII refusal for " + expression);
+            } catch (AiPiiException e) {
+                assertEquals("namedSets[0].expression", e.getField());
+            }
+        }
+    }
+
+    @Test
+    public void globalDimensionAndLevelLookupsCannotHidePiiReferences() {
+        addPiiCustomerDimension();
+        String[] expressions = {
+            "Levels(\"[Customer].[Customers].[Name]\").Members",
+            "Dimensions(\"[Customer].[Customers]\").Members",
+            "Dimensions(\"Customer\").Levels(1).Members",
+            "Dimensions(1).Members",
+            "Head(Dimensions(2).Levels(1).Members, 5)"
+        };
+        for (String expression : expressions) {
+            AiQueryRequest req = baseReq();
+            req.setNamedSets(Collections.singletonList(new AiNamedSet("S", expression)));
+            try {
+                converter.convert(req, schema);
+                fail("expected validation error for " + expression);
+            } catch (AiValidationException e) {
+                assertEquals("namedSets[0].expression", e.getField());
+            }
+        }
+    }
+
+    @Test
+    public void bareUnknownIdentifierIsRejectedButSafeBareHierarchyWorks() {
+        addPiiCustomerDimension();
         AiQueryRequest req = baseReq();
-        req.setNamedSets(Collections.singletonList(new AiNamedSet("S", "[Measures].Members")));
+        for (String expression :
+                new String[] {"{Product.Product.Department.Members}", "{Product.Product.Levels(1).Members}"}) {
+            req.setNamedSets(Collections.singletonList(new AiNamedSet("S", expression)));
+            assertTrue(converter.convert(req, schema).getMdx().contains(expression));
+        }
+
+        req.setNamedSets(Collections.singletonList(new AiNamedSet("S", "{Unknown.Members}")));
         try {
             converter.convert(req, schema);
-            fail("expected PII refusal for the Measures hierarchy");
-        } catch (AiPiiException e) {
+            fail("expected validation error for unknown bare dimension");
+        } catch (AiValidationException e) {
             assertEquals("namedSets[0].expression", e.getField());
+            assertTrue(e.getMessage(), e.getMessage().contains("Unknown"));
         }
     }
 
