@@ -277,7 +277,31 @@ function cellValue(cell, asNumbers) {
 }
 
 /**
+ * Neutralise a string Sheets would evaluate as a formula when written with
+ * setValues: one whose first character is {@code =}, {@code +}, {@code -},
+ * {@code @}, tab or CR (saiku#2550i). A member caption or formatted value starting with
+ * {@code =} (imagine {@code =IMPORTRANGE(...)}) would otherwise EXECUTE in the
+ * user's sheet on write. Prefixing an apostrophe forces the cell to text; the
+ * Sheets UI hides the apostrophe, so the display is unchanged. Numbers and
+ * other non-strings pass through untouched.
+ *
+ * @param {*} value
+ * @return {*}
+ */
+function neutralise(value) {
+  // Match CsvExporter.isPlainNumber so formatted negatives stay numeric-looking.
+  var plainNumber = /^[-+]?[$€£¥]?(\d+|\d{1,3}(,\d{3})+)(\.\d+)?%?$/;
+  if (typeof value === 'string' && /^[=+\-@\t\r]/.test(value) && !plainNumber.test(value)) {
+    return "'" + value;
+  }
+  return value;
+}
+
+/**
  * Turn a records response into a header row plus one row per record.
+ * Header captions and cell values are neutralised (see {@link neutralise})
+ * so a caption starting with {@code =}, {@code +}, {@code -} or {@code @}
+ * is written as text, never executed as a formula.
  *
  * @param {!Object} response
  * @param {{asNumbers:boolean}} [opts]
@@ -288,10 +312,10 @@ function toSheetValues(response, opts) {
   var asNumbers = options.asNumbers !== false;
   var headers = headerRow(response);
   var data = (response && response.data) || [];
-  var out = [headers];
+  var out = [headers.map(neutralise)];
   data.forEach(function (record) {
     var row = headers.map(function (header) {
-      return cellValue(record[header], asNumbers);
+      return neutralise(cellValue(record[header], asNumbers));
     });
     out.push(row);
   });
@@ -391,6 +415,7 @@ var SaikuQueryModel = {
   describeState: describeState,
   headerRow: headerRow,
   cellValue: cellValue,
+  neutralise: neutralise,
   toSheetValues: toSheetValues,
   planWrite: planWrite,
   fingerprint: fingerprint,

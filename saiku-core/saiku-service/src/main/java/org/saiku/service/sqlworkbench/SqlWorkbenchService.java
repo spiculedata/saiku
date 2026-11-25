@@ -44,6 +44,21 @@ public class SqlWorkbenchService {
     private static final int QUERY_TIMEOUT_SECONDS = 30;
     private static final int MAX_ERROR_MESSAGE_LENGTH = 500;
 
+    /** saiku#2550h: byte cap on a single materialised cell. A cell whose stringified
+     *  value exceeds this is TRUNCATED (with a marker appended) rather than refused —
+     *  one giant TEXT/BLOB cell should not dominate the budget. Counts UTF-8 bytes
+     *  of the stringified value. */
+    static final int MAX_CELL_BYTES = Integer.getInteger("saiku.sqlworkbench.maxCellBytes", 64 * 1024);
+
+    /** saiku#2550h: byte cap on the materialised result as a whole (all cells,
+     *  stringified, UTF-8). The row cap alone is not a heap cap: 5,000 rows of a
+     *  {@code REPEAT('x', 1000000)} column were ~5 GB. Reading stops once the cap is
+     *  exceeded and the result is reported {@code truncated}. */
+    static final long MAX_RESULT_BYTES = Long.getLong("saiku.sqlworkbench.maxResultBytes", 10L * 1024 * 1024);
+
+    /** Appended to a cell value that {@link #MAX_CELL_BYTES} cut off. */
+    static final String CELL_TRUNCATION_MARKER = "…[truncated]";
+
     private final SchemaGenOrchestrator.ConnectionProvider connectionProvider;
     private final DatasourceService datasourceService;
     private final SqlWorkbenchAuditLog auditLog;
@@ -319,18 +334,59 @@ public class SqlWorkbenchService {
             columns.add(md.getColumnLabel(i));
         }
         List<List<Object>> rows = new ArrayList<>();
+        long resultBytes = 0;
+        boolean byteCapped = false;
+        rows:
         while (rs.next()) {
             List<Object> row = new ArrayList<>(n);
             for (int i = 1; i <= n; i++) {
-                row.add(rs.getObject(i));
+                Object cell = rs.getObject(i);
+                // saiku#2550h: the row cap is not a heap cap — 5,000 rows of a
+                // REPEAT('x', 1000000) column were ~5 GB. Every cell is measured as
+                // its stringified UTF-8 bytes (the wire form the UI gets), a cell over
+                // MAX_CELL_BYTES is truncated in place, and reading stops entirely
+                // once the whole result crosses MAX_RESULT_BYTES. Binary values are
+                // measured via their string form too — a close-enough, documented
+                // approximation; the cap exists to bound materialisation, not to audit.
+                if (cell != null) {
+                    String s = String.valueOf(cell);
+                    byte[] utf8 = s.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                    if (utf8.length > MAX_CELL_BYTES) {
+                        s = truncateCell(s);
+                        utf8 = s.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                        cell = s;
+                    }
+                    // Keep only complete rows. A wide row must not overshoot the result cap.
+                    if (resultBytes > MAX_RESULT_BYTES - utf8.length) {
+                        byteCapped = true;
+                        break rows;
+                    }
+                    resultBytes += utf8.length;
+                }
+                row.add(cell);
             }
             rows.add(row);
         }
         // setMaxRows caps the driver at maxRows, so hitting that count exactly means there was
         // very likely more to fetch — a heuristic, not a certainty, but good enough for a "showing
-        // the first N rows" banner without a second COUNT(*) round-trip.
-        boolean truncated = rows.size() >= maxRows;
+        // the first N rows" banner without a second COUNT(*) round-trip. The byte cap is a
+        // certainty: we stopped reading because the materialised result got too big.
+        boolean truncated = byteCapped || rows.size() >= maxRows;
         return new SqlQueryResult(columns, rows, rows.size(), truncated, durationMs);
+    }
+
+    /** Keep complete Unicode code points within the UTF-8 budget. */
+    static String truncateCell(String value) {
+        int chars = 0;
+        int bytes = 0;
+        while (chars < value.length()) {
+            int codePoint = value.codePointAt(chars);
+            int nextBytes = codePoint <= 0x7f ? 1 : codePoint <= 0x7ff ? 2 : codePoint <= 0xffff ? 3 : 4;
+            if (bytes + nextBytes > MAX_CELL_BYTES) break;
+            bytes += nextBytes;
+            chars += Character.charCount(codePoint);
+        }
+        return value.substring(0, chars) + CELL_TRUNCATION_MARKER;
     }
 
     private void audit(

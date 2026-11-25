@@ -75,6 +75,12 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-11-25 — fix/2598-workbench-syntax-error — PR #2608 base merge
+**Was doing:** merged current development into the existing PR branch, preserving the #2598 syntax-error tests and #2550 result-size tests in the sole conflict.
+**Now:** check PR #2608 CI on the merge commit, especially the JDK 22 build, service/web tests, and acceptance specs.
+**Watch out:** local Maven tests stop before compilation because GitHub Packages returns 401 for private Mondrian/olap4j dependencies; Java Spotless passes.
+**Refs:** #2598, #2550, PR #2608
+
 ## 2026-11-25 — feature/share-bind-content-2536 — PR #2565 CI fixture rework
 **Was doing:** wired valid share-token store records into the older dashboard and notebook resource tests after CI reported 409 instead of their expected 200/404 responses.
 **Now:** check PR #2565 CI on the pushed head for the Java tests and Docker image job.

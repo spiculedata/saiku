@@ -69,11 +69,20 @@ public class DemoGateResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response request(@Context HttpServletRequest req, Map<String, String> body) {
         if (!enabled()) return disabled();
-        // Rate-limit sends too, so a bot can't make us blast WorkOS (which would
-        // bill us per send/verify) — same per-IP limiter as login + verify.
+        // Rate-limit sends too — same per-IP limiter as login + verify. See the
+        // saiku#2550b note below for why the hit is recorded before the dial.
         String email = email(body);
         if (rateLimiter.isBlocked(req, email)) return rateLimited();
         if (email == null) return badEmail();
+        // saiku#2550b: count EVERY send against the limiter, before the provider
+        // call — not only failed ones. Previously the hit was recorded only in the
+        // catch below, so a healthy WorkOS key meant the "rate-limit sends too"
+        // check never tripped and this endpoint could make us blast WorkOS
+        // unbounded (it bills per send/verify). Recording before the dial also
+        // means a hanging provider call still costs the caller its budget. The
+        // failed-send path records a second hit (below) — deliberately
+        // conservative, failures cost us too.
+        rateLimiter.recordFailure(req, email);
         try {
             gate.provider().sendCode(email);
             return Response.noContent().build();

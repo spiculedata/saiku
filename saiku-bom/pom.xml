@@ -6,7 +6,7 @@
 
     <groupId>org.saikuanalytics</groupId>
     <artifactId>saiku-bom</artifactId>
-    <version>4.9.1</version>
+    <version>4.10.0</version>
     <packaging>pom</packaging>
     <name>Saiku BOM</name>
     <description>Central dependency-version catalogue for Saiku modules.</description>
@@ -35,12 +35,12 @@
              log4j-slf4j-impl, the slf4j-1.x → log4j2 binding. -->
         <log4j2.version>2.26.1</log4j2.version>
         <!-- Batik 1.8 has CVE-2022-38398/40146/41704/42890/44729/44730. 1.17 fixes them. -->
-        <batik.version>1.19</batik.version>
+        <batik.version>1.20</batik.version>
         <jersey.version>3.1.9</jersey.version>
         <saiku-query.version>0.4-SNAPSHOT</saiku-query.version>
         <jackson.version>2.22.3</jackson.version>
         <arrow.version>19.0.0</arrow.version>
-        <caffeine.version>3.2.4</caffeine.version>
+        <caffeine.version>3.3.1</caffeine.version>
         <!-- JSON Schema (draft 2020-12) validator for the AiQueryRequest
              body. Used by AiRequestSchemaValidator to enforce shape errors
              before the converter's domain-resolution layer runs. Apache 2.0,
@@ -283,7 +283,7 @@
             <dependency>
                 <groupId>org.apache.xmlgraphics</groupId>
                 <artifactId>xmlgraphics-commons</artifactId>
-                <version>2.11</version>
+                <version>2.12</version>
             </dependency>
 
             <!-- avalon-framework-api / -impl 4.2.0 (2006!) were only needed to
