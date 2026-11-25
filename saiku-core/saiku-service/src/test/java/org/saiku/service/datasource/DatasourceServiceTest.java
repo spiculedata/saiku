@@ -230,6 +230,28 @@ public class DatasourceServiceTest {
         svc.saveFile("body", "/repo/file.saiku", "tom", List.of("R"));
         assertEquals("body", manager.savedFiles.get("/repo/file.saiku"));
 
+        // saiku#2536 — the save-file listener fires with path/content/writer,
+        // and a failing listener never fails the save.
+        List<String> observed = new ArrayList<>();
+        List<String> blows = new ArrayList<>();
+        svc.setRepositoryFileListeners(java.util.List.of(
+                (path, content, writer, service) -> observed.add(path + "/" + content + "/" + writer),
+                (path, content, writer, service) -> {
+                    blows.add(path);
+                    throw new RuntimeException("listener boom");
+                }));
+        svc.saveFile("content", "d.saikudash", "alice", List.of("R"));
+        assertEquals(1, observed.size());
+        assertEquals("d.saikudash/content/alice", observed.get(0));
+        assertEquals(1, blows.size());
+        // The second listener threw, yet the file was saved.
+        assertEquals("content", manager.savedFiles.get("d.saikudash"));
+
+        manager.failSave = true;
+        assertEquals("Save Failed: repository", svc.saveFile("bad", "d.saikudash", "bob", List.of("R")));
+        assertEquals(1, observed.size()); // a failed save must not re-arm or poison a binding
+        manager.failSave = false;
+
         svc.removeFile("/repo/file.saiku", "tom", List.of("R"));
         assertTrue(manager.removedFiles.contains("/repo/file.saiku"));
 
@@ -252,6 +274,30 @@ public class DatasourceServiceTest {
 
         svc.createUserHome("alice");
         assertEquals(Collections.singletonList("alice"), manager.createdUsers);
+    }
+
+    @Test
+    public void successful_remove_and_move_notify_bound_paths_but_failed_mutations_do_not() {
+        List<String> changed = new ArrayList<>();
+        svc.setRepositoryFileListeners(List.of(new RepositoryFileListener() {
+            @Override
+            public void onFileSaved(String path, String content, String writer, DatasourceService service) {}
+
+            @Override
+            public void onFileChangedWithoutSave(String path, String writer, DatasourceService service) {
+                changed.add(path + "/" + writer);
+            }
+        }));
+
+        assertEquals("Remove Okay", svc.removeFile("/bound/q.saiku", "bob", List.of("R")));
+        assertEquals("Move Okay", svc.moveFile("/tmp/q.saiku", "/bound/q.saiku", "bob", List.of("R")));
+        assertEquals(List.of("/bound/q.saiku/bob", "/tmp/q.saiku/bob", "/bound/q.saiku/bob"), changed);
+
+        manager.failRemove = true;
+        manager.failMove = true;
+        assertEquals("Save Failed: repository", svc.removeFile("/bound/q.saiku", "bob", List.of("R")));
+        assertEquals("Move Failed: repository", svc.moveFile("/tmp/q.saiku", "/bound/q.saiku", "bob", List.of("R")));
+        assertEquals(3, changed.size());
     }
 
     @Test
@@ -333,6 +379,9 @@ public class DatasourceServiceTest {
         final List<String> removeCalls = new ArrayList<>();
         final Map<String, Object> internalFiles = new HashMap<>();
         final Map<String, Object> savedFiles = new HashMap<>();
+        boolean failSave;
+        boolean failRemove;
+        boolean failMove;
         final Set<String> removedFiles = new HashSet<>();
         final List<String> movedFiles = new ArrayList<>();
         final List<Map<String, String>> addSchemaCalls = new ArrayList<>();
@@ -440,20 +489,29 @@ public class DatasourceServiceTest {
 
         @Override
         public String saveFile(String path, Object content, String user, List<String> roles) {
+            if (failSave) {
+                return "Save Failed: repository";
+            }
             savedFiles.put(path, content);
-            return "ok";
+            return "Save Okay";
         }
 
         @Override
         public String removeFile(String path, String user, List<String> roles) {
+            if (failRemove) {
+                return "Save Failed: repository";
+            }
             removedFiles.add(path);
-            return "ok";
+            return "Remove Okay";
         }
 
         @Override
         public String moveFile(String source, String target, String user, List<String> roles) {
+            if (failMove) {
+                return "Move Failed: repository";
+            }
             movedFiles.add(source + " -> " + target);
-            return "ok";
+            return "Move Okay";
         }
 
         @Override

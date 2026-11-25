@@ -14,10 +14,13 @@ import java.nio.file.attribute.PosixFilePermission;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiFunction;
 import java.util.regex.Pattern;
 import org.saiku.service.util.security.Usernames;
 import org.slf4j.Logger;
@@ -75,9 +78,35 @@ public class ShareTokenStore {
         this.dir = d;
     }
 
-    /** Mint a new token for {@code dashboardPath}, owned by {@code createdBy}. */
+    /** Mint a new token for {@code dashboardPath}, owned by {@code createdBy}.
+     *  Legacy overload: no content binding (the token binds to current content
+     *  on first use). */
     public ShareToken create(
             String dashboardPath, String createdBy, List<String> ownerRoles, long ttlMillis, String label) {
+        return create(dashboardPath, createdBy, ownerRoles, ttlMillis, label, null);
+    }
+
+    /** saiku#2536 — mint with the mint-time content binding: {@code
+     *  contentSha256} is the hash of the shared content as read under the
+     *  minter's scope. */
+    public ShareToken create(
+            String dashboardPath,
+            String createdBy,
+            List<String> ownerRoles,
+            long ttlMillis,
+            String label,
+            String contentSha256) {
+        return create(dashboardPath, createdBy, ownerRoles, ttlMillis, label, contentSha256, null);
+    }
+
+    public ShareToken create(
+            String dashboardPath,
+            String createdBy,
+            List<String> ownerRoles,
+            long ttlMillis,
+            String label,
+            String contentSha256,
+            Map<String, String> referenceSha256) {
         ShareToken t = new ShareToken();
         t.token = generateId();
         t.dashboardPath = dashboardPath;
@@ -87,8 +116,123 @@ public class ShareTokenStore {
         t.expiresAt = t.createdAt + ttlMillis;
         t.revoked = false;
         t.label = label;
+        t.contentSha256 = contentSha256;
+        t.referenceSha256 = referenceSha256 == null ? null : new HashMap<>(referenceSha256);
         persist(t);
         return t;
+    }
+
+    /** saiku#2536 — bind (or re-arm) a record's content hash. Used by the guest
+     *  read path to bind a legacy unbound record on first use. No-op when the
+     *  id is unknown. */
+    public void bindContentSha256(String id, String sha256Hex) {
+        ShareToken t = load(id);
+        if (t == null) {
+            return;
+        }
+        t.contentSha256 = sha256Hex;
+        t.contentChangedByOther = false;
+        persist(t);
+    }
+
+    public void bindReferences(String id, Map<String, String> hashes) {
+        ShareToken t = load(id);
+        if (t != null && t.referenceSha256 == null) {
+            t.referenceSha256 = new HashMap<>(hashes);
+            persist(t);
+        }
+    }
+
+    /** saiku#2536 — repository save hook (called by
+     *  {@code SharedContentBindingListener} after every successful
+     *  {@code saveFile}). When the writer is the minter, re-arm the binding to
+     *  the freshly written content — the link keeps serving the owner's own
+     *  edits. When anyone else wrote, poison the record: the guest read is
+     *  refused until the link is re-minted, even if the bytes are later
+     *  restored. */
+    public void onContentSaved(String path, String newSha256Hex, String writer) {
+        onContentSaved(path, newSha256Hex, writer, null, (reference, token) -> null);
+    }
+
+    public void onContentSaved(
+            String path,
+            String newSha256Hex,
+            String writer,
+            String content,
+            BiFunction<String, ShareToken, String> readReference) {
+        if (path == null) {
+            return;
+        }
+        String normalized = ContentBinding.normalizePath(path);
+        for (ShareToken t : listAll()) {
+            boolean primary = normalized.equals(ContentBinding.normalizePath(t.dashboardPath));
+            boolean referenced = t.referenceSha256 != null && t.referenceSha256.containsKey(normalized);
+            if (!primary && !referenced) {
+                continue;
+            }
+            boolean owner = Usernames.sameUser(writer, t.createdBy);
+            if (primary && owner) {
+                t.contentSha256 = newSha256Hex;
+                t.contentChangedByOther = false;
+                if (content != null && t.dashboardPath.endsWith(".saikudash")) {
+                    t.referenceSha256 = ContentBinding.refreshReferenceHashes(
+                            "dashboard", content, t.referenceSha256, reference -> readReference.apply(reference, t));
+                    if (t.referencesChangedByOther != null) {
+                        t.referencesChangedByOther.retainAll(t.referenceSha256.keySet());
+                    }
+                }
+            } else if (primary) {
+                t.contentChangedByOther = true;
+                log.warn(
+                        "Shared content {} was written by '{}' but its share link was minted by '{}' —"
+                                + " the link is refused until re-minted (saiku#2536)",
+                        path,
+                        writer,
+                        t.createdBy);
+            }
+            if (referenced) {
+                if (owner) {
+                    t.referenceSha256 = new HashMap<>(t.referenceSha256);
+                    t.referenceSha256.put(normalized, newSha256Hex);
+                    if (t.referencesChangedByOther != null) {
+                        t.referencesChangedByOther.remove(normalized);
+                    }
+                } else {
+                    if (t.referencesChangedByOther == null) {
+                        t.referencesChangedByOther = new HashSet<>();
+                    }
+                    t.referencesChangedByOther.add(normalized);
+                }
+            }
+            persist(t);
+        }
+    }
+
+    /** A successful delete or move can replace a bound path without a save event. */
+    public void onContentChangedWithoutSave(String path, String writer) {
+        if (path == null) {
+            return;
+        }
+        String normalized = ContentBinding.normalizePath(path);
+        for (ShareToken t : listAll()) {
+            if (Usernames.sameUser(writer, t.createdBy)) {
+                continue;
+            }
+            boolean primary = normalized.equals(ContentBinding.normalizePath(t.dashboardPath));
+            boolean referenced = t.referenceSha256 != null && t.referenceSha256.containsKey(normalized);
+            if (primary || referenced) {
+                if (primary) {
+                    t.contentChangedByOther = true;
+                }
+                if (referenced) {
+                    if (t.referencesChangedByOther == null) {
+                        t.referencesChangedByOther = new HashSet<>();
+                    }
+                    t.referencesChangedByOther.add(normalized);
+                }
+                persist(t);
+            }
+        }
     }
 
     /** Load a token by id, or null if the id is malformed / not found / unreadable. */
