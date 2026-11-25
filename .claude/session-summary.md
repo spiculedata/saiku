@@ -75,6 +75,12 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-11-25 — feature/2599-sql-workbench-scroll-ds-info — PR #2609 overlap rework
+**Was doing:** merged current development, kept #2610's scroll implementation and test, removed this PR's duplicate scroll code and test, and retained datasource info, table-list, and topbar coverage.
+**Now:** check PR #2609 CI after the push, especially Java compilation and the focused SQL workbench browser tests.
+**Watch out:** local Maven stops before compilation on GitHub Packages 401; Chromium lacks `libglib-2.0.so.0` here. UI check, 2,732 Vitest tests, lint, build, and Java Spotless pass.
+**Refs:** #2599, PR #2609, PR #2610
+
 ## 2026-11-25 — feature/share-bind-content-2536 — PR #2565 CI fixture rework
 **Was doing:** wired valid share-token store records into the older dashboard and notebook resource tests after CI reported 409 instead of their expected 200/404 responses.
 **Now:** check PR #2565 CI on the pushed head for the Java tests and Docker image job.

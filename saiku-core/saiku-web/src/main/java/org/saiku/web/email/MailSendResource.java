@@ -86,6 +86,23 @@ public class MailSendResource {
     /** Test seam over the sender build (production builds the real sender from the effective config). */
     private java.util.function.Function<MailConfig, MailSender> senderFactory = MailSenderFactory::create;
 
+    /** saiku#2550f: same stored-host rule the config wizard's test-send enforces — a host that was
+     *  saved before the save-time gate existed (or seeded straight into the encrypted store) must
+     *  not be dialled. Env-managed relays are trusted as-is (ops chose them, the wizard never wrote
+     *  them). Mirrors MailConfigResource's private gate. */
+    private boolean storedHostDialable(MailConfig cfg) {
+        if (mailConfigResolver == null || mailConfigResolver.managedByOps()) {
+            return true;
+        }
+        try {
+            return org.saiku.service.mail.SmtpHostValidator.validate(cfg.host(), cfg.port()) != null;
+        } catch (IllegalArgumentException e) {
+            // The reason stays server-side (never echoed — subnet-oracle risk).
+            log.warn("Refused stored SMTP host '{}' on port {}: {}", cfg.host(), cfg.port(), e.getMessage());
+            return false;
+        }
+    }
+
     public void setMultiRecipientMailService(MultiRecipientMailService multiRecipientMailService) {
         this.multiRecipientMailService = multiRecipientMailService;
     }
@@ -161,6 +178,13 @@ public class MailSendResource {
         if (cfg == null || !cfg.isConfigured()) {
             return notConfigured();
         }
+        // saiku#2550f: refuse a stored relay host that fails the SmtpHostValidator BEFORE any
+        // dial — /invite opens a real SMTP transport, and a config written by an older build or
+        // seeded directly into the encrypted store never passed the save-time gate.
+        if (!storedHostDialable(cfg)) {
+            log.warn("Admin {} invite refused: stored SMTP host is not an allowed relay", currentUser());
+            return badRequest("smtp host/port is not an allowed mail relay");
+        }
         MailSender sender = senderFactory.apply(cfg);
         if (sender == null || !sender.isConfigured()) {
             return notConfigured();
@@ -234,6 +258,11 @@ public class MailSendResource {
         MailConfig cfg = mailConfigResolver == null ? null : mailConfigResolver.effective();
         if (cfg == null || !cfg.isConfigured()) {
             return notConfigured();
+        }
+        // saiku#2550f: same pre-dial relay gate as /invite (see above).
+        if (!storedHostDialable(cfg)) {
+            log.warn("Admin {} send refused: stored SMTP host is not an allowed relay", currentUser());
+            return badRequest("smtp host/port is not an allowed mail relay");
         }
         MailSender sender = senderFactory.apply(cfg);
         if (sender == null || !sender.isConfigured()) {

@@ -3,14 +3,11 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 /**
  * SQL workbench e2e, mocked backend (saiku#2599). Verifies:
  *
- * 1. C1/C5 — a result taller than the viewport scrolls (the page is the scroll container,
- *    since `.app` is overflow:hidden), the pager is reachable by scrolling, and a wide grid
- *    scrolls horizontally inside its own wrapper.
- * 2. C2 — the datasource selector shows what it connects to: database product, catalog and
+ * 1. C2 — the datasource selector shows what it connects to: database product, catalog and
  *    default schema from DatabaseMetaData, plus the credential-redacted JDBC URL.
- * 3. C3 — the collapsible table list names the default schema's tables; clicking one puts
+ * 2. C3 — the collapsible table list names the default schema's tables; clicking one puts
  *    `SELECT * FROM "<table>"` into the editor (quoted, not bare).
- * 4. C4 — the topbar does not clip any nav item at 1024px or 1280px.
+ * 3. C4 — the topbar does not clip any nav item at 1024px or 1280px.
  */
 
 const DATASOURCE = { name: 'bank', type: 'OLAP' };
@@ -28,7 +25,7 @@ const INFO = {
 
 const TABLES = ['account', 'branch', 'customer'];
 
-const ROW_COUNT = 300;
+const ROW_COUNT = 1;
 
 function bigResult(rowCount: number) {
 	return {
@@ -176,52 +173,6 @@ test.describe('SQL workbench (mocked backend)', () => {
 		// observable content of the Monaco buffer in a headless browser.
 		await page.getByRole('button', { name: 'Run', exact: true }).click();
 		await expect.poll(() => backend.lastQueryBody?.sql).toBe('SELECT * FROM "account"');
-	});
-
-	test('C1: results taller than the viewport scroll, and the pager is reachable', async ({
-		page
-	}) => {
-		await page.goto('/sql-workbench');
-
-		await page.getByRole('button', { name: 'Run', exact: true }).click();
-		const grid = page.getByTestId('results-grid');
-		await expect(grid).toBeVisible();
-
-		// C5: the page scrolls to the pager even though `.app` hides overflow.
-		const scroller = page.locator('.sql-workbench');
-		await expect
-			.poll(() => scroller.evaluate((el) => el.scrollHeight - el.clientHeight))
-			.toBeGreaterThan(0);
-
-		// The result has its own bounded scroll area so its header stays at the top
-		// while the last row can be reached. A wide value also needs horizontal scroll.
-		const gridMetrics = await grid.evaluate((el) => ({
-			scrollHeight: el.scrollHeight,
-			clientHeight: el.clientHeight,
-			scrollWidth: el.scrollWidth,
-			clientWidth: el.clientWidth
-		}));
-		expect(gridMetrics.scrollHeight).toBeGreaterThan(gridMetrics.clientHeight);
-		expect(gridMetrics.scrollWidth).toBeGreaterThan(gridMetrics.clientWidth);
-		await grid.scrollIntoViewIfNeeded();
-		const headerTop = await grid
-			.locator('th')
-			.first()
-			.evaluate((el) => el.getBoundingClientRect().top);
-		await grid.evaluate((el) => el.scrollTo(0, el.scrollHeight));
-		await expect(grid.locator('tbody tr').last()).toBeInViewport();
-		expect(
-			await grid
-				.locator('th')
-				.first()
-				.evaluate((el) => el.getBoundingClientRect().top)
-		).toBeCloseTo(headerTop, 0);
-		await grid.evaluate((el) => (el.scrollLeft = el.scrollWidth));
-		expect(await grid.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
-
-		// Scrolling reaches the pager.
-		await scroller.evaluate((el) => el.scrollTo(0, el.scrollHeight));
-		await expect(page.getByRole('button', { name: 'Next' })).toBeInViewport();
 	});
 
 	test('C4: no topbar item is clipped at 1024px or 1280px', async ({ page }) => {
