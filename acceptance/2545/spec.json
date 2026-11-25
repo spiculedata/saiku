@@ -1,0 +1,24 @@
+{
+  "issue": 2545,
+  "title": "App Builder: an app.id outside ^[A-Za-z0-9_-]{1,64}$ is refused on save (typed 400) and by the loader, and the skin selector value is escaped so the custom-CSS scoping cannot be escaped",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "an app document whose id contains characters outside the allowed set (the issue's `\"]{}` breakout payload)",
+      "then": "the server rejects the save with a typed 400 (VALIDATION_ERROR, field id) and the UI loader refuses the document, so it is never rendered"
+    },
+    {
+      "id": "C2",
+      "given": "rootSelectorFor on the same payload",
+      "then": "the attribute-selector value is escaped, so the skin stylesheet — and the sanitised customCss — can contain no rule outside the app's scope; a vitest covers the issue's payload and asserts it"
+    },
+    {
+      "id": "C3",
+      "given": "an app whose id is generated (letters, digits, _ and -, at most 64 chars)",
+      "then": "the save answers 200 and the document loads back unchanged"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}

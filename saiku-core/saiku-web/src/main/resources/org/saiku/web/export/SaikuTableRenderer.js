@@ -6,6 +6,17 @@ var SaikuTableRenderer = _.extend(SaikuRenderer, {
 
 // Query results can contain data supplied by a warehouse user. Keep values as
 // text when building the HTML that is later parsed for PDF export.
+// Cell properties reach this renderer through FORMAT_STRING (a formatted value
+// of the form |text|key=value), so a query author chooses them — and the HTML
+// export runs on the Saiku origin for whoever opens the export link (saiku#2528).
+// Every property is escaped before concatenation, and URL properties (link,
+// image) are only honoured when they are absolute http(s) URLs; anything else
+// is dropped, so a property cannot smuggle markup, event handlers or another
+// scheme (javascript:, data:, relative paths) into the document.
+function isHttpUrl(value) {
+    return typeof value === 'string' && /^https?:\/\//i.test(value);
+}
+
 function escapeResultHtml(value) {
     return String(value == null ? "" : value).replace(/[&<>"']/g, function (ch) {
         return {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[ch];
@@ -435,24 +446,24 @@ SaikuTableRenderer.prototype.internalRender = function(allData, options) {
                 var color = "";
                 var val = escapeResultHtml(header.value);
                 var arrow = "";
-                if (header.properties.hasOwnProperty('image')) {
-                    var img_height = header.properties.hasOwnProperty('image_height') ? " height='" + header.properties.image_height + "'" : "";
-                    var img_width = header.properties.hasOwnProperty('image_width') ? " width='" + header.properties.image_width + "'" : "";
-                    val = "<img " + img_height + " " + img_width + " style='padding-left: 5px' src='" + header.properties.image + "' border='0'>";
+                if (header.properties.hasOwnProperty('image') && isHttpUrl(header.properties.image)) {
+                    var img_height = header.properties.hasOwnProperty('image_height') ? " height='" + escapeResultHtml(header.properties.image_height) + "'" : "";
+                    var img_width = header.properties.hasOwnProperty('image_width') ? " width='" + escapeResultHtml(header.properties.image_width) + "'" : "";
+                    val = "<img " + img_height + " " + img_width + " style='padding-left: 5px' src='" + escapeResultHtml(header.properties.image) + "' border='0'>";
                 }
 
                 if (header.properties.hasOwnProperty('style')) {
-                    color = " style='background-color: " + header.properties.style + "' ";
+                    color = " style='background-color: " + escapeResultHtml(header.properties.style) + "' ";
                 }
-                if (header.properties.hasOwnProperty('link')) {
-                    val = "<a target='__blank' href='" + header.properties.link + "'>" + val + "</a>";
+                if (header.properties.hasOwnProperty('link') && isHttpUrl(header.properties.link)) {
+                    val = "<a target='__blank' href='" + escapeResultHtml(header.properties.link) + "'>" + val + "</a>";
                 }
                 if (header.properties.hasOwnProperty('arrow')) {
-                    arrow = "<img height='10' width='10' style='padding-left: 5px' src='./images/arrow-" + header.properties.arrow + ".gif' border='0'>";
+                    arrow = "<img height='10' width='10' style='padding-left: 5px' src='./images/arrow-" + escapeResultHtml(header.properties.arrow) + ".gif' border='0'>";
                 }
 
                 rowContent += '<td class="data" ' + color + '>'
-                + (wrapContent ? '<div class="datadiv" alt="' + header.properties.raw + '" rel="' + header.properties.position + '">' : "")
+                + (wrapContent ? '<div class="datadiv" alt="' + escapeResultHtml(header.properties.raw) + '" rel="' + escapeResultHtml(header.properties.position) + '">' : "")
                 + val + arrow
                 + (wrapContent ? '</div>' : '') + '</td>';
                 if (totalsLists[ROWS])

@@ -6,16 +6,22 @@ package org.saiku.service.history;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.Before;
 import org.junit.Test;
+import org.saiku.repository.IRepositoryObject;
+import org.saiku.repository.RepositoryFileObject;
 import org.saiku.service.datasource.DatasourceService;
+import org.saiku.service.util.DashboardSidecars;
+import org.saiku.service.util.StorageLimits;
 
 /**
  * Unit coverage for {@link DashboardHistoryService} (issue #947): archive →
@@ -27,6 +33,7 @@ public class DashboardHistoryServiceTest {
 
     private static class FakeDs extends DatasourceService {
         final Map<String, String> internal = new HashMap<>();
+        final List<String> dashboards = new ArrayList<>();
 
         @Override
         public String saveInternalFile(String path, String content, String type) {
@@ -43,6 +50,15 @@ public class DashboardHistoryServiceTest {
         public void removeInternalFile(String path) {
             internal.remove(path);
         }
+
+        @Override
+        public List<IRepositoryObject> getFiles(List<String> type, String username, List<String> roles) {
+            List<IRepositoryObject> files = new ArrayList<>();
+            for (String path : dashboards) {
+                files.add(new RepositoryFileObject("x.saikudash", "#" + path, "saikudash", "/" + path, List.of()));
+            }
+            return files;
+        }
     }
 
     private FakeDs ds;
@@ -52,6 +68,7 @@ public class DashboardHistoryServiceTest {
     @Before
     public void setUp() {
         ds = new FakeDs();
+        ds.dashboards.add(DASH);
         svc = new DashboardHistoryService();
         svc.setDatasourceService(ds);
     }
@@ -92,8 +109,43 @@ public class DashboardHistoryServiceTest {
     public void purge_removes_the_history_file() {
         svc.archive(DASH, "{\"v\":1}", "admin");
         assertEquals(1, svc.list(DASH).size());
+        ds.dashboards.remove(DASH);
         svc.purge(DASH);
         assertEquals("purged history is empty", 0, svc.list(DASH).size());
+    }
+
+    /** saiku#2550d (review): purge must also remove the LEGACY history sidecar,
+     *  or a deleted dashboard's pre-upgrade versions pass to the next dashboard
+     *  flattening to the same name (and deleted-after-upgrade entries come back
+     *  when a dashboard is recreated at the same path). */
+    @Test
+    public void purge_removes_the_legacy_file_so_a_recreated_dashboard_starts_clean() {
+        String legacy = DashboardSidecars.legacyPath(DashboardHistoryService.KIND, DASH);
+        ds.internal.put(legacy, "{\"dashboard\":\"{\\\"v\\\":1}\",\"author\":\"admin\",\"ts\":1}\n");
+        ds.dashboards.remove(DASH);
+        svc.purge(DASH);
+        assertNull("legacy file removed with the dashboard", ds.internal.get(legacy));
+        ds.dashboards.add(DASH);
+        assertEquals(0, svc.list(DASH).size());
+    }
+
+    /** homes/a_b/x and homes/a/b/x flatten to one legacy name: the file goes
+     *  only when the deleted dashboard is its sole flattened owner. */
+    @Test
+    public void purge_keeps_an_ambiguous_legacy_file_while_another_dashboard_shares_the_flattened_name() {
+        String ab = "homes/a_b/x.saikudash";
+        String abx = "homes/a/b/x.saikudash";
+        ds.dashboards.clear();
+        ds.dashboards.add(ab);
+        ds.dashboards.add(abx);
+        String legacy = DashboardSidecars.legacyPath(DashboardHistoryService.KIND, ab);
+        ds.internal.put(legacy, "{\"dashboard\":\"{}\",\"author\":\"admin\",\"ts\":1}\n");
+
+        ds.dashboards.remove(ab);
+        svc.purge(ab);
+        assertNotNull(
+                "ambiguous legacy file kept while another dashboard shares the flattened name",
+                ds.internal.get(legacy));
     }
 
     @Test
@@ -104,13 +156,71 @@ public class DashboardHistoryServiceTest {
     }
 
     @Test
-    public void history_path_is_flattened_and_namespaced() {
-        assertEquals(
-                "saiku-history-dashboards_foo.saikudash.jsonl",
-                DashboardHistoryService.historyPath("dashboards/foo.saikudash"));
+    public void history_path_is_hashed_namespaced_and_flat() {
+        // saiku#2550d: hashed off the EXACT path (see DashboardSidecars) — distinct
+        // paths get distinct files, still flat at the datadir root.
+        String flat = DashboardHistoryService.historyPath("dashboards/foo.saikudash");
+        assertTrue(flat.startsWith("saiku-history-v2-"));
+        assertTrue(flat.endsWith(".jsonl"));
+        assertFalse(flat.contains("/") || flat.contains("\\"));
         String evil = DashboardHistoryService.historyPath("../../etc/passwd");
-        assertTrue(evil.startsWith("saiku-history-"));
+        assertTrue(evil.startsWith("saiku-history-v2-"));
         assertFalse(evil.contains(".."));
         assertFalse(evil.contains("/") || evil.contains("\\"));
+        // Paths differing only by / versus _ map to DIFFERENT files.
+        assertNotEquals(
+                DashboardHistoryService.historyPath("homes/a_b/x.saikudash"),
+                DashboardHistoryService.historyPath("homes/a/b/x.saikudash"));
+    }
+
+    @Test
+    public void unambiguous_legacy_sidecar_is_found_and_preserved_on_write() {
+        // saiku#2550d: legacy history files stay readable after upgrade...
+        String legacy = "saiku-history-" + DASH.replaceAll("[^A-Za-z0-9._-]", "_") + ".jsonl";
+        ds.internal.put(legacy, "{\"version\":\"v1\",\"createdAt\":1,\"author\":\"admin\",\"dashboard\":\"{}\"}\n");
+        assertEquals(1, svc.list(DASH).size());
+        assertNotNull(svc.getVersion(DASH, "v1"));
+
+        // A request write never destroys the legacy file; the v2 copy takes precedence.
+        svc.archive(DASH, "{}", "admin");
+        assertNotNull(ds.internal.get(legacy));
+        assertEquals(2, svc.list(DASH).size());
+    }
+
+    @Test
+    public void colliding_legacy_history_is_not_read_or_stolen_by_either_dashboard() {
+        String owner = "homes/a_b/x.saikudash";
+        String other = "homes/a/b/x.saikudash";
+        ds.dashboards.clear();
+        ds.dashboards.add(owner);
+        ds.dashboards.add(other);
+        String legacy = "saiku-history-" + owner.replaceAll("[^A-Za-z0-9._-]", "_") + ".jsonl";
+        String original = "{\"version\":\"v1\",\"dashboard\":\"owner\"}\n";
+        ds.internal.put(legacy, original);
+
+        assertTrue(svc.list(owner).isEmpty());
+        assertTrue(svc.list(other).isEmpty());
+        svc.archive(other, "other", "bob");
+        assertEquals(1, svc.list(other).size());
+        assertTrue(svc.list(owner).isEmpty());
+        assertEquals(original, ds.internal.get(legacy));
+    }
+
+    // ----------------------- #2535 storage caps -----------------------
+
+    @Test
+    public void oversized_version_is_not_archived_but_the_save_still_succeeds() {
+        System.setProperty(StorageLimits.KEY_HISTORY_ENTRY_BYTES, "1024"); // the clamp floor
+        try {
+            assertNull("oversized version is skipped", svc.archive(DASH, "x".repeat(2048), "admin"));
+            assertEquals("nothing was written", 0, svc.list(DASH).size());
+
+            // A version within the cap still archives normally.
+            DashboardVersion v = svc.archive(DASH, "{\"v\":1}", "admin");
+            assertNotNull(v);
+            assertEquals(1, svc.list(DASH).size());
+        } finally {
+            System.clearProperty(StorageLimits.KEY_HISTORY_ENTRY_BYTES);
+        }
     }
 }

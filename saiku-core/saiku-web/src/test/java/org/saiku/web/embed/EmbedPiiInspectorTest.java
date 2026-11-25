@@ -196,6 +196,177 @@ public class EmbedPiiInspectorTest {
         assertTrue("unresolvable cube must fail closed", r.referencesPii);
     }
 
+    /* ------------------------- .saikuapp tiles (saiku-cloud#949) ------------------------- */
+
+    @Test
+    public void app_without_pages_is_permissive() {
+        ds.put("/nogrid.saikuapp", "{\"version\":1}");
+        EmbedPiiInspector.Result r = inspector.inspect("app", "/nogrid.saikuapp", "admin", List.of());
+        assertFalse(r.referencesPii);
+        assertTrue(r.cubeIds.isEmpty());
+    }
+
+    @Test
+    public void app_with_no_tiles_is_permissive() {
+        ds.put("/empty.saikuapp", "{\"version\":1,\"pages\":[{\"grid\":{\"tiles\":[]}}]}");
+        EmbedPiiInspector.Result r = inspector.inspect("app", "/empty.saikuapp", "admin", List.of());
+        assertFalse(r.referencesPii);
+        assertTrue(r.cubeIds.isEmpty());
+    }
+
+    @Test
+    public void app_with_garbage_json_fails_closed() {
+        ds.put("/broken.saikuapp", "not json");
+        EmbedPiiInspector.Result r = inspector.inspect("app", "/broken.saikuapp", "admin", List.of());
+        assertTrue(r.referencesPii);
+        assertTrue(r.fellOpenForUnresolvable);
+    }
+
+    @Test
+    public void app_tiles_only_with_decoration_are_permissive() {
+        // A tile with no cube, no filter target and no inline/reference
+        // query can't bind PII — it's skipped before any lookup.
+        ds.put("/deco.saikuapp", appJson(List.of("{\"id\":\"t1\",\"type\":\"text\",\"x\":0,\"y\":0,\"w\":4,\"h\":2}")));
+        EmbedPiiInspector.Result r = inspector.inspect("app", "/deco.saikuapp", "admin", List.of());
+        assertFalse(r.referencesPii);
+        assertTrue(r.cubeIds.isEmpty());
+    }
+
+    @Test
+    public void app_tile_with_unwired_filter_target_is_skipped() {
+        // A filter widget whose target isn't wired to a cube yet: no
+        // schema lookup, no cube ids, permissive.
+        ds.put(
+                "/filter.saikuapp",
+                appJson(List.of("{\"id\":\"t1\",\"type\":\"filter\",\"x\":0,\"y\":0,\"w\":4,\"h\":2,"
+                        + "\"target\":{\"dimension\":\"Time\",\"hierarchy\":\"[Time].[Time]\","
+                        + "\"level\":\"Quarter\"}}")));
+        EmbedPiiInspector.Result r = inspector.inspect("app", "/filter.saikuapp", "admin", List.of());
+        assertFalse(r.referencesPii);
+        assertTrue(r.cubeIds.isEmpty());
+    }
+
+    @Test
+    public void app_tile_with_reference_query_walks_the_saved_query() {
+        // Reference-style tile: the saved query under the tile's path is
+        // read under the owner's scope and inspected inline.
+        ds.put(
+                "/ref.saikuapp",
+                appJson(List.of("{\"id\":\"t1\",\"type\":\"chart\",\"x\":0,\"y\":0,\"w\":4,\"h\":3,"
+                        + "\"query\":{\"kind\":\"reference\",\"path\":\"/saved.saiku\"}}")));
+        ds.put("/saved.saiku", thinQueryJson("conn-1", "Cat", "Sch", "Sales"));
+        cubes.putSchema("conn-1/Cat/Sch/Sales", cleanSchema());
+
+        EmbedPiiInspector.Result r = inspector.inspect("app", "/ref.saikuapp", "admin", List.of());
+        assertFalse(r.referencesPii);
+        assertEquals(1, r.cubeIds.size());
+    }
+
+    @Test
+    public void app_tile_referencing_an_unreadable_saved_query_fails_closed() {
+        ds.put(
+                "/ref-broken.saikuapp",
+                appJson(List.of("{\"id\":\"t1\",\"type\":\"chart\",\"x\":0,\"y\":0,\"w\":4,\"h\":3,"
+                        + "\"query\":{\"kind\":\"reference\",\"path\":\"/gone.saiku\"}}")));
+        ds.throwOn("/gone.saiku");
+
+        EmbedPiiInspector.Result r = inspector.inspect("app", "/ref-broken.saikuapp", "admin", List.of());
+        // The PII flag propagates through the tile walk; the fell-open
+        // marker itself is not re-reported for reference tiles.
+        assertTrue(r.referencesPii);
+        assertFalse(r.fellOpenForUnresolvable);
+    }
+
+    @Test
+    public void app_inline_query_tile_touching_only_clean_columns_is_not_pii() {
+        // Inline AiQueryRequest projecting a clean level and a clean
+        // measure on a cube whose Email level is PII-tagged.
+        ds.put(
+                "/inline.saikuapp",
+                appJson(List.of("{\"id\":\"t1\",\"type\":\"chart\",\"x\":0,\"y\":0,\"w\":4,\"h\":3,"
+                        + "\"cube\":{\"connectionName\":\"conn-1\",\"catalog\":\"Cat\","
+                        + "\"schema\":\"Sch\",\"cubeName\":\"Sales\"},"
+                        + "\"query\":{\"kind\":\"inline\",\"body\":{"
+                        + "\"rows\":[{\"dimension\":\"Time\",\"hierarchy\":\"Time\",\"level\":\"Quarter\"}],"
+                        + "\"measures\":[{\"name\":\"Store Sales\"}]}}}")));
+        AiSchema schema = cleanSchema();
+        AiSchema.Dimension cust = new AiSchema.Dimension("Customer", "[Customer]");
+        AiSchema.Hierarchy custHier = new AiSchema.Hierarchy("Customers", "[Customer].[Customers]");
+        AiSchema.Level email = new AiSchema.Level("Email", "[Customer].[Customers].[Email]");
+        email.pii = true;
+        custHier.levels.put(AiSchema.key("Email"), email);
+        cust.hierarchies.put(AiSchema.key("Customers"), custHier);
+        schema.dimensions.put(AiSchema.key("Customer"), cust);
+        addClean(schema, "Time", "Time", "Quarter");
+        addCleanMeasure(schema, "Store Sales");
+        cubes.putSchema("conn-1/Cat/Sch/Sales", schema);
+
+        EmbedPiiInspector.Result r = inspector.inspect("app", "/inline.saikuapp", "admin", List.of());
+        assertFalse("clean columns on a dirty cube must not flag", r.referencesPii);
+        assertEquals(1, r.cubeIds.size());
+    }
+
+    @Test
+    public void app_inline_query_tile_touching_a_pii_level_is_pii() {
+        ds.put(
+                "/inline-pii.saikuapp",
+                appJson(
+                        List.of(
+                                "{\"id\":\"t1\",\"type\":\"chart\",\"x\":0,\"y\":0,\"w\":4,\"h\":3,"
+                                        + "\"cube\":{\"connectionName\":\"conn-1\",\"catalog\":\"Cat\","
+                                        + "\"schema\":\"Sch\",\"cubeName\":\"Sales\"},"
+                                        + "\"query\":{\"kind\":\"inline\",\"body\":{"
+                                        + "\"rows\":[{\"dimension\":\"Customer\",\"hierarchy\":\"Customers\",\"level\":\"Email\"}]}}}")));
+        AiSchema schema = cleanSchema();
+        AiSchema.Dimension cust = new AiSchema.Dimension("Customer", "[Customer]");
+        AiSchema.Hierarchy custHier = new AiSchema.Hierarchy("Customers", "[Customer].[Customers]");
+        AiSchema.Level email = new AiSchema.Level("Email", "[Customer].[Customers].[Email]");
+        email.pii = true;
+        custHier.levels.put(AiSchema.key("Email"), email);
+        cust.hierarchies.put(AiSchema.key("Customers"), custHier);
+        schema.dimensions.put(AiSchema.key("Customer"), cust);
+        addClean(schema, "Time", "Time", "Quarter");
+        addCleanMeasure(schema, "Store Sales");
+        cubes.putSchema("conn-1/Cat/Sch/Sales", schema);
+
+        EmbedPiiInspector.Result r = inspector.inspect("app", "/inline-pii.saikuapp", "admin", List.of());
+        assertTrue(r.referencesPii);
+    }
+
+    @Test
+    public void app_kpi_tile_measure_is_checked_per_column() {
+        // A KPI tile whose primary measure is the PII-tagged one.
+        ds.put(
+                "/kpi.saikuapp",
+                appJson(List.of("{\"id\":\"t1\",\"type\":\"kpi\",\"x\":0,\"y\":0,\"w\":2,\"h\":2,"
+                        + "\"cube\":{\"connectionName\":\"conn-1\",\"catalog\":\"Cat\","
+                        + "\"schema\":\"Sch\",\"cubeName\":\"Sales\"},"
+                        + "\"kpi\":{\"measure\":\"SSN\"}}}")));
+        AiSchema schema = cleanSchema();
+        AiSchema.Measure ssn = new AiSchema.Measure("SSN", "[Measures].[SSN]");
+        ssn.pii = true;
+        schema.measures.put(AiSchema.key("SSN"), ssn);
+        addCleanMeasure(schema, "Store Sales");
+        cubes.putSchema("conn-1/Cat/Sch/Sales", schema);
+
+        EmbedPiiInspector.Result r = inspector.inspect("app", "/kpi.saikuapp", "admin", List.of());
+        assertTrue("KPI projecting the PII measure must flag", r.referencesPii);
+    }
+
+    @Test
+    public void app_kpi_tile_on_unresolvable_cube_fails_closed() {
+        ds.put(
+                "/kpi-broken.saikuapp",
+                appJson(List.of("{\"id\":\"t1\",\"type\":\"kpi\",\"x\":0,\"y\":0,\"w\":2,\"h\":2,"
+                        + "\"cube\":{\"connectionName\":\"conn-1\",\"catalog\":\"Cat\","
+                        + "\"schema\":\"Sch\",\"cubeName\":\"Broken\"},"
+                        + "\"kpi\":{\"measure\":\"SSN\"}}}")));
+        cubes.throwOn("conn-1/Cat/Sch/Broken");
+
+        EmbedPiiInspector.Result r = inspector.inspect("app", "/kpi-broken.saikuapp", "admin", List.of());
+        assertTrue(r.referencesPii);
+    }
+
     /* --------------------- per-column (saiku-cloud#949) --------------------- */
 
     @Test
@@ -509,6 +680,17 @@ public class EmbedPiiInspectorTest {
     private static String thinQueryJson(String conn, String cat, String sch, String cube) {
         return "{\"name\":\"q\",\"type\":\"QUERYMODEL\",\"cube\":{\"connection\":\"" + conn + "\",\"catalog\":\"" + cat
                 + "\",\"schema\":\"" + sch + "\",\"name\":\"" + cube + "\"}}";
+    }
+
+    private static String appJson(List<String> tileJsons) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("{\"version\":1,\"pages\":[{\"grid\":{\"tiles\":[");
+        for (int i = 0; i < tileJsons.size(); i++) {
+            if (i > 0) sb.append(',');
+            sb.append(tileJsons.get(i));
+        }
+        sb.append("]}}]}");
+        return sb.toString();
     }
 
     private static String dashboardJson(List<String> tileJsons) {

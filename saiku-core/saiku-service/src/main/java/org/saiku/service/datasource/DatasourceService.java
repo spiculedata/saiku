@@ -20,6 +20,7 @@ import java.io.ObjectInputStream;
 import java.io.Serializable;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import org.saiku.database.dto.MondrianSchema;
 import org.saiku.datasources.connection.IConnectionManager;
 import org.saiku.datasources.datasource.SaikuDatasource;
@@ -27,14 +28,23 @@ import org.saiku.repository.AclEntry;
 import org.saiku.repository.IRepositoryObject;
 import org.saiku.service.util.exception.SaikuDataSourceException;
 import org.saiku.service.util.exception.SaikuDataSourceNotFoundException;
+import org.saiku.service.util.exception.SaikuServiceException;
 
 public class DatasourceService implements Serializable {
 
     private static final long serialVersionUID = -4407446633148181669L;
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(DatasourceService.class);
+
     private transient IDatasourceManager datasources;
 
     private IConnectionManager connectionManager;
+
+    /** saiku#2536 — callbacks fired after every successful repository file
+     *  save. Copy-on-write so a listener can be added while saves are in
+     *  flight. Listener failures are logged, never propagated to the saver. */
+    private final transient CopyOnWriteArrayList<RepositoryFileListener> repositoryFileListeners =
+            new CopyOnWriteArrayList<>();
 
     public void setConnectionManager(IConnectionManager ic) {
         connectionManager = ic;
@@ -111,7 +121,7 @@ public class DatasourceService implements Serializable {
         int start = location.toLowerCase().indexOf(referenceText);
         if (start == -1) {
             throw new SaikuDataSourceException(
-                    "Could not find old locale because there is currently no locale defined in the data source");
+                    "Could not find old locale because there is currently no locale defined in the data" + " source");
         } else {
             start += referenceText.length();
             int end = location.indexOf(";", start);
@@ -123,8 +133,13 @@ public class DatasourceService implements Serializable {
         datasources.setDatasource(datasource);
     }
 
-    public void removeDatasource(String datasourceId) {
-        datasources.removeDatasource(datasourceId);
+    /**
+     * saiku#2533: surface the removal outcome so the REST layer can answer an unknown id with
+     * 404 instead of a fake 200. A datasource that cannot be removed (descriptor file still
+     * there) raises {@link SaikuServiceException} from the datasource manager.
+     */
+    public boolean removeDatasource(String datasourceId) {
+        return datasources.removeDatasource(datasourceId);
     }
 
     public void removeSchema(String schemaId) {
@@ -214,15 +229,58 @@ public class DatasourceService implements Serializable {
     }
 
     public String saveFile(String content, String path, String name, List<String> roles) {
-        return datasources.saveFile(path, content, name, roles);
+        String resp = datasources.saveFile(path, content, name, roles);
+        if ("Save Okay".equals(resp)) {
+            notifyFileSaved(path, content, name);
+        }
+        return resp;
+    }
+
+    /** saiku#2536 — setter for Spring wiring
+     *  ({@code <property name="repositoryFileListeners">}). */
+    public void setRepositoryFileListeners(List<RepositoryFileListener> listeners) {
+        if (listeners != null) {
+            repositoryFileListeners.addAll(listeners);
+        }
+    }
+
+    /** Fire the saiku#2536 save listeners. A listener failure never fails the
+     *  save that triggered it. */
+    private void notifyFileSaved(String path, String content, String writer) {
+        for (RepositoryFileListener l : repositoryFileListeners) {
+            try {
+                l.onFileSaved(path, content, writer, this);
+            } catch (RuntimeException e) {
+                log.warn("RepositoryFileListener {} failed after saving {} by {}", l, path, writer, e);
+            }
+        }
+    }
+
+    private void notifyFileChangedWithoutSave(String path, String writer) {
+        for (RepositoryFileListener l : repositoryFileListeners) {
+            try {
+                l.onFileChangedWithoutSave(path, writer, this);
+            } catch (RuntimeException e) {
+                log.warn("RepositoryFileListener {} failed after changing {} by {}", l, path, writer, e);
+            }
+        }
     }
 
     public String removeFile(String path, String name, List<String> roles) {
-        return datasources.removeFile(path, name, roles);
+        String resp = datasources.removeFile(path, name, roles);
+        if ("Remove Okay".equals(resp)) {
+            notifyFileChangedWithoutSave(path, name);
+        }
+        return resp;
     }
 
     public String moveFile(String source, String target, String name, List<String> roles) {
-        return datasources.moveFile(source, target, name, roles);
+        String resp = datasources.moveFile(source, target, name, roles);
+        if ("Move Okay".equals(resp)) {
+            notifyFileChangedWithoutSave(source, name);
+            notifyFileChangedWithoutSave(target, name);
+        }
+        return resp;
     }
 
     public List<IRepositoryObject> getFiles(List<String> type, String username, List<String> roles) {

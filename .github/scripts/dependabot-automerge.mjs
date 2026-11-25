@@ -5,10 +5,16 @@
 // A PR is eligible only when ALL of these hold:
 //   - the title is a single-package Dependabot bump ("Bump X from A to B"); a group PR
 //     ("Bump the <group> group ... with N updates") is never eligible;
-//   - the update is a semver PATCH (maven, npm) or a non-major / digest update (github-actions);
-//     majors, prereleases and every other ecosystem (docker, ...) are never eligible;
-//   - every changed file is a dependency manifest/lockfile, or a workflow file whose changed
-//     lines are all `uses:` lines.
+//   - the PR carries exactly one of the maven or npm labels; GitHub Actions updates are never
+//     auto-merged (actions execute in jobs holding packages:/contents: write and tokens, and
+//     only `ci` stands between them and development — #2548), and neither are docker or majors;
+//   - every changed file is a dependency manifest/lockfile, and no file under
+//     .github/workflows/ changes at all;
+//   - the diff itself yields a single from→to version pair, identical across every changed
+//     file: versions come from the diff, never from the title (a triager can edit a title —
+//     #2548). Maven build-plugin bumps are rejected using hunk context and the title's package
+//     name; build plugins execute at build time. A manifest without a patch is uninspectable.
+//   - the diff pair matches the title pair and is a semver PATCH (maven, npm).
 
 import { appendFileSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -16,14 +22,12 @@ import { fileURLToPath } from 'node:url';
 const TITLE_RE = /^(?:[a-z-]+(?:\([^)]*\))?!?:\s*)?bump\s+(\S+)\s+from\s+(\S+)\s+to\s+(\S+?)(?:\s+in\s+\S+)?$/i;
 const GROUP_RE = /\bgroup\b|\bwith\s+\d+\s+updates?\b/i;
 const SEMVER_RE = /^v?(\d+)\.(\d+)\.(\d+)$/;
-const MAJOR_MINOR_RE = /^v?(\d+)(?:\.(\d+))?$/;
-const DIGEST_RE = /^[0-9a-f]{7,40}$/;
 const MANIFEST_RE = /(^|\/)(pom\.xml|package\.json|package-lock\.json)$/;
-const WORKFLOW_RE = /^\.github\/workflows\/[^/]+\.ya?ml$/;
-const USES_LINE_RE = /^[+-]\s*(?:-\s*)?uses:\s/;
+const WORKFLOW_RE = /^\.github\/workflows\//;
+const PLUGIN_CONTEXT_RE = /<plugin(?:s|Management)?[\s>]|<artifactId>[^<]*plugin<\/artifactId>|\bplugin\.version\b/i;
 const MAX_FILES = 100;
 
-export const ECOSYSTEM_LABELS = ['maven', 'npm', 'github-actions'];
+export const ECOSYSTEM_LABELS = ['maven', 'npm'];
 
 export function parseTitle(title) {
   const text = String(title ?? '').trim();
@@ -39,22 +43,82 @@ export function isPatchUpdate(from, to) {
   return a[1] === b[1] && a[2] === b[2] && Number(b[3]) > Number(a[3]);
 }
 
-// github-actions: a digest refresh, or any version change inside the same major.
-export function isActionsNonMajor(from, to) {
-  if (DIGEST_RE.test(from) && DIGEST_RE.test(to)) return from !== to;
-  const a = MAJOR_MINOR_RE.exec(from) ?? SEMVER_RE.exec(from);
-  const b = MAJOR_MINOR_RE.exec(to) ?? SEMVER_RE.exec(to);
-  return Boolean(a && b && a[1] === b[1] && from !== to);
+// Strip range prefixes npm writes into package.json ("^1.2.3", "~1.2.3", ">=1.2.3", "v1.2.3")
+// so diff values compare equal to the plain versions a Dependabot title carries.
+function normalizeVersion(value) {
+  return String(value ?? '').trim().replace(/^[v^~>=<*]+/i, '');
+}
+
+function versionValue(filename, line) {
+  if (/pom\.xml$/.test(filename)) {
+    const match = /<([A-Za-z0-9._-]*version)>([^<>]{1,80})<\/\1>/.exec(line);
+    return match ? normalizeVersion(match[2]) : null;
+  }
+  if (/package-lock\.json$/.test(filename)) {
+    const match = /^\s*"version":\s*"([^"]{1,80})",?\s*$/.exec(line);
+    return match ? normalizeVersion(match[1]) : null;
+  }
+  if (/package\.json$/.test(filename)) {
+    const match = /^\s*"([^"]{1,128})":\s*"([^"]{0,80})",?\s*$/.exec(line);
+    if (!match) return null;
+    const value = normalizeVersion(match[2]);
+    // A dependency value is a version or a simple version range; anything else ("latest",
+    // "*", "file:../design-system", a git URL, a list of ranges) carries no comparable version.
+    return /^(v)?\d/.test(value) && !/\s/.test(value) ? value : null;
+  }
+  return null;
+}
+
+// Walk the diff and pull one from→to pair per changed manifest file. A file whose changed
+// lines carry no version token, or more than one distinct from or to, is unprovable — the
+// caller treats that as not eligible. Returns { ok, from, to } or { ok: false, reason }.
+export function diffVersions(files) {
+  if (!Array.isArray(files) || files.length === 0 || files.length >= MAX_FILES) {
+    return { ok: false, reason: 'PR changes no files (or more than 99)' };
+  }
+  let pair = null;
+  for (const file of files) {
+    const filename = String(file?.filename ?? '');
+    if (!MANIFEST_RE.test(filename)) continue;
+    if (typeof file?.patch !== 'string') {
+      return { ok: false, reason: `${filename} has no patch to inspect` };
+    }
+    const changed = file.patch.split('\n').filter((line) => /^[+-]/.test(line));
+    // The guard reads context lines too: <plugin> may be outside GitHub's three context lines,
+    // while the plugin artifactId is still in the hunk (#2506).
+    const hunk = file.patch.split('\n').filter((line) => !/^@@/.test(line));
+    if (hunk.some((line) => PLUGIN_CONTEXT_RE.test(line.replace(/^[+-]/, '')))) {
+      return { ok: false, reason: `${filename} looks like a Maven build-plugin change (plugins execute at build time)` };
+    }
+    const from = new Set();
+    const to = new Set();
+    for (const line of changed) {
+      const value = versionValue(filename, line.slice(1));
+      if (value === null) continue;
+      (line[0] === '-' ? from : to).add(value);
+    }
+    if (from.size === 0 && to.size === 0) {
+      return { ok: false, reason: `${filename} changed without a comparable version pair` };
+    }
+    if (from.size !== 1 || to.size !== 1 || from.values().next().value === to.values().next().value) {
+      return { ok: false, reason: `${filename} changed more than one version (or none)` };
+    }
+    const filePair = [from.values().next().value, to.values().next().value];
+    if (pair && (pair[0] !== filePair[0] || pair[1] !== filePair[1])) {
+      return { ok: false, reason: 'the diff changes more than one version pair' };
+    }
+    pair = filePair;
+  }
+  if (!pair) return { ok: false, reason: 'the diff names no version pair' };
+  return { ok: true, from: pair[0], to: pair[1] };
 }
 
 export function filesAreSafe(files) {
   if (!Array.isArray(files) || files.length === 0 || files.length >= MAX_FILES) return false;
   return files.every((file) => {
     const name = String(file?.filename ?? '');
-    if (MANIFEST_RE.test(name)) return true;
-    if (!WORKFLOW_RE.test(name) || typeof file.patch !== 'string') return false;
-    const changed = file.patch.split('\n').filter((line) => /^[+-]/.test(line));
-    return changed.length > 0 && changed.every((line) => USES_LINE_RE.test(line));
+    if (WORKFLOW_RE.test(name)) return false;
+    return MANIFEST_RE.test(name);
   });
 }
 
@@ -62,12 +126,23 @@ export function classify({ title, labels = [], files }) {
   const parsed = parseTitle(title);
   if (!parsed) return { eligible: false, reason: 'title is not a single-package Dependabot bump (groups are never auto-merged)' };
   const ecosystems = ECOSYSTEM_LABELS.filter((label) => labels.includes(label));
-  if (ecosystems.length !== 1) return { eligible: false, reason: 'PR does not carry exactly one of the maven, npm or github-actions labels' };
+  if (ecosystems.length !== 1) {
+    return { eligible: false, reason: 'PR does not carry exactly one of the maven or npm labels (github-actions, docker, majors and groups are never auto-merged)' };
+  }
   const [kind] = ecosystems;
-  const versionOk = kind === 'github-actions' ? isActionsNonMajor(parsed.from, parsed.to) : isPatchUpdate(parsed.from, parsed.to);
-  if (!versionOk) return { eligible: false, reason: `${parsed.from} to ${parsed.to} is not an auto-mergeable ${kind === 'github-actions' ? 'non-major or digest' : 'patch'} update` };
-  if (!filesAreSafe(files)) return { eligible: false, reason: 'PR changes files other than dependency manifests/lockfiles or workflow uses: lines' };
-  return { eligible: true, reason: `${kind} ${parsed.name} ${parsed.from} to ${parsed.to}` };
+  if (kind === 'maven' && /plugin/i.test(parsed.name)) {
+    return { eligible: false, reason: 'Maven build-plugin updates wait for a person' };
+  }
+  if (!filesAreSafe(files)) return { eligible: false, reason: 'PR changes files other than dependency manifests/lockfiles, or touches .github/workflows/' };
+  const diff = diffVersions(files);
+  if (!diff.ok) return { eligible: false, reason: diff.reason };
+  if (normalizeVersion(parsed.from) !== diff.from || normalizeVersion(parsed.to) !== diff.to) {
+    return { eligible: false, reason: 'the versions in the title do not match the diff' };
+  }
+  if (!isPatchUpdate(diff.from, diff.to)) {
+    return { eligible: false, reason: `${diff.from} to ${diff.to} is not an auto-mergeable ${kind} patch update` };
+  }
+  return { eligible: true, reason: `${kind} ${parsed.name} ${diff.from} to ${diff.to} (read from the diff)` };
 }
 
 function main() {

@@ -113,6 +113,48 @@ public class EmbedTokenResourceTest {
         assertEquals(List.of("ROLE_ADMIN"), stored.ownerRolesSnapshot);
     }
 
+    /** saiku#2536 — the mint binds the content: the token records the SHA-256
+     *  of the pinned content as read under the minter's scope. */
+    @Test
+    public void mint_bindsTheSharedContent() {
+        session.username = "admin";
+        session.roles = List.of("ROLE_ADMIN");
+        String content = "{\"query\":true}";
+        ds.allow("/homes/admin/sales.saiku");
+        ds.fileContent = content;
+
+        EmbedTokenResource.MintRequest req = new EmbedTokenResource.MintRequest();
+        req.resourceKind = "query";
+        req.resourcePath = "/homes/admin/sales.saiku";
+        req.ttlHours = 24;
+
+        Response r = resource.mint(req);
+        assertEquals(200, r.getStatus());
+        @SuppressWarnings("unchecked")
+        String token = (String) ((Map<String, Object>) r.getEntity()).get("token");
+        assertEquals(org.saiku.web.share.ContentBinding.sha256Hex(content), tokenStore.load(token).contentSha256);
+    }
+
+    /** saiku#2536 — a public grant binds the granted content the same way. */
+    @Test
+    public void grantPublic_bindsTheGrantedContent() {
+        session.username = "admin";
+        session.roles = List.of("ROLE_ADMIN");
+        String content = "{\"query\":true}";
+        ds.allow("/homes/admin/public.saiku");
+        ds.fileContent = content;
+
+        EmbedTokenResource.GrantRequest req = new EmbedTokenResource.GrantRequest();
+        req.resourceKind = "query";
+        req.resourcePath = "/homes/admin/public.saiku";
+
+        Response r = resource.grantPublic(req);
+        assertEquals(200, r.getStatus());
+        assertEquals(
+                org.saiku.web.share.ContentBinding.sha256Hex(content),
+                publicRegistry.lookup("query", "/homes/admin/public.saiku").contentSha256);
+    }
+
     @Test
     public void mint_returns_token_for_app_kind() {
         // App Builder Phase 2 — a .saikuapp resource must mint a token
@@ -595,6 +637,12 @@ public class EmbedTokenResourceTest {
     private class StubDatasourceService extends DatasourceService {
         private final java.util.Set<String> allowedPaths = new java.util.HashSet<>();
         private final java.util.Map<String, java.util.Set<String>> userToPaths = new java.util.HashMap<>();
+        String fileContent;
+
+        @Override
+        public String getFileData(String path, String username, List<String> roles) {
+            return fileContent;
+        }
 
         void allow(String path) {
             allowedPaths.add(path);

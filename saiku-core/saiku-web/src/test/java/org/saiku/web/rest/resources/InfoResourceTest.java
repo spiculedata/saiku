@@ -21,6 +21,7 @@ import org.junit.After;
 import org.junit.Test;
 import org.saiku.service.PlatformUtilsService;
 import org.saiku.service.olap.ai.ask.NlAskProviderFactory;
+import org.saiku.service.olap.ai.cubedesigner.CubeDesignerAiService;
 import org.saiku.service.util.dto.Plugin;
 
 public class InfoResourceTest {
@@ -54,6 +55,10 @@ public class InfoResourceTest {
         System.clearProperty("saiku.mcp.url");
         System.clearProperty("saiku.version");
         System.clearProperty("saiku.oauth.issuerUri");
+        System.clearProperty("saiku.oauth.audience");
+        System.clearProperty("saiku.sponsorLink");
+        System.clearProperty("saiku.update.latest");
+        System.clearProperty("saiku.telemetry.enabled");
     }
 
     /* ------------------------------ DXT bundle ------------------------------ */
@@ -175,6 +180,75 @@ public class InfoResourceTest {
         assertEquals(Boolean.FALSE, body.get("demoMode"));
     }
 
+    /* ------------------------------ sponsor link (saiku#2577) ------------------------------ */
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void capabilities_sponsorLinkOnByDefault() {
+        Map<String, Object> body =
+                (Map<String, Object>) new InfoResource().getCapabilities(null).getEntity();
+        assertEquals(Boolean.TRUE, body.get("sponsorLink"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void capabilities_sponsorLinkOffWhenPropertyOptsOut() {
+        System.setProperty("saiku.sponsorLink", "false");
+        Map<String, Object> body =
+                (Map<String, Object>) new InfoResource().getCapabilities(null).getEntity();
+        assertEquals(Boolean.FALSE, body.get("sponsorLink"));
+    }
+
+    /* ---------------------------- update check (saiku#2579) ---------------------------- */
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void capabilities_updateReportsNothingWhenNoCheckHasRun() {
+        Map<String, Object> body =
+                (Map<String, Object>) new InfoResource().getCapabilities(null).getEntity();
+        Map<String, Object> update = (Map<String, Object>) body.get("update");
+        assertEquals(Boolean.FALSE, update.get("available"));
+        assertNull(update.get("latestVersion"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void capabilities_updateSurfacesTheLauncherCheckFinding() {
+        // What TelemetryService.noteLatest writes when the check finds a newer release.
+        System.setProperty("saiku.update.latest", "4.10.0");
+        Map<String, Object> body =
+                (Map<String, Object>) new InfoResource().getCapabilities(null).getEntity();
+        Map<String, Object> update = (Map<String, Object>) body.get("update");
+        assertEquals(Boolean.TRUE, update.get("available"));
+        assertEquals("4.10.0", update.get("latestVersion"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void capabilities_updateReportsNothingWhenTelemetryIsOptedOut() {
+        // Even a recorded finding must not surface once telemetry is off — the check that
+        // produced it never ran on an opted-out deployment.
+        System.setProperty("saiku.update.latest", "4.10.0");
+        System.setProperty("saiku.telemetry.enabled", "false");
+        Map<String, Object> body =
+                (Map<String, Object>) new InfoResource().getCapabilities(null).getEntity();
+        Map<String, Object> update = (Map<String, Object>) body.get("update");
+        assertEquals(Boolean.FALSE, update.get("available"));
+        assertNull(update.get("latestVersion"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void capabilities_updateIgnoresABlankRecord() {
+        // A defensive edge: a blank record is no record.
+        System.setProperty("saiku.update.latest", "   ");
+        Map<String, Object> body =
+                (Map<String, Object>) new InfoResource().getCapabilities(null).getEntity();
+        Map<String, Object> update = (Map<String, Object>) body.get("update");
+        assertEquals(Boolean.FALSE, update.get("available"));
+        assertNull(update.get("latestVersion"));
+    }
+
     @Test
     @SuppressWarnings("unchecked")
     public void capabilities_demoModeAndMcpUrl_surfaceCorrectly() {
@@ -198,11 +272,27 @@ public class InfoResourceTest {
     public void capabilities_reportsOauthAuthModeWhenIssuerConfigured() {
         System.setProperty("saiku.mcp.url", "https://demo.saiku.bi/rest/saiku/api/mcp");
         System.setProperty("saiku.oauth.issuerUri", "https://idp.example.com/realms/saiku");
+        System.setProperty("saiku.oauth.audience", "saiku-mcp");
 
         Response resp = new InfoResource().getCapabilities(null);
         Map<String, Object> body = (Map<String, Object>) resp.getEntity();
         Map<String, Object> mcp = (Map<String, Object>) body.get("mcp");
         assertEquals("oauth", mcp.get("authMode"));
+    }
+
+    /** saiku#2543: an issuer without an audience stays fail-closed — capabilities must not
+     *  advertise OAuth for a half-configured deployment. */
+    @Test
+    @SuppressWarnings("unchecked")
+    public void capabilities_issuerWithoutAudience_reportsBasic() {
+        System.setProperty("saiku.mcp.url", "https://demo.saiku.bi/rest/saiku/api/mcp");
+        System.setProperty("saiku.oauth.issuerUri", "https://idp.example.com/realms/saiku");
+        System.clearProperty("saiku.oauth.audience");
+
+        Response resp = new InfoResource().getCapabilities(null);
+        Map<String, Object> body = (Map<String, Object>) resp.getEntity();
+        Map<String, Object> mcp = (Map<String, Object>) body.get("mcp");
+        assertEquals("basic", mcp.get("authMode"));
     }
 
     @Test
@@ -284,6 +374,38 @@ public class InfoResourceTest {
         Map<String, Object> body = (Map<String, Object>) resp.getEntity();
         Map<String, Object> ask = (Map<String, Object>) body.get("ask");
         assertEquals(Boolean.FALSE, ask.get("reachable"));
+    }
+
+    /* ------------------------ saiku#2489 — cube designer ------------------------ */
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void diagnostics_reportsCubeDesignerOllamaStack() {
+        CubeDesignerAiService svc = new CubeDesignerAiService("ollama", null, null, null, 60);
+        InfoResource r = new InfoResource();
+        r.setCubeDesignerAiService(svc);
+
+        Response resp = r.getDiagnostics();
+        Map<String, Object> body = (Map<String, Object>) resp.getEntity();
+        Map<String, Object> cubeDesigner = (Map<String, Object>) body.get("cubeDesigner");
+        assertEquals(Boolean.TRUE, cubeDesigner.get("enabled"));
+        assertEquals("ollama", cubeDesigner.get("provider"));
+        assertEquals(Boolean.TRUE, cubeDesigner.get("configured"));
+        assertEquals(CubeDesignerAiService.DEFAULT_OLLAMA_ENDPOINT, cubeDesigner.get("endpoint"));
+        // Never surfaces a key.
+        for (Object v : cubeDesigner.values()) {
+            assertFalse(String.valueOf(v).contains("sk-"));
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void diagnostics_reportsCubeDesignerDisabledWhenNotWired() {
+        Response resp = new InfoResource().getDiagnostics();
+        Map<String, Object> body = (Map<String, Object>) resp.getEntity();
+        Map<String, Object> cubeDesigner = (Map<String, Object>) body.get("cubeDesigner");
+        assertEquals(Boolean.FALSE, cubeDesigner.get("enabled"));
+        assertFalse(cubeDesigner.containsKey("provider"));
     }
 
     @Test

@@ -6,7 +6,7 @@
     <parent>
         <groupId>org.saikuanalytics</groupId>
         <artifactId>saiku-core</artifactId>
-        <version>4.9.1</version>
+        <version>4.10.0</version>
     </parent>
 
     <artifactId>saiku-sql</artifactId>
@@ -76,7 +76,7 @@
         <dependency>
             <groupId>org.apache.calcite.avatica</groupId>
             <artifactId>avatica-server</artifactId>
-            <version>1.28.0</version>
+            <version>1.29.0</version>
         </dependency>
 
         <!-- Jackson for reading Ossie YAML back into the POJO tree. Same version

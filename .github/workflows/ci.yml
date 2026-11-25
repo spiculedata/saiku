@@ -105,7 +105,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up JDK 22
-        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           distribution: temurin
           java-version: "22"
@@ -453,7 +453,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up JDK 22
-        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           distribution: temurin
           java-version: "22"
@@ -551,7 +551,7 @@ jobs:
   # (the `ci` rollup below keys on it); only its display name is `ci`.
   acceptance-convention:
     name: ci
-    uses: spiculedata/acceptance-spec/.github/workflows/convention.yml@e1ee02261986f510ca3be97f09b07546dd0614be
+    uses: spiculedata/acceptance-spec/.github/workflows/convention.yml@888e864f0f1641df962e661c9fab1f0b6fa26b30
     with:
       skip-outside-pull-request: true
       mode: enforce
@@ -603,7 +603,7 @@ jobs:
       needs.changes.outputs.java == 'true' ||
       needs.changes.outputs.ui == 'true' ||
       needs.changes.outputs.acceptance == 'true')
-    uses: spiculedata/acceptance-spec/.github/workflows/run-specs.yml@e1ee02261986f510ca3be97f09b07546dd0614be
+    uses: spiculedata/acceptance-spec/.github/workflows/run-specs.yml@888e864f0f1641df962e661c9fab1f0b6fa26b30
     with:
       mode: enforce
       node-version: "24"
@@ -661,7 +661,7 @@ jobs:
     # Not path-filtered: its own `detect changed specs` job (seconds) decides whether there is anything to
     # prove, and the rollup cross-checks that against the `specs` filter above.
     if: github.event_name == 'pull_request'
-    uses: spiculedata/acceptance-spec/.github/workflows/base-check.yml@e1ee02261986f510ca3be97f09b07546dd0614be
+    uses: spiculedata/acceptance-spec/.github/workflows/base-check.yml@888e864f0f1641df962e661c9fab1f0b6fa26b30
     with:
       mode: enforce
       node-version: "24"

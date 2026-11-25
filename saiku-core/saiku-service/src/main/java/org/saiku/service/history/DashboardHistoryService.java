@@ -10,6 +10,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import org.saiku.service.datasource.DatasourceService;
+import org.saiku.service.util.DashboardSidecars;
+import org.saiku.service.util.StorageLimits;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,9 +43,22 @@ public class DashboardHistoryService {
     }
 
     /** Archive {@code dashboardJson} as the latest version, pruning to the most
-     *  recent {@link #RETENTION}. No-op for null/blank content. */
+     *  recent {@link #RETENTION}. No-op for null/blank content. An oversized
+     *  version (over {@code saiku.history.maxEntryBytes}, #2535) is not archived
+     *  — the save itself still succeeds; only the historical snapshot is
+     *  skipped, so the history file cannot grow without bound. */
     public DashboardVersion archive(String dashboardPath, String dashboardJson, String author) {
         if (dashboardJson == null || dashboardJson.isBlank()) {
+            return null;
+        }
+        long maxEntryBytes = StorageLimits.historyEntryBytes();
+        long entryBytes = dashboardJson.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+        if (entryBytes > maxEntryBytes) {
+            log.warn(
+                    "Not archiving dashboard version for {} ({} bytes > cap {} bytes, saiku.history.maxEntryBytes)",
+                    dashboardPath,
+                    entryBytes,
+                    maxEntryBytes);
             return null;
         }
         DashboardVersion v = new DashboardVersion();
@@ -83,7 +98,7 @@ public class DashboardHistoryService {
      *  itself is removed so the sidecar JSONL isn't orphaned (#947 cleanup). */
     public void purge(String dashboardPath) {
         try {
-            datasourceService.removeInternalFile(historyPath(dashboardPath));
+            DashboardSidecars.purge(datasourceService, KIND, dashboardPath);
         } catch (RuntimeException e) {
             log.warn("could not purge history for {}", dashboardPath, e);
         }
@@ -91,18 +106,19 @@ public class DashboardHistoryService {
 
     /* --------------------------- internals --------------------------- */
 
-    /** Flat, sanitised internal path at the datadir root (no subdir — the
-     *  internal writer won't mkdir one). Separators collapse to {@code _} and
-     *  {@code ..} is neutralised; resolveWithinDatadir guards the final path. */
+    /** Sidecar kind — the prefix DashboardSidecars names our file with. */
+    static final String KIND = "history";
+
+    /** Sidecar file for a dashboard. saiku#2550d: keyed by a hash of the exact
+     *  path (DashboardSidecars), not the old sanitised flattening that collapsed
+     *  {@code a_b/x} and {@code a/b/x} onto one file. Kept for logging + tests. */
     static String historyPath(String dashboardPath) {
-        String flat = dashboardPath == null ? "null" : dashboardPath.replaceAll("[^A-Za-z0-9._-]", "_");
-        flat = flat.replace("..", "_");
-        return "saiku-history-" + flat + ".jsonl";
+        return DashboardSidecars.path(KIND, dashboardPath);
     }
 
     private List<DashboardVersion> readAll(String dashboardPath) {
         List<DashboardVersion> out = new ArrayList<>();
-        String raw = datasourceService.getInternalFileData(historyPath(dashboardPath));
+        String raw = DashboardSidecars.read(datasourceService, KIND, dashboardPath);
         if (raw == null || raw.isBlank()) {
             return out;
         }
@@ -128,6 +144,6 @@ public class DashboardHistoryService {
                 log.error("Failed to serialise dashboard version {}", v.version, e);
             }
         }
-        datasourceService.saveInternalFile(historyPath(dashboardPath), sb.toString(), null);
+        DashboardSidecars.write(datasourceService, KIND, dashboardPath, sb.toString());
     }
 }

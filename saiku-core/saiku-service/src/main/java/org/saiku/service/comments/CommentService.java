@@ -13,6 +13,8 @@ import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.saiku.service.datasource.DatasourceService;
+import org.saiku.service.util.DashboardSidecars;
+import org.saiku.service.util.StorageLimits;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -69,8 +71,35 @@ public class CommentService {
         return out;
     }
 
-    /** Append a comment authored by {@code author}; @-mentions parsed from body. */
+    /** Append a comment authored by {@code author}; @-mentions parsed from body.
+     *
+     *  <p>#2535: an oversized body ({@code saiku.comments.maxBodyBytes}) or a
+     *  dashboard that already holds the configured maximum of live comments
+     *  ({@code saiku.comments.maxCount}) raises {@link CommentLimitExceededException}
+     *  instead of letting the per-dashboard JSONL file grow without bound.
+     *
+     *  @throws CommentLimitExceededException when either cap is breached. */
     public Comment add(String dashboardPath, String tileId, String author, String body) {
+        long maxBodyBytes = StorageLimits.commentBodyBytes();
+        long bodyBytes = body == null ? 0 : body.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+        if (bodyBytes > maxBodyBytes) {
+            throw new CommentLimitExceededException(
+                    CommentLimitExceededException.Kind.BODY_TOO_LARGE,
+                    "comment exceeds the " + maxBodyBytes + "-byte limit (saiku.comments.maxBodyBytes)");
+        }
+        List<Comment> existing = readAll(dashboardPath);
+        int liveCount = 0;
+        for (Comment c : existing) {
+            if (!c.deleted) {
+                liveCount++;
+            }
+        }
+        int maxCount = StorageLimits.commentMaxCount();
+        if (liveCount >= maxCount) {
+            throw new CommentLimitExceededException(
+                    CommentLimitExceededException.Kind.COUNT_REACHED,
+                    "comment count limit reached for this dashboard (" + maxCount + ", saiku.comments.maxCount)");
+        }
         Comment c = new Comment();
         c.id = UUID.randomUUID().toString();
         c.tileId = tileId;
@@ -80,9 +109,8 @@ public class CommentService {
         c.createdAt = System.currentTimeMillis();
         c.deleted = false;
 
-        List<Comment> all = readAll(dashboardPath);
-        all.add(c);
-        writeAll(dashboardPath, all);
+        existing.add(c);
+        writeAll(dashboardPath, existing);
         return c;
     }
 
@@ -116,13 +144,23 @@ public class CommentService {
      *  itself is removed so the sidecar JSONL isn't orphaned (#942 cleanup). */
     public void purge(String dashboardPath) {
         try {
-            datasourceService.removeInternalFile(commentsPath(dashboardPath));
+            DashboardSidecars.purge(datasourceService, KIND, dashboardPath);
         } catch (RuntimeException e) {
             log.warn("could not purge comments for {}", dashboardPath, e);
         }
     }
 
     /* --------------------------- internals --------------------------- */
+
+    /** Sidecar kind — the prefix DashboardSidecars names our file with. */
+    static final String KIND = "comments";
+
+    /** Sidecar file for a dashboard. saiku#2550d: keyed by a hash of the exact
+     *  path (DashboardSidecars), not the old sanitised flattening that collapsed
+     *  {@code a_b/x} and {@code a/b/x} onto one file. Kept for logging + tests. */
+    static String commentsPath(String dashboardPath) {
+        return DashboardSidecars.path(KIND, dashboardPath);
+    }
 
     static List<String> parseMentions(String body) {
         Set<String> out = new LinkedHashSet<>();
@@ -135,20 +173,9 @@ public class CommentService {
         return new ArrayList<>(out);
     }
 
-    /** Internal storage path for a dashboard's comments — a single flat,
-     *  sanitised file at the datadir root (the internal-file writer does NOT
-     *  create parent dirs, so a subfolder would silently fail; the root always
-     *  exists). Separators collapse to {@code _} (no traversal) and {@code ..}
-     *  is neutralised; resolveWithinDatadir guards the final path too. */
-    static String commentsPath(String dashboardPath) {
-        String flat = dashboardPath == null ? "null" : dashboardPath.replaceAll("[^A-Za-z0-9._-]", "_");
-        flat = flat.replace("..", "_");
-        return "saiku-comments-" + flat + ".jsonl";
-    }
-
     private List<Comment> readAll(String dashboardPath) {
         List<Comment> out = new ArrayList<>();
-        String raw = datasourceService.getInternalFileData(commentsPath(dashboardPath));
+        String raw = DashboardSidecars.read(datasourceService, KIND, dashboardPath);
         if (raw == null || raw.isBlank()) {
             return out;
         }
@@ -174,6 +201,6 @@ public class CommentService {
                 log.error("Failed to serialise comment {}", c.id, e);
             }
         }
-        datasourceService.saveInternalFile(commentsPath(dashboardPath), sb.toString(), null);
+        DashboardSidecars.write(datasourceService, KIND, dashboardPath, sb.toString());
     }
 }

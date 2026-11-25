@@ -107,6 +107,13 @@
 
     <bean id="datasourceServiceBean" class="org.saiku.service.datasource.DatasourceService">
         <property name="connectionManager" ref="connectionManager"/>
+        <!-- saiku#2536: every repository file save notifies the share/embed content-binding
+             listener so minted bindings stay honest (minter writes re-arm, other writes poison). -->
+        <property name="repositoryFileListeners">
+            <list>
+                <ref bean="sharedContentBindingListener"/>
+            </list>
+        </property>
     </bean>
 
     <bean id="userDaoDataSource"
@@ -242,6 +249,11 @@
         <property name="queryCache" ref="saikuQueryCacheBean"/>
         <!-- saiku#1114: role-set mixed into the cellset cache key so role-masked results never leak across roles -->
         <property name="userService" ref="userServiceBean"/>
+        <!-- saiku#2538 (CWE-636): per-caller identity fragment for the result caches — on a
+             pass-through datasource two users with the same roles connect to the warehouse
+             with their own credentials, so they must not share a cached cellset or coalesce
+             onto each other's execution (reuses the saiku#2326 visibility rule). -->
+        <property name="identityContext" ref="connectionManager"/>
         <!-- saiku#946: shared in-flight coalescer (singleton) -->
         <property name="queryCoalescer" ref="queryCoalescerBean"/>
         <!-- Ossie query executor: takes over when ThinQuery.queryType = "OSSIE". -->
@@ -478,6 +490,8 @@
              resolves the dependency graph regardless of declaration order. -->
         <property name="askProviderFactory" ref="aiAskProviderFactory"/>
         <property name="schemaGenProviderFactory" ref="llmProviderFactory"/>
+        <!-- saiku#2489: the diagnostics report the Cube Designer's resolved provider + model too. -->
+        <property name="cubeDesignerAiService" ref="cubeDesignerAiService"/>
     </bean>
 
     <!-- saiku#1868: per-user preferences (/saiku/api/preferences). Gives the UI an account-level
@@ -577,13 +591,16 @@
     <!-- saiku#909 — Tier-1 tile-title/description suggestion (POST /ai/describe-query).
          Reuses the ask feature's own credentials (saiku.ai.ask.*) rather than a
          separate config namespace — same "off by default (no API key), 503 with a
-         clear message until configured" posture as aiAskServiceBean / cubeDesignerAiService. -->
+         clear message until configured" posture as aiAskServiceBean / cubeDesignerAiService.
+         saiku#2542: the configured provider is passed through so the Anthropic wire-format
+         transport refuses (503) rather than handing the ask API key to a non-Anthropic endpoint. -->
     <bean id="tileDescribeService"
           class="org.saiku.service.olap.ai.describe.TileDescribeService">
         <constructor-arg value="${saiku.ai.ask.apiKey:}"/>
         <constructor-arg value="${saiku.ai.ask.model:}"/>
         <constructor-arg value="${saiku.ai.ask.endpoint:}"/>
         <constructor-arg value="${saiku.ai.ask.timeoutSeconds:60}"/>
+        <constructor-arg value="${saiku.ai.ask.provider:}"/>
     </bean>
 
     <bean id="aiQueryResource" scope="request"
@@ -798,6 +815,8 @@
         <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
         <property name="queryCache" ref="saikuQueryCacheBean"/>
         <property name="userService" ref="userServiceBean"/>
+        <!-- saiku#2538: per-caller identity for the shared result caches (pass-through datasources). -->
+        <property name="identityContext" ref="connectionManager"/>
         <property name="queryCoalescer" ref="queryCoalescerBean"/>
         <property name="ossieQueryService" ref="ossieQueryServiceBean"/>
     </bean>
@@ -960,13 +979,20 @@
              which is request-scoped) — no scoped-proxy needed. -->
         <property name="aiOssieResource" ref="aiOssieResource"/>
         <property name="sessionStore" ref="mcpSessionStore"/>
+        <!-- saiku#2540: MCP tools/calls invoke the AI resources in-process, so
+             the /ai/ AiAuditFilter never sees them — the resource writes its
+             own audit entries (one per tools/call, allowed / denied / failed),
+             stamping the active policy tier off the shared guard. -->
+        <property name="auditLog" ref="aiAuditLog"/>
+        <property name="aiPolicyGuard" ref="aiPolicyGuard"/>
     </bean>
 
     <!-- ====================================================================
          MCP OAuth 2.0 resource-server — bearer-token passthrough auth
          (saiku#879, long-term follow-up to #878's HTTP Basic passthrough).
-         Inert unless -Dsaiku.oauth.issuerUri is set; see
-         OAuthResourceServerProperties for the full config surface.
+         Inert unless -Dsaiku.oauth.issuerUri AND -Dsaiku.oauth.audience are
+         set (saiku#2543: an issuer without an audience stays fail-closed);
+         see OAuthResourceServerProperties for the full config surface.
 
          - oauthResourceServerProperties: reads the saiku.oauth.* system
            properties once at context start-up.
@@ -1282,6 +1308,8 @@
         <property name="datasourceService" ref="datasourceServiceBean"/>
         <property name="sessionService" ref="sessionService"/>
         <property name="aiQueryResource" ref="aiQueryResource"/>
+        <!-- saiku#2536: the read path enforces the mint-time content binding -->
+        <property name="shareTokenStore" ref="shareTokenStore"/>
     </bean>
 
     <!-- Notebook counterpart of shareViewResource (issue #1108), sitting under
@@ -1297,6 +1325,19 @@
         <property name="sessionService" ref="sessionService"/>
         <property name="query2Resource" ref="queryResource2"/>
         <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
+        <!-- saiku#2536: the read path enforces the mint-time content binding -->
+        <property name="shareTokenStore" ref="shareTokenStore"/>
+    </bean>
+
+    <!-- saiku#2536: keeps the share/embed minted content bindings honest. Fires on
+         every repository file save (wired onto datasourceServiceBean above): the
+         minter's own writes re-arm the record's content hash; writes by anyone
+         else poison the record so the guest read is refused until re-minted. -->
+    <bean id="sharedContentBindingListener"
+          class="org.saiku.web.share.SharedContentBindingListener">
+        <property name="shareTokenStore" ref="shareTokenStore"/>
+        <property name="embedTokenStore" ref="embedTokenStore"/>
+        <property name="embedPublicRegistry" ref="embedPublicRegistry"/>
     </bean>
 
     <!-- ====================================================================
@@ -1380,6 +1421,9 @@
              gated on the plugin being referenced by the pinned app doc. Same trusted
              registry the in-app TilePluginResource serves — never author-supplied HTML. -->
         <property name="pluginRegistry" ref="tilePluginRegistryBean"/>
+        <!-- saiku#2536: the read path enforces the mint-time content binding -->
+        <property name="tokenStore" ref="embedTokenStore"/>
+        <property name="publicRegistry" ref="embedPublicRegistry"/>
     </bean>
 
     <!-- saiku#1435 Creator Mode. The only embed surface that writes: an
@@ -1622,8 +1666,16 @@
     <!-- Cube/schema designer backend (saiku-ui/src/lib/cube-designer). Reuses the
          schema-generator's JDBC connection provider + the datasource service;
          auto-registered as a JAX-RS resource by SaikuJerseyApplication's @Path scan. -->
+    <!-- saiku#2542: the configured provider is passed through so the Anthropic wire-format
+         transport refuses rather than handing the ask API key to a non-Anthropic endpoint. -->
     <bean id="cubeDesignerAiService"
           class="org.saiku.service.olap.ai.cubedesigner.CubeDesignerAiService">
+        <!-- saiku#2489: the Cube Designer picks its AI upstream with the SAME provider
+             setting NL-ask uses. Default is anthropic — the pre-#2489 behaviour (key via
+             saiku.ai.ask.apiKey / ANTHROPIC_API_KEY env) — so an operator who only sets
+             ANTHROPIC_API_KEY keeps working, while provider=ollama (keyless) or openai
+             flips both stacks to their OpenAI-compatible transport. noop = off. -->
+        <constructor-arg value="${saiku.ai.ask.provider:anthropic}"/>
         <constructor-arg value="${saiku.ai.ask.apiKey:}"/>
         <constructor-arg value="${saiku.ai.ask.model:}"/>
         <constructor-arg value="${saiku.ai.ask.endpoint:}"/>
@@ -1755,6 +1807,8 @@
         <constructor-arg ref="userServiceBean"/>
         <constructor-arg ref="queryCoalescerBean"/>
         <constructor-arg ref="ossieQueryServiceBean"/>
+        <!-- saiku#2538: per-caller identity for the shared result caches (pass-through datasources). -->
+        <constructor-arg ref="connectionManager"/>
     </bean>
 
     <!-- Webhook channel: POSTs a small JSON body via the JDK HttpClient to the
@@ -1879,6 +1933,8 @@
         <constructor-arg ref="userServiceBean"/>
         <constructor-arg ref="queryCoalescerBean"/>
         <constructor-arg ref="ossieQueryServiceBean"/>
+        <!-- saiku#2538: per-caller identity for the shared result caches (pass-through datasources). -->
+        <constructor-arg ref="connectionManager"/>
     </bean>
 
     <!-- The EXPORT_DELIVERY job handler. Runs as the job owner (the owner-identity
@@ -2045,6 +2101,9 @@
         <constructor-arg ref="userServiceBean"/>
         <constructor-arg ref="scimGroupStore"/>
         <constructor-arg value="${saiku.scim.default-workspace:}"/>
+        <!-- saiku#2537: comma-separated allow-list of roles a SCIM group may grant. Unset means
+             every role not in the reserved set is grantable; see docs/operator-hardening.md. -->
+        <constructor-arg value="${saiku.scim.grantableRoles:}"/>
     </bean>
 
     <bean id="scimAuthFilter" class="org.saiku.web.security.scim.ScimAuthFilter">

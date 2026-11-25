@@ -294,6 +294,14 @@ public class AiQueryResource {
         return AsyncQueryService.currentPrincipal();
     }
 
+    /** saiku#2542: the uniform 403 body for admin-only AI catalogue surfaces. */
+    private static Response adminOnly() {
+        return Response.status(Response.Status.FORBIDDEN)
+                .entity(java.util.Map.of("error", "this AI catalogue surface is admin-only"))
+                .type(MediaType.APPLICATION_JSON)
+                .build();
+    }
+
     /** True when the current caller holds {@code ROLE_ADMIN}. */
     private static boolean currentUserIsAdmin() {
         try {
@@ -384,6 +392,16 @@ public class AiQueryResource {
         if (tq.getName() == null || tq.getName().contains("/")) {
             tq.setName(java.util.UUID.randomUUID().toString());
         }
+
+        // saiku#2540: the audit entry for this call carries the cube.
+        auditEnrichCube(
+                tq.getCube() == null
+                        ? null
+                        : new AiCubeRef(
+                                tq.getCube().getConnection(),
+                                tq.getCube().getCatalog(),
+                                tq.getCube().getSchema(),
+                                tq.getCube().getName()));
 
         // saiku#1911: a client/dashboard filter on the SAME hierarchy as a forced RLS filter must
         // never ride alongside it — merged together, saiku-query UNIONs the member sets and widens
@@ -503,6 +521,8 @@ public class AiQueryResource {
             if (req.getCube() == null) {
                 return badRequest("cube", "cube ref required", null);
             }
+            // saiku#2540: the audit entry for this call carries the cube.
+            auditEnrichCube(req.getCube());
             schema = cubeMetadataService.getSchema(req.getCube());
             tq = converter.convert(req, schema);
         } catch (AiValidationException e) {
@@ -679,6 +699,8 @@ public class AiQueryResource {
             if (req.getCube() == null) {
                 return badRequest("cube", "cube ref required", null);
             }
+            // saiku#2540: the audit entry for this call carries the cube.
+            auditEnrichCube(req.getCube());
             schema = cubeMetadataService.getSchema(req.getCube());
             // Validates every name resolves against the live schema — same check
             // /ai/query runs before execution. The returned ThinQuery is discarded:
@@ -1023,6 +1045,11 @@ public class AiQueryResource {
     @Path("/skills")
     @Produces(MediaType.APPLICATION_JSON)
     public Response listSkills(@QueryParam("errors") @DefaultValue("false") boolean includeErrors) {
+        if (includeErrors && !currentUserIsAdmin()) {
+            // saiku#2542: parse/IO messages are server-side diagnostics for the authoring operator,
+            // not user data (paths, frontmatter text, filesystem errors).
+            return adminOnly();
+        }
         if (askService == null || askService.skills() == null) {
             return Response.ok(java.util.Map.of("skills", List.of()))
                     .type(MediaType.APPLICATION_JSON)
@@ -1049,6 +1076,11 @@ public class AiQueryResource {
     @Path("/skills/{name}")
     @Produces(MediaType.APPLICATION_JSON)
     public Response getSkill(@PathParam("name") String name) {
+        // saiku#2542: the skill BODY and its sourcePath are admin-authored server-side content —
+        // the same posture the ?errors=true list carries. Non-admins keep the summary list.
+        if (!currentUserIsAdmin()) {
+            return adminOnly();
+        }
         if (askService == null || askService.skills() == null) {
             return Response.status(Response.Status.NOT_FOUND)
                     .entity(java.util.Map.of("error", "skill not found"))
@@ -1074,6 +1106,10 @@ public class AiQueryResource {
     @Path("/skills/refresh")
     @Produces(MediaType.APPLICATION_JSON)
     public Response refreshSkills() {
+        // saiku#2542: forcing a rescan is an operator action.
+        if (!currentUserIsAdmin()) {
+            return adminOnly();
+        }
         if (askService == null || askService.skills() == null) {
             return Response.ok(java.util.Map.of("skills", 0, "errors", 0))
                     .type(MediaType.APPLICATION_JSON)
@@ -1097,6 +1133,10 @@ public class AiQueryResource {
     @Path("/spaces")
     @Produces(MediaType.APPLICATION_JSON)
     public Response listSpaces(@QueryParam("errors") @DefaultValue("false") boolean includeErrors) {
+        if (includeErrors && !currentUserIsAdmin()) {
+            // saiku#2542: parse/IO messages are server-side diagnostics.
+            return adminOnly();
+        }
         if (askService == null || askService.spaces() == null) {
             return Response.ok(java.util.Map.of("spaces", List.of()))
                     .type(MediaType.APPLICATION_JSON)
@@ -1169,6 +1209,10 @@ public class AiQueryResource {
     @Path("/spaces/refresh")
     @Produces(MediaType.APPLICATION_JSON)
     public Response refreshSpaces() {
+        // saiku#2542: forcing a rescan is an operator action.
+        if (!currentUserIsAdmin()) {
+            return adminOnly();
+        }
         if (askService == null || askService.spaces() == null) {
             return Response.ok(java.util.Map.of("spaces", 0, "errors", 0))
                     .type(MediaType.APPLICATION_JSON)
@@ -1200,6 +1244,10 @@ public class AiQueryResource {
     @Path("/certified")
     @Produces(MediaType.APPLICATION_JSON)
     public Response listCertified(@QueryParam("errors") @DefaultValue("false") boolean includeErrors) {
+        if (includeErrors && !currentUserIsAdmin()) {
+            // saiku#2542: parse/IO messages are server-side diagnostics.
+            return adminOnly();
+        }
         if (certifiedQueries == null) {
             return Response.ok(java.util.Map.of("certified", List.of()))
                     .type(MediaType.APPLICATION_JSON)
@@ -1225,6 +1273,12 @@ public class AiQueryResource {
     @Path("/certified/{id}")
     @Produces(MediaType.APPLICATION_JSON)
     public Response getCertified(@PathParam("id") String id) {
+        // saiku#2542: the full approved query/MDX is the admin's review surface — the list
+        // endpoint deliberately returns summaries only, and this detail route must not undo that
+        // for a non-admin caller the way the full agent-space record route did (saiku#1920).
+        if (!currentUserIsAdmin()) {
+            return adminOnly();
+        }
         if (certifiedQueries == null) {
             return Response.status(Response.Status.NOT_FOUND)
                     .entity(java.util.Map.of("error", "certified query not found"))
@@ -1252,6 +1306,10 @@ public class AiQueryResource {
     @Path("/certified/refresh")
     @Produces(MediaType.APPLICATION_JSON)
     public Response refreshCertified() {
+        // saiku#2542: forcing a rescan is an operator action.
+        if (!currentUserIsAdmin()) {
+            return adminOnly();
+        }
         if (certifiedQueries == null) {
             return Response.ok(java.util.Map.of("certified", 0, "errors", 0))
                     .type(MediaType.APPLICATION_JSON)
@@ -1301,14 +1359,41 @@ public class AiQueryResource {
      * Run one certified query and shape the response, shared by {@code /certified/{id}/run} and the
      * ask layer's certified short-circuit so the two can never disagree on attribution.
      *
-     * <p>The parsed {@link ThinQuery} is used as-is. The one permitted mutation is the same
-     * null / slash-bearing name fix-up {@code /query/saved} applies (a name with a slash would
-     * otherwise be rejected by Jetty's strict URI handling downstream) — the query itself is never
-     * touched, which is what "verbatim" has to mean for an approval to be worth anything.
+     * <p>The parsed {@link ThinQuery} is run against a defensive COPY (saiku#2542): the registry
+     * hands out its one shared, cached instance, and the name fix-up below is a mutation — a
+     * previous run's setName used to leak into every later reader of the same registry entry.
+     * The one permitted mutation is the same null / slash-bearing name fix-up {@code /query/saved}
+     * applies (a name with a slash would otherwise be rejected by Jetty's strict URI handling
+     * downstream) — the query itself is never touched, which is what "verbatim" has to mean for
+     * an approval to be worth anything.
      */
+    private ThinQuery copyCertifiedThinQuery(org.saiku.service.olap.ai.ask.CertifiedQuery certified) {
+        ThinQuery original = certified.query();
+        try {
+            return MAPPER.readValue(MAPPER.writeValueAsString(original), ThinQuery.class);
+        } catch (Exception e) {
+            // Fail-closed, copy-not-mutate: if the copy can't be made, run nothing rather than
+            // mutate the registry's shared instance.
+            log.error("certified query '{}' could not be copied; refusing to run", certified.id(), e);
+            throw new IllegalStateException("certified query could not be copied");
+        }
+    }
+
     private AiQueryResponse executeCertified(org.saiku.service.olap.ai.ask.CertifiedQuery certified, String format) {
         long start = System.currentTimeMillis();
-        ThinQuery tq = certified.query();
+        ThinQuery tq;
+        try {
+            tq = copyCertifiedThinQuery(certified);
+        } catch (RuntimeException e) {
+            AiQueryResponse err = new AiQueryResponse();
+            err.setQueryId(certified.id());
+            err.setStatus(AiQueryResponse.Status.EXECUTION_ERROR);
+            err.setError("execute failed");
+            err.setRuntimeMs(System.currentTimeMillis() - start);
+            err.setSource("certified");
+            err.setCertifiedId(certified.id());
+            return err;
+        }
         if (tq.getName() == null || tq.getName().isBlank() || tq.getName().contains("/")) {
             tq.setName(java.util.UUID.randomUUID().toString());
         }
@@ -2264,6 +2349,8 @@ public class AiQueryResource {
             if (req.getCube() == null) {
                 return badRequest("cube", "cube ref required", null);
             }
+            // saiku#2540: the audit entry for this call carries the cube.
+            auditEnrichCube(req.getCube());
             AiSchema schema = cubeMetadataService.getSchema(req.getCube());
             ThinQuery tq = converter.convert(req, schema);
             Map<String, Object> body = new LinkedHashMap<>();
@@ -2313,6 +2400,8 @@ public class AiQueryResource {
         if (ref == null) {
             return badRequest("cubeId", "cubeId must be connection/catalog/schema/cube", null);
         }
+        // saiku#2540: the audit entry for this call carries the cube.
+        auditEnrichCube(ref);
         try {
             AiSchema schema = cubeMetadataService.getSchema(ref);
             // saiku#902: project to the redacted agent view before serializing.
@@ -2368,6 +2457,8 @@ public class AiQueryResource {
         if (ref == null) {
             return badRequest("cubeId", "cubeId must be connection/catalog/schema/cube", null);
         }
+        // saiku#2540: the audit entry for this call carries the cube.
+        auditEnrichCube(ref);
         try {
             // Warm the schema cache first so a fresh suggestions request
             // doesn't return empty just because the cube hadn't been
@@ -2408,6 +2499,8 @@ public class AiQueryResource {
         if (dimension == null || dimension.isEmpty() || level == null || level.isEmpty()) {
             return badRequest("dimension/level", "dimension and level query params required", null);
         }
+        // saiku#2540: the audit entry for this call carries the cube.
+        auditEnrichCube(ref);
         if (!(cubeMetadataService instanceof OlapAiCubeMetadataService)) {
             return error("Member search requires an olap4j-backed metadata service");
         }
@@ -2453,6 +2546,8 @@ public class AiQueryResource {
             if (req == null || req.getCube() == null) {
                 return badRequest("cube", "cube ref required", null);
             }
+            // saiku#2540: the audit entry for this call carries the cube.
+            auditEnrichCube(req.getCube());
             schema = cubeMetadataService.getSchema(req.getCube());
             tq = converter.convert(req, schema);
         } catch (AiValidationException e) {
@@ -3646,99 +3741,118 @@ public class AiQueryResource {
             policy = org.olap4j.AllocationPolicy.EQUAL_ALLOCATION;
         }
 
-        org.olap4j.OlapConnection con = null;
-        org.olap4j.Scenario prior = null;
+        // saiku#2550j: every client-supplied identifier below is CONCATENATED into MDX, so each
+        // is validated before it reaches a query — measure and cube as plain names (they are
+        // bracketed here), level/member/payerLevel/trendLevel as full MDX unique names, and the
+        // member checked against the level's actual query rows below. MDX member unique names
+        // contain hierarchy and ancestor members, not the level's unique name.
+        // A name like "Foo] ON COLUMNS, {[]} --" is now a 400, not a different query.
+        String invalid = validateWhatIfNames(
+                cube, level, measure, member, str(body.get("payerLevel")), str(body.get("trendLevel")));
+        if (invalid != null) {
+            return badRequest(invalid, "not a valid MDX name for this request", null);
+        }
+
+        // A workspace alias can resolve to the same native connection as another name.
+        // Lock the resolved connection itself, so both spellings serialize scenario state.
+        org.olap4j.OlapConnection con;
         try {
             con = olapDiscoverService.getNativeConnection(connection);
-            prior = con.getScenario();
-            org.olap4j.Scenario scenario = con.createScenario();
-            con.setScenario(scenario);
-            // The query MUST be scoped to the scenario member in the WHERE clause, or it just
-            // reads actuals — the write-back lives on [Scenario].[<id>].
-            String mdx = "SELECT {[Measures].[" + measure + "]} ON COLUMNS, " + level
-                    + ".Members ON ROWS FROM [" + cube + "] WHERE [Scenario].[Scenario].[" + scenario.getId()
-                    + "]";
-            log.info("Scenario what-if MDX: {}", mdx);
-            try (org.olap4j.OlapStatement st = con.createStatement()) {
-                // saiku#1914: server-enforced statement timeout on this execute path too.
-                org.saiku.olap.util.QueryGuardrails.applyQueryTimeout(st);
-                // 1) actuals under the (empty) scenario
-                org.olap4j.CellSet actual = st.executeOlapQuery(mdx);
-                java.util.List<org.olap4j.Position> rows =
-                        actual.getAxes().get(1).getPositions();
-                java.util.List<java.util.Map<String, Object>> out = new java.util.ArrayList<>();
-                int targetRow = -1;
-                for (int i = 0; i < rows.size(); i++) {
-                    org.olap4j.metadata.Member m = rows.get(i).getMembers().get(0);
-                    double a = cellDouble(actual.getCell(
-                            actual.getAxes().get(0).getPositions().get(0), rows.get(i)));
-                    java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
-                    row.put("member", m.getUniqueName());
-                    row.put("caption", m.getCaption());
-                    row.put("actual", a);
-                    out.add(row);
-                    if (m.getUniqueName().equals(member)) targetRow = i;
-                }
-                if (targetRow < 0) {
-                    return badRequest(
-                            "member",
-                            "member not found on the level",
-                            out.stream().map(r -> (String) r.get("member")).toList());
-                }
-                // Secondary breakdowns (payer type + month). Capture the portfolio actuals AND
-                // the changed member's OWN mix now (scenario still empty). Mondrian's scenario
-                // re-allocation reflects in the write-back's own dimension but not in
-                // cross-dimension aggregates, so we distribute the portfolio delta across payer /
-                // month in proportion to the changed member's mix — which is exactly where the
-                // re-allocated value lands.
-                String payerLevel = str(body.get("payerLevel"));
-                String trendLevel = str(body.get("trendLevel"));
-                String memberSlicer = "(" + member + ")";
-                java.util.LinkedHashMap<String, Double> payerAct =
-                        payerLevel == null ? null : queryLevelAgg(st, measure, payerLevel, cube, null);
-                java.util.LinkedHashMap<String, Double> payerMix =
-                        payerLevel == null ? null : queryLevelAgg(st, measure, payerLevel, cube, memberSlicer);
-                java.util.LinkedHashMap<String, Double> trendAct =
-                        trendLevel == null ? null : queryLevelAgg(st, measure, trendLevel, cube, null);
-                java.util.LinkedHashMap<String, Double> trendMix =
-                        trendLevel == null ? null : queryLevelAgg(st, measure, trendLevel, cube, memberSlicer);
+        } catch (RuntimeException e) {
+            log.warn("Scenario what-if connection lookup failed", e);
+            return error("what-if failed: " + e.getMessage());
+        }
+        synchronized (con) {
+            org.olap4j.Scenario prior = null;
+            try {
+                prior = con.getScenario();
+                org.olap4j.Scenario scenario = con.createScenario();
+                con.setScenario(scenario);
+                // The query MUST be scoped to the scenario member in the WHERE clause, or it just
+                // reads actuals — the write-back lives on [Scenario].[<id>].
+                String mdx = "SELECT {[Measures].[" + measure + "]} ON COLUMNS, " + level
+                        + ".Members ON ROWS FROM [" + cube + "] WHERE [Scenario].[Scenario].[" + scenario.getId()
+                        + "]";
+                log.info("Scenario what-if MDX: {}", mdx);
+                try (org.olap4j.OlapStatement st = con.createStatement()) {
+                    // saiku#1914: server-enforced statement timeout on this execute path too.
+                    org.saiku.olap.util.QueryGuardrails.applyQueryTimeout(st);
+                    // 1) actuals under the (empty) scenario
+                    org.olap4j.CellSet actual = st.executeOlapQuery(mdx);
+                    java.util.List<org.olap4j.Position> rows =
+                            actual.getAxes().get(1).getPositions();
+                    java.util.List<java.util.Map<String, Object>> out = new java.util.ArrayList<>();
+                    int targetRow = -1;
+                    for (int i = 0; i < rows.size(); i++) {
+                        org.olap4j.metadata.Member m = rows.get(i).getMembers().get(0);
+                        double a = cellDouble(actual.getCell(
+                                actual.getAxes().get(0).getPositions().get(0), rows.get(i)));
+                        java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
+                        row.put("member", m.getUniqueName());
+                        row.put("caption", m.getCaption());
+                        row.put("actual", a);
+                        out.add(row);
+                        if (m.getUniqueName().equals(member)) targetRow = i;
+                    }
+                    if (targetRow < 0) {
+                        return badRequest(
+                                "member",
+                                "member not found on the level",
+                                out.stream().map(r -> (String) r.get("member")).toList());
+                    }
+                    // Secondary breakdowns (payer type + month). Capture the portfolio actuals AND
+                    // the changed member's OWN mix now (scenario still empty). Mondrian's scenario
+                    // re-allocation reflects in the write-back's own dimension but not in
+                    // cross-dimension aggregates, so we distribute the portfolio delta across payer /
+                    // month in proportion to the changed member's mix — which is exactly where the
+                    // re-allocated value lands.
+                    String payerLevel = str(body.get("payerLevel"));
+                    String trendLevel = str(body.get("trendLevel"));
+                    String memberSlicer = "(" + member + ")";
+                    java.util.LinkedHashMap<String, Double> payerAct =
+                            payerLevel == null ? null : queryLevelAgg(st, measure, payerLevel, cube, null);
+                    java.util.LinkedHashMap<String, Double> payerMix =
+                            payerLevel == null ? null : queryLevelAgg(st, measure, payerLevel, cube, memberSlicer);
+                    java.util.LinkedHashMap<String, Double> trendAct =
+                            trendLevel == null ? null : queryLevelAgg(st, measure, trendLevel, cube, null);
+                    java.util.LinkedHashMap<String, Double> trendMix =
+                            trendLevel == null ? null : queryLevelAgg(st, measure, trendLevel, cube, memberSlicer);
 
-                // 2) write the new value into the scenario (engine re-allocates the delta)
-                actual.getCell(actual.getAxes().get(0).getPositions().get(0), rows.get(targetRow))
-                        .setValue(newValue, policy);
+                    // 2) write the new value into the scenario (engine re-allocates the delta)
+                    actual.getCell(actual.getAxes().get(0).getPositions().get(0), rows.get(targetRow))
+                            .setValue(newValue, policy);
 
-                // 3) re-run the main breakdown under the scenario — reflects the write-back
-                org.olap4j.CellSet whatif = st.executeOlapQuery(mdx);
-                java.util.List<org.olap4j.Position> wrows =
-                        whatif.getAxes().get(1).getPositions();
-                double actualTotal = 0, whatifTotal = 0;
-                for (int i = 0; i < wrows.size(); i++) {
-                    double w = cellDouble(whatif.getCell(
-                            whatif.getAxes().get(0).getPositions().get(0), wrows.get(i)));
-                    out.get(i).put("whatif", w);
-                    actualTotal += (double) out.get(i).get("actual");
-                    whatifTotal += w;
+                    // 3) re-run the main breakdown under the scenario — reflects the write-back
+                    org.olap4j.CellSet whatif = st.executeOlapQuery(mdx);
+                    java.util.List<org.olap4j.Position> wrows =
+                            whatif.getAxes().get(1).getPositions();
+                    double actualTotal = 0, whatifTotal = 0;
+                    for (int i = 0; i < wrows.size(); i++) {
+                        double w = cellDouble(whatif.getCell(
+                                whatif.getAxes().get(0).getPositions().get(0), wrows.get(i)));
+                        out.get(i).put("whatif", w);
+                        actualTotal += (double) out.get(i).get("actual");
+                        whatifTotal += w;
+                    }
+                    double delta = whatifTotal - actualTotal;
+                    java.util.Map<String, Object> resp = new java.util.LinkedHashMap<>();
+                    resp.put("measure", measure);
+                    resp.put("policy", policy.name());
+                    resp.put("member", member);
+                    resp.put("rows", out);
+                    resp.put("actualTotal", actualTotal);
+                    resp.put("whatifTotal", whatifTotal);
+                    if (payerAct != null) resp.put("payer", distributeDelta(payerAct, payerMix, delta));
+                    if (trendAct != null) resp.put("trend", distributeDelta(trendAct, trendMix, delta));
+                    return Response.ok(resp).type(MediaType.APPLICATION_JSON).build();
                 }
-                double delta = whatifTotal - actualTotal;
-                java.util.Map<String, Object> resp = new java.util.LinkedHashMap<>();
-                resp.put("measure", measure);
-                resp.put("policy", policy.name());
-                resp.put("member", member);
-                resp.put("rows", out);
-                resp.put("actualTotal", actualTotal);
-                resp.put("whatifTotal", whatifTotal);
-                if (payerAct != null) resp.put("payer", distributeDelta(payerAct, payerMix, delta));
-                if (trendAct != null) resp.put("trend", distributeDelta(trendAct, trendMix, delta));
-                return Response.ok(resp).type(MediaType.APPLICATION_JSON).build();
-            }
-        } catch (RuntimeException | java.sql.SQLException e) {
-            log.warn("Scenario what-if failed", e);
-            Throwable root = e;
-            while (root.getCause() != null && root.getCause() != root) root = root.getCause();
-            return error("what-if failed: " + e.getMessage() + " | root: "
-                    + root.getClass().getSimpleName() + ": " + root.getMessage());
-        } finally {
-            if (con != null) {
+            } catch (RuntimeException | java.sql.SQLException e) {
+                log.warn("Scenario what-if failed", e);
+                Throwable root = e;
+                while (root.getCause() != null && root.getCause() != root) root = root.getCause();
+                return error("what-if failed: " + e.getMessage() + " | root: "
+                        + root.getClass().getSimpleName() + ": " + root.getMessage());
+            } finally {
                 try {
                     con.setScenario(prior);
                 } catch (Exception ignore) {
@@ -3746,6 +3860,27 @@ public class AiQueryResource {
                 }
             }
         }
+    }
+
+    /** MDX full unique name: one or more bracketed segments joined by dots, with no
+     *  brackets inside a segment — a client value that doesn't match cannot change the
+     *  structure of the query it is concatenated into. */
+    private static final java.util.regex.Pattern MDX_UNIQUE_NAME =
+            java.util.regex.Pattern.compile("\\[[^\\[\\]]*\\](?:\\.\\[[^\\[\\]]*\\])*");
+
+    /** Plain name (bracketed as-is when the MDX is built): no brackets of its own. */
+    private static final java.util.regex.Pattern MDX_PLAIN_NAME = java.util.regex.Pattern.compile("[^\\[\\]]+");
+
+    /** Null when every name is acceptable; otherwise the offending body field. */
+    private static String validateWhatIfNames(
+            String cube, String level, String measure, String member, String payerLevel, String trendLevel) {
+        if (cube != null && !MDX_PLAIN_NAME.matcher(cube).matches()) return "cube";
+        if (measure != null && !MDX_PLAIN_NAME.matcher(measure).matches()) return "measure";
+        if (level != null && !MDX_UNIQUE_NAME.matcher(level).matches()) return "level";
+        if (member != null && !MDX_UNIQUE_NAME.matcher(member).matches()) return "member";
+        if (payerLevel != null && !MDX_UNIQUE_NAME.matcher(payerLevel).matches()) return "payerLevel";
+        if (trendLevel != null && !MDX_UNIQUE_NAME.matcher(trendLevel).matches()) return "trendLevel";
+        return null;
     }
 
     private static String str(Object o) {
@@ -4237,5 +4372,30 @@ public class AiQueryResource {
             return ((org.springframework.web.context.request.ServletRequestAttributes) attrs).getRequest();
         }
         return null;
+    }
+
+    /**
+     * saiku#2540 — publish the cube this call targeted as AI-audit enrichment.
+     * {@link AiAuditFilter} folds it into the entry it writes for this request,
+     * so the audit trail names the cube, not just the endpoint. The resource is
+     * a Spring singleton and cannot reach the JAX-RS request context, so the
+     * enrichment crosses as a servlet request attribute (the filter reads the
+     * {@code P_*} keys off the {@code RequestContextHolder}-bound request).
+     * Never throws — a missing enrichment degrades the entry gracefully, it
+     * must never break the call being audited.
+     */
+    private static void auditEnrichCube(org.saiku.service.olap.ai.AiCubeRef cube) {
+        if (cube != null) {
+            auditEnrich(AiAuditFilter.P_CUBE, cube.toString());
+        }
+    }
+
+    /** saiku#2540 companion to {@link #auditEnrichCube}: set any audit
+     *  enrichment key on the bound request. */
+    private static void auditEnrich(String key, String value) {
+        jakarta.servlet.http.HttpServletRequest req = currentRequest();
+        if (req != null) {
+            req.setAttribute(key, value);
+        }
     }
 }

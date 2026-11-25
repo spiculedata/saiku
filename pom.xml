@@ -5,7 +5,7 @@
     <groupId>org.saikuanalytics</groupId>
     <artifactId>saiku</artifactId>
     <packaging>pom</packaging>
-    <version>4.9.1</version>
+    <version>4.10.0</version>
     <name>Saiku Module Project</name>
     <scm>
         <developerConnection>
@@ -158,7 +158,7 @@
             <plugin>
                 <groupId>com.diffplug.spotless</groupId>
                 <artifactId>spotless-maven-plugin</artifactId>
-                <version>3.10.4</version>
+                <version>3.11.0</version>
                 <configuration>
                     <java>
                         <includes>
@@ -189,7 +189,7 @@
                      .coverage-thresholds.json via scripts/check-coverage.sh. -->
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
-                <version>0.8.15</version>
+                <version>0.8.16</version>
                 <executions>
                     <execution>
                         <id>jacoco-prepare-agent</id>

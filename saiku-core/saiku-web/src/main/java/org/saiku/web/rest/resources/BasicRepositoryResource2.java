@@ -31,6 +31,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -43,10 +44,12 @@ import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.glassfish.jersey.media.multipart.FormDataContentDisposition;
 import org.glassfish.jersey.media.multipart.FormDataParam;
 import org.saiku.repository.AclEntry;
+import org.saiku.repository.FilesystemRepositoryManager;
 import org.saiku.repository.IRepositoryObject;
 import org.saiku.service.ISessionService;
 import org.saiku.service.datasource.DatasourceService;
 import org.saiku.service.user.UserService;
+import org.saiku.service.util.StorageLimits;
 import org.saiku.service.util.exception.SaikuServiceException;
 import org.saiku.web.rest.util.SessionRoles;
 import org.slf4j.Logger;
@@ -102,6 +105,22 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
         while (p.startsWith("./")) {
             p = p.substring(2);
         }
+        // saiku#2521: collapse trailing separators and dot segments — "x.sds/", "x.sds/." and
+        // "x.sds//" all land on the single file "x.sds" (the same collapse
+        // FilesystemRepositoryManager's resolved-path guard performs) — so a trailing "/" or
+        // "/." can no longer smuggle a descriptor write past this 403.
+        boolean collapsed;
+        do {
+            collapsed = false;
+            while (p.endsWith("/")) {
+                p = p.substring(0, p.length() - 1);
+                collapsed = true;
+            }
+            if (p.endsWith("/.")) {
+                p = p.substring(0, p.length() - 2);
+                collapsed = true;
+            }
+        } while (collapsed);
         p = stripWindowsFilenameTail(p);
         if (p.endsWith(".sds")) {
             return true;
@@ -144,6 +163,27 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
                 return Response.status(Status.FORBIDDEN)
                         .entity("Datasource descriptors (.sds) and the /datasources tree can only be modified by an"
                                 + " administrator")
+                        .type("text/plain")
+                        .build();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * saiku#2525: the ACL sidecar ({@code acl.json}) is reserved — it is never repository content.
+     * The manager refuses it everywhere (the hard stop for every door: dashboards, apps,
+     * notebooks, history, embed-authoring, zip-upload); this resource-level guard turns the
+     * refusals on the REST repository surface into the contracted 403 instead of a 500, before
+     * the service layer is touched. {@code null} when the call may proceed, otherwise the 403.
+     */
+    private Response refuseAclSidecar(String... paths) {
+        for (String p : paths) {
+            if (FilesystemRepositoryManager.isAclSidecarPath(p)) {
+                log.warn("Refused direct access to the reserved ACL sidecar (saiku#2525)");
+                return Response.status(Status.FORBIDDEN)
+                        .entity("acl.json is a reserved ACL sidecar: it cannot be read, written or deleted as"
+                                + " repository content; use the ACL API instead")
                         .type("text/plain")
                         .build();
             }
@@ -271,6 +311,11 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
     @Produces({"text/plain"})
     @Path("/resource")
     public Response getResource(@QueryParam("file") String file) {
+        // saiku#2525: the sidecar is never served as content (the contracted 403).
+        Response sidecarRefused = refuseAclSidecar(file);
+        if (sidecarRefused != null) {
+            return sidecarRefused;
+        }
         String username = sessionService.getAllSessionObjects().get("username").toString();
         // saiku#1752: authoritative SecurityContextHolder read, not the session "roles" map.
         List<String> roles = SessionRoles.currentRoles();
@@ -306,6 +351,23 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
         if (refused != null) {
             return refused;
         }
+        // saiku#2525: a sidecar write is an ACL takeover (the contracted 403).
+        refused = refuseAclSidecar(file);
+        if (refused != null) {
+            return refused;
+        }
+        // #2535: per-object storage cap. The REST body-size filter bounds the whole
+        // request; this bounds the object itself (an operator may raise the body cap
+        // for a route without unbounding repository objects).
+        long maxBytes = StorageLimits.repoObjectBytes();
+        long contentBytes = content == null ? 0 : content.getBytes(StandardCharsets.UTF_8).length;
+        if (contentBytes > maxBytes) {
+            log.warn("Rejected oversized repository object {} ({} bytes > cap {} bytes)", file, contentBytes, maxBytes);
+            return Response.status(Response.Status.REQUEST_ENTITY_TOO_LARGE)
+                    .entity("Repository object exceeds the " + maxBytes + "-byte limit (saiku.repo.maxObjectBytes)")
+                    .type("text/plain")
+                    .build();
+        }
         String username = sessionService.getAllSessionObjects().get("username").toString();
         // saiku#1752: authoritative SecurityContextHolder read, not the session "roles" map.
         List<String> roles = SessionRoles.currentRoles();
@@ -333,6 +395,11 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
     @DELETE
     @Path("/resource")
     public Response deleteResource(@QueryParam("file") String file) {
+        // saiku#2525: deleting the sidecar wipes every share and private entry in the folder (403).
+        Response sidecarRefused = refuseAclSidecar(file);
+        if (sidecarRefused != null) {
+            return sidecarRefused;
+        }
         String username = sessionService.getAllSessionObjects().get("username").toString();
         // saiku#1752: authoritative SecurityContextHolder read, not the session "roles" map.
         List<String> roles = SessionRoles.currentRoles();
@@ -360,6 +427,11 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
         // saiku#1903: a rename into *.sds / into /datasources is a descriptor write; moving an
         // existing descriptor is equally admin-only.
         Response refused = refuseDatasourceDescriptorWrite(source, target);
+        if (refused != null) {
+            return refused;
+        }
+        // saiku#2525: the sidecar is reserved as both the source and the target of a move (403).
+        refused = refuseAclSidecar(source, target);
         if (refused != null) {
             return refused;
         }

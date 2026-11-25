@@ -122,6 +122,10 @@ public class SaikuLauncher implements Callable<Integer> {
             System.out.println("  Workspace : " + base + "ui/");
             System.out.println("  Admin     : " + base + "ui/admin");
             System.out.println("  REST API  : " + base + "rest/saiku/");
+            if (org.saiku.service.util.SponsorLink.enabled()) {
+                // saiku#2577: Saiku is free; one line on how to support it (SAIKU_SPONSOR_LINK=false hides it).
+                System.out.println("  Sponsor   : " + org.saiku.service.util.SponsorLink.URL);
+            }
             printDefaultCredentialWarning();
             server.join();
             return 0;
@@ -319,6 +323,15 @@ public class SaikuLauncher implements Callable<Integer> {
             // servlet's <multipart-config> in web.xml. Default 2 MB; tunable.
             webapp.setMaxFormContentSize(Integer.getInteger("saiku.http.maxFormContentSize", 2_000_000));
 
+            // saiku#2550c: turn OFF the default servlet's directory listings.
+            // Jetty's default ships dirAllowed=true, so GET /images/ answered with
+            // an index of every packaged static file — an unnecessary disclosure
+            // of the WAR's contents and a free directory-walk for anyone probing
+            // static paths. With dirAllowed=false a directory URL with no welcome
+            // file answers 403. Context-level init param so the DefaultServlet's
+            // own web.xml init-param (absent here) doesn't override it.
+            webapp.setInitParameter("org.eclipse.jetty.servlet.Default.dirAllowed", "false");
+
             // Tier-1 auth hardening: JSESSIONID cookie attrs.
             //   HttpOnly = true   (always — no JS needs to read it)
             //   SameSite = Lax    (block CSRF via top-level nav from other origins,
@@ -411,6 +424,18 @@ public class SaikuLauncher implements Callable<Integer> {
             sessionCache.setSessionDataStore(sessionStore);
             sessionCache.setSaveOnCreate(true);
             sessionCache.setFlushOnResponseCommit(true);
+            // saiku#2524: Jetty's default cache policy is NEVER_EVICT, so every session ever
+            // created stayed resident on the heap until its 7-day idle expiry — the same
+            // memory half of the unauthenticated-session fill the request-cache fix stops.
+            // Idle sessions now leave the cache after 5 minutes without a request. That is
+            // a cache residency policy, not data loss: with a FileSessionDataStore an
+            // evicted session is reloaded from disk on its next use, and
+            // setSaveOnInactiveEviction writes it out before the eviction. Authenticated
+            // idle sessions therefore still survive a restart (saiku#1859), they just
+            // occupy heap only while they are actually used.
+            // >0 is the number of seconds of inactivity after which a session is evicted.
+            sessionCache.setEvictionPolicy(300);
+            sessionCache.setSaveOnInactiveEviction(true);
             sessionHandler.setSessionCache(sessionCache);
             sessionHandler.setMaxInactiveInterval(7 * 24 * 60 * 60);
         }

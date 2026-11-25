@@ -87,89 +87,105 @@
 	}
 </script>
 
-<div class="sql-workbench">
-	<PageHeader title={i18n.t('sqlWorkbench.title')} subtitle={i18n.t('sqlWorkbench.subtitle')} />
+<!-- saiku#2599: the app shell is height:100vh with overflow:hidden, so this page provides its
+     own scroll container; the results table scrolls horizontally inside its own wrapper. -->
+<div class="sql-workbench-scroll">
+	<div class="sql-workbench">
+		<PageHeader title={i18n.t('sqlWorkbench.title')} subtitle={i18n.t('sqlWorkbench.subtitle')} />
 
-	{#if datasourcesError}
-		<FeedbackBanner tone="error">{datasourcesError}</FeedbackBanner>
-	{/if}
-
-	<div class="sql-workbench__toolbar">
-		<FormField label={i18n.t('sqlWorkbench.datasource')}>
-			<Select bind:value={selectedDatasource} aria-label={i18n.t('sqlWorkbench.datasource')}>
-				<option value="" disabled>{i18n.t('sqlWorkbench.datasource.placeholder')}</option>
-				{#each datasources as ds (ds.name)}
-					<option value={ds.name}>{ds.name}</option>
-				{/each}
-			</Select>
-		</FormField>
-		<Button onclick={run} disabled={running || !selectedDatasource || !sql.trim()}>
-			{running ? i18n.t('sqlWorkbench.running') : i18n.t('sqlWorkbench.run')}
-		</Button>
-		<Button variant="outline" onclick={exportCsv} disabled={!result || result.rows.length === 0}>
-			{i18n.t('sqlWorkbench.exportCsv')}
-		</Button>
-	</div>
-
-	<p class="sql-workbench__notice">{i18n.t('sqlWorkbench.readOnlyNotice')}</p>
-
-	<MonacoEditor value={sql} language="sql" minHeight="200px" onChange={(v) => (sql = v)} />
-
-	{#if queryError}
-		<FeedbackBanner tone="error">{queryError}</FeedbackBanner>
-	{/if}
-
-	{#if result}
-		<div class="sql-workbench__meta">
-			<span>{rowsShownLabel(result)}</span>
-			{#if result.truncated}
-				<span class="sql-workbench__truncated">{truncatedLabel(result)}</span>
-			{/if}
-		</div>
-		{#if result.rows.length === 0}
-			<p class="sql-workbench__empty">{i18n.t('sqlWorkbench.empty')}</p>
-		{:else}
-			<table class="data-grid">
-				<thead>
-					<tr>
-						{#each result.columns as col (col)}
-							<th>{col}</th>
-						{/each}
-					</tr>
-				</thead>
-				<tbody>
-					{#each pageRows as row, i (i)}
-						<tr>
-							{#each row as cell, j (j)}
-								<td>{cell ?? ''}</td>
-							{/each}
-						</tr>
-					{/each}
-				</tbody>
-			</table>
-			{#if totalPages > 1}
-				<div class="sql-workbench__pager">
-					<Button variant="outline" size="sm" disabled={page === 0} onclick={() => page--}>
-						{i18n.t('sqlWorkbench.prev')}
-					</Button>
-					<span>{pageLabel()}</span>
-					<Button
-						variant="outline"
-						size="sm"
-						disabled={page >= totalPages - 1}
-						onclick={() => page++}
-					>
-						{i18n.t('sqlWorkbench.next')}
-					</Button>
-				</div>
-			{/if}
+		{#if datasourcesError}
+			<FeedbackBanner tone="error">{datasourcesError}</FeedbackBanner>
 		{/if}
-	{:else}
-		<p class="sql-workbench__empty">{i18n.t('sqlWorkbench.empty')}</p>
-	{/if}
+
+		<div class="sql-workbench__toolbar">
+			<FormField label={i18n.t('sqlWorkbench.datasource')}>
+				<Select bind:value={selectedDatasource} aria-label={i18n.t('sqlWorkbench.datasource')}>
+					<option value="" disabled>{i18n.t('sqlWorkbench.datasource.placeholder')}</option>
+					{#each datasources as ds (ds.name)}
+						<option value={ds.name}>{ds.name}</option>
+					{/each}
+				</Select>
+			</FormField>
+			<Button onclick={run} disabled={running || !selectedDatasource || !sql.trim()}>
+				{running ? i18n.t('sqlWorkbench.running') : i18n.t('sqlWorkbench.run')}
+			</Button>
+			<Button variant="outline" onclick={exportCsv} disabled={!result || result.rows.length === 0}>
+				{i18n.t('sqlWorkbench.exportCsv')}
+			</Button>
+		</div>
+
+		<p class="sql-workbench__notice">{i18n.t('sqlWorkbench.readOnlyNotice')}</p>
+
+		<MonacoEditor value={sql} language="sql" minHeight="200px" onChange={(v) => (sql = v)} />
+
+		{#if queryError}
+			<FeedbackBanner tone="error">{queryError}</FeedbackBanner>
+		{/if}
+
+		{#if result}
+			<div class="sql-workbench__meta">
+				<span>{rowsShownLabel(result)}</span>
+				{#if result.truncated}
+					<span class="sql-workbench__truncated">{truncatedLabel(result)}</span>
+				{/if}
+			</div>
+			{#if result.rows.length === 0}
+				<p class="sql-workbench__empty">{i18n.t('sqlWorkbench.empty')}</p>
+			{:else}
+				<div class="sql-workbench__results">
+					<table class="data-grid">
+						<thead>
+							<tr>
+								{#each result.columns as col (col)}
+									<th>{col}</th>
+								{/each}
+							</tr>
+						</thead>
+						<tbody>
+							{#each pageRows as row, i (i)}
+								<tr>
+									{#each row as cell, j (j)}
+										<td>{cell ?? ''}</td>
+									{/each}
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+				{#if totalPages > 1}
+					<div class="sql-workbench__pager">
+						<Button variant="outline" size="sm" disabled={page === 0} onclick={() => page--}>
+							{i18n.t('sqlWorkbench.prev')}
+						</Button>
+						<span>{pageLabel()}</span>
+						<Button
+							variant="outline"
+							size="sm"
+							disabled={page >= totalPages - 1}
+							onclick={() => page++}
+						>
+							{i18n.t('sqlWorkbench.next')}
+						</Button>
+					</div>
+				{/if}
+			{/if}
+		{:else}
+			<p class="sql-workbench__empty">{i18n.t('sqlWorkbench.empty')}</p>
+		{/if}
+	</div>
 </div>
 
 <style>
+	.sql-workbench-scroll {
+		flex: 1 1 auto;
+		min-height: 0;
+		min-width: 0;
+		overflow-y: auto;
+	}
+	.sql-workbench__results {
+		max-width: 100%;
+		overflow-x: auto;
+	}
 	.sql-workbench {
 		display: flex;
 		flex-direction: column;

@@ -1,0 +1,29 @@
+{
+  "issue": 2538,
+  "title": "Cellset cache, coalescer and Arrow cache are per user on pass-through datasources, and unresolvable roles bypass the caches",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "two callers with the SAME Saiku role set query the same cube on a security.type=passthrough datasource",
+      "then": "the cellset cache key (QueryCacheKey), the in-flight coalescer key (QueryCoalescer) and the Arrow result cache are all keyed per caller identity: ThinQueryService mixes a per-caller identity fragment (from a QueryCacheIdentityContext seam implemented by SecurityAwareConnectionManager, reusing the saiku#2326 visibility rule) into the cache key, so the second caller neither reuses the first caller's cached cellset nor coalesces onto their in-flight execution"
+    },
+    {
+      "id": "C2",
+      "given": "a datasource that is NOT pass-through (no security, or one2one/lookup role masking)",
+      "then": "the identity fragment is omitted and the key stays byte-identical to the role-keyed key — cache hit rates are unchanged"
+    },
+    {
+      "id": "C3",
+      "given": "a failure while resolving the caller's roles or identity (userService or the seam throws, key build fails)",
+      "then": "the caches are bypassed fail-closed: currentRolesForCacheKey no longer swallows exceptions into a shared role-less key, cacheKeyFor returns null, executeCached executes live, and the coalescer pass-throughs"
+    },
+    {
+      "id": "C4",
+      "given": "the cross-user cache behaviour",
+      "then": "regression tests ship for per-identity keys on pass-through, unchanged role-keyed behaviour elsewhere, and fail-closed bypass on unresolvable roles; every ThinQueryService that consults the shared caches (session bean, eval bean, off-request reader and CSV producer) is wired with the identity seam"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}

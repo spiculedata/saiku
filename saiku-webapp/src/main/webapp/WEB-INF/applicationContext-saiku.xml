@@ -221,7 +221,19 @@
          *.jsp), which re-challenges authentication in the ERROR context → loop → 500.
          Security is unchanged for direct requests: the catch-all blocks all unmapped REQUEST
          dispatches as intended. -->
-    <security:http auto-config='true' use-expressions="true" request-matcher="ant" filter-all-dispatcher-types="false">
+    <!-- saiku#2523: auto-config is GONE (deliberately). It registered Spring's
+         generated form-login — a POST /login filter plus a GET /login page —
+         which authenticated real users OUTSIDE every guard the documented login
+         goes through: no rate limiter (LoginRateLimitFilter only watches
+         Authorization-bearing requests), no CSRF (SaikuCsrfRequestMatcher requires
+         tokens under /rest/ only), and no demo email gate (web.xml maps that to
+         /rest/*). A locked-out account could still sign in at /login, and
+         302 / vs 302 /login?error was an unlimited password oracle. Everything
+         auto-config provided besides form login is declared explicitly below
+         (logout, http-basic, anonymous), so dropping auto-config removes ONLY the
+         second login path. The one login is POST /rest/saiku/session
+         (rate-limited, audited), plus HTTP Basic for stateless clients and XMLA. -->
+    <security:http use-expressions="true" request-matcher="ant" filter-all-dispatcher-types="false">
       <!--access-denied-page="/login.jsp"-->
       <!--
         CSRF: enforced on state-changing /rest/** methods.
@@ -247,6 +259,20 @@
              token to resolve on every request so the XSRF-TOKEN cookie is
              written before the response commits — without it, GET requests
              never seed the cookie. -->
+      <!-- saiku#2524: a refused request saves NOTHING. Spring's default
+           HttpSessionRequestCache stashes the refused request (URL, query
+           string, ALL headers) in a brand-new HTTP session on every 401, so
+           any anonymous caller could mint sessions — persisted to
+           <saiku-home>/sessions/ for seven days and sized by its own headers
+           (an unauthenticated heap + disk filler). This chain answers 401
+           JSON and never redirects back to a saved request (the SPA does its
+           own login at /rest/saiku/session), so the null cache is the right
+           answer: ExceptionTranslationFilter simply has nothing to store.
+           Failed Basic attempts on protected URLs (ExceptionTranslationFilter
+           → sendStartAuthentication → saveRequest) are covered by the same
+           change. Authenticated users are unaffected: nothing reads a saved
+           request on this surface. -->
+      <security:request-cache ref="nullRequestCache"/>
       <security:csrf token-repository-ref="csrfTokenRepository"
                      request-matcher-ref="csrfRequestMatcher"
                      request-handler-ref="csrfTokenRequestHandler"/>
@@ -270,9 +296,17 @@
 	         whether to surface the demo-mode connection panel (saiku#871).
 	         /info itself is the plugin-list endpoint the SPA pings on boot.
 	         Diagnostics contains the configured AI upstream URL and reachability,
-	         so its exact admin-only rule must precede the public wildcard. -->
+	         so its admin-only rule must precede the public wildcard. saiku#2550a:
+	         the rule uses a ** wildcard so the trailing-slash spelling
+	         (/diagnostics/) is covered too — Ant matching treats it as a
+	         different path, and without the wildcard a /diagnostics/ request
+	         fell through to the public /rest/saiku/info/** permitAll rule and
+	         reached Jersey, which only then stopped it at the @RolesAllowed gate
+	         (403, after the filter chain had already passed it as anonymous).
+	         /diagnostics/** still matches the exact path, so one rule covers both
+	         spellings. -->
 	    <security:intercept-url pattern="/rest/saiku/info" access="permitAll" />
-	    <security:intercept-url pattern="/rest/saiku/info/diagnostics" access="hasRole('ADMIN')" />
+	    <security:intercept-url pattern="/rest/saiku/info/diagnostics/**" access="hasRole('ADMIN')" />
 	    <security:intercept-url pattern="/rest/saiku/info/**" access="permitAll" />
 	    <!-- saiku#879: OAuth protected-resource discovery metadata (RFC 9728) for
 	         the MCP endpoint. A client fetches this BEFORE it has any token, so it
@@ -469,6 +503,11 @@
     <!-- Tier-1 auth hardening: CSRF wiring (saiku#1150). -->
     <!-- saiku#1165 audit-3: XSRF-TOKEN cookie via factory so it carries
          SameSite=Lax (matching JSESSIONID); stays non-HttpOnly for the SPA. -->
+    <!-- saiku#2524: the request cache for the main chain (see the request-cache
+         element above). Spring Security's own NullRequestCache — saveRequest is
+         a no-op, so a refused request never forces a session into existence. -->
+    <bean id="nullRequestCache"
+          class="org.springframework.security.web.savedrequest.NullRequestCache"/>
     <bean id="csrfTokenRepository"
           class="org.saiku.web.security.csrf.SaikuCsrfTokenRepository"
           factory-method="create"/>

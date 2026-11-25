@@ -60,6 +60,18 @@ public class CsvExporter {
         return (risky && !isPlainNumber(value)) ? "'" + value : value;
     }
 
+    /** Neutralises a field, then doubles any enclosing quote so a caption like
+     *  {@code x","=HYPERLINK(...)} cannot close its own CSV field and leave the
+     *  next field starting with {@code =} — neutralisation alone only inspects
+     *  the first character (CWE-1236, saiku#2544). Used for BOTH header and body
+     *  cells: quote-doubling was previously applied to body cells only, so a
+     *  quoted header bypassed it. Null passes through so string concatenation at
+     *  a call site keeps rendering the literal {@code null} as before. */
+    static String escapeCsvCell(String value) {
+        String neutralised = neutralizeCsvFormula(value);
+        return neutralised == null ? null : neutralised.replace("\"", "\"\"");
+    }
+
     /** True for an optionally-signed, optionally currency-prefixed number
      *  (thousands separators + decimal + percent tolerated) — these stay
      *  un-neutralised so numeric exports don't degrade to text. */
@@ -132,9 +144,7 @@ public class CsvExporter {
                         } else {
                             header = "";
                         }
-                        header += enclosing
-                                + neutralizeCsvFormula(rs.getMetaData().getColumnName(s + 1))
-                                + enclosing;
+                        header += enclosing + escapeCsvCell(rs.getMetaData().getColumnName(s + 1)) + enclosing;
                     }
                     if (header != null && printHeader) {
                         header += "\r\n";
@@ -153,8 +163,7 @@ public class CsvExporter {
                     if (i > 0) {
                         sb.append(delimiter);
                     }
-                    content = neutralizeCsvFormula(content);
-                    content = content.replace("\"", "\"\"");
+                    content = escapeCsvCell(content);
                     sb.append(enclosing).append(content).append(enclosing);
                 }
                 sb.append("\r\n");
@@ -196,7 +205,7 @@ public class CsvExporter {
                             col = value + "/" + col;
                         }
                     }
-                    cols.add(enclosing + neutralizeCsvFormula(col) + enclosing);
+                    cols.add(enclosing + escapeCsvCell(col) + enclosing);
                 }
                 result[0] = cols.toArray(new String[cols.size()]);
             }
@@ -224,8 +233,7 @@ public class CsvExporter {
                     if (value == null || "null".equals(value)) {
                         value = "";
                     }
-                    value = neutralizeCsvFormula(value);
-                    value = value.replace("\"", "\"\"");
+                    value = escapeCsvCell(value);
                     value = enclosing + value + enclosing;
                     cols.add(value);
                 }

@@ -63,14 +63,32 @@ public class EmailResource {
         boolean configured = mailSender != null && mailSender.isConfigured();
         boolean selfConfigured = mailConfig != null && mailConfig.selfSendConfigured();
         // Single-admin embedded build: the self-send recipient is the admin's own
-        // configured address, so exposing it to an authenticated user is acceptable
-        // and lets the composer show "Sends to: <address>". null when unconfigured.
-        String to = selfConfigured ? mailConfig.selfTo() : null;
+        // configured address. saiku#2550e: the address itself is now revealed ONLY
+        // to admins — an authenticated non-admin used to be able to read the
+        // operator's selfTo here, which is a personal data / reconnaissance
+        // disclosure (and, via POST /self, a way to mail it). Everyone still gets
+        // the configured booleans the composer needs to render its state.
+        String to = selfConfigured && viewerIsAdmin() ? mailConfig.selfTo() : null;
         Map<String, Object> health = new java.util.HashMap<>();
         health.put("configured", configured);
         health.put("selfConfigured", selfConfigured);
         health.put("to", to);
         return Response.ok(health).build();
+    }
+
+    /** ROLE_ADMIN according to the current security context — the same role the
+     *  class-level @RolesAllowed gates on elsewhere in the mail resources. */
+    private static boolean viewerIsAdmin() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || auth instanceof AnonymousAuthenticationToken) {
+            return false;
+        }
+        for (var authority : auth.getAuthorities()) {
+            if ("ROLE_ADMIN".equals(authority.getAuthority())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @POST
@@ -84,6 +102,7 @@ public class EmailResource {
                     .entity(Map.of("error", "authentication required"))
                     .build();
         }
+        boolean admin = viewerIsAdmin();
         if (!emailRateLimiter.tryAcquire(auth.getName())) {
             return Response.status(429)
                     .entity(java.util.Map.of(
@@ -114,7 +133,15 @@ public class EmailResource {
             MailMessage msg = assembler.assemble(body, mailConfig.from(), mailConfig.selfTo());
             mailSender.send(msg);
             log.info("Emailed analysis for user {} to {}", auth.getName(), msg.to());
-            return Response.ok(Map.of("status", "sent", "to", msg.to())).build();
+            // saiku#2550e: the recipient is the operator's own configured address, so the
+            // response echoes it to ADMINS ONLY — a non-admin used to learn the operator's
+            // selfTo just by firing a self-send. The send itself stays open to any
+            // authenticated user (it is the documented self-send feature, rate-limited per
+            // user); only the address disclosure is closed.
+            Map<String, Object> ok = new java.util.HashMap<>();
+            ok.put("status", "sent");
+            if (admin) ok.put("to", msg.to());
+            return Response.ok(ok).build();
         } catch (EmailRequestException e) {
             return Response.status(Response.Status.BAD_REQUEST)
                     .entity(Map.of("error", e.getMessage()))

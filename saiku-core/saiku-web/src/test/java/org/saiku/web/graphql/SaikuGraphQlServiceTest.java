@@ -9,8 +9,15 @@ import static org.junit.Assert.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.saiku.service.ossie.OssieDiscoverService;
+import org.saiku.service.ossie.OssieModelDto;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 /**
  * Boots the {@code SaikuGraphQlService} with a minimal fetchers bean (no wired services)
@@ -31,6 +38,9 @@ public class SaikuGraphQlServiceTest {
 
     @Before
     public void setUp() {
+        SecurityContextHolder.getContext()
+                .setAuthentication(new UsernamePasswordAuthenticationToken(
+                        "admin", "unused", List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))));
         ObjectMapper mapper = new ObjectMapper();
         SaikuGraphQlFetchers fetchers = new SaikuGraphQlFetchers(mapper);
         fetchers.setServerVersion("4.6.0-test");
@@ -39,6 +49,92 @@ public class SaikuGraphQlServiceTest {
         svc = new SaikuGraphQlService(mapper);
         svc.setFetchers(fetchers);
         svc.afterPropertiesSet();
+    }
+
+    @After
+    public void tearDown() {
+        SecurityContextHolder.clearContext();
+    }
+
+    @After
+    public void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
+    }
+
+    private SaikuGraphQlService serviceWithDiscover(OssieDiscoverService discover) {
+        ObjectMapper mapper = new ObjectMapper();
+        SaikuGraphQlFetchers fetchers = new SaikuGraphQlFetchers(mapper);
+        fetchers.setServerVersion("4.6.0-test");
+        fetchers.setOssieDiscoverService(discover);
+        SaikuGraphQlService s = new SaikuGraphQlService(mapper);
+        s.setFetchers(fetchers);
+        s.afterPropertiesSet();
+        return s;
+    }
+
+    private static void authenticateAs(String user, String... authorities) {
+        List<SimpleGrantedAuthority> auths = java.util.Arrays.stream(authorities)
+                .map(SimpleGrantedAuthority::new)
+                .toList();
+        SecurityContextHolder.getContext()
+                .setAuthentication(new UsernamePasswordAuthenticationToken(user, "n/a", auths));
+    }
+
+    /** A model with one unrestricted and one role-restricted field (saiku#1393 shape). */
+    static final class StubDiscover extends OssieDiscoverService {
+        @Override
+        public OssieModelDto getModel(String connectionName) {
+            OssieModelDto semantic = new OssieModelDto();
+            semantic.setConnection("Geo");
+            semantic.setName("GEO");
+            OssieModelDto.Dataset geography = new OssieModelDto.Dataset();
+            geography.setName("geography");
+            OssieModelDto.Field region = new OssieModelDto.Field();
+            region.setName("region");
+            region.setExpression("REGION");
+            geography.getFields().add(region);
+            OssieModelDto.Field email = new OssieModelDto.Field();
+            email.setName("email");
+            email.setExpression("EMAIL_ADDRESS");
+            email.setAllowRoles(List.of("ROLE_ADMIN"));
+            geography.getFields().add(email);
+            semantic.getDatasets().add(geography);
+            return semantic;
+        }
+    }
+
+    /**
+     * saiku#2526 — the GraphQL {@code ossieModel} fetcher returns the caller's role-filtered
+     * view: a hidden field (and with it its physical column name in {@code expression}) must not
+     * be readable through GraphQL when REST GET /ai/ossie/schema hides it.
+     */
+    @Test
+    public void ossieModelOmitsFieldsHiddenFromTheCallerRoles() {
+        SaikuGraphQlService discoverSvc = serviceWithDiscover(new StubDiscover());
+
+        authenticateAs("analyst", "ROLE_ANALYST");
+        Map<String, Object> result = discoverSvc.execute("{ ossieModel(connection: \"Geo\") }", null, null);
+        Map<String, Object> model = (Map<String, Object>) result.get("data");
+        assertNotNull(model);
+        Map<String, Object> ossie = (Map<String, Object>) model.get("ossieModel");
+        assertNotNull(ossie);
+
+        List<Map<String, Object>> datasets = (List<Map<String, Object>>) ossie.get("datasets");
+        assertEquals(1, datasets.size());
+        List<Map<String, Object>> fields =
+                (List<Map<String, Object>>) datasets.get(0).get("fields");
+        Set<String> names = new java.util.LinkedHashSet<>();
+        for (Map<String, Object> f : fields) names.add((String) f.get("name"));
+        assertTrue("unrestricted field stays visible", names.contains("region"));
+        assertFalse("hidden field must be omitted", names.contains("email"));
+        assertFalse(
+                "hidden field's physical column must not leak", ossie.toString().contains("EMAIL_ADDRESS"));
+
+        // The admin role sees everything.
+        authenticateAs("admin", "ROLE_ADMIN");
+        Map<String, Object> adminResult = discoverSvc.execute("{ ossieModel(connection: \"Geo\") }", null, null);
+        Map<String, Object> adminModel = (Map<String, Object>) adminResult.get("data");
+        assertTrue(adminModel.get("ossieModel").toString().contains("email"));
     }
 
     @Test
@@ -70,6 +166,39 @@ public class SaikuGraphQlServiceTest {
         boolean hasServerInfo = types.stream().anyMatch(t -> "ServerInfo".equals(t.get("name")));
         assertTrue("Query type missing from introspection", hasQuery);
         assertTrue("ServerInfo type missing from introspection", hasServerInfo);
+    }
+
+    @Test
+    public void nonAdminCannotIntrospectViaAliasFragmentOrPersistedQuery() {
+        String query = "query Inspect { hidden: __schema { types { name } } ...TypeLookup } "
+                + "fragment TypeLookup on Query { type: __type(name: \"Query\") { name } }";
+        String hash = PersistedQueryCache.sha256Hex(query);
+        Map<String, Object> extensions = Map.of("persistedQuery", Map.of("version", 1, "sha256Hash", hash));
+        // An admin may store the persisted document. Access is checked again on each execution.
+        assertNull(svc.execute(query, null, null, extensions).get("errors"));
+        SecurityContextHolder.getContext()
+                .setAuthentication(new UsernamePasswordAuthenticationToken(
+                        "reader", "unused", List.of(new SimpleGrantedAuthority("ROLE_USER"))));
+        Map<String, Object> direct = svc.execute(query, null, null);
+        Map<String, Object> cached = svc.execute(null, null, null, extensions);
+        assertNull(direct.get("data"));
+        assertNull(cached.get("data"));
+        assertEquals("FORBIDDEN", firstErrorCode(direct));
+        assertEquals("FORBIDDEN", firstErrorCode(cached));
+    }
+
+    @Test
+    public void nonAdminCanStillExecuteOrdinaryQuery() {
+        SecurityContextHolder.getContext()
+                .setAuthentication(new UsernamePasswordAuthenticationToken(
+                        "reader", "unused", List.of(new SimpleGrantedAuthority("ROLE_USER"))));
+        assertNull(svc.execute("{ serverInfo { version } }", null, null).get("errors"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static String firstErrorCode(Map<String, Object> result) {
+        List<Map<String, Object>> errors = (List<Map<String, Object>>) result.get("errors");
+        return (String) ((Map<String, Object>) errors.get(0).get("extensions")).get("code");
     }
 
     @Test
