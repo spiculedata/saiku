@@ -17,6 +17,7 @@ import org.saiku.web.demo.DemoGate;
 import org.saiku.web.demo.DemoGateCookie;
 import org.saiku.web.demo.DemoGateException;
 import org.saiku.web.demo.DemoGateProvider;
+import org.saiku.web.security.ratelimit.LoginRateLimiter;
 
 public class DemoGateResourceTest {
 
@@ -25,6 +26,7 @@ public class DemoGateResourceTest {
     /** Configurable in-memory provider — no network, no Mockito. */
     private static final class FakeProvider implements DemoGateProvider {
         boolean sendCalled;
+        int sendCount;
         String lastEmail;
         String lastCode;
         String lastFirstName;
@@ -37,6 +39,7 @@ public class DemoGateResourceTest {
         public void sendCode(String email) throws DemoGateException {
             if (throwOnSend) throw new DemoGateException("boom");
             sendCalled = true;
+            sendCount++;
             lastEmail = email;
         }
 
@@ -106,6 +109,19 @@ public class DemoGateResourceTest {
         assertEquals(204, resp.getStatus());
         assertTrue(p.sendCalled);
         assertEquals("user@example.com", p.lastEmail);
+    }
+
+    /** saiku#2550b: repeated SUCCESSFUL sends for one address hit the limiter — previously the
+     *  hit was recorded only on failure, so a healthy WorkOS key meant unbounded sends. */
+    @Test
+    public void request_rateLimitsRepeatedSuccessfulSends() {
+        FakeProvider p = new FakeProvider();
+        DemoGateResource r = resource(p, true);
+        r.setRateLimiter(new LoginRateLimiter(2, 60_000L, false));
+        assertEquals(204, r.request(req(null), Map.of("email", "u@e.com")).getStatus());
+        assertEquals(204, r.request(req(null), Map.of("email", "u@e.com")).getStatus());
+        assertEquals(429, r.request(req(null), Map.of("email", "u@e.com")).getStatus());
+        assertEquals("the third send never reached the provider", 2, p.sendCount);
     }
 
     @Test

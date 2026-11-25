@@ -11,13 +11,16 @@ GET  /rest/saiku/api/graphql/schema.graphql
 ```
 
 Auth is the same session cookie / JWT the REST endpoints use — nothing new to configure.
+Schema SDL and GraphQL introspection (`__schema`, `__type`) require `ROLE_ADMIN` because
+the generated schema includes names from the full cube estate. Ordinary queries remain
+available to authenticated users under their existing role checks.
 
 ## Why GraphQL
 
 Not new capability. The same cube queries already reachable via `/rest/saiku/api/ai/query`,
 `/rest/saiku/api/ai/ossie/query`, MCP, and the Postgres-wire endpoint. What GraphQL adds:
 
-- **Introspection + codegen** — point Apollo Client at `/graphql`, run
+- **Introspection + codegen** — with an admin credential, point Apollo Client at `/graphql`, run
   `graphql-codegen`, get a typed React / Vue client. This is a real ergonomic win for
   embedded / ISV builds where the frontend team lives in TypeScript.
 - **One-request batching** — multiple aggregations in a single round-trip.
@@ -29,7 +32,7 @@ Same execution path underneath.
 
 ## Shape of the schema
 
-The full SDL is served at `/rest/saiku/api/graphql/schema.graphql`. Top-level `Query` fields:
+Admins can read the full SDL at `/rest/saiku/api/graphql/schema.graphql`. Top-level `Query` fields:
 
 | Field | Purpose |
 | --- | --- |
@@ -52,6 +55,9 @@ and lets you reuse the response types you already have.
 ## Examples
 
 ### Introspection — grab the SDL
+
+Run these requests with an admin credential. Non-admin introspection returns a GraphQL
+`FORBIDDEN` error, including when the query is sent by persisted-query hash.
 
 ```bash
 curl -sN https://your-saiku/rest/saiku/api/graphql/schema.graphql
@@ -146,8 +152,9 @@ With variables:
 
 ## Codegen
 
-The endpoint speaks the standard GraphQL over HTTP protocol, so any codegen tool that
-understands introspection works. A typical setup with `@graphql-codegen/cli`:
+The endpoint speaks the standard GraphQL over HTTP protocol, so codegen tools that
+understand introspection work when configured with an admin credential. A typical
+setup with `@graphql-codegen/cli`:
 
 ```yaml
 # codegen.yml

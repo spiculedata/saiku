@@ -18,6 +18,10 @@ import graphql.analysis.MaxQueryComplexityInstrumentation;
 import graphql.analysis.MaxQueryDepthInstrumentation;
 import graphql.execution.instrumentation.ChainedInstrumentation;
 import graphql.execution.instrumentation.Instrumentation;
+import graphql.language.Field;
+import graphql.language.Node;
+import graphql.parser.InvalidSyntaxException;
+import graphql.parser.Parser;
 import graphql.scalars.ExtendedScalars;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.idl.RuntimeWiring;
@@ -221,6 +225,15 @@ public class SaikuGraphQlService implements InitializingBean {
             envelope.put("errors", java.util.List.of(err));
             return envelope;
         }
+        // The schema is assembled from the full cube estate, without the request principal.
+        // Apply the SDL endpoint's admin rule to introspection too. Inspect the parsed AST so
+        // aliases, fragments and APQ hash-only requests cannot bypass the rule.
+        if (!isAdmin() && containsIntrospectionField(resolvedQuery)) {
+            Map<String, Object> envelope = new LinkedHashMap<>();
+            envelope.put("data", null);
+            envelope.put("errors", List.of(Map.of("message", "admin only", "extensions", Map.of("code", "FORBIDDEN"))));
+            return envelope;
+        }
         ExecutionInput.Builder input = ExecutionInput.newExecutionInput().query(resolvedQuery);
         if (variables != null && !variables.isEmpty()) {
             input.variables(variables);
@@ -230,6 +243,35 @@ public class SaikuGraphQlService implements InitializingBean {
         }
         ExecutionResult result = graphql.execute(input.build());
         return result.toSpecification();
+    }
+
+    private static boolean isAdmin() {
+        org.springframework.security.core.Authentication auth =
+                org.springframework.security.core.context.SecurityContextHolder.getContext()
+                        .getAuthentication();
+        return auth != null
+                && auth.isAuthenticated()
+                && !(auth instanceof org.springframework.security.authentication.AnonymousAuthenticationToken)
+                && auth.getAuthorities().stream().anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
+    }
+
+    private static boolean containsIntrospectionField(String query) {
+        try {
+            return containsIntrospectionField(new Parser().parseDocument(query));
+        } catch (InvalidSyntaxException e) {
+            // Keep graphql-java's normal syntax error response.
+            return false;
+        }
+    }
+
+    private static boolean containsIntrospectionField(Node<?> node) {
+        if (node instanceof Field field && ("__schema".equals(field.getName()) || "__type".equals(field.getName()))) {
+            return true;
+        }
+        for (Node<?> child : node.getChildren()) {
+            if (containsIntrospectionField(child)) return true;
+        }
+        return false;
     }
 
     // ------------------------------------------------------------

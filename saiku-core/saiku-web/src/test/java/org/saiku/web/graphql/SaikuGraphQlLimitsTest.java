@@ -14,6 +14,9 @@ import java.util.List;
 import java.util.Map;
 import org.junit.After;
 import org.junit.Test;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 /**
  * saiku#1549 — query depth/complexity limits on the GraphQL engine. The engine previously
@@ -24,8 +27,7 @@ import org.junit.Test;
  *       fail SAFE to the default);</li>
  *   <li>live enforcement through {@code execute()} — an over-deep document is rejected with
  *       a GraphQL error, not executed;</li>
- *   <li>normal queries (serverInfo, introspection) pass untouched under the DEFAULTS, so
- *       real clients and GraphiQL are unaffected.</li>
+ *   <li>normal queries (serverInfo, admin introspection) pass under the DEFAULTS.</li>
  * </ul>
  */
 public class SaikuGraphQlLimitsTest {
@@ -34,9 +36,13 @@ public class SaikuGraphQlLimitsTest {
     public void clearProps() {
         System.clearProperty(SaikuGraphQlService.PROP_MAX_DEPTH);
         System.clearProperty(SaikuGraphQlService.PROP_MAX_COMPLEXITY);
+        SecurityContextHolder.clearContext();
     }
 
     private static SaikuGraphQlService boot() {
+        SecurityContextHolder.getContext()
+                .setAuthentication(new UsernamePasswordAuthenticationToken(
+                        "admin", "unused", List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))));
         ObjectMapper mapper = new ObjectMapper();
         SaikuGraphQlFetchers fetchers = new SaikuGraphQlFetchers(mapper);
         fetchers.setServerVersion("4.6.0-test");

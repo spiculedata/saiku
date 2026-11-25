@@ -75,6 +75,12 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-11-25 — feature/2459-ci-secret-lifecycle-gate — PR #2494 base conflict rework
+**Was doing:** merged current development into the PR branch, retaining both sides of the corrections and session entries; the credential gate remains unchanged.
+**Now:** check PR #2494 CI after the push, especially the Python scripts and acceptance gate.
+**Watch out:** local Maven verify stops before compilation because GitHub Packages returns 401 for Mondrian and olap4j; the Python and acceptance suites pass.
+**Refs:** #2459, PR #2494
+
 ## 2026-11-25 — feature/2459-ci-secret-lifecycle-gate — PR #2494 review rework
 **Was doing:** merged development and restored detection of non-redirect credential writes, PR-tree switches, and npm config writes with regression fixtures.
 **Now:** check PR #2494 CI on the pushed head; the Python suite and acceptance command pass locally.
@@ -84,6 +90,23 @@ pushed down; normal sessions append and the history stays useful.
 **Was doing:** tightened PR #2494's trusted-base detection to require the base SHA as the full checkout ref and added regression fixtures for comment, path-only, and checkout-action cases.
 **Now:** check PR #2494 CI after the push; the Python script suite and acceptance check pass locally.
 **Refs:** #2459, #2494
+## 2026-11-25 — feature/2547-redact-connection-error-logs — PR #2594 base merge
+**Was doing:** merged current development into the existing PR branch and retained its earlier redaction fixes and tests.
+**Now:** check PR #2594 CI after the push, especially the Maven suites and acceptance spec.
+**Watch out:** local dependency resolution stops at GitHub Packages HTTP 401.
+**Refs:** #2547, PR #2594
+
+## 2026-11-25 — feature/2599-sql-workbench-scroll-ds-info — PR #2609 overlap rework
+**Was doing:** merged current development, kept #2610's scroll implementation and test, removed this PR's duplicate scroll code and test, and retained datasource info, table-list, and topbar coverage.
+**Now:** check PR #2609 CI after the push, especially Java compilation and the focused SQL workbench browser tests.
+**Watch out:** local Maven stops before compilation on GitHub Packages 401; Chromium lacks `libglib-2.0.so.0` here. UI check, 2,732 Vitest tests, lint, build, and Java Spotless pass.
+**Refs:** #2599, PR #2609, PR #2610
+
+## 2026-11-25 — feature/share-bind-content-2536 — PR #2565 CI fixture rework
+**Was doing:** wired valid share-token store records into the older dashboard and notebook resource tests after CI reported 409 instead of their expected 200/404 responses.
+**Now:** check PR #2565 CI on the pushed head for the Java tests and Docker image job.
+**Watch out:** local Maven stops before compilation on GitHub Packages 401; the previous Docker job hit Maven Central 429 while downloading the telemetry agent.
+**Refs:** #2536, PR #2565
 
 ## 2026-11-24 — feature/2535-rest-body-size-limits — PR #2566 review rework
 **Was doing:** formatted the REST body filter test and corrected the operator guide; local Spotless, licence, and static acceptance checks pass. Maven service/web tests stop at GitHub Packages 401 before compilation.
@@ -289,3 +312,7 @@ the tree first.
 **Was doing:** covered scalar `on: pull_request`, `github.token`, `permissions: write-all`, explicit Maven settings paths, and `.npmrc` in the credential-lifecycle gate, with fixtures for each review case. The latest development tip merged cleanly in a dry run, so no base merge was needed.
 **Now:** check PR #2494 CI after the push. The Python script suite and acceptance spec passed locally.
 **Refs:** #2459, #2494
+## 2026-11-24 — feature/2599-sql-workbench-scroll-ds-info — PR #2609 CI rework
+**Was doing:** fixed the SQL result grid's flex shrink so the page reaches its pager, bounded the grid's own scrolling to keep headers sticky, and strengthened the Playwright scroll assertions.
+**Now:** check PR #2609 CI after the push; local Chromium cannot launch because this host lacks `libglib-2.0.so.0`, and focused Maven tests stop at GitHub Packages 401 before compilation.
+**Refs:** #2599, #2609

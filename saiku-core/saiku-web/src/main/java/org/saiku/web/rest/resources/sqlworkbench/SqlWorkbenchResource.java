@@ -11,6 +11,7 @@ import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
@@ -60,6 +61,40 @@ public class SqlWorkbenchResource {
     @Produces(MediaType.APPLICATION_JSON)
     public List<SqlWorkbenchService.DatasourceView> datasources() {
         return service.listDatasources(currentUserRoles());
+    }
+
+    /**
+     * saiku#2599 — what the named datasource connects to (database product, driver, catalog,
+     * default schema, credential-redacted URL), read live from {@code DatabaseMetaData}. Carries
+     * the same class-level {@code @RolesAllowed} gate as every other path on this resource, and
+     * the service re-checks the caller's roles against the datasource map.
+     */
+    @GET
+    @Path("/datasources/{name}/info")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response datasourceInfo(@PathParam("name") String name) {
+        try {
+            return Response.ok(service.describeDatasource(currentUserRoles(), name))
+                    .build();
+        } catch (SqlWorkbenchException e) {
+            return badRequest(e.getCode().name(), e.getMessage());
+        }
+    }
+
+    /**
+     * saiku#2599 — the named datasource's default-schema tables (read-only metadata), so the
+     * workbench can list them and make the datasource selector's effect obvious. Same gate and
+     * entitlement check as {@link #query}.
+     */
+    @GET
+    @Path("/datasources/{name}/tables")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response datasourceTables(@PathParam("name") String name) {
+        try {
+            return Response.ok(service.listTables(currentUserRoles(), name)).build();
+        } catch (SqlWorkbenchException e) {
+            return badRequest(e.getCode().name(), e.getMessage());
+        }
     }
 
     @POST

@@ -6,17 +6,22 @@ package org.saiku.service.comments;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.Before;
 import org.junit.Test;
+import org.saiku.repository.IRepositoryObject;
+import org.saiku.repository.RepositoryFileObject;
 import org.saiku.service.datasource.DatasourceService;
+import org.saiku.service.util.DashboardSidecars;
 import org.saiku.service.util.StorageLimits;
 
 /**
@@ -30,6 +35,7 @@ public class CommentServiceTest {
     /** In-memory internal-file store; getFileData controls the canRead gate. */
     private static class FakeDs extends DatasourceService {
         final Map<String, String> internal = new HashMap<>();
+        final List<String> dashboards = new ArrayList<>();
         boolean dashboardReadable = true;
 
         @Override
@@ -52,6 +58,15 @@ public class CommentServiceTest {
         public void removeInternalFile(String path) {
             internal.remove(path);
         }
+
+        @Override
+        public List<IRepositoryObject> getFiles(List<String> type, String username, List<String> roles) {
+            List<IRepositoryObject> files = new ArrayList<>();
+            for (String path : dashboards) {
+                files.add(new RepositoryFileObject("x.saikudash", "#" + path, "saikudash", "/" + path, List.of()));
+            }
+            return files;
+        }
     }
 
     private FakeDs ds;
@@ -59,9 +74,14 @@ public class CommentServiceTest {
 
     private static final String DASH = "dashboards/foo.saikudash";
 
+    /** One pre-upgrade comment row, as the legacy writer left it. */
+    private static final String LEGACY_LINE = "{\"id\":\"old\",\"body\":\"pre-upgrade\",\"tile\":\"t1\","
+            + "\"author\":\"admin\",\"created\":0,\"mentions\":[]}\n";
+
     @Before
     public void setUp() {
         ds = new FakeDs();
+        ds.dashboards.add(DASH);
         svc = new CommentService();
         svc.setDatasourceService(ds);
     }
@@ -98,8 +118,69 @@ public class CommentServiceTest {
     public void purge_removes_the_comment_file() {
         svc.add(DASH, "t1", "admin", "hi");
         assertEquals(1, svc.list(DASH, "t1").size());
+        ds.dashboards.remove(DASH);
         svc.purge(DASH);
         assertEquals("purged thread is empty", 0, svc.list(DASH, "t1").size());
+    }
+
+    /** saiku#2550d (review): purge must also remove the LEGACY sidecar — a deleted
+     *  dashboard's pre-upgrade comments must not pass to the next dashboard that
+     *  flattens to the same name, and a delete-then-recreate at the same path must
+     *  not resurrect deleted comments. */
+    @Test
+    public void purge_removes_the_legacy_file_so_a_recreated_dashboard_starts_clean() {
+        String legacy = DashboardSidecars.legacyPath(CommentService.KIND, DASH);
+        ds.internal.put(legacy, LEGACY_LINE);
+        ds.dashboards.remove(DASH);
+        svc.purge(DASH);
+        assertNull("legacy file removed with the dashboard", ds.internal.get(legacy));
+        ds.dashboards.add(DASH);
+        assertEquals(0, svc.list(DASH, "t1").size());
+    }
+
+    /** Deleting homes/a_b/x must remove the legacy file even though user a's
+     *  homes/a/b/x flattens to the SAME name — but only once a_b/x is the sole
+     *  flattened owner; while both exist the file is ambiguous and stays. */
+    @Test
+    public void purge_deletes_the_legacy_file_for_a_b_x_only_when_it_is_the_sole_flattened_owner() {
+        String ab = "homes/a_b/x.saikudash";
+        String abx = "homes/a/b/x.saikudash";
+        ds.dashboards.clear();
+        ds.dashboards.add(ab);
+        String legacy = DashboardSidecars.legacyPath(CommentService.KIND, ab);
+        ds.internal.put(legacy, LEGACY_LINE);
+
+        // Only a_b exists: the file is unambiguous and goes with its dashboard.
+        ds.dashboards.remove(ab);
+        svc.purge(ab);
+        assertNull("legacy file removed when no other dashboard flattens to the name", ds.internal.get(legacy));
+
+        // User a recreates the collision path; it must read nothing.
+        ds.dashboards.clear();
+        ds.dashboards.add(abx);
+        assertEquals(
+                "a/b/x must not inherit a_b/x's pre-upgrade comments",
+                0,
+                svc.list(abx, "t1").size());
+    }
+
+    /** While both colliding dashboards exist, deleting ONE of them keeps the
+     *  ambiguous legacy file for operator recovery. */
+    @Test
+    public void purge_keeps_an_ambiguous_legacy_file_when_another_dashboard_still_shares_the_flattened_name() {
+        String ab = "homes/a_b/x.saikudash";
+        String abx = "homes/a/b/x.saikudash";
+        ds.dashboards.clear();
+        ds.dashboards.add(ab);
+        ds.dashboards.add(abx);
+        String legacy = DashboardSidecars.legacyPath(CommentService.KIND, ab);
+        ds.internal.put(legacy, LEGACY_LINE);
+
+        ds.dashboards.remove(ab);
+        svc.purge(ab);
+        assertNotNull(
+                "ambiguous legacy file kept while another dashboard shares the flattened name",
+                ds.internal.get(legacy));
     }
 
     @Test
@@ -128,16 +209,60 @@ public class CommentServiceTest {
     }
 
     @Test
-    public void comments_path_is_flattened_and_namespaced() {
-        // A single flat file at the datadir root; separators / traversal chars
-        // collapse to underscores (the internal writer won't mkdir a subdir).
-        assertEquals(
-                "saiku-comments-dashboards_foo.saikudash.jsonl",
-                CommentService.commentsPath("dashboards/foo.saikudash"));
+    public void comments_path_is_hashed_namespaced_and_flat() {
+        // saiku#2550d: the file key is a hash of the EXACT path, so two different
+        // paths can no longer collapse onto one file the way the old sanitised
+        // flattening let homes/a_b/x and homes/a/b/x do. Still a single flat name
+        // at the datadir root, with no separators or parent-dir hops anywhere in it.
+        String flat = CommentService.commentsPath("dashboards/foo.saikudash");
+        assertTrue(flat.startsWith("saiku-comments-v2-"));
+        assertTrue(flat.endsWith(".jsonl"));
+        assertFalse("no separators survive", flat.contains("/") || flat.contains("\\"));
         String evil = CommentService.commentsPath("../../etc/passwd");
-        assertTrue(evil.startsWith("saiku-comments-"));
+        assertTrue(evil.startsWith("saiku-comments-v2-"));
         assertFalse("no parent-dir hops survive", evil.contains(".."));
         assertFalse("no separators survive", evil.contains("/") || evil.contains("\\"));
+        // Paths differing only by / versus _ map to DIFFERENT files.
+        assertNotEquals(
+                CommentService.commentsPath("homes/a_b/x.saikudash"),
+                CommentService.commentsPath("homes/a/b/x.saikudash"));
+    }
+
+    @Test
+    public void unambiguous_legacy_sidecar_is_found_and_preserved_on_write() {
+        // saiku#2550d: reads fall back to the pre-#2550 sanitised name, so a
+        // dashboard with existing comments keeps them after upgrade.
+        String legacy = "saiku-comments-" + DASH.replaceAll("[^A-Za-z0-9._-]", "_") + ".jsonl";
+        ds.internal.put(legacy, "{\"tileId\":\"t1\",\"author\":\"admin\",\"body\":\"legacy\"}\n");
+        assertEquals(1, svc.list(DASH, "t1").size());
+        assertEquals("legacy", svc.list(DASH, "t1").get(0).body);
+
+        // The v2 copy takes precedence while the legacy file remains for recovery.
+        svc.add(DASH, "t1", "admin", "new");
+        assertTrue(ds.internal.containsKey(legacy));
+        List<Comment> after = svc.list(DASH, "t1");
+        assertEquals(2, after.size());
+        assertEquals("legacy", after.get(0).body);
+        assertEquals("new", after.get(1).body);
+    }
+
+    @Test
+    public void colliding_legacy_comments_are_not_read_or_stolen_by_either_dashboard() {
+        String owner = "homes/a_b/x.saikudash";
+        String other = "homes/a/b/x.saikudash";
+        ds.dashboards.clear();
+        ds.dashboards.add(owner);
+        ds.dashboards.add(other);
+        String legacy = "saiku-comments-" + owner.replaceAll("[^A-Za-z0-9._-]", "_") + ".jsonl";
+        String original = "{\"tileId\":\"t1\",\"author\":\"owner\",\"body\":\"private\"}\n";
+        ds.internal.put(legacy, original);
+
+        assertTrue(svc.list(owner, "t1").isEmpty());
+        assertTrue(svc.list(other, "t1").isEmpty());
+        svc.add(other, "t1", "bob", "new");
+        assertEquals("new", svc.list(other, "t1").get(0).body);
+        assertTrue(svc.list(owner, "t1").isEmpty());
+        assertEquals(original, ds.internal.get(legacy));
     }
 
     // ----------------------- #2535 storage caps -----------------------

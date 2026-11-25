@@ -26,6 +26,16 @@ When tracking credential files by path, include `tee`, in-place edits, and scrip
 When a gate parses GitHub Actions, cover scalar and mapping `on:` triggers, both `secrets.GITHUB_TOKEN` and `github.token`, `permissions: write-all`, and credential files supplied through tool flags or `.npmrc`.
 **Why:** a gate that recognizes only one valid spelling can pass while an equivalent credential-bearing PR build runs.
 **Source:** PR #2494 reviews of the #2459 credential-lifecycle gate
+## 2026-11-25 — SQL workbench: reconcile separately merged issue criteria
+Before updating a PR that spans several acceptance criteria, check whether another PR has already landed one of them. For #2599, preserve #2610's C1 scroll implementation on `development` and keep #2609 focused on its remaining datasource work.
+**Why:** carrying both scroll implementations through a base merge creates conflicting containers and duplicate browser coverage.
+**Source:** PR #2609 maintainer feedback; merged PR #2610
+
+## 2026-11-24 — Mondrian errors: redact parsed password values through the next field
+Mondrian's connection error writes parsed values without Saiku's connect-string quoting. Treat `JdbcPassword=` as a raw value ending at the next `; Key=` field boundary; spaces, `;` without a following key, `&`, and quotes can all be part of the password.
+**Why:** stopping at the first whitespace or punctuation leaks the remainder of a supported password.
+**Source:** PR #2594 review of #2547
+
 ## 2026-11-24 — Model IDE: exercise the page's buffer and completion paths
 Use one buffer-key function at every page read and write site, and only offer live Ossie completions for the currently selected datasource. Test the actual editor-to-upload path and datasource switches, including late model responses.
 **Why:** a self-contained key helper test can pass while the page uploads stale XML, and a shared completion catalogue can show another datasource's names.

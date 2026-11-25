@@ -1,17 +1,25 @@
 version: 2
 updates:
+  # cooldown: an update is not considered until N days after the new version's release, so a
+  # compromised or sabotaged release has time to be noticed and pulled before Dependabot opens
+  # a PR for it (#2548). 7 days for every ecosystem (the feature's floor is 3). Cooldown applies
+  # to version updates only — Dependabot's separate security-update path is never delayed.
   - package-ecosystem: maven
     directory: /
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
     labels: [dependencies, maven]
+    cooldown:
+      default-days: 7
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
     open-pull-requests-limit: 3
     labels: [dependencies, github-actions]
+    cooldown:
+      default-days: 7
   # The Dockerfile FROM is digest-pinned (eclipse-temurin:21-jre-noble@sha256:…)
   # for supply-chain integrity (#1989). Dependabot understands the tag@sha256
   # form and bumps BOTH the tag and the digest, so the base JRE gets CVE-driven
@@ -22,6 +30,8 @@ updates:
       interval: weekly
     open-pull-requests-limit: 3
     labels: [dependencies, docker]
+    cooldown:
+      default-days: 7
     # The runtime baseline is JRE 21 (an LTS). Dependabot bumped 21-jre-noble to
     # 23-jre-noble (#2149), whose image ships no curl: the OpenTelemetry-agent download
     # in the Dockerfile and the container HEALTHCHECK both call curl, so every image
@@ -58,6 +68,8 @@ updates:
     directory: /saiku-ui
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     # Raised from 5. Now that the dev group is bounded, each pending major
     # (typescript, @sveltejs/vite-plugin-svelte, @types/node) gets its own PR and
     # competes with the grouped ones for this pool; at 5 the majors would starve
