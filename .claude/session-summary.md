@@ -80,6 +80,11 @@ pushed down; normal sessions append and the history stays useful.
 **Now:** check PR #2593 CI after the rework push, especially acceptance C3 and `AiSchemaConverterTest`.
 **Watch out:** local Maven tests stop before compilation: GitHub Packages returns 401 for Mondrian and olap4j; Spotless and static checks pass.
 **Refs:** #2541, PR #2593
+## 2026-11-24 — feature/2535-rest-body-size-limits — PR #2566 review rework
+**Was doing:** formatted the REST body filter test and corrected the operator guide; local Spotless, licence, and static acceptance checks pass. Maven service/web tests stop at GitHub Packages 401 before compilation.
+**Now:** check PR #2566 CI on the rework commit for the full build and Java tests.
+**Watch out:** local JDK 22 and Maven are available under `/data/agents/quality/.tools/`, but private package dependencies do not resolve with this workspace's credentials.
+**Refs:** #2535, PR #2566
 
 ## 2026-11-24 — feature/2540-mcp-ai-audit — PR #2563 review rework
 **Was doing:** merged current development into the PR branch, retaining both session-summary entries, and added assertions for the MCP validation error's `status`, `field` and `available` fields.

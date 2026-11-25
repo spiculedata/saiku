@@ -16,6 +16,7 @@ import java.util.Map;
 import org.junit.Before;
 import org.junit.Test;
 import org.saiku.service.datasource.DatasourceService;
+import org.saiku.service.util.StorageLimits;
 
 /**
  * Unit coverage for {@link DashboardHistoryService} (issue #947): archive →
@@ -112,5 +113,23 @@ public class DashboardHistoryServiceTest {
         assertTrue(evil.startsWith("saiku-history-"));
         assertFalse(evil.contains(".."));
         assertFalse(evil.contains("/") || evil.contains("\\"));
+    }
+
+    // ----------------------- #2535 storage caps -----------------------
+
+    @Test
+    public void oversized_version_is_not_archived_but_the_save_still_succeeds() {
+        System.setProperty(StorageLimits.KEY_HISTORY_ENTRY_BYTES, "1024"); // the clamp floor
+        try {
+            assertNull("oversized version is skipped", svc.archive(DASH, "x".repeat(2048), "admin"));
+            assertEquals("nothing was written", 0, svc.list(DASH).size());
+
+            // A version within the cap still archives normally.
+            DashboardVersion v = svc.archive(DASH, "{\"v\":1}", "admin");
+            assertNotNull(v);
+            assertEquals(1, svc.list(DASH).size());
+        } finally {
+            System.clearProperty(StorageLimits.KEY_HISTORY_ENTRY_BYTES);
+        }
     }
 }
