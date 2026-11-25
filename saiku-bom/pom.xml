@@ -40,7 +40,7 @@
         <saiku-query.version>0.4-SNAPSHOT</saiku-query.version>
         <jackson.version>2.22.3</jackson.version>
         <arrow.version>19.0.0</arrow.version>
-        <caffeine.version>3.2.4</caffeine.version>
+        <caffeine.version>3.3.1</caffeine.version>
         <!-- JSON Schema (draft 2020-12) validator for the AiQueryRequest
              body. Used by AiRequestSchemaValidator to enforce shape errors
              before the converter's domain-resolution layer runs. Apache 2.0,
