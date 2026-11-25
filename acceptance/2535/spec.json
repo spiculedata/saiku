@@ -1,0 +1,29 @@
+{
+  "issue": 2535,
+  "title": "REST request bodies have a size ceiling (413) and repository objects, dashboard history entries and comments are size-capped",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "an authenticated user POSTs an oversized form body (a 30 MB content field) to /rest/saiku/api/repository/resource",
+      "then": "the request answers 413 before the repository stores the object"
+    },
+    {
+      "id": "C2",
+      "given": "an anonymous caller POSTs a 5 MB body to the pre-authentication login endpoint /rest/saiku/session",
+      "then": "the request answers 413 instead of being read and parsed and then answered 401"
+    },
+    {
+      "id": "C3",
+      "given": "a normal-size login and a normal-size repository save",
+      "then": "both still answer 200 — the new caps do not block legitimate small requests, and a saved object can be read back and deleted"
+    },
+    {
+      "id": "C4",
+      "given": "a documented upload endpoint (dashboard image upload) receives a legitimate 1x1 PNG within its documented 2 MB limit",
+      "then": "it still answers 200 (the per-route upload ceiling is high enough to keep uploads working)"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 120
+}

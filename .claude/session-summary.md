@@ -75,23 +75,11 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
-## 2026-11-24 — feature/chart-export-pixel-budget — PR #2559 compile rework
-**Was doing:** merged current development while retaining both session entries and higher test floors, then moved `runBounded` inside `Converter` to address the latest review.
-**Now:** check PR #2559 CI for main/test compilation, the chart acceptance spec, and the required rollup.
-**Watch out:** local `ConverterTest` stops in dependency resolution at GitHub Packages 401; `saiku-web` Spotless passes.
-**Refs:** #2527, PR #2559
-
-## 2026-11-24 — feature/chart-export-pixel-budget — PR #2559 review and base rework
-**Was doing:** merged development at cb2263027, retained both session entries and the higher service/web test floors, clarified Batik timeout wording, and stabilized the running-task timeout test.
-**Now:** check PR #2559 CI for the JDK 22 build and chart acceptance after the push.
-**Watch out:** local focused Maven tests stop before compilation at GitHub Packages 401 for Mondrian and olap4j; Spotless runs locally.
-**Refs:** #2527, PR #2559
-
-## 2026-11-24 — feature/chart-export-pixel-budget — PR #2559 acceptance rework
-**Was doing:** fixed acceptance/2527 to obtain the post-login CSRF token before chart POSTs; all four live cases pass against the PR's CI-built launcher JAR.
-**Now:** use PR #2559 CI for the Maven build and Java tests; local Maven dependency resolution stops at GitHub Packages 401 for Mondrian and olap4j.
-**Watch out:** send only JSESSIONID on the token-seeding GET; echoing the login response's stale XSRF-TOKEN prevents a fresh cookie from being issued.
-**Refs:** #2527, PR #2559
+## 2026-11-24 — feature/2535-rest-body-size-limits — PR #2566 review rework
+**Was doing:** formatted the REST body filter test and corrected the operator guide; local Spotless, licence, and static acceptance checks pass. Maven service/web tests stop at GitHub Packages 401 before compilation.
+**Now:** check PR #2566 CI on the rework commit for the full build and Java tests.
+**Watch out:** local JDK 22 and Maven are available under `/data/agents/quality/.tools/`, but private package dependencies do not resolve with this workspace's credentials.
+**Refs:** #2535, PR #2566
 
 ## 2026-11-24 — feature/2540-mcp-ai-audit — PR #2563 review rework
 **Was doing:** merged current development into the PR branch, retaining both session-summary entries, and added assertions for the MCP validation error's `status`, `field` and `available` fields.
