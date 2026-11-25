@@ -218,9 +218,10 @@ replaced on re-login, and is zeroed on logout and when the HTTP session expires.
 instance can still contain the passwords of currently signed-in users, so treat dumps as sensitive.
 
 If you use no pass-through datasources, stop retaining the password altogether
-(`JAVA_OPTS` below is honoured for `-D` properties by the launcher in the Docker image,
-dist scripts and plain `java -jar`; in the container it cannot carry JVM flags like `-Xmx`,
-which go in `JDK_JAVA_OPTIONS` instead):
+(`JAVA_OPTS` below is honoured for `-D` properties by the launcher in the Docker image
+and with direct `java -jar` launches. The `dist/run.*` scripts reset `JAVA_OPTS`; use
+`JDK_JAVA_OPTIONS` for `-D` properties with those scripts. In the container, JVM flags
+like `-Xmx` also go in `JDK_JAVA_OPTIONS`):
 
 ```bash
 JAVA_OPTS="-Dsaiku.passthrough.retainCredential=false"
@@ -398,11 +399,10 @@ default; set them in `saiku.properties` or with `-Dsaiku.olap.<key>=<value>`.
 Mondrian's own deployment-wide backstops in `mondrian.properties` ship with
 non-zero values too: `mondrian.rolap.queryTimeout=300`,
 `mondrian.result.limit=1000000`, `mondrian.rolap.iterationLimit=100000000`.
-Raise them only if a legitimate report needs more, and prefer raising the
-`saiku.olap.*` ceilings above first. Note that the two query-timeout settings
-are not independent: `saiku.olap.query.timeout.seconds` and
-`mondrian.rolap.queryTimeout` ship at 300s each, and whichever is lower still
-cuts the query off — a longer timeout needs both raised.
+Raise a limit only if a legitimate report needs more. For a longer query
+timeout, raise both `saiku.olap.query.timeout.seconds` and
+`mondrian.rolap.queryTimeout` (300s each); whichever is lower still cuts the
+query off.
 
 The Docker image and `dist/run.sh` / `dist/run.bat` start the JVM with
 `-XX:+ExitOnOutOfMemoryError -XX:MaxRAMPercentage=75`. The flag makes the JVM
@@ -410,12 +410,12 @@ The Docker image and `dist/run.sh` / `dist/run.bat` start the JVM with
 it does not restart anything. In the container the restart comes from the
 Docker engine's restart policy or from an orchestrator (see the `Dockerfile`
 comment); a process started by `dist/run.sh` / `dist/run.bat` is restarted by
-nothing. To tune the `saiku.olap.*` limits on this page, pass them as `-D`
-properties through `JAVA_OPTS` (honoured by the launcher in the Docker image,
-the dist scripts and plain `java -jar`) rather than overriding the image's own
-`JAVA_TOOL_OPTIONS`: `-e JAVA_TOOL_OPTIONS=...` replaces the image's flags —
-including `-XX:+ExitOnOutOfMemoryError` and `-XX:MaxRAMPercentage=75` —
-wholesale.
+nothing. To tune the `saiku.olap.*` limits on this page, pass `-D` properties
+through `JAVA_OPTS` in the Docker image or with a direct `java -jar` launch. The
+`dist/run.*` scripts reset `JAVA_OPTS`, so use `JDK_JAVA_OPTIONS` for `-D`
+properties with those scripts. Do not override the image's `JAVA_TOOL_OPTIONS`:
+`-e JAVA_TOOL_OPTIONS=...` replaces its flags — including
+`-XX:+ExitOnOutOfMemoryError` and `-XX:MaxRAMPercentage=75` — wholesale.
 
 ---
 
