@@ -7,6 +7,7 @@
 package org.saiku.service.sqlworkbench;
 
 import java.sql.Connection;
+import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
@@ -17,6 +18,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.regex.Pattern;
 import org.saiku.datasources.datasource.SaikuDatasource;
 import org.saiku.service.datasource.DatasourceNameDecoration;
 import org.saiku.service.datasource.DatasourceService;
@@ -43,6 +45,35 @@ public class SqlWorkbenchService {
     private static final int MAX_MAX_ROWS = 5000;
     private static final int QUERY_TIMEOUT_SECONDS = 30;
     private static final int MAX_ERROR_MESSAGE_LENGTH = 500;
+    /** saiku#2599 — a schema with more tables than this is unreadable in a picker anyway. */
+    private static final int MAX_TABLES = 2000;
+
+    /** saiku#2599 — URL userinfo (scheme://user:password@host) never survives redaction. */
+    private static final Pattern URL_USERINFO =
+            Pattern.compile("(?i)(\\w+://)[^/\\\s\"']*@", Pattern.UNICODE_CHARACTER_CLASS);
+
+    /** saiku#2599 — secret-bearing URL properties (;password=…, ?JdbcPassword=…) never survive redaction. */
+    private static final Pattern URL_SECRET_PROPERTY = Pattern.compile(
+            "(?i)([;?&])(jdbc\\s*password|password|pwd|passphrase|keystore\\s*password|truststore\\s*password|ssl\\s*password)\\s*=\\s*[^;\\\s&\"']{0,512}");
+
+    /** saiku#2599 — the Oracle thin form jdbc:oracle:thin:user/password@host never survives redaction. */
+    private static final Pattern ORACLE_THIN_CREDENTIALS =
+            Pattern.compile("(?i)(thin:)[^/@\\\s\"']+/[^/@\\\s\"']+@", Pattern.UNICODE_CHARACTER_CLASS);
+
+    /** saiku#2550h: byte cap on a single materialised cell. A cell whose stringified
+     *  value exceeds this is TRUNCATED (with a marker appended) rather than refused —
+     *  one giant TEXT/BLOB cell should not dominate the budget. Counts UTF-8 bytes
+     *  of the stringified value. */
+    static final int MAX_CELL_BYTES = Integer.getInteger("saiku.sqlworkbench.maxCellBytes", 64 * 1024);
+
+    /** saiku#2550h: byte cap on the materialised result as a whole (all cells,
+     *  stringified, UTF-8). The row cap alone is not a heap cap: 5,000 rows of a
+     *  {@code REPEAT('x', 1000000)} column were ~5 GB. Reading stops once the cap is
+     *  exceeded and the result is reported {@code truncated}. */
+    static final long MAX_RESULT_BYTES = Long.getLong("saiku.sqlworkbench.maxResultBytes", 10L * 1024 * 1024);
+
+    /** Appended to a cell value that {@link #MAX_CELL_BYTES} cut off. */
+    static final String CELL_TRUNCATION_MARKER = "…[truncated]";
 
     private final SchemaGenOrchestrator.ConnectionProvider connectionProvider;
     private final DatasourceService datasourceService;
@@ -61,6 +92,19 @@ public class SqlWorkbenchService {
 
     public record SqlQueryResult(
             List<String> columns, List<List<Object>> rows, int rowCount, boolean truncated, long durationMs) {}
+
+    /** saiku#2599 — what the selected datasource actually connects to, read live from
+     *  {@link DatabaseMetaData}. {@code url} is redacted (never a password, never URL userinfo); the
+     *  password itself is never present anywhere in this record. */
+    public record DatasourceInfo(
+            String name,
+            String databaseProductName,
+            String databaseProductVersion,
+            String driverName,
+            String driverVersion,
+            String catalog,
+            String schema,
+            String url) {}
 
     /** Datasources visible to {@code userRoles} — the same ACL {@link DatasourceService} already
      *  applies for cube listing, so the picker never offers a datasource the user couldn't
@@ -160,6 +204,103 @@ public class SqlWorkbenchService {
             audit(username, dataSourceId, validated, SqlWorkbenchAuditEntry.OUTCOME_ERROR, null, safe, elapsed);
             throw new SqlWorkbenchException(SqlWorkbenchException.Code.QUERY_FAILED, safe);
         }
+    }
+
+    /**
+     * saiku#2599 — what {@code dataSourceId} connects to, so the workbench can show the picker's
+     * effect even when several datasources share one warehouse (where {@code SHOW TABLES} looks
+     * identical for all of them). Read live from {@link DatabaseMetaData} on the datasource's own
+     * connection — the same connection {@link #execute} would use. Same entitlement check as
+     * {@link #execute}: a datasource the caller's roles cannot see is reported as unknown.
+     */
+    public DatasourceInfo describeDatasource(String[] userRoles, String dataSourceId) {
+        requireEntitled(userRoles, dataSourceId);
+        try (Connection conn = connectionProvider.get(dataSourceId)) {
+            DatabaseMetaData md = conn.getMetaData();
+            return new DatasourceInfo(
+                    dataSourceId,
+                    md.getDatabaseProductName(),
+                    md.getDatabaseProductVersion(),
+                    md.getDriverName(),
+                    md.getDriverVersion(),
+                    bestEffort(conn::getCatalog),
+                    bestEffort(conn::getSchema),
+                    redactUrl(bestEffort(md::getURL)));
+        } catch (SQLException e) {
+            LOG.warn("SQL workbench info failed for datasource '{}': {}", dataSourceId, e.toString());
+            throw new SqlWorkbenchException(SqlWorkbenchException.Code.QUERY_FAILED, redactUrl(safeMessage(e)));
+        }
+    }
+
+    /**
+     * saiku#2599 — the table names of the datasource's default schema ({@link DatabaseMetaData#getTables}
+     * on the same connection {@link #execute} would use, base-table types only), sorted
+     * case-insensitively and capped at {@link #MAX_TABLES}. Read-only metadata; nothing here
+     * executes user SQL. Same entitlement check as {@link #execute}.
+     */
+    public List<String> listTables(String[] userRoles, String dataSourceId) {
+        requireEntitled(userRoles, dataSourceId);
+        List<String> out = new ArrayList<>();
+        try (Connection conn = connectionProvider.get(dataSourceId)) {
+            DatabaseMetaData md = conn.getMetaData();
+            String catalog = bestEffort(conn::getCatalog);
+            String schema = bestEffort(conn::getSchema);
+            try (ResultSet rs = md.getTables(catalog, schema, "%", new String[] {"TABLE"})) {
+                while (rs.next() && out.size() < MAX_TABLES) {
+                    String name = rs.getString("TABLE_NAME");
+                    if (name != null && !name.isBlank()) {
+                        out.add(name);
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            LOG.warn("SQL workbench table list failed for datasource '{}': {}", dataSourceId, e.toString());
+            throw new SqlWorkbenchException(SqlWorkbenchException.Code.QUERY_FAILED, redactUrl(safeMessage(e)));
+        }
+        out.sort(String.CASE_INSENSITIVE_ORDER);
+        return out;
+    }
+
+    /**
+     * The entitlement half of {@link #execute} — the target is resolved by name or UUID and the
+     * resolved record must be in the caller's role-filtered datasource map. A miss is reported as
+     * an unknown datasource (never a distinguishable "exists but denied", saiku#2318).
+     */
+    private void requireEntitled(String[] userRoles, String dataSourceId) {
+        if (!isEntitledTo(userRoles, dataSourceId)) {
+            throw new SqlWorkbenchException(
+                    SqlWorkbenchException.Code.UNKNOWN_DATASOURCE, "No such datasource: " + dataSourceId);
+        }
+    }
+
+    /** A JDBC metadata read that may throw {@link SQLException} — what {@link #bestEffort} tolerates. */
+    private interface SqlStringCall {
+        String get() throws SQLException;
+    }
+
+    /** A JDBC metadata read that returns {@code null} instead of throwing when the driver does not support the call. */
+    private static String bestEffort(SqlStringCall call) {
+        try {
+            return call.get();
+        } catch (SQLException | UnsupportedOperationException notSupported) {
+            return null;
+        }
+    }
+
+    /**
+     * saiku#2599 (cf. #2547) — redacts credentials out of any text that may carry a JDBC URL:
+     * {@code scheme://user:password@host} userinfo becomes {@code scheme://***@}, and secret-bearing
+     * URL properties ({@code ;password=…}, {@code ?JdbcPassword=…}) become {@code ;password=***}.
+     * Applied both to the URL we report and to any error message that might quote one.
+     */
+    static String redactUrl(String text) {
+        if (text == null || text.isBlank()) {
+            return text;
+        }
+        String out = URL_USERINFO.matcher(text).replaceAll("$1***@");
+        out = URL_SECRET_PROPERTY.matcher(out).replaceAll("$1$2=***");
+        out = ORACLE_THIN_CREDENTIALS.matcher(out).replaceAll("$1***/***@");
+        return out;
     }
 
     /**
@@ -306,18 +447,59 @@ public class SqlWorkbenchService {
             columns.add(md.getColumnLabel(i));
         }
         List<List<Object>> rows = new ArrayList<>();
+        long resultBytes = 0;
+        boolean byteCapped = false;
+        rows:
         while (rs.next()) {
             List<Object> row = new ArrayList<>(n);
             for (int i = 1; i <= n; i++) {
-                row.add(rs.getObject(i));
+                Object cell = rs.getObject(i);
+                // saiku#2550h: the row cap is not a heap cap — 5,000 rows of a
+                // REPEAT('x', 1000000) column were ~5 GB. Every cell is measured as
+                // its stringified UTF-8 bytes (the wire form the UI gets), a cell over
+                // MAX_CELL_BYTES is truncated in place, and reading stops entirely
+                // once the whole result crosses MAX_RESULT_BYTES. Binary values are
+                // measured via their string form too — a close-enough, documented
+                // approximation; the cap exists to bound materialisation, not to audit.
+                if (cell != null) {
+                    String s = String.valueOf(cell);
+                    byte[] utf8 = s.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                    if (utf8.length > MAX_CELL_BYTES) {
+                        s = truncateCell(s);
+                        utf8 = s.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                        cell = s;
+                    }
+                    // Keep only complete rows. A wide row must not overshoot the result cap.
+                    if (resultBytes > MAX_RESULT_BYTES - utf8.length) {
+                        byteCapped = true;
+                        break rows;
+                    }
+                    resultBytes += utf8.length;
+                }
+                row.add(cell);
             }
             rows.add(row);
         }
         // setMaxRows caps the driver at maxRows, so hitting that count exactly means there was
         // very likely more to fetch — a heuristic, not a certainty, but good enough for a "showing
-        // the first N rows" banner without a second COUNT(*) round-trip.
-        boolean truncated = rows.size() >= maxRows;
+        // the first N rows" banner without a second COUNT(*) round-trip. The byte cap is a
+        // certainty: we stopped reading because the materialised result got too big.
+        boolean truncated = byteCapped || rows.size() >= maxRows;
         return new SqlQueryResult(columns, rows, rows.size(), truncated, durationMs);
+    }
+
+    /** Keep complete Unicode code points within the UTF-8 budget. */
+    static String truncateCell(String value) {
+        int chars = 0;
+        int bytes = 0;
+        while (chars < value.length()) {
+            int codePoint = value.codePointAt(chars);
+            int nextBytes = codePoint <= 0x7f ? 1 : codePoint <= 0x7ff ? 2 : codePoint <= 0xffff ? 3 : 4;
+            if (bytes + nextBytes > MAX_CELL_BYTES) break;
+            bytes += nextBytes;
+            chars += Character.charCount(codePoint);
+        }
+        return value.substring(0, chars) + CELL_TRUNCATION_MARKER;
     }
 
     private void audit(

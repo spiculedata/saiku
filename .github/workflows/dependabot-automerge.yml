@@ -1,9 +1,12 @@
 name: dependabot-automerge
 
 # Merges low-risk Dependabot PRs once `ci` has passed on them: single-package semver-patch
-# updates (maven, npm) and GitHub Actions non-major/digest updates. Groups, majors, minors, docker
-# and any PR touching more than dependency manifests/lockfiles or workflow `uses:` lines are left
-# for a human. Eligibility lives in .github/scripts/dependabot-automerge.mjs (unit-tested).
+# updates (maven, npm) whose diff itself proves a single manifest version pair. GitHub Actions
+# updates are NEVER auto-merged (they execute in jobs holding packages:/contents: write and
+# repository tokens — #2548), nor are workflow files, Maven build plugins, majors, minors,
+# docker or groups. Versions are read from the diff, not the title (a triager can edit a
+# title). .github/dependabot.yml additionally holds every update for a 7-day cooldown after
+# release. Eligibility lives in .github/scripts/dependabot-automerge.mjs (unit-tested).
 #
 # Safety: this runs from the base branch with a write token, so it never checks out or runs PR
 # code; the script is fetched from the default branch through the API. PR text reaches the shell

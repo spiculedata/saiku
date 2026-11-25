@@ -19,6 +19,8 @@ import org.saiku.web.rest.resources.notebooks.Notebook;
 import org.saiku.web.rest.resources.notebooks.NotebookCell;
 import org.saiku.web.security.share.ShareTokenAuthFilter.ShareGuestDetails;
 import org.saiku.web.service.SessionService;
+import org.saiku.web.share.ShareToken;
+import org.saiku.web.share.ShareTokenStore;
 
 /** Unit tests for {@link NotebookShareViewResource}. */
 public class NotebookShareViewResourceTest {
@@ -28,6 +30,7 @@ public class NotebookShareViewResourceTest {
     private NotebookShareViewResource resource;
     private StubDatasources datasources;
     private StubQuery2 query2;
+    private ShareTokenStore tokenStore;
     private Notebook notebook;
 
     @Before
@@ -39,6 +42,8 @@ public class NotebookShareViewResourceTest {
         resource.setSessionService(new StubSessionService());
         resource.setQuery2Resource(query2);
         resource.setOlapDiscoverService(new StubDiscover());
+        tokenStore = new ShareTokenStore(null);
+        resource.setShareTokenStore(tokenStore);
         notebook = new Notebook();
         notebook.cells = new java.util.ArrayList<>();
     }
@@ -85,9 +90,10 @@ public class NotebookShareViewResourceTest {
     }
 
     private void asGuest(String notebookPath) {
+        ShareToken token = tokenStore.create(notebookPath, "owner", List.of("ROLE_USER"), 3600_000L, null);
         org.springframework.security.authentication.TestingAuthenticationToken auth =
-                new org.springframework.security.authentication.TestingAuthenticationToken("guest", "tok");
-        auth.setDetails(new ShareGuestDetails("tok", notebookPath, "owner", List.of("ROLE_USER")));
+                new org.springframework.security.authentication.TestingAuthenticationToken("guest", token.token);
+        auth.setDetails(new ShareGuestDetails(token.token, notebookPath, "owner", List.of("ROLE_USER")));
         org.springframework.security.core.context.SecurityContextHolder.getContext()
                 .setAuthentication(auth);
     }

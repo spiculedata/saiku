@@ -179,6 +179,39 @@ public class ShareTokenResourceTest {
         assertEquals(400, r.getStatus());
     }
 
+    /** saiku#2536 — the mint binds the content: the token records the SHA-256
+     *  of the shared content as read under the minter's scope. */
+    @Test
+    public void mint_bindsTheSharedContent() {
+        session.username = "admin";
+        String content = "{\"dashboard\":true}";
+        ds.allow("/q.saikudash");
+        ds.fileContent = content;
+        ShareTokenResource.MintRequest req = new ShareTokenResource.MintRequest();
+        req.dashboardPath = "/q.saikudash";
+        Response r = resource.mint(req);
+        assertEquals(200, r.getStatus());
+        @SuppressWarnings("unchecked")
+        String token = (String) ((Map<String, Object>) r.getEntity()).get("token");
+        assertEquals(org.saiku.web.share.ContentBinding.sha256Hex(content), store.load(token).contentSha256);
+    }
+
+    /** saiku#2536 — unreadable content still mints (the guest read would 404
+     *  anyway) but leaves the record unbound; it binds on first use. */
+    @Test
+    public void mint_ofUnreadableContent_startsUnbound() {
+        session.username = "admin";
+        ds.allow("/q.saikudash");
+        ds.failRead = true;
+        ShareTokenResource.MintRequest req = new ShareTokenResource.MintRequest();
+        req.dashboardPath = "/q.saikudash";
+        Response r = resource.mint(req);
+        assertEquals(200, r.getStatus());
+        @SuppressWarnings("unchecked")
+        String token = (String) ((Map<String, Object>) r.getEntity()).get("token");
+        assertEquals(null, store.load(token).contentSha256);
+    }
+
     /* --------------------------- stubs ---------------------------- */
 
     private static class StubSessionService extends SessionService {
@@ -201,6 +234,16 @@ public class ShareTokenResourceTest {
      *  revoke can't be masked by the {@code stillCanGrant} fallback. */
     private class StubDatasourceService extends DatasourceService {
         private final Map<String, Set<String>> userToPaths = new HashMap<>();
+        String fileContent;
+        boolean failRead;
+
+        @Override
+        public String getFileData(String path, String username, List<String> roles) {
+            if (failRead) {
+                throw new RuntimeException("unreadable");
+            }
+            return fileContent;
+        }
 
         void allow(String path) {
             userToPaths.computeIfAbsent(session.username, k -> new HashSet<>()).add(path);

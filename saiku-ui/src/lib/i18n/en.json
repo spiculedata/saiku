@@ -932,5 +932,7 @@
 	"sqlWorkbench.readOnlyNotice": "Read-only: only read-only queries (SELECT / WITH / SHOW / DESCRIBE) are allowed.",
 	"sqlWorkbench.page": "Page {page} of {total}",
 	"sqlWorkbench.prev": "Previous",
-	"sqlWorkbench.next": "Next"
+	"sqlWorkbench.next": "Next",
+	"sqlWorkbench.infoUnavailable": "Could not load what this datasource connects to.",
+	"sqlWorkbench.tables": "Tables"
 }

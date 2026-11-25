@@ -180,4 +180,34 @@ public class WebhookUrlValidatorTest {
         assertEquals(1, vt.addresses().length);
         assertEquals("93.184.216.34", vt.addresses()[0].getHostAddress());
     }
+
+    // --- saiku#2550g: IPv6 transition mechanisms that tunnel an IPv4 target ---
+
+    @Test
+    public void rejectsNat64Prefix() {
+        // 64:ff9b::/96 with an embedded internal IPv4 — 64:ff9b::a9fe:a9fe = 169.254.169.254.
+        assertRejected("https://[64:ff9b::169.254.169.254]/hook", PUBLIC);
+        // The whole /96 is refused regardless of the embedded v4 (DNS64-synthesised
+        // addresses are never a legitimate webhook target).
+        assertRejected("https://[64:ff9b::1.2.3.4]/hook", PUBLIC);
+    }
+
+    @Test
+    public void rejects6to4WithEmbeddedInternalIpv4() {
+        // 2002::/16 — the next 32 bits are the embedded IPv4. 2002:0a00:0001:: = 10.0.0.1.
+        assertRejected("https://[2002:a00:1::1]/hook", PUBLIC);
+        assertRejected("https://[2002:c0a8:1::]/hook", PUBLIC); // 192.168.0.1
+        // ...but a 6to4 address with a PUBLIC embedded IPv4 is not itself blocked.
+        assertTrue(WebhookUrlValidator.isValid("https://[2002:5db8:d822::1]/hook", PUBLIC));
+    }
+
+    @Test
+    public void rejectsIpv4CompatibleWithEmbeddedInternalIpv4() {
+        // ::a.b.c.d — deprecated transition form, still parses everywhere.
+        assertRejected("https://[::127.0.0.1]/hook", PUBLIC);
+        assertRejected("https://[::10.0.0.1]/hook", PUBLIC);
+        assertRejected("https://[::169.254.169.254]/hook", PUBLIC);
+        // IPv4-mapped ::ffff:a.b.c.d keeps its existing (Java-handled) checks.
+        assertRejected("https://[::ffff:127.0.0.1]/hook", PUBLIC);
+    }
 }

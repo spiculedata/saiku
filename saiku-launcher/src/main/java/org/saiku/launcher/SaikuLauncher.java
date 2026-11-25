@@ -323,6 +323,15 @@ public class SaikuLauncher implements Callable<Integer> {
             // servlet's <multipart-config> in web.xml. Default 2 MB; tunable.
             webapp.setMaxFormContentSize(Integer.getInteger("saiku.http.maxFormContentSize", 2_000_000));
 
+            // saiku#2550c: turn OFF the default servlet's directory listings.
+            // Jetty's default ships dirAllowed=true, so GET /images/ answered with
+            // an index of every packaged static file — an unnecessary disclosure
+            // of the WAR's contents and a free directory-walk for anyone probing
+            // static paths. With dirAllowed=false a directory URL with no welcome
+            // file answers 403. Context-level init param so the DefaultServlet's
+            // own web.xml init-param (absent here) doesn't override it.
+            webapp.setInitParameter("org.eclipse.jetty.servlet.Default.dirAllowed", "false");
+
             // Tier-1 auth hardening: JSESSIONID cookie attrs.
             //   HttpOnly = true   (always — no JS needs to read it)
             //   SameSite = Lax    (block CSRF via top-level nav from other origins,

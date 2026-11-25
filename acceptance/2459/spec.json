@@ -1,0 +1,24 @@
+{
+  "issue": 2459,
+  "title": "The CI credential-lifecycle gate flags any pull_request job that runs Maven or npm lifecycle code over PR content while a package credential is readable; the repaired model-diff pattern passes; today's callers are allow-listed pending remediation #2492",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "a pull_request job that receives GH_PACKAGES_TOKEN (directly, or as BUILD_TOKEN via a reusable-workflow caller, or as the ephemeral GITHUB_TOKEN of a packages:write job) and executes Maven or npm lifecycle code over PR-controlled files",
+      "then": ".github/scripts/test_ci_secret_lifecycle.py flags the job — fixtures cover the saiku#1993 release-token shape and the pre-fix saiku#2305 model-diff shape"
+    },
+    {
+      "id": "C2",
+      "given": "the repaired model-diff pattern: Maven runs on the trusted base SHA and ~/.m2/settings.xml is removed before the checkout returns to PR content",
+      "then": "the gate passes it, and dependency:build-classpath on the trusted base is not treated as a lifecycle goal"
+    },
+    {
+      "id": "C3",
+      "given": "the repository's own pull_request workflows on this build",
+      "then": "every gate finding is on the explicit allow-list, each entry links remediation issue #2492, and the list may only shrink (a stale entry, or a finding outside the list, fails the gate)"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 120
+}

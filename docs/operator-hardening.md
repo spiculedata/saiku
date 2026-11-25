@@ -218,9 +218,10 @@ replaced on re-login, and is zeroed on logout and when the HTTP session expires.
 instance can still contain the passwords of currently signed-in users, so treat dumps as sensitive.
 
 If you use no pass-through datasources, stop retaining the password altogether
-(`JAVA_OPTS` below is honoured for `-D` properties by the launcher in the Docker image,
-dist scripts and plain `java -jar`; in the container it cannot carry JVM flags like `-Xmx`,
-which go in `JDK_JAVA_OPTIONS` instead):
+(`JAVA_OPTS` below is honoured for `-D` properties by the launcher in the Docker image
+and with direct `java -jar` launches. The `dist/run.*` scripts reset `JAVA_OPTS`; use
+`JDK_JAVA_OPTIONS` for `-D` properties with those scripts. In the container, JVM flags
+like `-Xmx` also go in `JDK_JAVA_OPTIONS`):
 
 ```bash
 JAVA_OPTS="-Dsaiku.passthrough.retainCredential=false"
@@ -398,14 +399,59 @@ default; set them in `saiku.properties` or with `-Dsaiku.olap.<key>=<value>`.
 Mondrian's own deployment-wide backstops in `mondrian.properties` ship with
 non-zero values too: `mondrian.rolap.queryTimeout=300`,
 `mondrian.result.limit=1000000`, `mondrian.rolap.iterationLimit=100000000`.
-Raise them only if a legitimate report needs more, and prefer raising the
-`saiku.olap.*` ceilings above first.
+Raise a limit only if a legitimate report needs more. For a longer query
+timeout, raise both `saiku.olap.query.timeout.seconds` and
+`mondrian.rolap.queryTimeout` (300s each); whichever is lower still cuts the
+query off.
 
 The Docker image and `dist/run.sh` / `dist/run.bat` start the JVM with
-`-XX:+ExitOnOutOfMemoryError -XX:MaxRAMPercentage=75`, so an out-of-memory
-condition restarts the process instead of leaving it limping.
+`-XX:+ExitOnOutOfMemoryError -XX:MaxRAMPercentage=75`. The flag makes the JVM
+**exit** on an out-of-memory condition instead of limping on a corrupt heap —
+it does not restart anything. In the container the restart comes from the
+Docker engine's restart policy or from an orchestrator (see the `Dockerfile`
+comment); a process started by `dist/run.sh` / `dist/run.bat` is restarted by
+nothing. To tune the `saiku.olap.*` limits on this page, pass `-D` properties
+through `JAVA_OPTS` in the Docker image or with a direct `java -jar` launch. The
+`dist/run.*` scripts reset `JAVA_OPTS`, so use `JDK_JAVA_OPTIONS` for `-D`
+properties with those scripts. Do not override the image's `JAVA_TOOL_OPTIONS`:
+`-e JAVA_TOOL_OPTIONS=...` replaces its flags — including
+`-XX:+ExitOnOutOfMemoryError` and `-XX:MaxRAMPercentage=75` — wholesale.
 
 ---
+
+## Chart export raster bounds (`saiku.export.chart.*`)
+
+`POST /rest/saiku/{user}/export/saiku/chart` rasterises an uploaded SVG with
+Batik (PNG, JPG, TIFF; PDF's vector output is bounded by the same budgets —
+unsized oversized requests get a typed `400` and `KEY_WIDTH`/`KEY_HEIGHT` are
+always set). Two independent budgets protect the JVM heap (CWE-400):
+
+- **byte budget** (saiku#1165): the SVG payload itself is capped at 20 MB, and
+  anything that would make Batik reach off-document is rejected;
+- **pixel budget** (saiku#2527): the output raster is capped per side, so a
+  `width="12000" height="12000"` chart can no longer allocate a 144-megapixel
+  raster inside one request. The root element's `width`/`height` (or
+  `viewBox`) is resolved before the transcoder runs; an unsized request that
+  exceeds the budget is refused with a `400` before anything is allocated, and
+  with a `size` hint the request is scaled down to fit the budget instead.
+  Both `KEY_WIDTH` and `KEY_HEIGHT` are always set on the transcoder, so a
+  percentage- or missing-dimension document can no longer inherit unbounded
+  intrinsic sizes.
+
+The transcode also runs on a small fixed thread pool with a wall-clock limit
+(the same shape as the snapshot renderer's bounded pool), so a byte-legal but
+pathological SVG answers `400` once it has overrun the limit instead of
+wedging a request thread. A queued request that never got a worker within
+the limit answers `503` — that is server-side saturation, not the caller's
+fault, and clients and proxies may retry it. Note the limit does not force-stop
+Batik mid-render: a timed-out task releases its pool slot only when Batik
+returns, so a pathological render keeps one worker until it finishes.
+
+| Property | Default | Effect |
+|---|---|---|
+| `saiku.export.chart.maxWidth` | `2000` | Maximum output raster width in px (per side; 32–10000). An unsized request whose intrinsic width exceeds it gets a typed `400`. |
+| `saiku.export.chart.maxHeight` | `2000` | Maximum output raster height in px (per side; 32–10000). With a `size` hint the export is scaled down to fit instead of refused. |
+| `saiku.export.chart.timeoutMillis` | `30000` | Wall-clock limit for one transcode (1000–120000 ms). |
 
 ## Request-body and stored-object size caps (`saiku.http.*`, `saiku.repo.*`, `saiku.history.*`, `saiku.comments.*`)
 

@@ -1,0 +1,29 @@
+{
+  "issue": 2548,
+  "title": "Dependabot updates wait out a cooldown before they can be auto-queued, and workflow action bumps are never auto-merged",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "a Dependabot PR labelled github-actions, or any PR that changes a file under .github/workflows/",
+      "then": "the automerge eligibility rules return not eligible — a workflow change can never ride into a job holding packages:/contents: write on a bot-only `ci` pass"
+    },
+    {
+      "id": "C2",
+      "given": ".github/dependabot.yml with one update block per ecosystem (maven, github-actions, docker, npm)",
+      "then": "every block sets a cooldown of at least 3 days, so a fresh release is not opened as a PR until it has aged"
+    },
+    {
+      "id": "C3",
+      "given": "a PR whose title claims a patch bump but whose diff actually moves the version across a major",
+      "then": "eligibility reads the version pair from the diff and refuses; the title is a cross-check, never the source"
+    },
+    {
+      "id": "C4",
+      "given": "docs/ci-overview.md, Dependabot section",
+      "then": "it documents the cooldown and the never-auto-merge rule for Actions and workflow updates"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}
