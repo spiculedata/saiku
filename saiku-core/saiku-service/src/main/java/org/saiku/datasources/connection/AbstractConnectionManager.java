@@ -26,6 +26,7 @@ import java.util.Properties;
 import org.olap4j.OlapConnection;
 import org.saiku.datasources.datasource.SaikuDatasource;
 import org.saiku.olap.util.exception.SaikuOlapException;
+import org.saiku.service.datasource.ConnectStringRedactor;
 import org.saiku.service.datasource.IDatasourceManager;
 import org.saiku.service.datasource.IDatasourceProcessor;
 import org.saiku.service.datasource.JdbcUrlPolicy;
@@ -183,7 +184,7 @@ public abstract class AbstractConnectionManager implements IConnectionManager, S
                 refreshConnection(name);
             } catch (Exception ex) {
                 // Log but continue so one broken datasource doesn't sink the rest
-                log.error("Failed to refresh connection {}", name, ex);
+                log.error("Failed to refresh connection {}", name, ConnectStringRedactor.redact(ex));
             }
         }
     }

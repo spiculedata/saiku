@@ -69,6 +69,20 @@ avatica-server 1.29.0, fop 2.12, jacoco 0.8.16, spotless 3.11.0, setup-java 6.3.
 
 #### Security
 
+- **Credentials redacted from connection error logs (saiku#2547, CWE-532).**
+  When a Mondrian connection failed, the logged exception's message carried the
+  full connect string — for a `security.type=passthrough` datasource that is
+  the signed-in user's login name and **plaintext password**
+  (`JdbcUser=`/`JdbcPassword=`), and for other datasources the stored warehouse
+  password. Anyone who could read `saiku.log` (a log shipper,
+  `GET /rest/saiku/admin/log/{logname}`) saw them. A new
+  `ConnectStringRedactor` masks password-bearing connect-string fields and URL
+  passwords with `***` — and is applied to the whole logged cause
+  chain in the connection managers, to the admin datasource
+  create/update/refresh error responses, and to the discover refresh logs.
+  The log still names the datasource, the JDBC URL, the login name and the
+  root cause; only the password values are masked.
+
 - **REST request-body size caps and storage caps (saiku#2535).** A new servlet-level
   `RestBodySizeFilter` caps every `/rest/*` request body and answers `413` — a
   declared-oversized body is refused before a single byte is read, and chunked

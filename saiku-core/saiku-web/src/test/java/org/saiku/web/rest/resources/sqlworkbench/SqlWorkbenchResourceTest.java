@@ -7,6 +7,7 @@
 package org.saiku.web.rest.resources.sqlworkbench;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import jakarta.ws.rs.core.Response;
@@ -167,6 +168,45 @@ public class SqlWorkbenchResourceTest {
         assertEquals(400, response.getStatus());
         ErrorBody body = (ErrorBody) response.getEntity();
         assertTrue(body.message() != null && !body.message().contains("org.saiku"));
+    }
+
+    // saiku#2599 — the datasource info / table-list endpoints.
+
+    @Test
+    public void datasourceInfo_reportsTheDatabaseProductAndSchema() {
+        Response response = resource.datasourceInfo(DATA_SOURCE_ID);
+        assertEquals(200, response.getStatus());
+        SqlWorkbenchService.DatasourceInfo info = (SqlWorkbenchService.DatasourceInfo) response.getEntity();
+        assertEquals(DATA_SOURCE_ID, info.name());
+        assertEquals("H2", info.databaseProductName());
+        assertTrue(info.url().startsWith("jdbc:h2:"));
+        assertFalse(
+                "no credential in the reported URL", info.url().toLowerCase().contains("password"));
+    }
+
+    @Test
+    public void datasourceInfo_unknownDatasource_returns400WithUnknownDatasourceCode() {
+        Response response = resource.datasourceInfo("no-such-ds");
+        assertEquals(400, response.getStatus());
+        ErrorBody body = (ErrorBody) response.getEntity();
+        assertEquals("UNKNOWN_DATASOURCE", body.code());
+    }
+
+    @Test
+    public void datasourceTables_listsTheSeededTable() {
+        Response response = resource.datasourceTables(DATA_SOURCE_ID);
+        assertEquals(200, response.getStatus());
+        @SuppressWarnings("unchecked")
+        List<String> tables = (List<String>) response.getEntity();
+        assertTrue("the seeded table must be listed, got " + tables, tables.contains("CUSTOMER"));
+    }
+
+    @Test
+    public void datasourceTables_unknownDatasource_returns400WithUnknownDatasourceCode() {
+        Response response = resource.datasourceTables("no-such-ds");
+        assertEquals(400, response.getStatus());
+        ErrorBody body = (ErrorBody) response.getEntity();
+        assertEquals("UNKNOWN_DATASOURCE", body.code());
     }
 
     /** Hand-rolled stub (house pattern — saiku-web has no Mockito), mirrors CubeDesignerResourceTest's. */

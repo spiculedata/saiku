@@ -8,6 +8,7 @@ package org.saiku.service.sqlworkbench;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
@@ -545,6 +546,103 @@ public class SqlWorkbenchServiceTest {
                 auditLog.recent(1, 0, null).get(0).outcome);
     }
 
+    // saiku#2599 — the datasource info / table-list metadata surface.
+
+    @Test
+    public void describeDatasource_reportsTheTargetDatabaseAndSchema() {
+        SqlWorkbenchService.DatasourceInfo info = service.describeDatasource(sqlExecRoles, DATA_SOURCE_ID);
+        assertEquals(DATA_SOURCE_ID, info.name());
+        assertEquals("H2", info.databaseProductName());
+        assertTrue(info.url().startsWith("jdbc:h2:"));
+        // The driver-reported URL is what we show (credential-free here), never the datasource's
+        // stored property text — and whatever it is, it went through the redactor.
+        assertTrue(info.url().startsWith("jdbc:"));
+        assertFalse(info.url().toLowerCase(java.util.Locale.ROOT).contains("password"));
+    }
+
+    @Test
+    public void describeDatasource_redactsCredentialsFromTheReportedUrl() {
+        Connection lying = recordingConnection(
+                "jdbc:postgresql://warehouse:SecretPass123@db.internal:5432/foodmart?password=SecretPass123",
+                new ArrayList<>(),
+                false);
+        SqlWorkbenchService redaction =
+                new SqlWorkbenchService(id -> lying, new StubDatasourceService(DATA_SOURCE_ID), auditLog);
+
+        SqlWorkbenchService.DatasourceInfo info = redaction.describeDatasource(sqlExecRoles, DATA_SOURCE_ID);
+        assertFalse("userinfo password must not survive", info.url().contains("SecretPass123"));
+        assertTrue("userinfo is replaced", info.url().contains("://***@"));
+        assertTrue("secret URL properties are replaced", info.url().contains("password=***"));
+    }
+
+    @Test
+    public void listTables_listsTheDefaultSchemaTablesSorted() {
+        List<String> tables = service.listTables(sqlExecRoles, DATA_SOURCE_ID);
+        assertTrue("the seeded table must be listed, got " + tables, tables.contains("CUSTOMER"));
+        List<String> sorted = new ArrayList<>(tables);
+        sorted.sort(String.CASE_INSENSITIVE_ORDER);
+        assertEquals("tables come back sorted case-insensitively", sorted, tables);
+    }
+
+    @Test
+    public void describeDatasource_refusesCallerWhoseRolesCannotSeeTheDatasource() {
+        assertRefusedWithoutOpeningConnection(
+                id -> DriverManager.getConnection(JDBC_URL, "sa", ""),
+                (scoped, roles) -> scoped.describeDatasource(roles, DATA_SOURCE_ID));
+    }
+
+    @Test
+    public void listTables_refusesCallerWhoseRolesCannotSeeTheDatasource() {
+        assertRefusedWithoutOpeningConnection(
+                id -> DriverManager.getConnection(JDBC_URL, "sa", ""),
+                (scoped, roles) -> scoped.listTables(roles, DATA_SOURCE_ID));
+    }
+
+    /** Shared body of the two entitlement refusals: UNKNOWN_DATASOURCE, no connection opened. */
+    private void assertRefusedWithoutOpeningConnection(
+            SchemaGenOrchestrator.ConnectionProvider provider,
+            java.util.function.BiFunction<SqlWorkbenchService, String[], Object> call) {
+        List<String> openedFor = new ArrayList<>();
+        SqlWorkbenchService scoped = new SqlWorkbenchService(
+                id -> {
+                    openedFor.add(id);
+                    return provider.get(id);
+                },
+                new StubDatasourceService(DATA_SOURCE_ID) {
+                    @Override
+                    public Map<String, SaikuDatasource> getDatasources(String[] roles) {
+                        // Simulates the role filter excluding everything for this caller.
+                        return Map.of();
+                    }
+                },
+                auditLog);
+
+        SqlWorkbenchException ex = assertThrows(SqlWorkbenchException.class, () -> call.apply(scoped, sqlExecRoles));
+        assertEquals(SqlWorkbenchException.Code.UNKNOWN_DATASOURCE, ex.getCode());
+        assertTrue("the datasource was never opened", openedFor.isEmpty());
+    }
+
+    @Test
+    public void redactUrl_redactsUserinfoAndSecretProperties_andLeavesPlainUrlsAlone() {
+        String plain = "jdbc:h2:file:/data/foodmart;IFEXISTS=TRUE";
+        assertEquals("a credential-free URL is untouched", plain, SqlWorkbenchService.redactUrl(plain));
+        assertEquals(
+                "jdbc:postgresql://***@db.internal:5432/foodmart",
+                SqlWorkbenchService.redactUrl("jdbc:postgresql://warehouse:hunter2@db.internal:5432/foodmart"));
+        assertEquals(
+                "jdbc:mysql://db.internal/foodmart;JdbcPassword=***;Catalog=FoodMart",
+                SqlWorkbenchService.redactUrl(
+                        "jdbc:mysql://db.internal/foodmart;JdbcPassword=hunter2;Catalog=FoodMart"));
+        assertEquals(
+                "jdbc:postgresql://db.internal/foodmart?password=***&ssl=true",
+                SqlWorkbenchService.redactUrl("jdbc:postgresql://db.internal/foodmart?password=hunter2&ssl=true"));
+        assertEquals(
+                "the Oracle thin credential form is redacted too",
+                "jdbc:oracle:thin:***/***@host:1521/orcl",
+                SqlWorkbenchService.redactUrl("jdbc:oracle:thin:scott/tiger@host:1521/orcl"));
+        assertNull(SqlWorkbenchService.redactUrl(null));
+    }
+
     // --- saiku#2550h: byte caps on materialised cells and the result as a whole ---
 
     @Test
@@ -595,7 +693,6 @@ public class SqlWorkbenchServiceTest {
         assertTrue(result.truncated());
         assertEquals(0, result.rowCount());
     }
-
     /** Rows in INFORMATION_SCHEMA.TABLES matching a table name (0 when it was never created). */
     private long tableCount(String tableName) {
         SqlWorkbenchService.SqlQueryResult result = service.execute(

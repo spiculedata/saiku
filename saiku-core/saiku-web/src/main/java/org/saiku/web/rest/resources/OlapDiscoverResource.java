@@ -31,6 +31,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.saiku.olap.dto.*;
+import org.saiku.service.datasource.ConnectStringRedactor;
 import org.saiku.service.olap.OlapDiscoverService;
 import org.saiku.service.ossie.OssieDiscoverService;
 import org.saiku.service.ossie.OssieModelDto;
@@ -165,7 +166,8 @@ public class OlapDiscoverResource implements Serializable {
             }
             return olapDiscoverService.getAllConnections();
         } catch (Exception e) {
-            log.error(this.getClass().getName(), e);
+            // saiku#2547 (CWE-532): a failed refresh's chain carries the connect string.
+            log.error(this.getClass().getName(), ConnectStringRedactor.redact(e));
             return new ArrayList<>();
         }
     }
@@ -191,7 +193,8 @@ public class OlapDiscoverResource implements Serializable {
             olapDiscoverService.refreshConnection(connectionName);
             return olapDiscoverService.getConnection(connectionName);
         } catch (Exception e) {
-            log.error(this.getClass().getName(), e);
+            // saiku#2547 (CWE-532): a failed refresh's chain carries the connect string.
+            log.error(this.getClass().getName(), ConnectStringRedactor.redact(e));
             return new ArrayList<>();
         }
     }

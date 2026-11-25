@@ -75,11 +75,23 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
-## 2026-11-25 — fix/2598-workbench-syntax-error — PR #2608 base merge
-**Was doing:** merged current development into the existing PR branch, preserving the #2598 syntax-error tests and #2550 result-size tests in the sole conflict.
-**Now:** check PR #2608 CI on the merge commit, especially the JDK 22 build, service/web tests, and acceptance specs.
-**Watch out:** local Maven tests stop before compilation because GitHub Packages returns 401 for private Mondrian/olap4j dependencies; Java Spotless passes.
-**Refs:** #2598, #2550, PR #2608
+## 2026-11-25 — fix/2598-workbench-syntax-error — PR #2608 latest base merge
+**Was doing:** merged current development into the PR branch, keeping #2598 syntax tests, #2599 datasource tests, #2550 result-size tests, and both handoff notes; combined their test floors.
+**Now:** check PR #2608 CI on the new merge commit, especially the JDK 22 build and Model IDE browser test.
+**Watch out:** local Maven tests stop at GitHub Packages 401; local Chromium lacks `libglib-2.0.so.0`. UI check, 2,732 Vitest tests, lint, build, and Java Spotless passed.
+**Refs:** #2598, #2599, #2550, PR #2608
+
+## 2026-11-25 — feature/2547-redact-connection-error-logs — PR #2594 base merge
+**Was doing:** merged current development into the existing PR branch and retained its earlier redaction fixes and tests.
+**Now:** check PR #2594 CI after the push, especially the Maven suites and acceptance spec.
+**Watch out:** local dependency resolution stops at GitHub Packages HTTP 401.
+**Refs:** #2547, PR #2594
+
+## 2026-11-25 — feature/2599-sql-workbench-scroll-ds-info — PR #2609 overlap rework
+**Was doing:** merged current development, kept #2610's scroll implementation and test, removed this PR's duplicate scroll code and test, and retained datasource info, table-list, and topbar coverage.
+**Now:** check PR #2609 CI after the push, especially Java compilation and the focused SQL workbench browser tests.
+**Watch out:** local Maven stops before compilation on GitHub Packages 401; Chromium lacks `libglib-2.0.so.0` here. UI check, 2,732 Vitest tests, lint, build, and Java Spotless pass.
+**Refs:** #2599, PR #2609, PR #2610
 
 ## 2026-11-25 — feature/share-bind-content-2536 — PR #2565 CI fixture rework
 **Was doing:** wired valid share-token store records into the older dashboard and notebook resource tests after CI reported 409 instead of their expected 200/404 responses.
@@ -292,3 +304,8 @@ the tree first.
 **Was doing:** added `acceptance/2543` to prove the OAuth audience, explicit role mapping, and session-context requirements that the existing PR implements. The command spec passes on the PR head and fails on the current development base; there is no merge conflict.
 **Now:** check CI after the push. Local focused Maven tests stopped before compilation because GitHub Packages returned 401 for private Mondrian and olap4j artifacts.
 **Refs:** #2543, #2574
+
+## 2026-11-24 — feature/2599-sql-workbench-scroll-ds-info — PR #2609 CI rework
+**Was doing:** fixed the SQL result grid's flex shrink so the page reaches its pager, bounded the grid's own scrolling to keep headers sticky, and strengthened the Playwright scroll assertions.
+**Now:** check PR #2609 CI after the push; local Chromium cannot launch because this host lacks `libglib-2.0.so.0`, and focused Maven tests stop at GitHub Packages 401 before compilation.
+**Refs:** #2599, #2609
