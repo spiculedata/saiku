@@ -17,6 +17,7 @@ import jakarta.ws.rs.core.Response;
 import java.util.List;
 import java.util.Map;
 import org.saiku.service.comments.Comment;
+import org.saiku.service.comments.CommentLimitExceededException;
 import org.saiku.service.comments.CommentService;
 import org.saiku.service.user.UserService;
 import org.saiku.service.util.security.Usernames;
@@ -80,8 +81,16 @@ public class CommentResource {
         if (!commentService.canReadDashboard(req.dashboard, username, currentRoles())) {
             return forbidden();
         }
-        Comment c = commentService.add(req.dashboard, req.tile, username, req.body);
-        return Response.ok(c).type(MediaType.APPLICATION_JSON).build();
+        try {
+            Comment c = commentService.add(req.dashboard, req.tile, username, req.body);
+            return Response.ok(c).type(MediaType.APPLICATION_JSON).build();
+        } catch (CommentLimitExceededException e) {
+            // #2535: the documented body/count caps — a clean refusal, not a 500.
+            return Response.status(Response.Status.REQUEST_ENTITY_TOO_LARGE)
+                    .entity(Map.of("error", e.getMessage()))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
     }
 
     @DELETE
