@@ -255,10 +255,9 @@ public final class ReadOnlySqlGuard {
         if (LEXICAL_ALLOWLIST.contains(firstWord(statement).toUpperCase(Locale.ROOT))) {
             return statement;
         }
-        // EXPLAIN is refused by policy no matter what follows (its ANALYZE form EXECUTES the
-        // statement it explains — saiku#2318), so an EXPLAIN-led statement the parser cannot
-        // read keeps the read-only refusal: its problem is not the syntax.
-        if ("EXPLAIN".equalsIgnoreCase(firstWord(statement))) {
+        // EXPLAIN is refused by policy, and PostgreSQL data-modifying CTEs must also keep the
+        // #2318 read-only verdict even though Calcite cannot parse their DML bodies.
+        if ("EXPLAIN".equalsIgnoreCase(firstWord(statement)) || containsDataModifyingCte(statement)) {
             throw new IllegalArgumentException(
                     "Only read-only queries are allowed here; the statement could not be parsed as one");
         }
@@ -276,6 +275,40 @@ public final class ReadOnlySqlGuard {
     /** JavaCC's "Encountered <token image> at line L, column C" — the offending token, escaped. */
     private static final Pattern ENCOUNTERED =
             Pattern.compile("Encountered \"((?:[^\"\\\\]|\\\\.)*)\" at line (\\d+), column (\\d+)");
+
+    /** PostgreSQL permits writes inside CTE bodies, which Calcite cannot parse as a statement. */
+    private static final Pattern DATA_MODIFYING_CTE = Pattern.compile(
+            "\\bAS\\s*(?:(?:NOT\\s+)?MATERIALIZED\\s*)?\\(\\s*(?:INSERT|UPDATE|DELETE|MERGE)\\b",
+            Pattern.CASE_INSENSITIVE);
+
+    /** The DML keyword must start a CTE body, not appear inside a string or quoted identifier. */
+    private static boolean containsDataModifyingCte(String statement) {
+        if (!"WITH".equalsIgnoreCase(firstWord(statement))) {
+            return false;
+        }
+        StringBuilder unquoted = new StringBuilder(statement.length());
+        char quote = 0;
+        for (int i = 0; i < statement.length(); i++) {
+            char c = statement.charAt(i);
+            if (quote != 0) {
+                unquoted.append(' ');
+                if (c == quote) {
+                    if (i + 1 < statement.length() && statement.charAt(i + 1) == quote) {
+                        unquoted.append(' ');
+                        i++;
+                    } else {
+                        quote = 0;
+                    }
+                }
+            } else if (c == '\'' || c == '"' || c == '`') {
+                quote = c;
+                unquoted.append(' ');
+            } else {
+                unquoted.append(c);
+            }
+        }
+        return DATA_MODIFYING_CTE.matcher(unquoted).find();
+    }
 
     /** Builds the caller-safe message for a statement neither grammar could parse: the standard
      *  grammar's position, a short reason, and the standing read-only sentence. No stack trace,

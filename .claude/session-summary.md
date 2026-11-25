@@ -75,6 +75,12 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-11-24 — fix/2598-workbench-syntax-error — PR #2608 CI rework
+**Was doing:** restored `READ_ONLY_VIOLATION` for PostgreSQL data-modifying CTEs that Calcite cannot parse, with guard and REST regression coverage; pushed to the existing PR branch.
+**Now:** check PR #2608 CI, especially `acceptance/2318` and the Maven service/web tests.
+**Watch out:** local Maven tests stop before compilation because GitHub Packages returns 401 for private Mondrian/olap4j dependencies; focused guard tests and Spotless pass locally.
+**Refs:** #2598, #2318, PR #2608
+
 ## 2026-11-24 — feature/2535-rest-body-size-limits — PR #2566 review rework
 **Was doing:** formatted the REST body filter test and corrected the operator guide; local Spotless, licence, and static acceptance checks pass. Maven service/web tests stop at GitHub Packages 401 before compilation.
 **Now:** check PR #2566 CI on the rework commit for the full build and Java tests.

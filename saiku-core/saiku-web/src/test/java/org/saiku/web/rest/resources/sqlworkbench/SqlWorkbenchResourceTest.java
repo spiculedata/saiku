@@ -128,6 +128,16 @@ public class SqlWorkbenchResourceTest {
     }
 
     @Test
+    public void query_dataModifyingCte_stillReturns400WithReadOnlyViolationCode() {
+        Response response = resource.query(
+                new QueryRequest(DATA_SOURCE_ID, "WITH d AS (DELETE FROM customer RETURNING 1) SELECT * FROM d", null));
+        assertEquals(400, response.getStatus());
+        ErrorBody body = (ErrorBody) response.getEntity();
+        assertEquals("READ_ONLY_VIOLATION", body.code());
+        assertTrue(body.message().contains("Only read-only queries"));
+    }
+
+    @Test
     public void query_missingSql_returns400() {
         Response response = resource.query(new QueryRequest(DATA_SOURCE_ID, "", null));
         assertEquals(400, response.getStatus());

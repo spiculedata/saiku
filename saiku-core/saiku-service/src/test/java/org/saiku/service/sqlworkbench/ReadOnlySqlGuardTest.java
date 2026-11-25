@@ -118,9 +118,19 @@ public class ReadOnlySqlGuardTest {
 
     @Test
     public void dataModifyingCte_isRejected() {
-        assertThrows(
+        IllegalArgumentException ex = assertThrows(
                 IllegalArgumentException.class,
                 () -> ReadOnlySqlGuard.checkReadOnly("WITH d AS (DELETE FROM customer RETURNING 1) SELECT * FROM d"));
+        assertFalse(ex instanceof ReadOnlySqlGuard.SqlSyntaxException);
+        assertTrue(ex.getMessage().contains("Only read-only queries"));
+    }
+
+    @Test
+    public void malformedCteWithQuotedDmlText_isStillASyntaxError() {
+        assertThrows(
+                ReadOnlySqlGuard.SqlSyntaxException.class,
+                () -> ReadOnlySqlGuard.checkReadOnly(
+                        "WITH d AS (SELECT 'AS (DELETE FROM customer)' FROM) SELECT * FROM d"));
     }
 
     @Test
