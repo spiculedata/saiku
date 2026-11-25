@@ -75,6 +75,12 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-11-25 — feature/2599-sql-workbench-scroll-ds-info — PR #2609 overlap rework
+**Was doing:** merged current development, kept #2610's scroll implementation and test, removed this PR's duplicate scroll code and test, and retained datasource info, table-list, and topbar coverage.
+**Now:** check PR #2609 CI after the push, especially Java compilation and the focused SQL workbench browser tests.
+**Watch out:** local Maven stops before compilation on GitHub Packages 401; Chromium lacks `libglib-2.0.so.0` here. UI check, 2,732 Vitest tests, lint, build, and Java Spotless pass.
+**Refs:** #2599, PR #2609, PR #2610
+
 ## 2026-11-25 — feature/share-bind-content-2536 — PR #2565 CI fixture rework
 **Was doing:** wired valid share-token store records into the older dashboard and notebook resource tests after CI reported 409 instead of their expected 200/404 responses.
 **Now:** check PR #2565 CI on the pushed head for the Java tests and Docker image job.
@@ -280,3 +286,8 @@ the tree first.
 **Was doing:** added `acceptance/2543` to prove the OAuth audience, explicit role mapping, and session-context requirements that the existing PR implements. The command spec passes on the PR head and fails on the current development base; there is no merge conflict.
 **Now:** check CI after the push. Local focused Maven tests stopped before compilation because GitHub Packages returned 401 for private Mondrian and olap4j artifacts.
 **Refs:** #2543, #2574
+
+## 2026-11-24 — feature/2599-sql-workbench-scroll-ds-info — PR #2609 CI rework
+**Was doing:** fixed the SQL result grid's flex shrink so the page reaches its pager, bounded the grid's own scrolling to keep headers sticky, and strengthened the Playwright scroll assertions.
+**Now:** check PR #2609 CI after the push; local Chromium cannot launch because this host lacks `libglib-2.0.so.0`, and focused Maven tests stop at GitHub Packages 401 before compilation.
+**Refs:** #2599, #2609

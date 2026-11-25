@@ -17,6 +17,11 @@ A promoted entry has the same shape plus `**Status:** promoted`, `**Supersedes:*
 
 ---
 
+## 2026-11-25 — SQL workbench: reconcile separately merged issue criteria
+Before updating a PR that spans several acceptance criteria, check whether another PR has already landed one of them. For #2599, preserve #2610's C1 scroll implementation on `development` and keep #2609 focused on its remaining datasource work.
+**Why:** carrying both scroll implementations through a base merge creates conflicting containers and duplicate browser coverage.
+**Source:** PR #2609 maintainer feedback; merged PR #2610
+
 ## 2026-11-24 — Model IDE: exercise the page's buffer and completion paths
 Use one buffer-key function at every page read and write site, and only offer live Ossie completions for the currently selected datasource. Test the actual editor-to-upload path and datasource switches, including late model responses.
 **Why:** a self-contained key helper test can pass while the page uploads stale XML, and a shared completion catalogue can show another datasource's names.
