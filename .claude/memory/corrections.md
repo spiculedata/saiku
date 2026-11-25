@@ -17,6 +17,11 @@ A promoted entry has the same shape plus `**Status:** promoted`, `**Supersedes:*
 
 ---
 
+## 2026-11-24 — Model IDE: exercise the page's buffer and completion paths
+Use one buffer-key function at every page read and write site, and only offer live Ossie completions for the currently selected datasource. Test the actual editor-to-upload path and datasource switches, including late model responses.
+**Why:** a self-contained key helper test can pass while the page uploads stale XML, and a shared completion catalogue can show another datasource's names.
+**Source:** PR #2490 review of #1428
+
 ## 2026-11-24 — SCIM user PUT: validate group grants before any user write
 Check every requested group's role before changing the username, profile, email, or enabled state in a full user replace.
 **Why:** a stale reserved or off-list group otherwise returns 400 after part of the PUT has persisted, leaving the IdP retrying a failed sync against changed data.
