@@ -40,7 +40,8 @@ import org.slf4j.LoggerFactory;
  * a no-arg constructor, so the repository is injected through {@link #setRepositoryReader} at
  * startup rather than through the constructor. Until that call lands — and for every reference this
  * class doesn't own — reads are delegated to Mondrian's stock {@link ApacheVfs2VirtualFileHandler},
- * so behaviour for {@code file:} / {@code http:} / {@code jar:} catalogs is exactly as before.
+ * except that {@code http(s)} catalogs are refused (saiku#2320, operator opt-in via
+ * {@link #ALLOW_HTTP_CATALOG_PROPERTY}).
  *
  * <p>Reads go through a {@link Function} rather than the filesystem so this holds for repository
  * backends with no filesystem at all — Saiku Cloud overrides {@code createRepositoryManager()} to
@@ -52,6 +53,13 @@ public class SaikuVirtualFileHandler implements VirtualFileHandler {
 
     /** Mondrian's property naming the handler implementation to instantiate. */
     public static final String HANDLER_PROPERTY = "mondrian.spi.virtualFileHandlerClass";
+
+    /**
+     * {@code true} re-enables Mondrian catalogs fetched over {@code http(s)} (saiku#2320). Default:
+     * refused — a catalog URL is fetched from the server's network vantage point, so an admin's
+     * schema can otherwise be turned into an SSRF primitive (CWE-918).
+     */
+    public static final String ALLOW_HTTP_CATALOG_PROPERTY = "saiku.mondrian.allowHttpCatalogs";
 
     /**
      * Reads a repository path, returning null when absent. Static because Mondrian owns this
@@ -230,7 +238,24 @@ public class SaikuVirtualFileHandler implements VirtualFileHandler {
         if (guard != null && url != null && url.trim().startsWith("file:")) {
             guard.assertReadable(java.nio.file.Path.of(stripFileScheme(url.trim())));
         }
+        // saiku#2320: an http(s) catalog is fetched by THIS server (the delegated VFS handler),
+        // so a datasource's Catalog= can be an SSRF primitive. Refuse it unless the operator
+        // opted in; file: catalogs stay governed by the SchemaFileAccessGuard above.
+        if (url != null && !allowHttpCatalogs()) {
+            String trimmed = url.trim().toLowerCase(java.util.Locale.ROOT);
+            if (trimmed.startsWith("http:") || trimmed.startsWith("https:")) {
+                log.warn(
+                        "Refused an http(s) Mondrian catalog: fetching it would read from the network ({})",
+                        ALLOW_HTTP_CATALOG_PROPERTY);
+                throw new FileNotFoundException("Refused http(s) Mondrian catalog reference (an admin may allow"
+                        + " it with -D" + ALLOW_HTTP_CATALOG_PROPERTY + "=true)");
+            }
+        }
         return delegate.readVirtualFile(url);
+    }
+
+    private static boolean allowHttpCatalogs() {
+        return Boolean.getBoolean(ALLOW_HTTP_CATALOG_PROPERTY);
     }
 
     /**

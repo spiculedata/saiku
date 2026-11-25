@@ -331,11 +331,16 @@ public final class JdbcUrlPolicy {
      * any properties in the URL, so a denied key smuggled through the map (e.g. a future caller
      * copying request-supplied properties) is exactly as dangerous as one in the URL. Today's
      * callers only put {@code user}/{@code password} here, which pass.
+     *
+     * <p>saiku#2320: the URL gets the same file-engine confinement rewrite as the
+     * {@code (url, user, password)} overload — the SQL workbench, the schema generator and
+     * {@code M3ToM4Converter} open connections through this form, and every open path must reach
+     * the driver confined.
      */
     public static Connection openConnection(String url, Properties info) throws SQLException {
         validate(url);
         rejectDeniedInfoProperties(url, info);
-        return DriverManager.getConnection(url, info);
+        return DriverManager.getConnection(confineFileEngines(url), info);
     }
 
     /**
@@ -361,10 +366,17 @@ public final class JdbcUrlPolicy {
         boolean h2 = lower.contains("jdbc:h2:");
         boolean wrapper = isMondrianWrapper(lower);
         boolean h2Driver = false;
+        boolean duckDbDriver = lower.contains("jdbc:duckdb:") || lower.contains("jdbc:quack:");
         if (wrapper) {
-            h2Driver = isH2Url(parseMondrian(plain).get("Jdbc"));
+            Util.PropertyList props = parseMondrian(plain);
+            h2Driver = isH2Url(lastValue(props, "Jdbc"));
+            duckDbDriver |= isFileEngineUrl(lastValue(props, "Jdbc"), "duckdb", "quack");
             for (String name : info.stringPropertyNames()) {
-                h2Driver |= "jdbc".equalsIgnoreCase(name.trim()) && isH2Url(info.getProperty(name));
+                if ("jdbc".equalsIgnoreCase(name.trim())) {
+                    String v = info.getProperty(name);
+                    h2Driver |= isH2Url(v);
+                    duckDbDriver |= isFileEngineUrl(v, "duckdb", "quack");
+                }
             }
         }
         for (String name : info.stringPropertyNames()) {
@@ -376,8 +388,13 @@ public final class JdbcUrlPolicy {
                 rejectH2Executable(pair);
                 rejectH2Executable(percentDecode(pair));
             }
+            if (duckDbDriver) {
+                // saiku#2320: a confinement key arriving through the info map would be applied
+                // case-insensitively in hash order alongside the URL's own options.
+                rejectConfinementKeyRaw(name, value);
+            }
             if (wrapper) {
-                checkMondrianEntry(name, value, h2Driver, 0);
+                checkMondrianEntry(name, value, h2Driver, duckDbDriver, 0);
             } else if (h2) {
                 checkH2Setting(name, value);
             }
@@ -482,9 +499,16 @@ public final class JdbcUrlPolicy {
 
         if ("h2".equals(scheme)) {
             checkH2Settings(url);
-            // saiku#2320: an H2 file database must live under saiku.home (or an operator root).
-            FileEngineConfinement.rejectH2PathOutsideRoots(url);
-            FileEngineConfinement.rejectH2PathOutsideRoots(decoded);
+        }
+        if (FILE_ENGINE_SCHEMES.contains(scheme)) {
+            // saiku#2320: a file database of an embedded engine must live under saiku.home (or an
+            // operator root); DuckDB/Quack may not carry their own confinement settings.
+            FileEngineConfinement.rejectFileEnginePathOutsideRoots(url, scheme);
+            FileEngineConfinement.rejectFileEnginePathOutsideRoots(decoded, scheme);
+        }
+        if ("duckdb".equals(scheme) || "quack".equals(scheme)) {
+            rejectDuckDbConfinementKeys(url);
+            rejectDuckDbConfinementKeys(decoded);
         }
         if (wrapper) {
             checkMondrianWrapper(url, depth);
@@ -508,6 +532,9 @@ public final class JdbcUrlPolicy {
         }
         return scheme;
     }
+
+    /** The engines whose URL names a database file on this host (saiku#2320). */
+    private static final Set<String> FILE_ENGINE_SCHEMES = Set.of("h2", "sqlite", "derby", "hsqldb");
 
     private static boolean isAllowedScheme(String scheme) {
         if (BUILT_IN_SCHEMES.contains(scheme)) {
@@ -594,6 +621,38 @@ public final class JdbcUrlPolicy {
         Matcher m = PROPERTY_KEY.matcher(url);
         while (m.find()) {
             rejectIfDeniedRawKey(m.group(1), calcite);
+        }
+    }
+
+    /**
+     * Refuse a user-supplied DuckDB (or Quack) confinement setting anywhere in the URL, in any
+     * spelling: {@code enable_external_access}, {@code allowed_directories}, {@code allowed_paths},
+     * {@code allowed_configs} and {@code lock_configuration} are managed by
+     * {@link FileEngineConfinement}. duckdb-java copies URL options into a {@code Properties} map
+     * and applies them in hash order, resolving names case-insensitively, so a caller-supplied
+     * value could pre-empt or undo the confinement defaults (saiku#2320). A copy whose value is
+     * exactly the confined default is benign and passes — a confined URL stays valid under
+     * {@link #validate}.
+     */
+    private static void rejectDuckDbConfinementKeys(String url) {
+        for (String token : FileEngineConfinement.duckDbOptionTokens(url)) {
+            int eq = token.indexOf('=');
+            if (eq > 0) {
+                rejectConfinementKeyRaw(token.substring(0, eq), token.substring(eq + 1));
+            }
+        }
+    }
+
+    /** The deny decision for one confinement key as written (including a {@code jdbc.} forward). */
+    private static void rejectConfinementKeyRaw(String rawKey, String rawValue) {
+        rejectNonAsciiKey(rawKey);
+        String key = normaliseKey(rawKey);
+        String forwarded = stripDriverPrefix(rawKey);
+        String stripped = forwarded == null ? key : normaliseKey(forwarded);
+        if (FileEngineConfinement.DUCKDB_CONFINEMENT_KEYS.contains(key)) {
+            FileEngineConfinement.rejectConfinementValue(key, rawKey, rawValue);
+        } else if (!stripped.equals(key) && FileEngineConfinement.DUCKDB_CONFINEMENT_KEYS.contains(stripped)) {
+            FileEngineConfinement.rejectConfinementValue(stripped, rawKey, rawValue);
         }
     }
 
@@ -739,10 +798,42 @@ public final class JdbcUrlPolicy {
     private static void checkMondrianWrapper(String url, int depth) {
         // Mondrian's own parser, so quoting and escaping are read exactly as Mondrian reads them.
         Util.PropertyList props = parseMondrian(url);
-        boolean h2Driver = isH2Url(props.get("Jdbc"));
+        String jdbcValue = lastValue(props, "Jdbc");
+        boolean h2Driver = isH2Url(jdbcValue);
+        boolean duckDbDriver = isFileEngineUrl(jdbcValue, "duckdb", "quack");
         for (Pair<String, String> p : props) {
-            checkMondrianEntry(p.left, p.right == null ? "" : p.right, h2Driver, depth);
+            checkMondrianEntry(p.left, p.right == null ? "" : p.right, h2Driver, duckDbDriver, depth);
         }
+    }
+
+    /** The last value of a (possibly duplicated) key, read case-insensitively — Mondrian takes the last. */
+    private static String lastValue(Util.PropertyList props, String key) {
+        String value = null;
+        for (Pair<String, String> p : props) {
+            if (key.equalsIgnoreCase(p.left)) {
+                value = p.right;
+            }
+        }
+        return value;
+    }
+
+    /** True when {@code url} is a {@code jdbc:<one of schemes>:} URL. */
+    private static boolean isFileEngineUrl(String url, String... schemes) {
+        if (url == null) {
+            return false;
+        }
+        String lower = percentDecode(url).trim().toLowerCase(Locale.ROOT);
+        for (String scheme : schemes) {
+            if (lower.startsWith(PREFIX + scheme + ":")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Package-visible seam for {@link FileEngineConfinement}'s wrapper rewrite (saiku#2320). */
+    static Util.PropertyList parseMondrianConnectString(String wrapperUrl) {
+        return parseMondrian(wrapperUrl);
     }
 
     private static Util.PropertyList parseMondrian(String wrapperUrl) {
@@ -766,11 +857,16 @@ public final class JdbcUrlPolicy {
     /**
      * One Mondrian property, from the parsed connect string or from an info map Mondrian merges
      * into it. Mondrian hands a {@code jdbc.<name>} property to the driver as {@code <name>}: the
-     * deny-list sees both spellings, and an H2 driver also gets the setting rules.
+     * deny-list sees both spellings, an H2 driver also gets the setting rules, and a DuckDB /
+     * Quack driver may not receive a confinement key (saiku#2320).
      */
-    private static void checkMondrianEntry(String name, String value, boolean h2Driver, int depth) {
+    private static void checkMondrianEntry(
+            String name, String value, boolean h2Driver, boolean duckDbDriver, int depth) {
         rejectIfDeniedRawKey(name, false);
         checkMondrianProperty(name.trim().toLowerCase(Locale.ROOT), value, depth);
+        if (duckDbDriver && stripDriverPrefix(name) != null) {
+            rejectConfinementKeyRaw(name, value);
+        }
         if (h2Driver && stripDriverPrefix(name) != null) {
             rejectH2Executable(name + "=" + value);
             checkH2Setting(name, value);

@@ -23,8 +23,8 @@ assert.ok(/FileEngineConfinement\.confine|confineFileEngines/.test(openBody), 'C
 assert.ok(/confineFileEngines/.test(ossie), 'C1: the Ossie warehouse URL is confined');
 assert.ok(olap.includes('JdbcUrlPolicy.openConnection('), 'C1: the OLAP connection goes through openConnection');
 
-// C2: H2 file paths are checked in the URL validator.
-assert.ok(/FileEngineConfinement\.rejectH2PathOutsideRoots|rejectH2File/.test(policy), 'C2: checkUrl confines H2 file paths');
+// C2: file-engine database paths are checked in the URL validator.
+assert.ok(/FileEngineConfinement\.rejectFileEnginePathOutsideRoots|rejectH2File/.test(policy), 'C2: checkUrl confines file-engine paths');
 
 // C3: opt-out is named in code and documented.
 assert.ok(confinement.includes('saiku.jdbc.fileEngineConfinement'), 'C3: opt-out property exists');

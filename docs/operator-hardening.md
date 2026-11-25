@@ -78,29 +78,68 @@ every connection path shares it: `JdbcUrlPolicy`. **On by default.**
 
 - **DuckDB** (`jdbc:duckdb:`, also inside a `jdbc:mondrian:Jdbc=` wrapper and the
   Ossie warehouse URL) opens with `enable_external_access=false`,
-  `allowed_directories=[<allowed roots>]` and `lock_configuration=true`. Local
-  files under the allowed roots stay readable; other paths and all network access
-  are refused, and `SET enable_external_access=true` fails because the
-  configuration is locked.
-- **H2** file databases (`jdbc:h2:<path>`, `file:`, `nio:`, `split:`, `zip:`) must
-  live under an allowed root, or the URL is rejected. `mem:`, `tcp:` and `ssl:`
-  URLs are not file URLs and are unaffected.
+  `allowed_directories=[<allowed roots>]` and `lock_configuration=true`. The
+  rewrite strips any URL-supplied copy of those keys first (in any case or
+  separator spelling), so exactly one copy of each option — ours — survives; a
+  user-supplied value that is *not* the confined default (`enable_external_access=false`,
+  `lock_configuration=true`, or an `allowed_directories` list equal to the
+  configured roots) is refused outright, on the URL and in the connection
+  properties map. Local files under the allowed roots stay readable; other paths
+  and all network access are refused, and `SET enable_external_access=true`
+  fails because the configuration is locked.
+- **H2** file databases must live under an allowed root, or the URL is rejected.
+  H2's own grammar is matched case-sensitively, so `MEM:` is a (relative, hence
+  rejected) file path, not an in-memory database; in-memory (`mem:`, `memFS:`,
+  `memLZF:`, `nioMemFS:`, `nioMemLZF:`) and remote (`tcp:`, `ssl:`) URLs are not
+  file URLs and are unaffected. `file:`, `zip:`, `split:` and `retry:` prefixes
+  are stripped to reach the path; any other `scheme:` prefix is refused rather
+  than resolved against the working directory (`nio:` / `nioMapped:` / `async:`
+  were removed in H2 2.x).
+- **SQLite, Derby and HSQLDB** file databases are confined the same way:
+  `jdbc:sqlite:<path>` (including its `file:` URI form), `jdbc:derby:<path>` /
+  `directory:` / `jar:`, and `jdbc:hsqldb:<path>` / `file:` must live under an
+  allowed root. In-memory (`sqlite :memory:`, `derby memory:` / `classpath:`,
+  `hsqldb mem:` / `res:`) and remote (`derby //host`, `net://`; `hsqldb
+  hsql://`, `hsqls://`, `http(s)://`) URLs are unaffected. Derby's `http:` /
+  `jcp:` sub-subprotocols are refused: they would fetch a database from the
+  network.
 - **Allowed roots** are `${saiku.home}` plus `saiku.jdbc.allowedFileRoots`. The
   launcher always sets `saiku.home`. If neither is set, confinement **fails
-  closed**: H2 file URLs are rejected with an error naming `saiku.home`, and
-  DuckDB still gets `enable_external_access=false` and `lock_configuration=true`
-  with no allowed directories, so it cannot read local files at all. Set
-  `saiku.home` (or `saiku.jdbc.allowedFileRoots`), or opt out below.
+  closed**: H2/SQLite/Derby/HSQLDB file URLs are rejected with an error naming
+  `saiku.home`, and DuckDB still gets `enable_external_access=false` and
+  `lock_configuration=true` with no allowed directories, so it cannot read local
+  files at all. Set `saiku.home` (or `saiku.jdbc.allowedFileRoots`), or opt out
+  below.
 
 | Property | Default | Meaning |
 |---|---|---|
-| `saiku.jdbc.fileEngineConfinement` | `true` | `false` opts out of all of the above. Use only if you must read DuckDB files over HTTP or keep H2 files outside the allowed roots and cannot list them. |
-| `saiku.jdbc.allowedFileRoots` | *(empty)* | Extra directories (platform path separator) DuckDB may read and H2 may keep databases in, e.g. `/mnt/warehouse:/srv/data`. |
-| `saiku.jdbc.duckdb.allowR2Uploads` | `false` | `true` leaves `jdbc:duckdb:r2://` upload URLs (saiku-cloud) unconfined, because they need `httpfs`. |
+| `saiku.jdbc.fileEngineConfinement` | `true` | `false` opts out of all of the above. Use only if you must read DuckDB files over HTTP or keep file-engine databases outside the allowed roots and cannot list them. |
+| `saiku.jdbc.allowedFileRoots` | *(empty)* | Extra directories (platform path separator) DuckDB may read and H2/SQLite/Derby/HSQLDB may keep databases in, e.g. `/mnt/warehouse:/srv/data`. |
+| `saiku.jdbc.duckdb.allowR2Uploads` | `false` | `true` leaves `jdbc:duckdb:r2://` upload URLs (saiku-cloud) unconfined, because they need `httpfs`. Deliberately global: DuckDB has no per-host allow-list for `httpfs`, so a narrower exemption would need a per-datasource flag instead. |
 
-Not covered here: `http(s):` Mondrian catalogs (`SaikuVirtualFileHandler`),
-SQLite / Derby / HSQLDB file paths, and `jdbc:quack:` (a remote DuckDB client).
-See the follow-up on #2320.
+Not covered here: `jdbc:quack:` (a remote DuckDB client — host-file access
+happens on the server it talks to, so the URL is not rewritten, though
+user-supplied confinement keys are still refused on it), and the DuckDB database
+path itself (opening the configured database is the datasource's purpose;
+external *reads* are what `enable_external_access=false` takes away).
+
+### Mondrian catalogs over http(s) (`saiku.mondrian.allowHttpCatalogs`)
+
+A Mondrian `Catalog=` of `http://` / `https://` is fetched **by the server** —
+`SaikuVirtualFileHandler` delegates it to Mondrian's stock VFS handler — so an
+admin's schema reference can be turned into an SSRF primitive (CWE-918).
+[#2320](https://github.com/spiculedata/saiku/issues/2320) refuses such catalogs
+by default. Set `saiku.mondrian.allowHttpCatalogs=true` only if you keep schemas
+on a web server; `file:` catalogs stay governed by the schema access guard
+(#1845) and `mondrian://` references by the repository, whatever this setting.
+
+**Upgrade note:** a plain-WAR deployment that runs without `saiku.home` set as a
+JVM system property now rejects every file-engine database URL — the seeded
+FoodMart H2 datasource included. The launcher and the Docker image always set
+`saiku.home`; if you run the WAR in your own servlet container, set
+`-Dsaiku.home=<dir>` (or list your data directories in
+`saiku.jdbc.allowedFileRoots`, or opt out with
+`saiku.jdbc.fileEngineConfinement=false`).
 
 ---
 
