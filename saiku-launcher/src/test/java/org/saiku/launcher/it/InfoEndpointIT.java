@@ -59,4 +59,14 @@ public class InfoEndpointIT {
         assertTrue(body.has("ask"));
         assertTrue(body.has("schemaGen"));
     }
+
+    @Test
+    public void diagnosticsTrailingSlash_is401Anonymous_notJersey403() throws Exception {
+        // saiku#2550a: the trailing-slash spelling used to fall through to the public
+        // /rest/saiku/info/** permitAll rule and stop only at the Jersey annotation
+        // (403). With the /diagnostics/** URL rule it must be stopped by the filter
+        // chain — an anonymous caller gets 401, same as the exact path.
+        HttpResponse<String> anonymous = harness.getAnon("/rest/saiku/info/diagnostics/");
+        assertEquals(401, anonymous.statusCode());
+    }
 }

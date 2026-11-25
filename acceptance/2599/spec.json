@@ -1,0 +1,71 @@
+{
+  "issue": 2599,
+  "title": "The SQL workbench reports what a datasource connects to (database product, catalog, default schema, credential-free URL) and lists the default schema's tables read-only",
+  "kind": "api",
+  "auth": "session",
+  "criteria": [
+    {
+      "id": "C2",
+      "given": "a logged-in ROLE_SQL_EXEC/ROLE_ADMIN caller on a default install (FoodMart demo seeded)",
+      "then": "GET /rest/saiku/sql-workbench/datasources/foodmart/info reports the database product, driver, catalog and default schema from DatabaseMetaData, and the JDBC URL it reports carries no credential (cf. #2547)"
+    },
+    {
+      "id": "C3",
+      "given": "the same caller",
+      "then": "GET /rest/saiku/sql-workbench/datasources/foodmart/tables lists the datasource's default schema tables read-only (the FoodMart H2 seed contains PUBLIC.\"account\"); a datasource name the caller is not entitled to is refused 400 UNKNOWN_DATASOURCE, never a distinguishable exists-but-denied"
+    }
+  ],
+  "steps": [
+    {
+      "name": "the datasource info names the database product and default catalog/schema, and its URL carries no credential",
+      "criterion": "C2",
+      "request": {
+        "method": "GET",
+        "path": "/rest/saiku/sql-workbench/datasources/foodmart/info",
+        "headers": { "Accept": "application/json" }
+      },
+      "expect": {
+        "status": 200,
+        "json": {
+          "name": { "equals": "foodmart" },
+          "databaseProductName": { "type": "string" },
+          "schema": { "type": "string" },
+          "url": {
+            "matches": "^(?!.*[pP][aA][sS][sS][wW][oO][rR][dD])jdbc:",
+            "because": "the URL is shown to help identify the target, but a password property or URL userinfo must never survive redaction (cf. #2547)"
+          }
+        }
+      }
+    },
+    {
+      "name": "the table list names the seeded FoodMart tables read-only",
+      "criterion": "C3",
+      "request": {
+        "method": "GET",
+        "path": "/rest/saiku/sql-workbench/datasources/foodmart/tables",
+        "headers": { "Accept": "application/json" }
+      },
+      "expect": {
+        "status": 200,
+        "json": {
+          "$": { "contains": "account", "because": "contains works only on an array, so this also proves the shape; the FoodMart H2 seed creates PUBLIC.\"account\"" }
+        }
+      }
+    },
+    {
+      "name": "a datasource the caller is not entitled to is reported as unknown, not denied",
+      "criterion": "C3",
+      "request": {
+        "method": "GET",
+        "path": "/rest/saiku/sql-workbench/datasources/no-such-datasource/info",
+        "headers": { "Accept": "application/json" }
+      },
+      "expect": {
+        "status": 400,
+        "json": {
+          "code": { "equals": "UNKNOWN_DATASOURCE" }
+        }
+      }
+    }
+  ]
+}

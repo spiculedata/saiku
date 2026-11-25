@@ -358,6 +358,47 @@ public class MailSendResourceTest {
         assertEquals(400, resp.getStatus());
     }
 
+    // ================================================================ saiku#2550f: stored-host relay gate
+
+    /** A resource whose mail config comes from the wizard FILE (not env) — the shape that can carry
+     *  a host written by an older build, past the save-time gate, straight to a dial. */
+    private MailSendResource fileStoredResource(MailConfigStore store, CapturingSender sender) {
+        MailSendPolicy policy = new MailSendPolicy(k -> "true", k -> null);
+        ConsentInviteService invite = new ConsentInviteService(policy, trust, suppression, consent, links);
+        MultiRecipientMailService multi = new MultiRecipientMailService(policy, gate, tokens, links);
+        MailSendResource r = new MailSendResource();
+        r.setMultiRecipientMailService(multi);
+        r.setConsentInviteService(invite);
+        r.setMailConfigResolver(new MailConfigResolver(m -> null, k -> null, store));
+        r.setUserService(new StubUserService(true));
+        r.setSenderFactory(c -> sender);
+        return r;
+    }
+
+    @Test
+    public void invite_refusesAStoredHostTheRelayGateRejects_nothingSent() throws Exception {
+        loginAdmin();
+        allowlist("a@example.com");
+        MailConfigStore store = new MailConfigStore(home);
+        store.save("127.0.0.1", 587, "u", "p", FROM, true, false, SELF_TO);
+        CapturingSender sender = new CapturingSender();
+        Response resp = fileStoredResource(store, sender).invite(inviteReq("a@example.com"));
+        assertEquals(400, resp.getStatus());
+        assertTrue("no SMTP dial happened", sender.sent.isEmpty());
+    }
+
+    @Test
+    public void send_refusesAStoredHostTheRelayGateRejects_nothingSent() throws Exception {
+        loginAdmin();
+        allowAndConfirm("a@example.com");
+        MailConfigStore store = new MailConfigStore(home);
+        store.save("127.0.0.1", 587, "u", "p", FROM, true, false, SELF_TO);
+        CapturingSender sender = new CapturingSender();
+        Response resp = fileStoredResource(store, sender).send(sendReq("a@example.com"));
+        assertEquals(400, resp.getStatus());
+        assertTrue("no SMTP dial happened", sender.sent.isEmpty());
+    }
+
     // ---- stub ----
 
     private static final class StubUserService extends UserService {

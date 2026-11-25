@@ -24,6 +24,9 @@ import org.saiku.web.rest.resources.notebooks.NotebookCell;
 import org.saiku.web.rest.resources.notebooks.NotebookCubeResolver;
 import org.saiku.web.security.share.ShareTokenAuthFilter.ShareGuestDetails;
 import org.saiku.web.service.SessionService;
+import org.saiku.web.share.ContentBinding;
+import org.saiku.web.share.ShareToken;
+import org.saiku.web.share.ShareTokenStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
@@ -53,6 +56,12 @@ import org.springframework.security.core.context.SecurityContextHolder;
  * the share owner's data scope via {@link SessionService#runAs} — a
  * delegation by someone who held GRANT — so the guest sees exactly what was
  * shared, but with no ability to author a query or widen the cube.
+ *
+ * <p><b>saiku#2536 — the link binds CONTENT, not only a path</b> (same rule as
+ * {@link ShareViewResource}): a notebook is raw-MDX-bearing, so an edit by a
+ * collaborator holding {@code WRITE} must never be executed under the
+ * minter's roles. The mint-time hash + changed-by-other flag are enforced
+ * before anything is served; the minter's own edits re-arm the binding.
  */
 @Path("/saiku/share/view/notebook")
 public class NotebookShareViewResource {
@@ -68,6 +77,9 @@ public class NotebookShareViewResource {
     private SessionService sessionService;
     private Query2Resource query2Resource;
     private OlapDiscoverService olapDiscoverService;
+    /** saiku#2536 — resolves the minted record the token names, for the
+     *  content binding (and the legacy first-use binding). */
+    private ShareTokenStore shareTokenStore;
 
     public void setDatasourceService(DatasourceService s) {
         this.datasourceService = s;
@@ -85,6 +97,10 @@ public class NotebookShareViewResource {
         this.olapDiscoverService = s;
     }
 
+    public void setShareTokenStore(ShareTokenStore s) {
+        this.shareTokenStore = s;
+    }
+
     /** The pinned notebook, so the viewer can render its cells. */
     @GET
     @Produces(MediaType.APPLICATION_JSON)
@@ -92,6 +108,10 @@ public class NotebookShareViewResource {
         ShareGuestDetails g = guest();
         if (g == null) {
             return invalid();
+        }
+        Response conflict = contentBindingError(g);
+        if (conflict != null) {
+            return harden(conflict);
         }
         Notebook nb = loadNotebook(g);
         if (nb == null) {
@@ -113,6 +133,10 @@ public class NotebookShareViewResource {
         ShareGuestDetails g = guest();
         if (g == null) {
             return invalid();
+        }
+        Response conflict = contentBindingError(g);
+        if (conflict != null) {
+            return harden(conflict);
         }
         Notebook nb = loadNotebook(g);
         if (nb == null || nb.cells == null) {
@@ -161,6 +185,44 @@ public class NotebookShareViewResource {
     }
 
     /* --------------------------- helpers ---------------------------- */
+
+    /** Same mint-time content binding as {@link ShareViewResource#contentBindingError}
+     *  (saiku#2536) — see that method for the full contract. */
+    private Response contentBindingError(ShareGuestDetails g) {
+        ShareToken t = shareTokenStore == null ? null : shareTokenStore.load(g.token);
+        if (t == null) {
+            // The filter validated this token a moment ago; a concurrent
+            // revoke must not turn a missing record into a data read. Refuse.
+            return ContentBinding.conflict();
+        }
+        if (t.contentChangedByOther) {
+            log.warn(
+                    "refusing share read of {} — content was written by someone other than the minter (saiku#2536)",
+                    t.dashboardPath);
+            return ContentBinding.conflict();
+        }
+        String raw;
+        try {
+            raw = datasourceService.getFileData(g.dashboardPath, g.ownerUser, g.ownerRoles);
+        } catch (RuntimeException e) {
+            return null; // unreadable → the load path produces the 404.
+        }
+        if (raw == null || raw.isEmpty()) {
+            return null;
+        }
+        if (t.contentSha256 == null) {
+            // Legacy unbound record — bind it to the content this read sees.
+            shareTokenStore.bindContentSha256(g.token, ContentBinding.sha256Hex(raw));
+            return null;
+        }
+        if (!ContentBinding.matches(t.contentSha256, raw)) {
+            log.warn(
+                    "refusing share read of {} — content no longer matches the minted binding (saiku#2536)",
+                    t.dashboardPath);
+            return ContentBinding.conflict();
+        }
+        return null;
+    }
 
     private Notebook loadNotebook(ShareGuestDetails g) {
         // Defence-in-depth: re-assert the pinned path is a notebook at the

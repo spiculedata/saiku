@@ -318,6 +318,10 @@
 		display: flex;
 		align-items: center;
 		gap: var(--space-3);
+		/* saiku#2599 C4: with Query Editor, Dashboards, Apps, Notebooks, MDX Workbench,
+	   SQL Workbench, Admin, Sponsor and Sign out the row no longer fits 1024px. Wrapping
+	   onto a second line keeps every item reachable (and is invisible when they fit). */
+		flex-wrap: wrap;
 	}
 	.topbar__actions :global(.btn) {
 		height: 32px;
