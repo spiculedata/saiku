@@ -41,19 +41,29 @@ block() {
   exit 2
 }
 
-# Tokenize a shell command. Approximate on purpose — it ignores quoting, so a
-# refspec buried inside quotes is not seen. That errs towards allowing the call,
-# which is the right way for a guard that exists to catch accidents.
+# Tokenize a shell command. Approximate on purpose. Operators written without
+# surrounding spaces (`cd .&&git push`, `mvn clean deploy;`) and quotes that
+# hide a refspec or a sub-command are normalised away first, so a compound
+# line is scanned as the separate commands it actually runs. That errs
+# towards blocking, which is the right way for a guard that exists to catch
+# accidents; a refspec buried inside quotes is still seen (minus the quotes).
 tokens() {
+  local line="$1"
+  line="${line//\$\(/ }"     # $( starts a command substitution
+  line="${line//\`/ }"       # so does a backtick
+  line="${line//[;&|()]/ }"  # command separators and grouping
+  line="${line//\"/ }" # a quote must not hide an operator or refspec from tokens
+  line="${line//\'/ }"
   # shellcheck disable=SC2206 # deliberate word splitting into "$@" below
-  local words=($1)
+  local words=($line)
   printf '%s\n' "${words[@]}"
 }
 
 # True when the command invokes $1 anywhere in it — not only as its first
-# token — so a compound line like `cd x && git push …` is still scanned.
+# token — so a compound line like `cd x && git push …` is still scanned. An
+# absolute or path-qualified spelling (/usr/bin/git, ./git) counts too.
 invokes() {
-  tokens "$2" | grep -qx -- "$1"
+  tokens "$2" | grep -qx -e "$1" -e ".*/$1"
 }
 
 # Print every token that follows an occurrence of the sub-command $1 (all
@@ -184,24 +194,50 @@ bash)
       deploy | deploy:* | *:deploy)
         block "'mvn deploy' is blocked — publishing happens in CI when a v* tag is pushed (see .agents/skills/cut-release/SKILL.md)."
         ;;
+      exec:* | *:exec | *:exec-maven-plugin:*)
+        block "'mvn exec' runs an arbitrary executable and is not on the agent's allowed list — a safe goal before it does not make it safe. Ask a maintainer."
+        ;;
       esac
     done < <(tokens "$command")
   fi
 
-  # Rule 5 — never bypass a write gate.
-  if invokes gh "$command" && [ "$(tokens "$command" | grep -cx -e '--admin')" != 0 ]; then
+  # Rule 5 — never bypass a write gate. pflag accepts --admin=true on a bool
+  # flag, so the = form counts too.
+  if invokes gh "$command" && [ "$(tokens "$command" | grep -cx -e '--admin' -e '--admin=.*')" != 0 ]; then
     block "'--admin' is blocked: it bypasses the branch-protection gate. Wait for the required checks, or ask a maintainer."
   fi
+
+  # Rule 4b — credential files are out of bounds for agents. The settings.json
+  # Bash denies only cover the plain spelling; here the whole command line is
+  # visible, so a flag, a ~/$HOME spelling or an absolute path is caught too:
+  # `cat -n .env`, `cat -- .env`, `cat $HOME/.ssh/id_rsa` and
+  # `cat /Users/me/.aws/credentials` all block.
+  while IFS= read -r t; do
+    case "$t" in
+    "\$HOME"/*) t="${t/#\$HOME/$HOME}" ;;
+    esac
+    cp="$(canon_path "$t")"
+    case "$cp" in
+    */.env | */.env.* | */.ssh/* | */.aws/* | */.npmrc | */.m2/settings.xml | *.pem | *.key | *id_rsa*)
+      block "'$t' is a credential file — agents do not read secrets (see AGENTS.md)."
+      ;;
+    esac
+  done < <(tokens "$command")
   ;;
 
 edit | write)
   path="$(json_get file_path)"
   [ -z "$path" ] && exit 0
   norm="$(canon_path "$path")"
+  # Rules 6–8 compare against literal lowercase spellings, but the edit lands
+  # on macOS's case-insensitive default volume: .Claude/Settings.json opens the
+  # real settings file. Match on a lowercased form so a case variant cannot
+  # widen permissions (blocking more often is the safe direction here).
+  norm_lc="$(printf '%s' "$norm" | tr '[:upper:]' '[:lower:]')"
 
   # Rule 6 — saiku-home/ is runtime state, seeded-if-absent and gitignored.
   # Editing it never ships and silently diverges from the tracked seed.
-  case "$norm" in
+  case "$norm_lc" in
   *saiku-home/* | */saiku-home)
     block "'$norm' is under saiku-home/, which is per-machine runtime state and is never seeded again once it exists. Edit the tracked source instead (see AGENTS.md, 'Mondrian 4 virtual cubes')."
     ;;
@@ -211,7 +247,7 @@ edit | write)
   # suffix of the canonicalised path, so absolute and ../ spellings are caught
   # too (editing some other checkout's settings is denied as well — this
   # errors towards blocking, which is the safe direction for this rule).
-  case "$norm" in
+  case "$norm_lc" in
   *"/.claude/settings.json" | *"/.claude/settings.local.json" | *"/.claude/settings.json."*)
     block "'$norm' is this guard's own configuration. Changing it is a maintainer decision — raise it in a PR instead of editing it in-session."
     ;;
@@ -220,7 +256,7 @@ edit | write)
   # Rule 8 — the guard cannot weaken itself: the hook reads this script on
   # every call, so editing it in-session widens permissions exactly as
   # editing its settings would.
-  case "$norm" in
+  case "$norm_lc" in
   *"scripts/agent-guard.sh")
     block "'$norm' is this guard. Changing it is a maintainer decision — raise it in a PR instead of editing it in-session."
     ;;
