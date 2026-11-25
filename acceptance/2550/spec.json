@@ -1,0 +1,21 @@
+{
+  "issue": 2550,
+  "title": "Security hygiene follow-ups from the 2026-11 review (twelve small items)",
+  "kind": "ui",
+  "criteria": [
+    { "id": "C1", "given": "the Spring Security URL rules", "then": "the admin-only diagnostics rule covers the trailing-slash spelling (/rest/saiku/info/diagnostics/**) so an anonymous request there is stopped by the URL rule (401), not by the Jersey annotation (403)" },
+    { "id": "C2", "given": "a demo gate send request", "then": "DemoGateResource records a limiter hit for every send BEFORE the provider dial, not only when sendCode throws" },
+    { "id": "C3", "given": "the launcher's Jetty WebAppContext", "then": "the default servlet's dirAllowed init-param is false, so a directory URL answers 403, not a listing" },
+    { "id": "C4", "given": "two dashboard paths differing only by / versus _", "then": "their comment and history sidecars derive from a hash of the exact path (DashboardSidecars), so they are DIFFERENT files; reads fall back to the legacy sanitised name and the first write retires it" },
+    { "id": "C5", "given": "the email health and self-send endpoints", "then": "the operator's selfTo address is echoed only to ROLE_ADMIN callers (health omits it, self-send stops echoing it); other callers get the configured booleans / a plain sent status" },
+    { "id": "C6", "given": "the admin invite and multi-recipient send endpoints", "then": "both dial only after the stored SMTP host passes SmtpHostValidator (env-managed relays trusted as-is), like the test-send endpoint already does" },
+    { "id": "C7", "given": "the webhook SSRF address block-list", "then": "it covers NAT64 64:ff9b::/96, 6to4 2002::/16 (via its embedded IPv4) and IPv4-compatible ::a.b.c.d (via its embedded IPv4)" },
+    { "id": "C8", "given": "the SQL workbench result materialisation", "then": "cells are capped at MAX_CELL_BYTES stringified (marked when truncated) and reading stops once the whole result passes MAX_RESULT_BYTES, reporting truncated" },
+    { "id": "C9", "given": "the Google Sheets add-on's setValues path", "then": "toSheetValues neutralises strings starting with =, +, - or @ with a leading apostrophe, in headers and cell values" },
+    { "id": "C10", "given": "the what-if endpoint's client-supplied names", "then": "measure/cube are plain names, level/member/payerLevel/trendLevel must be full MDX unique names, the member must be on the level, and the create/write/re-query/restore sequence is serialised per connection" },
+    { "id": "C11", "given": "GET /rest/saiku/api/graphql/schema.graphql", "then": "it answers 403 unless the caller holds ROLE_ADMIN — the static SDL (which names elements Mondrian roles may hide) is not served to ordinary users" },
+    { "id": "C12", "given": "the WAR packaging", "then": "the saiku-ui webResources copy excludes *.map, so no JavaScript source map ships under /ui/" }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}

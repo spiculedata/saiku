@@ -514,6 +514,57 @@ public class SqlWorkbenchServiceTest {
         assertEquals(0, tableCount("T3"));
     }
 
+    // --- saiku#2550h: byte caps on materialised cells and the result as a whole ---
+
+    @Test
+    public void anOversizedCellIsTruncatedToTheCellCap() {
+        SqlWorkbenchService.SqlQueryResult result = service.execute(
+                "alice",
+                sqlExecRoles,
+                DATA_SOURCE_ID,
+                "SELECT REPEAT('x', 200000) AS big FROM SYSTEM_RANGE(1, 1)",
+                null);
+        assertEquals(1, result.rowCount());
+        Object cell = result.rows().get(0).get(0);
+        String s = String.valueOf(cell);
+        assertTrue("cell is capped to the cell limit plus marker", s.length() < 70_000);
+        assertTrue("truncated cell is marked", s.endsWith(SqlWorkbenchService.CELL_TRUNCATION_MARKER));
+    }
+
+    @Test
+    public void resultReadingStopsAtTheResultByteCap() {
+        SqlWorkbenchService.SqlQueryResult result = service.execute(
+                "alice",
+                sqlExecRoles,
+                DATA_SOURCE_ID,
+                "SELECT REPEAT('x', 70000) AS big FROM SYSTEM_RANGE(1, 200)",
+                null);
+        assertTrue("reading stops at the byte cap, not the row cap", result.rowCount() < 200);
+        assertTrue(result.truncated());
+        long bytes = result.rows().stream()
+                .flatMap(List::stream)
+                .mapToLong(cell -> String.valueOf(cell).getBytes(java.nio.charset.StandardCharsets.UTF_8).length)
+                .sum();
+        assertTrue("materialised cells stay within the result cap", bytes <= SqlWorkbenchService.MAX_RESULT_BYTES);
+    }
+
+    @Test
+    public void truncationNeverSplitsASurrogatePair() {
+        String input = "x".repeat(SqlWorkbenchService.MAX_CELL_BYTES - 1) + "😀";
+        String cut = SqlWorkbenchService.truncateCell(input);
+        assertEquals(
+                "x".repeat(SqlWorkbenchService.MAX_CELL_BYTES - 1) + SqlWorkbenchService.CELL_TRUNCATION_MARKER, cut);
+    }
+
+    @Test
+    public void wideRowIsNotMaterialisedPastTheResultCap() {
+        String columns = String.join(", ", java.util.Collections.nCopies(165, "REPEAT('x', 70000)"));
+        SqlWorkbenchService.SqlQueryResult result =
+                service.execute("alice", sqlExecRoles, DATA_SOURCE_ID, "SELECT " + columns, null);
+        assertTrue(result.truncated());
+        assertEquals(0, result.rowCount());
+    }
+
     /** Rows in INFORMATION_SCHEMA.TABLES matching a table name (0 when it was never created). */
     private long tableCount(String tableName) {
         SqlWorkbenchService.SqlQueryResult result = service.execute(

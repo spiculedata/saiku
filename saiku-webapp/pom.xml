@@ -162,6 +162,15 @@
                         <resource>
                             <directory>${project.basedir}/../saiku-ui/dist</directory>
                             <targetPath>ui</targetPath>
+                            <!-- saiku#2550l: don't ship JavaScript source maps in the
+                                 WAR. saiku-embed.js.map, saiku-chart.js.map and
+                                 saiku-dashboard.js.map are ~14 MB of readable source
+                                 served from /ui/*.map — production payloads for a
+                                 dev-time debugging aid. Developers rebuild the bundle
+                                 with maps when they need them. -->
+                            <excludes>
+                                <exclude>**/*.map</exclude>
+                            </excludes>
                         </resource>
                     </webResources>
                 </configuration>
