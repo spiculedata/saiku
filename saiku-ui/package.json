@@ -91,7 +91,7 @@
 		"html-to-image": "^1.11.13",
 		"jspdf": "^4.2.1",
 		"monaco-editor": "^0.57.0",
-		"tailwind-merge": "^3.7.0",
+		"tailwind-merge": "^3.7.1",
 		"tailwind-variants": "^4.0.2",
 		"yaml": "^2.9.1"
 	},

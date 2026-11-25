@@ -48,7 +48,7 @@
 	"dependencies": {
 		"bits-ui": "^2.21.0",
 		"clsx": "^2.1.1",
-		"tailwind-merge": "^3.7.0",
+		"tailwind-merge": "^3.7.1",
 		"tailwind-variants": "^4.0.2"
 	},
 	"devDependencies": {
