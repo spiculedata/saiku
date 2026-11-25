@@ -1,0 +1,29 @@
+{
+  "issue": 2549,
+  "title": "The agent guard denies refspec and compound push lines and protects its own script; gh api and mvn are not blanket-allowed",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "the issue's steps 1 to 6 are piped to the guard as tool calls",
+      "then": "every one is denied (exit 2): refspec destinations (HEAD:development, feature/x:main, +HEAD:development, :development), compound lines, -fu / +refspec / --mirror force spellings, an unsignoffed compound git commit, fully-qualified mvn deploy goals, gh pr merge --admin after cd, and absolute or ../ spellings of .claude/settings.json and of scripts/agent-guard.sh itself"
+    },
+    {
+      "id": "C2",
+      "given": "the checked-in .claude/settings.json",
+      "then": "allow no longer carries Bash(gh api:*) or a blanket Bash(mvn:*)/Bash(mvn -B:*)/Bash(mvn -pl:*), Bash(mvn exec:*) is ask-first, and deny mirrors the secret-path Read denies for Bash cat/grep"
+    },
+    {
+      "id": "C3",
+      "given": "routine read-only commands (git status, mvn verify, gh pr view, a feature-branch push, --force-with-lease)",
+      "then": "the guard still allows them"
+    },
+    {
+      "id": "C4",
+      "given": "AGENTS.md 'Permissions and guard'",
+      "then": "it matches the behaviour: gh api behind a prompt, mvn exec:* ask-first, and the guard script itself protected"
+    }
+  ],
+  "command": ["bash", "check.sh"],
+  "timeoutSeconds": 120
+}
