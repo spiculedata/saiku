@@ -106,6 +106,19 @@ public class SqlWorkbenchService {
         String validated;
         try {
             validated = ReadOnlySqlGuard.validatedStatement(sql);
+        } catch (ReadOnlySqlGuard.SqlSyntaxException syntax) {
+            // saiku#2598: an unparseable statement is a syntax problem, not a permission problem —
+            // a distinct code so the UI and API clients can tell the two apart. Still a refusal:
+            // the guard stays fail-closed and nothing reaches a JDBC driver.
+            audit(
+                    username,
+                    dataSourceId,
+                    sql,
+                    SqlWorkbenchAuditEntry.OUTCOME_REJECTED,
+                    null,
+                    syntax.getMessage(),
+                    elapsedMs(started));
+            throw new SqlWorkbenchException(SqlWorkbenchException.Code.SQL_SYNTAX_ERROR, syntax.getMessage());
         } catch (IllegalArgumentException rejected) {
             audit(
                     username,

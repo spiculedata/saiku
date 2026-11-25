@@ -106,6 +106,27 @@ public class SqlWorkbenchResourceTest {
         assertEquals("READ_ONLY_VIOLATION", body.code());
     }
 
+    /** saiku#2598 — an unparseable statement is a distinct SQL_SYNTAX_ERROR, still 400, with the
+     *  parse position in the message; a genuine write keeps READ_ONLY_VIOLATION. */
+    @Test
+    public void query_unparseable_returns400WithSqlSyntaxErrorCodeAndPosition() {
+        Response response = resource.query(new QueryRequest(DATA_SOURCE_ID, "select * from 'account'", null));
+        assertEquals(400, response.getStatus());
+        ErrorBody body = (ErrorBody) response.getEntity();
+        assertEquals("SQL_SYNTAX_ERROR", body.code());
+        assertTrue(body.message().contains("SQL syntax error at line 1, column 15"));
+        assertTrue(body.message().contains("Only read-only statements can be run"));
+    }
+
+    @Test
+    public void query_delete_stillReturns400WithReadOnlyViolationCode() {
+        Response response = resource.query(new QueryRequest(DATA_SOURCE_ID, "DELETE FROM customer", null));
+        assertEquals(400, response.getStatus());
+        ErrorBody body = (ErrorBody) response.getEntity();
+        assertEquals("READ_ONLY_VIOLATION", body.code());
+        assertTrue(body.message().contains("Only read-only queries"));
+    }
+
     @Test
     public void query_missingSql_returns400() {
         Response response = resource.query(new QueryRequest(DATA_SOURCE_ID, "", null));

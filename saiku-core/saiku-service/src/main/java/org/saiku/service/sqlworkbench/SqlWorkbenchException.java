@@ -17,6 +17,9 @@ public class SqlWorkbenchException extends RuntimeException {
     public enum Code {
         UNKNOWN_DATASOURCE,
         READ_ONLY_VIOLATION,
+        /** saiku#2598: the statement could not be parsed at all — a syntax problem the caller
+         *  fixes by correcting the SQL, distinct from a refused write (READ_ONLY_VIOLATION). */
+        SQL_SYNTAX_ERROR,
         QUERY_FAILED
     }
 

@@ -514,6 +514,37 @@ public class SqlWorkbenchServiceTest {
         assertEquals(0, tableCount("T3"));
     }
 
+    /**
+     * saiku#2598 — a statement the guard cannot parse is a SYNTAX error (SQL_SYNTAX_ERROR), not a
+     * permission problem: the message carries the parse position and the refusal is still audited.
+     */
+    @Test
+    public void unparseableStatement_isRejectedAsSqlSyntaxError_notReadOnlyViolation() {
+        SqlWorkbenchException ex = assertThrows(
+                SqlWorkbenchException.class,
+                () -> service.execute("alice", sqlExecRoles, DATA_SOURCE_ID, "select * from 'account'", null));
+        assertEquals(SqlWorkbenchException.Code.SQL_SYNTAX_ERROR, ex.getCode());
+        assertTrue(ex.getMessage().contains("SQL syntax error"));
+        assertTrue(ex.getMessage().contains("Only read-only statements can be run"));
+        assertEquals(
+                SqlWorkbenchAuditEntry.OUTCOME_REJECTED,
+                auditLog.recent(1, 0, null).get(0).outcome);
+    }
+
+    /** saiku#2598 — an unterminated quote names the unterminated quote. */
+    @Test
+    public void unbalancedQuote_isRejectedAsSqlSyntaxError_withItsOwnMessage() {
+        SqlWorkbenchException ex = assertThrows(
+                SqlWorkbenchException.class,
+                () -> service.execute(
+                        "alice", sqlExecRoles, DATA_SOURCE_ID, "select * from account where name = 'o", null));
+        assertEquals(SqlWorkbenchException.Code.SQL_SYNTAX_ERROR, ex.getCode());
+        assertTrue(ex.getMessage().contains("Unterminated string or identifier quote"));
+        assertEquals(
+                SqlWorkbenchAuditEntry.OUTCOME_REJECTED,
+                auditLog.recent(1, 0, null).get(0).outcome);
+    }
+
     /** Rows in INFORMATION_SCHEMA.TABLES matching a table name (0 when it was never created). */
     private long tableCount(String tableName) {
         SqlWorkbenchService.SqlQueryResult result = service.execute(

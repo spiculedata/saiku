@@ -118,7 +118,8 @@ A failed request returns `400` with `{code, message}`:
 | `code` | Meaning |
 | --- | --- |
 | `INVALID_REQUEST` | Missing `sql` or `datasource` in the body. |
-| `READ_ONLY_VIOLATION` | The statement failed `ReadOnlySqlGuard`. |
+| `READ_ONLY_VIOLATION` | The statement failed `ReadOnlySqlGuard` — a refused write or a construct the guard rejects outright (JDBC escapes, executable comments, stacked statements, `EXPLAIN`). |
+| `SQL_SYNTAX_ERROR` | The statement could not be parsed as read-only SQL at all (saiku#2598) — still a 400 refusal, but the message is a syntax error carrying the standard grammar's line/column and a short reason (e.g. `SQL syntax error at line 1, column 15 near "'account'": table names are identifiers — use account or "account", not 'account'. Only read-only statements can be run in the SQL workbench.`), so a typo does not read like a permission problem. An unterminated quote gets its own message. No stack trace or class name, bounded to 400 chars. |
 | `UNKNOWN_DATASOURCE` | No datasource matches the given name/id. |
 | `QUERY_FAILED` | The statement reached the driver and failed — `message` is the driver's own error text (bounded to 500 chars), which is deliberately **not** scrubbed the way other resources scrub SQL/exception detail from responses (see `add-rest-endpoint.prompt.md`): a query tool that hides why a query failed isn't usable, and the caller already holds an elevated grant equivalent to direct warehouse access. It never carries a Java stack trace or class name. The same code is used when a backend with a session read-only switch refuses that session: the caller's statement was **not** executed. |
 
