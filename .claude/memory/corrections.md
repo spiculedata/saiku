@@ -17,6 +17,15 @@ A promoted entry has the same shape plus `**Status:** promoted`, `**Supersedes:*
 
 ---
 
+## 2026-11-25 — CI credential gate: track non-redirect credential writes
+When tracking credential files by path, include `tee`, in-place edits, and script writes that name `settings.xml` or `.npmrc`; keep explicit custom paths so later Maven `-s` and `rm` steps are modeled.
+**Why:** redirect-only tracking let a later PR-controlled build read a token written by common commands while the gate reported no finding.
+**Source:** PR #2494 review of #2459
+
+## 2026-11-24 — CI security gates: test ordinary workflow and credential spellings
+When a gate parses GitHub Actions, cover scalar and mapping `on:` triggers, both `secrets.GITHUB_TOKEN` and `github.token`, `permissions: write-all`, and credential files supplied through tool flags or `.npmrc`.
+**Why:** a gate that recognizes only one valid spelling can pass while an equivalent credential-bearing PR build runs.
+**Source:** PR #2494 reviews of the #2459 credential-lifecycle gate
 ## 2026-11-25 — SQL workbench: reconcile separately merged issue criteria
 Before updating a PR that spans several acceptance criteria, check whether another PR has already landed one of them. For #2599, preserve #2610's C1 scroll implementation on `development` and keep #2609 focused on its remaining datasource work.
 **Why:** carrying both scroll implementations through a base merge creates conflicting containers and duplicate browser coverage.

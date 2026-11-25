@@ -76,10 +76,26 @@ pushed down; normal sessions append and the history stays useful.
 ## Log
 
 ## 2026-11-25 — fix/2598-workbench-syntax-error — PR #2608 latest base merge
-**Was doing:** merged current development into the PR branch, keeping #2598 syntax tests, #2599 datasource tests, #2550 result-size tests, and both handoff notes; combined their test floors.
-**Now:** check PR #2608 CI on the new merge commit, especially the JDK 22 build and Model IDE browser test.
+**Was doing:** merged development through 5ce354285 into the PR branch, keeping #2598 syntax tests, #2599 datasource tests, #2550 result-size tests, and every handoff entry; combined their test floors.
+**Now:** check PR #2608 CI on the latest merge commit; the prior merge's CI passed before the base advanced again.
 **Watch out:** local Maven tests stop at GitHub Packages 401; local Chromium lacks `libglib-2.0.so.0`. UI check, 2,732 Vitest tests, lint, build, and Java Spotless passed.
 **Refs:** #2598, #2599, #2550, PR #2608
+
+## 2026-11-25 — feature/2459-ci-secret-lifecycle-gate — PR #2494 base conflict rework
+**Was doing:** merged current development into the PR branch, retaining both sides of the corrections and session entries; the credential gate remains unchanged.
+**Now:** check PR #2494 CI after the push, especially the Python scripts and acceptance gate.
+**Watch out:** local Maven verify stops before compilation because GitHub Packages returns 401 for Mondrian and olap4j; the Python and acceptance suites pass.
+**Refs:** #2459, PR #2494
+
+## 2026-11-25 — feature/2459-ci-secret-lifecycle-gate — PR #2494 review rework
+**Was doing:** merged development and restored detection of non-redirect credential writes, PR-tree switches, and npm config writes with regression fixtures.
+**Now:** check PR #2494 CI on the pushed head; the Python suite and acceptance command pass locally.
+**Refs:** #2459, PR #2494
+
+## 2026-11-24 — feature/2459-ci-secret-lifecycle-gate — trusted checkout rework
+**Was doing:** tightened PR #2494's trusted-base detection to require the base SHA as the full checkout ref and added regression fixtures for comment, path-only, and checkout-action cases.
+**Now:** check PR #2494 CI after the push; the Python script suite and acceptance check pass locally.
+**Refs:** #2459, #2494
 
 ## 2026-11-25 — feature/2547-redact-connection-error-logs — PR #2594 base merge
 **Was doing:** merged current development into the existing PR branch and retained its earlier redaction fixes and tests.
@@ -305,6 +321,10 @@ the tree first.
 **Now:** check CI after the push. Local focused Maven tests stopped before compilation because GitHub Packages returned 401 for private Mondrian and olap4j artifacts.
 **Refs:** #2543, #2574
 
+## 2026-11-24 — feature/2459-ci-secret-lifecycle-gate — PR #2494 review rework
+**Was doing:** covered scalar `on: pull_request`, `github.token`, `permissions: write-all`, explicit Maven settings paths, and `.npmrc` in the credential-lifecycle gate, with fixtures for each review case. The latest development tip merged cleanly in a dry run, so no base merge was needed.
+**Now:** check PR #2494 CI after the push. The Python script suite and acceptance spec passed locally.
+**Refs:** #2459, #2494
 ## 2026-11-24 — feature/2599-sql-workbench-scroll-ds-info — PR #2609 CI rework
 **Was doing:** fixed the SQL result grid's flex shrink so the page reaches its pager, bounded the grid's own scrolling to keep headers sticky, and strengthened the Playwright scroll assertions.
 **Now:** check PR #2609 CI after the push; local Chromium cannot launch because this host lacks `libglib-2.0.so.0`, and focused Maven tests stop at GitHub Packages 401 before compilation.
