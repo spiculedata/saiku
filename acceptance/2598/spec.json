@@ -1,0 +1,165 @@
+{
+	"issue": 2598,
+	"title": "The SQL workbench refuses a syntax error as a read-only violation instead of reporting the parse error",
+	"kind": "api",
+	"auth": "session",
+	"criteria": [
+		{
+			"id": "C1",
+			"given": "a logged-in ROLE_SQL_EXEC caller posting a statement no grammar can parse and no lexical allowance covers (select * from 'account' — a string literal where an identifier belongs; and a typo, selec 1)",
+			"then": "the workbench still refuses it with 400 — the guard stays fail-closed — but the response code is SQL_SYNTAX_ERROR and the message is a syntax error carrying the standard grammar's position and a short reason, and it still says only read-only statements can run; it is not READ_ONLY_VIOLATION"
+		},
+		{
+			"id": "C2",
+			"given": "the same caller posting a genuine write (DELETE FROM customer)",
+			"then": "the workbench refuses it with 400 READ_ONLY_VIOLATION — today's wording and code for a real write are unchanged"
+		},
+		{
+			"id": "C3",
+			"given": "the same caller posting a statement with a quote still open at end of input (select * from account where name = 'o)",
+			"then": "the workbench refuses it with 400 SQL_SYNTAX_ERROR and the message names the unterminated string or identifier quote"
+		},
+		{
+			"id": "C5",
+			"given": "the workbench allowlist as the backend enforces it (SELECT / WITH / VALUES / TABLE / DESCRIBE, plus the lexical SHOW / DESC allowance)",
+			"then": "a parsed but non-query statement (CALL some_proc(1)) is refused with a message that names that allowlist — the surface the UI hint text must match"
+		}
+	],
+	"steps": [
+		{
+			"name": "a quoted string where an identifier belongs is refused as a syntax error with the parser's position, not as a read-only violation",
+			"criterion": "C1",
+			"request": {
+				"method": "POST",
+				"path": "/rest/saiku/sql-workbench/query",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"json": {
+					"datasource": "foodmart",
+					"sql": "select * from 'account'"
+				}
+			},
+			"expect": {
+				"status": 400,
+				"json": {
+					"code": {
+						"equals": "SQL_SYNTAX_ERROR",
+						"because": "a statement that cannot be parsed is a syntax problem, not a permission problem"
+					},
+					"message": {
+						"matches": "(?=[\\s\\S]*SQL syntax error at line 1, column 15)(?=[\\s\\S]*table names are identifiers — use account or \"account\", not 'account')(?=[\\s\\S]*Only read-only statements can be run)",
+						"because": "the message carries the standard grammar's position, a short reason for the single-quote mistake, and still says only read-only statements can run"
+					}
+				}
+			}
+		},
+		{
+			"name": "a typo (selec 1) is refused as a syntax error with the parser's position",
+			"criterion": "C1",
+			"request": {
+				"method": "POST",
+				"path": "/rest/saiku/sql-workbench/query",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"json": {
+					"datasource": "foodmart",
+					"sql": "selec 1"
+				}
+			},
+			"expect": {
+				"status": 400,
+				"json": {
+					"code": {
+						"equals": "SQL_SYNTAX_ERROR"
+					},
+					"message": {
+						"contains": "SQL syntax error at line 1, column 1",
+						"because": "the message carries the standard grammar's position for the typo too"
+					}
+				}
+			}
+		},
+		{
+			"name": "a genuine write is still refused with READ_ONLY_VIOLATION and today's wording",
+			"criterion": "C2",
+			"request": {
+				"method": "POST",
+				"path": "/rest/saiku/sql-workbench/query",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"json": {
+					"datasource": "foodmart",
+					"sql": "DELETE FROM customer"
+				}
+			},
+			"expect": {
+				"status": 400,
+				"json": {
+					"code": {
+						"equals": "READ_ONLY_VIOLATION"
+					},
+					"message": {
+						"contains": "Only read-only queries"
+					}
+				}
+			}
+		},
+		{
+			"name": "an unterminated quote gets its own message, not the generic read-only one",
+			"criterion": "C3",
+			"request": {
+				"method": "POST",
+				"path": "/rest/saiku/sql-workbench/query",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"json": {
+					"datasource": "foodmart",
+					"sql": "select * from account where name = 'o"
+				}
+			},
+			"expect": {
+				"status": 400,
+				"json": {
+					"code": {
+						"equals": "SQL_SYNTAX_ERROR"
+					},
+					"message": {
+						"matches": "(?=[\\s\\S]*Unterminated string or identifier quote)(?=[\\s\\S]*Only read-only statements can be run)",
+						"because": "the quote never closed — the message says so and still refuses the statement"
+					}
+				}
+			}
+		},
+		{
+			"name": "a parsed non-query statement names the backend's allowlist (the surface the UI hint must match)",
+			"criterion": "C5",
+			"request": {
+				"method": "POST",
+				"path": "/rest/saiku/sql-workbench/query",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"json": {
+					"datasource": "foodmart",
+					"sql": "CALL some_proc(1)"
+				}
+			},
+			"expect": {
+				"status": 400,
+				"json": {
+					"code": {
+						"equals": "READ_ONLY_VIOLATION"
+					},
+					"message": {
+						"contains": "SELECT / WITH / VALUES / TABLE / DESCRIBE",
+						"because": "the backend's own allowlist wording — the UI hint text says the same things it allows"
+					}
+				}
+			}
+		}
+	]
+}
