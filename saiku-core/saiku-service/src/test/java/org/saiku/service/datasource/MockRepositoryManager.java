@@ -155,7 +155,11 @@ public class MockRepositoryManager implements IRepositoryManager {
     }
 
     @Override
-    public void deleteFile(String datasourcePath) {}
+    public boolean deleteFile(String datasourcePath) {
+        // saiku#2533: mirror the real manager's contract — removal is only reported as
+        // done when a datasource was actually stored under this exact path.
+        return this.datasources.remove(datasourcePath) != null;
+    }
 
     @Override
     public AclEntry getACL(String object, String username, List<String> roles) {

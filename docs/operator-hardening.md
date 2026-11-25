@@ -230,8 +230,12 @@ JAVA_OPTS="-Dsaiku.passthrough.retainCredential=false"
 
 ## Login lockout and running behind a reverse proxy (`saiku.auth.trustedProxyHops`)
 
-Failed logins (form login, HTTP Basic, XMLA and the demo email gate share one limiter) are counted in three
-independent budgets inside a 15-minute window, and any one of them blocks further attempts with `429`:
+Failed logins (the REST session login `POST /rest/saiku/session`, HTTP Basic, XMLA and the demo email gate share
+one limiter) are counted in three independent budgets inside a 15-minute window, and any one of them blocks further
+attempts with `429`. Every failure is counted exactly once, wherever the credential check happens (saiku#2523).
+Spring Security's generated `/login` form endpoint no longer exists — the main security chain does not register
+form login, so `GET`/`POST /login` is answered by the terminal catch-all (`401`, no session, no authentication) and
+there is no second login path to bypass the limiter or CSRF with:
 
 | Budget | Limit | Purpose |
 |---|---|---|
@@ -279,7 +283,7 @@ Saiku has two user stores. The bundled authenticator reads `users.properties` (w
 password and roles); the admin console and SCIM write the H2 `USERS` / `USER_ROLES` tables. For an account
 that exists in **both**, the H2 row now wins for revocation:
 
-- `enabled = false` (SCIM `active:false` or `DELETE`, which deactivates) refuses form login and HTTP Basic
+- `enabled = false` (SCIM `active:false` or `DELETE`, which deactivates) refuses the REST session login and HTTP Basic
   (`/rest/**`, `/xmla/**`) with `401`, and ends an existing session on its next request.
 - Removing `ROLE_ADMIN` from the row removes admin authority from that user's next request (the admin
   endpoints answer `403`, `GET /rest/saiku/session` reports `isadmin:false`) without a re-login.
@@ -306,7 +310,7 @@ revocation is not being enforced and the store needs attention.
   authority. Removing any other role (for example `ROLE_SQL_EXEC` or a data role) from the row changes
   nothing for a user whose authenticator still grants it; revoke those in `users.properties` / the
   directory.
-- **Authentication types covered.** Only credential logins (form login and HTTP Basic) are checked. OAuth
+- **Authentication types covered.** Only credential logins (the REST session login and HTTP Basic) are checked. OAuth
   bearer tokens, SSO/pre-authenticated principals and share/embed principals are exempt and governed by
   their own provider.
 - **Re-enabling.** The admin console has no control to re-enable a deactivated row. Re-enable through SCIM
@@ -339,6 +343,46 @@ deletion needs a tombstone or a single user store, which is not implemented.
 
 ---
 
+## SCIM group roles (`saiku.scim.grantableRoles`)
+
+A SCIM group's `displayName` **is** the role recorded in `USER_ROLES` for each of its members, so the
+identity provider effectively decides which authorities it can hand out. Two rules bound that
+(saiku#2065, saiku#2537, CWE-269):
+
+- **Reserved roles are always refused.** Creating or renaming a group to `ROLE_SCIM`, `ROLE_ACTUATOR`,
+  `ROLE_ANONYMOUS`, `ROLE_SQL_EXEC` (raw SQL through the workbench with the stored warehouse
+  credentials), `ROLE_TOKEN_PRINCIPAL` (unlocks every `/rest/**` rule), `ROLE_EMBED_AUTHOR`,
+  `ROLE_EMBED_GUEST`, `ROLE_SHARE_GUEST`, or to any role configured as an admin role
+  (`userService`'s `adminRoles` list, `ROLE_ADMIN` by default) answers `400 invalidValue` — including
+  case variants. The admin set is read live from the configuration, so a custom admin role is covered
+  without a code change.
+- **The allow-list narrows what is left.** Set `saiku.scim.grantableRoles` to a comma-separated list
+  (e.g. `saiku.scim.grantableRoles=analysts,report_viewers`) and only those names can be granted
+  through SCIM, matched case-insensitively; anything else answers `400`. Listing a reserved role on
+  the allow-list does not rescue it — the reserved check runs first. The allow-list is an
+  <em>allow-list</em>, not a rename map: a rename to a name outside the list is refused.
+  The policy is enforced at every grant site (member add, create-with-groups, PUT/PATCH
+  membership sync), not only on the group's name — so an existing group record whose
+  displayName is reserved or falls off the configured list stops granting its role to new
+  members after the upgrade (its membership writes answer `400 invalidValue`; renaming the
+  group to a grantable name is the fix).
+
+**Default (allow-list unset): every role that is not reserved is grantable.** That is the documented
+behaviour, not an accident — set the property explicitly on an instance whose IdP should only manage a
+fixed set of data roles.
+
+**Last enabled admin.** SCIM cannot deactivate the only enabled account holding an admin role:
+`DELETE /Users/{id}`, `PATCH` with `active:false` and a `PUT` carrying `active:false` all answer `400`
+while a second enabled admin exists nowhere in the directory. Deactivating other accounts — or an
+admin once a second enabled admin exists — is unchanged. This protects the operator's own recovery
+path; the SCIM token itself is scoped to `ROLE_SCIM` and must never be able to lock every
+administrator out.
+
+The SCIM bearer surface currently answers `401` for every call over plain HTTP (saiku#2449), so verify
+changes to this behaviour through unit tests or a fixed build rather than a live IdP probe.
+
+---
+
 ## OLAP query guardrails (`saiku.olap.*`)
 
 Every execute path applies server-side limits so a single authenticated request
@@ -360,3 +404,54 @@ Raise them only if a legitimate report needs more, and prefer raising the
 The Docker image and `dist/run.sh` / `dist/run.bat` start the JVM with
 `-XX:+ExitOnOutOfMemoryError -XX:MaxRAMPercentage=75`, so an out-of-memory
 condition restarts the process instead of leaving it limping.
+
+---
+
+## Request-body and stored-object size caps (`saiku.http.*`, `saiku.repo.*`, `saiku.history.*`, `saiku.comments.*`)
+
+Jersey reads request entities itself, so the servlet container's
+`maxFormContentSize` (2 MB, form parsing only) and the Jersey servlet's
+`multipart-config` never bounded most REST bodies: a 30 MB repository save
+answered `200`, and a 5 MB anonymous login body was read and parsed before it
+was answered `401` ([#2535](https://github.com/spiculedata/saiku/issues/2535)).
+
+`RestBodySizeFilter` (web.xml, declared **before** the Spring Security filter
+chain) closes that for every `/rest/*` body. A body whose declared
+`Content-Length` exceeds its route cap is answered `413` before a single byte
+is read; a chunked body (no `Content-Length`) is counted as it streams and
+refused the moment the cap is exceeded, so nothing is ever fully buffered.
+Stored objects are capped separately, because an operator may raise the body
+cap for a route without unbounding what lands in the repository.
+
+Every value is resolved live. For the three `saiku.http.*` limits, the
+`SAIKU_HTTP_*` environment variable wins over the `-Dsaiku.*` system property,
+which wins over `saiku.properties`. The stored-object limits use the system
+property first, then `saiku.properties`; they have no environment-variable
+override. Missing or unparseable values use the default, and out-of-range
+values are clamped to the floor or ceiling.
+
+| Property (env) | Default | Meaning |
+|---|---|---|
+| `saiku.http.maxBodyBytes` (`SAIKU_HTTP_MAX_BODY_BYTES`) | `10485760` (10 MiB) | Ceiling on every `/rest/*` request body. Refused with `413`. Floor 64 KiB, ceiling 1 GiB. |
+| `saiku.http.sessionMaxBodyBytes` (`SAIKU_HTTP_SESSION_MAX_BODY_BYTES`) | `16384` (16 KiB) | Ceiling on the pre-authentication login body (`/rest/saiku/session`). Floor 1 KiB, ceiling 64 KiB. |
+| `saiku.http.uploadMaxBodyBytes` (`SAIKU_HTTP_UPLOAD_MAX_BODY_BYTES`) | `52428800` (50 MiB) | Ceiling on the documented upload routes — zip upload, dashboard image upload, Ossie vendor-model import, quickstart upload, admin model diff, email self-send and the SVG chart export — matching the Jersey servlet's 50 MB `multipart-config`. Floor 64 KiB, ceiling 1 GiB. |
+| `saiku.repo.maxObjectBytes` | `10485760` (10 MiB) | One repository object written through the save-file path (`POST /saiku/api/repository/resource` answers `413`; the manager backstop refuses larger zip-upload entries and image assets). Floor 64 KiB, ceiling 512 MiB. |
+| `saiku.history.maxEntryBytes` | `4194304` (4 MiB) | One archived dashboard version. An oversized version is **not archived** (logged) and the save itself still succeeds. Floor 1 KiB, ceiling 512 MiB. |
+| `saiku.comments.maxBodyBytes` | `8192` (8 KiB) | One comment body. Oversized comments are refused with `413`. Floor 1 KiB, ceiling 1 MiB. |
+| `saiku.comments.maxCount` | `500` | Live (non-deleted) comments per dashboard. An add beyond the cap is refused with `413`; soft-deleted comments stop counting. Floor 10, ceiling 10,000. |
+
+Dashboard history retains up to 50 versions per dashboard. At the default
+entry cap, its JSONL file can approach 200 MiB plus JSON overhead; history
+operations read the whole file. Lower `saiku.history.maxEntryBytes` if that
+memory and I/O cost is too high for a deployment.
+
+**Raising the body caps.** The first matching route rule wins (session, then
+upload routes, then the default). If a deployment legitimately posts bodies
+above 10 MiB to an endpoint not in the upload list, raise
+`saiku.http.maxBodyBytes` rather than widening an upload route — and remember
+that `MaxRAMPercentage` (75) bounds what the JVM can buffer in total.
+
+**Related, pre-existing caps** (kept as-is): preferences 64 KB, dashboard
+images 2 MiB, zip upload entries 10 MB / 50 MB total, email artifacts 15 MB
+each inside a 48 MB request, model-diff sides 8 MB. The new ceilings sit
+*above* these per-endpoint limits so the two layers don't fight.

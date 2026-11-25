@@ -5,8 +5,36 @@ All notable changes to Saiku are documented here. This project follows
 
 ## Unreleased
 
+### Fixed
+
+- **MCP tool calls are recorded in the AI audit log (saiku#2540).**
+  Every `tools/call` now writes one `ai-audit.jsonl` entry carrying the user,
+  tool name, target cube or Ossie model, policy decision and outcome —
+  including `SAIKU_AI_POLICY` denials, which the MCP endpoint returns as 200
+  tool errors the `/ai/` filter could never see. The three admin endpoints
+  that invoke AI machinery in-process (`/saiku/admin/cube-designer/turn`,
+  `/saiku/admin/ai-evals/run`, `/saiku/admin/ossie-generate`) are audited too,
+  and REST AI entries now carry the cube (`/ai/query`, `/ai/schema/{cube}`,
+  `/ai/members/search`, ...) or model (`/ai/ossie/query`,
+  `/ai/ossie/schema/{connection}/{model}`, ...).
+
 ### Security
 
+- **REST request-body size caps and storage caps (saiku#2535).** A new servlet-level
+  `RestBodySizeFilter` caps every `/rest/*` request body and answers `413` — a
+  declared-oversized body is refused before a single byte is read, and chunked
+  bodies are counted as they stream, so Jersey endpoints (including the
+  pre-authentication login) no longer read and parse arbitrary bodies before
+  answering. Defaults: 10 MiB for every REST body, 16 KiB for `/rest/saiku/session`,
+  50 MiB for the documented upload routes (zip upload, image upload, Ossie import,
+  quickstart upload, admin model diff, email self-send, SVG chart export) — all
+  tunable via `saiku.http.*` / `SAIKU_HTTP_*` (see `docs/operator-hardening.md`).
+  Stored objects are now capped too: repository objects (`saiku.repo.maxObjectBytes`,
+  10 MiB), dashboard history entries (`saiku.history.maxEntryBytes`, 4 MiB — an
+  oversized version is skipped, the save still succeeds), comment bodies
+  (`saiku.comments.maxBodyBytes`, 8 KiB) and live comments per dashboard
+  (`saiku.comments.maxCount`, 500) — oversized saves answer `413`, oversized or
+  over-count comments are refused.
 - **HTML export hardening (saiku#2528, follow-up to #2199/#2430).** The HTML
   export renderer escaped cell values but concatenated cell *properties* into
   attributes raw. Those properties are query-author-chosen (they come from
@@ -22,6 +50,23 @@ All notable changes to Saiku are documented here. This project follows
   an external host. Exported tables that relied on non-`http(s)` image/link
   properties, or on external image hosts, need the operator to allow those
   sources explicitly.
+
+### Fixed
+
+- **The generated Spring `/login` endpoint is gone (saiku#2523).** The main
+  security chain no longer declares `auto-config`, which silently registered
+  Spring's form login: a `GET`/`POST /login` second login path outside the
+  rate limiter, CSRF and the demo email gate (a locked-out account could still
+  sign in there, and the `302` destination was an unlimited password oracle).
+  The one login is `POST /rest/saiku/session`, plus HTTP Basic for stateless
+  clients and XMLA; `GET`/`POST /login` is now answered by the terminal
+  catch-all (`401`, fail-closed, no session).
+- **Login failures count once (saiku#2523).** A wrong password at
+  `POST /rest/saiku/session` was recorded twice — once by the resource and once
+  by `SpringSecurityAuditListener` from the same authentication-failure event —
+  so the lockout tripped after three wrong passwords instead of the documented
+  five. `SessionResource` now marks its requests and is the single recorder for
+  that path; the listener keeps recording the HTTP-Basic / filter-chain path.
 
 ## 4.9.1 — 2026-11-23
 

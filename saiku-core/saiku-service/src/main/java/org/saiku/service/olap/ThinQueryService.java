@@ -157,8 +157,21 @@ public class ThinQueryService implements Serializable {
      */
     private UserService userService;
 
+    /**
+     * Optional — per-caller identity seam (saiku#2538), mixed into the cache key when the
+     * datasource's result visibility varies by warehouse account (security.type=passthrough),
+     * so two users with the SAME Saiku roles never share a cached cellset or coalesce onto
+     * each other's execution. Null in non-Spring/standalone contexts ⇒ legacy role-only key.
+     */
+    private QueryCacheIdentityContext identityContext;
+
     public void setUserService(UserService userService) {
         this.userService = userService;
+    }
+
+    /** saiku#2538 — per-caller identity seam for the result caches; see {@link #cacheKeyFor}. */
+    public void setIdentityContext(QueryCacheIdentityContext identityContext) {
+        this.identityContext = identityContext;
     }
 
     public void setOlapDiscoverService(OlapDiscoverService os) {
@@ -214,10 +227,14 @@ public class ThinQueryService implements Serializable {
 
         final String cubeVersion = QueryCacheKey.cubeVersion(tq);
         // Mix the caller's role-set into the key so a role-masked cellset is never served
-        // to a different role from cache (saiku#1114). Empty role-set ⇒ same key as before.
+        // to a different role from cache (saiku#1114), and the caller's identity so two
+        // users of a pass-through datasource never share a cellset (saiku#2538).
         final String key = cacheKeyFor(tq, cubeVersion);
 
-        if (queryCache == null || !queryCache.isEnabled()) {
+        // key == null (saiku#2538): the caller's role-set or per-user identity could not be
+        // resolved — FAIL CLOSED and execute live rather than consulting the shared cache
+        // with a degraded key.
+        if (queryCache == null || !queryCache.isEnabled() || key == null) {
             CachedQueryResult r = runAndMaterialise(tq);
             log.info(
                     "saiku.query.executed format=arrow cacheHit=false bytes={} runtimeMs={} rows={} queryName={}",
@@ -243,12 +260,42 @@ public class ThinQueryService implements Serializable {
      * Package-private seam (saiku#1114) so the role-aware cache key is unit-testable without a
      * live olap connection: builds the cellset cache key for {@code tq} exactly as {@link
      * #executeCached} does, mixing in the current user's Mondrian role-set via {@link
-     * #currentRolesForCacheKey()}. The original #1114 leak was the call-site omitting the
-     * role-set — this IS that call-site, so the wiring (not just {@link QueryCacheKey#of}) is
-     * pinned by {@code ThinQueryServiceCacheKeyTest}.
+     * #currentRolesForCacheKey()}, and — when the datasource's result visibility varies by
+     * warehouse account — the caller's identity via {@link #callerIdentityForCache} (saiku#2538).
+     * The original #1114 leak was the call-site omitting the role-set — this IS that call-site,
+     * so the wiring (not just {@link QueryCacheKey#of}) is pinned by {@code
+     * ThinQueryServiceCacheKeyTest}.
+     *
+     * <p>FAIL CLOSED (saiku#2538): returns {@code null} when the key cannot be built — an
+     * exception reading the caller's roles, a throwing identity seam, or a key-build failure —
+     * so {@link #executeCached} bypasses the cache and {@link #coalesceKey} disables
+     * coalescing rather than degrading to a key another caller could share.
      */
     String cacheKeyFor(ThinQuery tq, String cubeVersion) {
-        return QueryCacheKey.of(tq, cubeVersion, currentRolesForCacheKey());
+        try {
+            return QueryCacheKey.of(tq, cubeVersion, currentRolesForCacheKey(), callerIdentityForCache(tq));
+        } catch (Exception e) {
+            log.warn(
+                    "saiku#2538: cache key unresolvable for query {} — bypassing the caches (fail-closed)",
+                    tq.getName(),
+                    e);
+            return null;
+        }
+    }
+
+    /**
+     * The per-caller identity fragment for the result caches (saiku#2538), or the empty string
+     * when identity does not distinguish results on this datasource. Null seam (standalone) ⇒
+     * empty ⇒ legacy role-only key. A THROWING seam propagates — {@link #cacheKeyFor} turns
+     * that into a null key, i.e. the caches are bypassed, never shared.
+     */
+    private String callerIdentityForCache(ThinQuery tq) {
+        if (identityContext == null) {
+            return "";
+        }
+        String connection = tq.getCube() == null ? null : tq.getCube().getConnection();
+        String identity = identityContext.identityKey(connection);
+        return identity == null ? "" : identity;
     }
 
     /**
@@ -262,6 +309,10 @@ public class ThinQueryService implements Serializable {
      */
     private String coalesceKey(ThinQuery tq) {
         try {
+            // saiku#2538: the key is the SAME per-user identity the result cache uses, so two
+            // users of a pass-through datasource never coalesce onto each other's execution
+            // (and never register the other user's CellSet in their own context). A null key
+            // (unresolvable roles/identity — fail closed) disables coalescing for the call.
             return cacheKeyFor(tq, QueryCacheKey.cubeVersion(tq));
         } catch (RuntimeException e) {
             return null;
@@ -270,21 +321,18 @@ public class ThinQueryService implements Serializable {
 
     /**
      * The current user's Saiku role-set for cache-key isolation, or empty when it can't be
-     * resolved (no Spring/session context — boot, scheduled tasks, standalone). Never throws:
-     * a missing context must not fail the query, and an empty set hashes to the legacy key.
+     * resolved because there IS no context (no Spring/session context — boot, scheduled tasks,
+     * standalone). saiku#2538: a THROWING resolution (security context present but unreadable)
+     * is no longer swallowed into the role-less key here — it propagates to {@link
+     * #cacheKeyFor}, which fails closed and bypasses the caches, because a degraded shared key
+     * can hand one caller another caller's cellset.
      */
     private java.util.Collection<String> currentRolesForCacheKey() {
         if (userService == null) {
             return java.util.Collections.emptyList();
         }
-        try {
-            String[] roles = userService.getCurrentUserRoles();
-            return roles == null ? java.util.Collections.emptyList() : java.util.Arrays.asList(roles);
-        } catch (Exception e) {
-            // No security/session context available — degrade to an unkeyed (role-less) cache
-            // entry rather than failing the query.
-            return java.util.Collections.emptyList();
-        }
+        String[] roles = userService.getCurrentUserRoles();
+        return roles == null ? java.util.Collections.emptyList() : java.util.Arrays.asList(roles);
     }
 
     /** Live-execute the query and encode the CellSet to Arrow IPC bytes. */

@@ -17,6 +17,24 @@ A promoted entry has the same shape plus `**Status:** promoted`, `**Supersedes:*
 
 ---
 
+## 2026-11-24 — Model IDE: exercise the page's buffer and completion paths
+Use one buffer-key function at every page read and write site, and only offer live Ossie completions for the currently selected datasource. Test the actual editor-to-upload path and datasource switches, including late model responses.
+**Why:** a self-contained key helper test can pass while the page uploads stale XML, and a shared completion catalogue can show another datasource's names.
+**Source:** PR #2490 review of #1428
+
+## 2026-11-24 — SCIM user PUT: validate group grants before any user write
+Check every requested group's role before changing the username, profile, email, or enabled state in a full user replace.
+**Why:** a stale reserved or off-list group otherwise returns 400 after part of the PUT has persisted, leaving the IdP retrying a failed sync against changed data.
+**Source:** PR #2564 review of #2537
+
+## 2026-11-24 — Result-cache identity: test the real datasource decision
+A stubbed identity fragment and source-text assertions did not test whether pass-through
+datasources resolve to distinct caller identities. Add a Java test of the real
+`SecurityAwareConnectionManager.identityKey` path, including datasource classification,
+principal resolution, and unresolved names, when changing cache isolation.
+**Why:** a refactor could restore cross-user cellset sharing while stub-based tests stay green.
+**Source:** PR #2575 review for #2538
+
 ## 2026-11-24 — Ossie filters: resolve semantic names through their dataset and expression
 Checking that an unqualified filter name is visible somewhere in the model is insufficient. Resolve it to one declaring dataset, reject ambiguity, and emit that dataset's mapped column expression.
 **Why:** a bare quoted name can bind to a different table's hidden physical column and disclose values through filter results.

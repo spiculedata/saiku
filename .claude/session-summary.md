@@ -80,11 +80,34 @@ pushed down; normal sessions append and the history stays useful.
 **Now:** check PR #2568 CI and resolve the issue #2532 acceptance criterion's 403 versus the implementation's 400 with a maintainer.
 **Watch out:** this workspace has no Java or Maven, so local verification is limited to the acceptance script; CI must compile and run the Java tests.
 **Refs:** #2532, PR #2568
+## 2026-11-24 — feature/2535-rest-body-size-limits — PR #2566 review rework
+**Was doing:** formatted the REST body filter test and corrected the operator guide; local Spotless, licence, and static acceptance checks pass. Maven service/web tests stop at GitHub Packages 401 before compilation.
+**Now:** check PR #2566 CI on the rework commit for the full build and Java tests.
+**Watch out:** local JDK 22 and Maven are available under `/data/agents/quality/.tools/`, but private package dependencies do not resolve with this workspace's credentials.
+**Refs:** #2535, PR #2566
+
+## 2026-11-24 — feature/2540-mcp-ai-audit — PR #2563 review rework
+**Was doing:** merged current development into the PR branch, retaining both session-summary entries, and added assertions for the MCP validation error's `status`, `field` and `available` fields.
+**Now:** check PR #2563 CI after the push, especially the JDK 22 build and the focused MCP audit tests.
+**Watch out:** the local Maven test run stops before Java compilation because GitHub Packages returns 401 for Mondrian and olap4j; the acceptance script and Spotless pass.
+**Refs:** #2540, PR #2563
+
+## 2026-11-24 — feature/scim-grantable-roles — PR #2564 review rework
+**Was doing:** moved user PUT group-policy validation before every user write and fixed the SCIM test file's Spotless violations; added a regression test for unchanged username, email, and enabled state.
+**Now:** check PR #2564 CI after the push for Java compilation and tests.
+**Watch out:** local Spotless passes, but Maven tests stop before compilation because GitHub Packages returns 401 for private dependencies.
+**Refs:** #2537, PR #2564
+
+## 2026-11-24 — feature/passthrough-cache-identity — PR #2575 identity-key test rework
+**Was doing:** added real `SecurityAwareConnectionManager.identityKey` and `ThinQueryService` call-chain tests for #2538; clarified unresolved-query cache reuse in the PR description.
+**Now:** check PR #2575 CI for the new Java tests; local Maven stops before compilation because GitHub Packages returns 401 for Mondrian and olap4j artifacts.
+**Refs:** #2538, PR #2575, `SecurityAwareConnectionManagerIdentityKeyTest`
 
 ## 2026-11-24 — feature/2524-unauth-401-no-session — PR #2560 formatting rework
 **Was doing:** matched the two launcher test files to Spotless's CI diff; the prior CI run passed both affected test classes but failed at formatting.
 **Now:** check PR #2560 CI for the rework commit; local Java and Maven are unavailable in this workspace.
 **Refs:** #2524, PR #2560
+
 
 ## 2026-11-24 — feature/2526-ossie-role-bypass — PR #2552 review rework
 **Was doing:** fixed the unqualified-filter physical-column collision, typed sort/fact validation, and consistent query-door error bodies on the existing PR branch.

@@ -5,31 +5,49 @@
 	import { FeedbackBanner } from '$lib/design-system';
 	import { X } from '@lucide/svelte';
 
+	// saiku#2579 (C3): the project moved; release notes now live on the spiculedata repo,
+	// pinned to the latest release rather than the bare list.
+	const RELEASES_URL = 'https://github.com/spiculedata/saiku/releases/latest';
+	// saiku#2579 (C4): admins who keep Saiku current are the most likely sponsors — when the
+	// server says the sponsor link is on, the banner carries one short link alongside it.
+	const SPONSOR_URL = 'https://github.com/sponsors/spiculedata';
 	const STORAGE_KEY = 'saiku.upgrade.dismissed';
 
-	let dismissed = $state<boolean>(browser && localStorage.getItem(STORAGE_KEY) === '1');
+	// saiku#2579 (C5): the dismissal is keyed by the version it dismissed, so dismissing 4.9.1
+	// doesn't hide the 4.10.0 notice. The old unkeyed format stored '1', which never matches a
+	// version — those users simply see the next notice once more.
+	let dismissedVersion = $state<string | null>(browser ? localStorage.getItem(STORAGE_KEY) : null);
+
+	function isDismissed(): boolean {
+		// Only a dismissal recorded FOR this latest version hides it; a null latestVersion (the
+		// server always pairs it with available:true, but defensively) never counts as dismissed.
+		return platform.latestVersion != null && dismissedVersion === platform.latestVersion;
+	}
 
 	function dismiss() {
-		dismissed = true;
-		if (browser) localStorage.setItem(STORAGE_KEY, '1');
+		dismissedVersion = platform.latestVersion;
+		if (browser && platform.latestVersion) {
+			localStorage.setItem(STORAGE_KEY, platform.latestVersion);
+		}
 	}
 </script>
 
-{#if !dismissed && platform.newVersionAvailable}
+{#if platform.newVersionAvailable && !isDismissed()}
 	<FeedbackBanner tone="warning" size="sm" testid="upgrade-banner">
 		<div class="flex items-center gap-3">
 			<span class="flex-1">
-				{i18n.t('upgrade.available')}{platform.version
-					? ` (${i18n.t('upgrade.current')}: ${platform.version})`
-					: ''}.
-				<a
-					href="https://github.com/OSBI/saiku/releases"
-					target="_blank"
-					rel="noopener"
-					class="underline"
-				>
+				{i18n.t('upgrade.available')}{platform.latestVersion
+					? `: ${platform.latestVersion}`
+					: ''}{platform.version ? ` (${i18n.t('upgrade.current')}: ${platform.version})` : ''}.
+				<a href={RELEASES_URL} target="_blank" rel="noopener" class="underline">
 					{i18n.t('upgrade.releaseNotes')}
 				</a>
+				{#if platform.capabilities?.sponsorLink === true}
+					·
+					<a href={SPONSOR_URL} target="_blank" rel="noopener noreferrer" class="underline">
+						{i18n.t('upgrade.sponsor')}
+					</a>
+				{/if}
 			</span>
 			<button
 				type="button"

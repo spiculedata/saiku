@@ -167,7 +167,7 @@ public class SecurityAwareConnectionManagerVisibilityKeyTest {
     }
 
     /** Minimal IDatasourceManager — only getDatasource / getDatasources matter here. */
-    private static final class FakeDatasourceManager implements IDatasourceManager {
+    static final class FakeDatasourceManager implements IDatasourceManager {
 
         private final Map<String, SaikuDatasource> store = new LinkedHashMap<>();
 
@@ -411,7 +411,7 @@ public class SecurityAwareConnectionManagerVisibilityKeyTest {
     }
 
     /** Minimal ISessionService fake — only getAllSessionObjects() is read. */
-    private static final class FakeSessionService implements ISessionService {
+    static final class FakeSessionService implements ISessionService {
         private final Map<String, Object> session;
 
         FakeSessionService(Map<String, Object> session) {
