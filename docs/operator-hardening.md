@@ -399,11 +399,23 @@ Mondrian's own deployment-wide backstops in `mondrian.properties` ship with
 non-zero values too: `mondrian.rolap.queryTimeout=300`,
 `mondrian.result.limit=1000000`, `mondrian.rolap.iterationLimit=100000000`.
 Raise them only if a legitimate report needs more, and prefer raising the
-`saiku.olap.*` ceilings above first.
+`saiku.olap.*` ceilings above first. Note that the two query-timeout settings
+are not independent: `saiku.olap.query.timeout.seconds` and
+`mondrian.rolap.queryTimeout` ship at 300s each, and whichever is lower still
+cuts the query off — a longer timeout needs both raised.
 
 The Docker image and `dist/run.sh` / `dist/run.bat` start the JVM with
-`-XX:+ExitOnOutOfMemoryError -XX:MaxRAMPercentage=75`, so an out-of-memory
-condition restarts the process instead of leaving it limping.
+`-XX:+ExitOnOutOfMemoryError -XX:MaxRAMPercentage=75`. The flag makes the JVM
+**exit** on an out-of-memory condition instead of limping on a corrupt heap —
+it does not restart anything. In the container the restart comes from the
+Docker engine's restart policy or from an orchestrator (see the `Dockerfile`
+comment); a process started by `dist/run.sh` / `dist/run.bat` is restarted by
+nothing. To tune the `saiku.olap.*` limits on this page, pass them as `-D`
+properties through `JAVA_OPTS` (honoured by the launcher in the Docker image,
+the dist scripts and plain `java -jar`) rather than overriding the image's own
+`JAVA_TOOL_OPTIONS`: `-e JAVA_TOOL_OPTIONS=...` replaces the image's flags —
+including `-XX:+ExitOnOutOfMemoryError` and `-XX:MaxRAMPercentage=75` —
+wholesale.
 
 ---
 
