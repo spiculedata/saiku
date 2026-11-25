@@ -407,6 +407,40 @@ condition restarts the process instead of leaving it limping.
 
 ---
 
+## Chart export raster bounds (`saiku.export.chart.*`)
+
+`POST /rest/saiku/{user}/export/saiku/chart` rasterises an uploaded SVG with
+Batik (PNG, JPG, TIFF; PDF's vector output is bounded by the same budgets —
+unsized oversized requests get a typed `400` and `KEY_WIDTH`/`KEY_HEIGHT` are
+always set). Two independent budgets protect the JVM heap (CWE-400):
+
+- **byte budget** (saiku#1165): the SVG payload itself is capped at 20 MB, and
+  anything that would make Batik reach off-document is rejected;
+- **pixel budget** (saiku#2527): the output raster is capped per side, so a
+  `width="12000" height="12000"` chart can no longer allocate a 144-megapixel
+  raster inside one request. The root element's `width`/`height` (or
+  `viewBox`) is resolved before the transcoder runs; an unsized request that
+  exceeds the budget is refused with a `400` before anything is allocated, and
+  with a `size` hint the request is scaled down to fit the budget instead.
+  Both `KEY_WIDTH` and `KEY_HEIGHT` are always set on the transcoder, so a
+  percentage- or missing-dimension document can no longer inherit unbounded
+  intrinsic sizes.
+
+The transcode also runs on a small fixed thread pool with a wall-clock limit
+(the same shape as the snapshot renderer's bounded pool), so a byte-legal but
+pathological SVG answers `400` once it has overrun the limit instead of
+wedging a request thread. A queued request that never got a worker within
+the limit answers `503` — that is server-side saturation, not the caller's
+fault, and clients and proxies may retry it. Note the limit does not force-stop
+Batik mid-render: a timed-out task releases its pool slot only when Batik
+returns, so a pathological render keeps one worker until it finishes.
+
+| Property | Default | Effect |
+|---|---|---|
+| `saiku.export.chart.maxWidth` | `2000` | Maximum output raster width in px (per side; 32–10000). An unsized request whose intrinsic width exceeds it gets a typed `400`. |
+| `saiku.export.chart.maxHeight` | `2000` | Maximum output raster height in px (per side; 32–10000). With a `size` hint the export is scaled down to fit instead of refused. |
+| `saiku.export.chart.timeoutMillis` | `30000` | Wall-clock limit for one transcode (1000–120000 ms). |
+
 ## Request-body and stored-object size caps (`saiku.http.*`, `saiku.repo.*`, `saiku.history.*`, `saiku.comments.*`)
 
 Jersey reads request entities itself, so the servlet container's
