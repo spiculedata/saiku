@@ -75,6 +75,12 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-11-25 — feature/2547-redact-connection-error-logs — PR #2594 base merge
+**Was doing:** merged current development into the existing PR branch and retained its earlier redaction fixes and tests.
+**Now:** check PR #2594 CI after the push, especially the Maven suites and acceptance spec.
+**Watch out:** local dependency resolution stops at GitHub Packages HTTP 401.
+**Refs:** #2547, PR #2594
+
 ## 2026-11-25 — feature/2599-sql-workbench-scroll-ds-info — PR #2609 overlap rework
 **Was doing:** merged current development, kept #2610's scroll implementation and test, removed this PR's duplicate scroll code and test, and retained datasource info, table-list, and topbar coverage.
 **Now:** check PR #2609 CI after the push, especially Java compilation and the focused SQL workbench browser tests.

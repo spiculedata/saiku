@@ -30,6 +30,7 @@ import org.saiku.datasources.connection.SaikuConnectionFactory;
 import org.saiku.datasources.datasource.SaikuDatasource;
 import org.saiku.olap.util.exception.SaikuOlapException;
 import org.saiku.service.ISessionService;
+import org.saiku.service.datasource.ConnectStringRedactor;
 import org.saiku.service.datasource.IDatasourceManager;
 import org.saiku.service.olap.QueryCacheIdentityContext;
 import org.saiku.service.olap.ai.AiVisibilityContext;
@@ -185,7 +186,7 @@ public class SecurityAwareConnectionManager extends AbstractConnectionManager
             }
             return getInternalConnection(name, datasource);
         } catch (Exception e) {
-            log.error("Error refreshing connection: " + name, e);
+            log.error("Error refreshing connection: " + name, ConnectStringRedactor.redact(e));
         }
         return null;
     }
@@ -691,7 +692,10 @@ public class SecurityAwareConnectionManager extends AbstractConnectionManager
                 return con;
             }
         } catch (Exception e) {
-            log.error("Error connecting: " + name, e);
+            // saiku#2547 (CWE-532): the failure's message carries the connect string — for a
+            // passthrough datasource the signed-in user's plaintext JdbcPassword= — so the logged
+            // chain must be redacted before it reaches saiku.log.
+            log.error("Error connecting: " + name, ConnectStringRedactor.redact(e));
         }
 
         return null;
