@@ -65,7 +65,7 @@ read rather than to gate a build.
 ## REST
 
 ```
-POST /rest/saiku/api/admin/model/diff
+POST /rest/saiku/admin/model/diff
 ```
 
 Admin role required. Each side is either inline content or a path:

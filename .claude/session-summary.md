@@ -85,6 +85,11 @@ pushed down; normal sessions append and the history stays useful.
 **Was doing:** corrected the refused-call counter assertion, covered the embed request stamp, and applied Spotless formatting for the CI failure.
 **Now:** check PR #2556 CI for the Java build and focused tests; local Maven dependency resolution stops at GitHub Packages 401.
 **Refs:** #2529, PR #2556
+## 2026-11-24 — feature/2535-rest-body-size-limits — PR #2566 review rework
+**Was doing:** formatted the REST body filter test and corrected the operator guide; local Spotless, licence, and static acceptance checks pass. Maven service/web tests stop at GitHub Packages 401 before compilation.
+**Now:** check PR #2566 CI on the rework commit for the full build and Java tests.
+**Watch out:** local JDK 22 and Maven are available under `/data/agents/quality/.tools/`, but private package dependencies do not resolve with this workspace's credentials.
+**Refs:** #2535, PR #2566
 
 ## 2026-11-24 — feature/2540-mcp-ai-audit — PR #2563 review rework
 **Was doing:** merged current development into the PR branch, retaining both session-summary entries, and added assertions for the MCP validation error's `status`, `field` and `available` fields.
