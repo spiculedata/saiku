@@ -75,6 +75,12 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-11-25 — feature/share-bind-content-2536 — PR #2565 CI fixture rework
+**Was doing:** wired valid share-token store records into the older dashboard and notebook resource tests after CI reported 409 instead of their expected 200/404 responses.
+**Now:** check PR #2565 CI on the pushed head for the Java tests and Docker image job.
+**Watch out:** local Maven stops before compilation on GitHub Packages 401; the previous Docker job hit Maven Central 429 while downloading the telemetry agent.
+**Refs:** #2536, PR #2565
+
 ## 2026-11-24 — fix/2598-workbench-syntax-error — PR #2608 CI rework
 **Was doing:** restored `READ_ONLY_VIOLATION` for PostgreSQL data-modifying CTEs that Calcite cannot parse, with guard and REST regression coverage; pushed to the existing PR branch.
 **Now:** check PR #2608 CI, especially `acceptance/2318` and the Maven service/web tests.
