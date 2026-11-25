@@ -75,10 +75,21 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-11-25 — feature/2459-ci-secret-lifecycle-gate — PR #2494 review rework
+**Was doing:** merged development and restored detection of non-redirect credential writes, PR-tree switches, and npm config writes with regression fixtures.
+**Now:** check PR #2494 CI on the pushed head; the Python suite and acceptance command pass locally.
+**Refs:** #2459, PR #2494
+
 ## 2026-11-24 — feature/2459-ci-secret-lifecycle-gate — trusted checkout rework
 **Was doing:** tightened PR #2494's trusted-base detection to require the base SHA as the full checkout ref and added regression fixtures for comment, path-only, and checkout-action cases.
 **Now:** check PR #2494 CI after the push; the Python script suite and acceptance check pass locally.
 **Refs:** #2459, #2494
+
+## 2026-11-24 — feature/2535-rest-body-size-limits — PR #2566 review rework
+**Was doing:** formatted the REST body filter test and corrected the operator guide; local Spotless, licence, and static acceptance checks pass. Maven service/web tests stop at GitHub Packages 401 before compilation.
+**Now:** check PR #2566 CI on the rework commit for the full build and Java tests.
+**Watch out:** local JDK 22 and Maven are available under `/data/agents/quality/.tools/`, but private package dependencies do not resolve with this workspace's credentials.
+**Refs:** #2535, PR #2566
 
 ## 2026-11-24 — feature/2540-mcp-ai-audit — PR #2563 review rework
 **Was doing:** merged current development into the PR branch, retaining both session-summary entries, and added assertions for the MCP validation error's `status`, `field` and `available` fields.

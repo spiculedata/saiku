@@ -97,6 +97,22 @@
         <url-pattern>/rest/*</url-pattern>
     </filter-mapping>
 
+    <!-- #2535: servlet-level request-body ceiling for the REST surface. Runs
+         BEFORE the security filterChainProxy so the pre-authentication login
+         body is capped first. Declared-size bodies over the route cap are
+         answered 413 without a byte being read; chunked bodies are counted as
+         they stream. Caps (default 10 MiB, session 16 KiB, upload routes
+         50 MiB) are documented in docs/operator-hardening.md and tunable via
+         saiku.http.*BodyBytes / SAIKU_HTTP_* env vars. -->
+    <filter>
+        <filter-name>restBodySize</filter-name>
+        <filter-class>org.saiku.web.servlet.RestBodySizeFilter</filter-class>
+    </filter>
+    <filter-mapping>
+        <filter-name>restBodySize</filter-name>
+        <url-pattern>/rest/*</url-pattern>
+    </filter-mapping>
+
     <filter>
         <filter-name>org.springframework.security.filterChainProxy</filter-name>
         <filter-class>org.springframework.web.filter.DelegatingFilterProxy</filter-class>
