@@ -84,10 +84,14 @@ NPM_LIFECYCLE_RE = re.compile(
     r"|\bnpm\s+run\s+(?:[^\s]+\s+)*(build|test|package)\b"
     r"|\b(?:yarn|pnpm)\s+(?:--?[^\s]+\s+)*(install|build|publish)\b"
 )
-GIT_CHECKOUT_RE = re.compile(r"\bgit\s+checkout\b")
+GIT_TREE_CHANGE_RE = re.compile(r"\bgit\s+(?:checkout|switch|reset\s+--hard)\b")
 CREDENTIAL_FILE_WRITE_RE = re.compile(
     r"(?:^|\s)>+\s*(?:\"([^\"]+)\"|'([^']+)'|([^\s;|]+))"
 )
+NAMED_CREDENTIAL_FILE_RE = re.compile(
+    r"(?<![\w.])(?:[~$./][\w${}/.-]*/)?(?:settings\.xml|\.npmrc)\b"
+)
+NPM_CONFIG_SET_RE = re.compile(r"\bnpm\s+config\s+set\b")
 MAVEN_SETTINGS_ARG_RE = re.compile(
     r"(?:^|\s)(?:-s|--settings)(?:\s+|=)(?:\"([^\"]+)\"|'([^']+)'|([^\s;|]+))"
 )
@@ -151,8 +155,8 @@ def is_trusted_base_ref(value) -> bool:
 
 
 def checks_out_trusted_base(line: str) -> bool:
-    """Recognize a full-tree checkout of BASE_SHA as the command's ref."""
-    match = GIT_CHECKOUT_RE.search(line)
+    """Recognize a full-tree checkout, switch, or hard reset to BASE_SHA."""
+    match = GIT_TREE_CHANGE_RE.search(line)
     if not match or line[:match.start()].strip():
         return False
     try:
@@ -162,18 +166,56 @@ def checks_out_trusted_base(line: str) -> bool:
         tokens = list(lexer)
     except ValueError:
         return False
-    if tokens[:2] != ["git", "checkout"]:
+    if len(tokens) < 3 or tokens[0] != "git":
         return False
+    command = tokens[1]
     args = []
     for token in tokens[2:]:
         if token and all(char in ";&|<>" for char in token):
             break
         args.append(token)
-    return bool(
-        args
-        and args[-1] in {"$BASE_SHA", "${BASE_SHA}"}
-        and all(arg in {"--detach", "--force", "-f", "--quiet", "-q"} for arg in args[:-1])
-    )
+    if not args or args[-1] not in {"$BASE_SHA", "${BASE_SHA}"}:
+        return False
+    flags = args[:-1]
+    if command == "checkout":
+        return all(arg in {"--detach", "--force", "-f", "--quiet", "-q"} for arg in flags)
+    if command == "switch":
+        return all(arg in {"--detach", "-d", "--force", "-f", "--quiet", "-q"} for arg in flags)
+    return command == "reset" and flags == ["--hard"]
+
+
+def credential_write_paths(line: str) -> set[str]:
+    """Find credential-file targets, including writers without a redirect."""
+    paths = {
+        matched_path(match)
+        for match in CREDENTIAL_FILE_WRITE_RE.finditer(line)
+        if matched_path(match) != "/dev/null"
+    }
+    # The previous gate noticed a settings.xml name even when a script wrote
+    # it without shell redirection. Keep that signal alongside custom paths.
+    paths.update(match.group() for match in NAMED_CREDENTIAL_FILE_RE.finditer(line))
+    if NPM_CONFIG_SET_RE.search(line):
+        paths.add("~/.npmrc")
+    try:
+        lexer = shlex.shlex(line, posix=True, punctuation_chars=";&|<>")
+        lexer.whitespace_split = True
+        lexer.commenters = "#"
+        tokens = list(lexer)
+    except ValueError:
+        return paths
+    for index, token in enumerate(tokens):
+        if token not in {"tee", "sed"}:
+            continue
+        args = []
+        for arg in tokens[index + 1:]:
+            if arg and all(char in ";&|<>" for char in arg):
+                break
+            args.append(arg)
+        if token == "tee":
+            paths.update(arg for arg in args if not arg.startswith("-"))
+        elif args and any(arg == "-i" or arg.startswith("-i.") for arg in args):
+            paths.add(args[-1])
+    return paths
 
 
 def string_values(node) -> list[str]:
@@ -279,12 +321,8 @@ def run_job_findings(job_id: str, job: dict, doc: dict) -> list[str]:
                         "credential is in the step environment"
                     )
             if step_secrets:
-                credential_files.update(
-                    matched_path(match)
-                    for match in CREDENTIAL_FILE_WRITE_RE.finditer(line)
-                    if matched_path(match) != "/dev/null"
-                )
-            if GIT_CHECKOUT_RE.search(line):
+                credential_files.update(credential_write_paths(line))
+            if GIT_TREE_CHANGE_RE.search(line):
                 on_trusted_base = checks_out_trusted_base(line)
             if re.search(r"\brm\b", line):
                 credential_files = {
@@ -845,6 +883,96 @@ jobs:
         self.assertEqual(sorted(findings_in_workflow(doc, "settings.yml")), ["settings.yml:build"])
         doc["jobs"]["build"]["steps"].insert(1, {"run": 'rm "$RUNNER_TEMP/s.xml"'})
         self.assertEqual(findings_in_workflow(doc, "settings.yml"), {})
+
+    def test_tee_settings_write_persists_into_later_build(self):
+        for writer in (
+            'echo "<settings><password>$TOKEN</password></settings>" | tee ~/.m2/settings.xml',
+            'echo "<settings><password>$TOKEN</password></settings>" | tee ~/.m2/settings.xml >/dev/null',
+        ):
+            with self.subTest(writer=writer):
+                doc = yaml.safe_load("""
+on: pull_request
+jobs:
+  build:
+    steps:
+      - env: {TOKEN: "${{ secrets.GH_PACKAGES_TOKEN }}"}
+        run: "placeholder"
+      - run: mvn -B verify
+""")
+                doc["jobs"]["build"]["steps"][0]["run"] = writer
+                self.assertEqual(sorted(findings_in_workflow(doc, "tee.yml")), ["tee.yml:build"])
+
+    def test_tee_custom_settings_path_is_tracked_until_removed(self):
+        doc = yaml.safe_load("""
+on: pull_request
+jobs:
+  build:
+    steps:
+      - env: {TOKEN: "${{ secrets.GH_PACKAGES_TOKEN }}"}
+        run: 'echo "<settings><password>$TOKEN</password></settings>" | tee "$RUNNER_TEMP/s.xml" >/dev/null'
+      - run: mvn -B -s "$RUNNER_TEMP/s.xml" verify
+""")
+        self.assertEqual(sorted(findings_in_workflow(doc, "tee-custom.yml")), ["tee-custom.yml:build"])
+        doc["jobs"]["build"]["steps"].insert(1, {"run": 'rm "$RUNNER_TEMP/s.xml"'})
+        self.assertEqual(findings_in_workflow(doc, "tee-custom.yml"), {})
+
+    def test_sed_in_place_custom_settings_write_and_removal(self):
+        doc = yaml.safe_load("""
+on: pull_request
+jobs:
+  build:
+    steps:
+      - run: cp .github/settings-template.xml "$RUNNER_TEMP/s.xml"
+      - env: {TOKEN: "${{ secrets.GH_PACKAGES_TOKEN }}"}
+        run: 'sed -i "s|@TOKEN@|$TOKEN|" "$RUNNER_TEMP/s.xml"'
+      - run: mvn -B -s "$RUNNER_TEMP/s.xml" verify
+""")
+        self.assertEqual(sorted(findings_in_workflow(doc, "sed.yml")), ["sed.yml:build"])
+        doc["jobs"]["build"]["steps"].insert(2, {"run": 'rm "$RUNNER_TEMP/s.xml"'})
+        self.assertEqual(findings_in_workflow(doc, "sed.yml"), {})
+
+    def test_python_settings_write_persists_into_later_build(self):
+        doc = yaml.safe_load("""
+on: pull_request
+jobs:
+  build:
+    steps:
+      - env: {TOKEN: "${{ secrets.GH_PACKAGES_TOKEN }}"}
+        run: >-
+          python3 -c "import os; open(os.path.expanduser('~/.m2/settings.xml'),'w').write(os.environ['TOKEN'])"
+      - run: mvn -B verify
+""")
+        self.assertEqual(sorted(findings_in_workflow(doc, "python.yml")), ["python.yml:build"])
+
+    def test_switch_and_hard_reset_back_to_pr_content_are_flagged(self):
+        for command in ('git switch --detach "$PR_SHA"', 'git reset --hard "$PR_SHA"'):
+            with self.subTest(command=command):
+                doc = yaml.safe_load("""
+on: pull_request
+jobs:
+  build:
+    steps:
+      - env: {TOKEN: "${{ secrets.GH_PACKAGES_TOKEN }}"}
+        run: |
+          git checkout --detach "$BASE_SHA"
+          echo "<settings><password>$TOKEN</password></settings>" > ~/.m2/settings.xml
+      - run: placeholder
+      - run: mvn -B verify
+""")
+                doc["jobs"]["build"]["steps"][1]["run"] = command
+                self.assertEqual(sorted(findings_in_workflow(doc, "tree.yml")), ["tree.yml:build"])
+
+    def test_npm_config_set_persists_token_into_later_install(self):
+        doc = yaml.safe_load("""
+on: pull_request
+jobs:
+  build:
+    steps:
+      - env: {TOKEN: "${{ secrets.GH_PACKAGES_TOKEN }}"}
+        run: npm config set //npm.pkg.github.com/:_authToken "$TOKEN"
+      - run: npm ci
+""")
+        self.assertEqual(sorted(findings_in_workflow(doc, "config.yml")), ["config.yml:build"])
 
     def test_pull_request_target_trigger_is_scanned(self):
         """A pull_request_target job that checks out the PR head with the
