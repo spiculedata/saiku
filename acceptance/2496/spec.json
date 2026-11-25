@@ -1,0 +1,24 @@
+{
+  "issue": 2496,
+  "title": "saiku-web and saiku-launcher line coverage reach 70% and their coverage/test-count ratchets are raised, never lowered",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "the gated JaCoCo report of a ci build",
+      "then": "saiku-core/saiku-web line coverage is at least 70%; its ratchet in .coverage-thresholds.json is raised to just under the measured value (69 for 70.38 measured), and scripts/check-coverage.sh passes"
+    },
+    {
+      "id": "C2",
+      "given": "the same gated JaCoCo report",
+      "then": "saiku-launcher line coverage is at least 70%; its ratchet is raised to just under the measured value (73 for 74.25 measured under the CI configuration)"
+    },
+    {
+      "id": "C3",
+      "given": "the tests added to saiku-web and saiku-launcher",
+      "then": "the surefire floors in .github/test-floors.json are raised (web 1700, launcher 140) so no existing test can be silently dropped, and no floor anywhere is lowered"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 60
+}

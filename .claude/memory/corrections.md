@@ -17,15 +17,10 @@ A promoted entry has the same shape plus `**Status:** promoted`, `**Supersedes:*
 
 ---
 
-## 2026-11-24 — Shared content: parent saves cannot re-arm existing references
-Keep the original hash for each referenced query still present when the minter saves a dashboard or app. Only the minter saving that referenced file may re-arm it; observe deletes and moves at bound paths as well.
-**Why:** a collaborator can replace a query through delete and move without a save callback, then wait for the minter's routine parent save to bless those bytes.
-**Source:** PR #2565 review of #2536
-
-## 2026-11-24 — Shared content: bind saved queries referenced by tiles
-When a shared dashboard or app executes a saved-query reference under the minter's roles, bind that referenced file at mint time and check it before execution. A write by someone else to the referenced file must poison the link even if the parent document is untouched.
-**Why:** a hash of the parent dashboard or app does not detect a collaborator replacing the query at an unchanged reference path.
-**Source:** PR #2565 review of #2536
+## 2026-11-24 — Model IDE: exercise the page's buffer and completion paths
+Use one buffer-key function at every page read and write site, and only offer live Ossie completions for the currently selected datasource. Test the actual editor-to-upload path and datasource switches, including late model responses.
+**Why:** a self-contained key helper test can pass while the page uploads stale XML, and a shared completion catalogue can show another datasource's names.
+**Source:** PR #2490 review of #1428
 
 ## 2026-11-24 — SCIM user PUT: validate group grants before any user write
 Check every requested group's role before changing the username, profile, email, or enabled state in a full user replace.
