@@ -1,0 +1,29 @@
+{
+  "issue": 2527,
+  "title": "Chart export bounds the output raster dimensions, not only the SVG byte size: oversized requests are refused with a typed 4xx and every PNG stays within the pixel budget",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "an SVG whose intrinsic width/height (no size field) exceeds the pixel budget (for example width=3000 height=10)",
+      "then": "POST /rest/saiku/{user}/export/saiku/chart with type=png is refused with a typed 4xx before any raster is allocated, never a 200 with an image wider than the maximum"
+    },
+    {
+      "id": "C2",
+      "given": "a size field plus an SVG with an extreme aspect ratio (width=1 height=100, size=32)",
+      "then": "the export succeeds but the returned PNG is never taller than the maximum, instead of the old 32x3200"
+    },
+    {
+      "id": "C3",
+      "given": "an SVG with percentage or missing dimensions (width=100% height=100% and a viewBox) and a size field",
+      "then": "the export succeeds and the returned PNG is bounded by the pixel budget"
+    },
+    {
+      "id": "C4",
+      "given": "an ordinary chart SVG (800x600, no size field)",
+      "then": "the export is unchanged: a 200 PNG of exactly 800x600"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 180
+}

@@ -7,8 +7,12 @@
 	import {
 		listDatasources,
 		runQuery,
+		datasourceInfo,
+		listTables,
+		selectAllSql,
 		SqlWorkbenchApiError,
 		type SqlDatasource,
+		type SqlDatasourceInfo,
 		type SqlQueryResult
 	} from '$lib/api/sqlWorkbench';
 	import { sqlResultToCsv } from '$lib/sqlworkbench/csv';
@@ -27,6 +31,15 @@
 	let queryError = $state<string | null>(null);
 	let page = $state(0);
 
+	// saiku#2599 — what the selected datasource actually connects to, and its default-schema
+	// tables. Refetched whenever the selection changes so the selector's effect is visible
+	// even when several datasources share one warehouse.
+	let dsInfo = $state<SqlDatasourceInfo | null>(null);
+	let dsInfoError = $state(false);
+	let tables = $state<string[]>([]);
+	let tablesLoading = $state(false);
+	let tablesOpen = $state(false);
+
 	onMount(async () => {
 		try {
 			datasources = await listDatasources();
@@ -35,6 +48,36 @@
 			datasourcesError = e instanceof Error ? e.message : 'Could not load datasources';
 		}
 	});
+
+	$effect(() => {
+		const ds = selectedDatasource;
+		// Only `selectedDatasource` is tracked here (the async body's writes happen after the
+		// first await, outside the effect's tracking pass — the Svelte 5 re-queue trap).
+		void loadDatasourceMeta(ds);
+	});
+
+	async function loadDatasourceMeta(ds: string): Promise<void> {
+		dsInfo = null;
+		dsInfoError = false;
+		tables = [];
+		tablesOpen = false;
+		if (!ds) return;
+		tablesLoading = true;
+		try {
+			const [info, names] = await Promise.all([datasourceInfo(ds), listTables(ds)]);
+			if (selectedDatasource !== ds) return; // the user moved on — drop the stale answer
+			dsInfo = info;
+			tables = names;
+		} catch {
+			if (selectedDatasource === ds) dsInfoError = true;
+		} finally {
+			tablesLoading = false;
+		}
+	}
+
+	function insertTable(table: string): void {
+		sql = selectAllSql(table);
+	}
 
 	let totalPages = $derived(result ? Math.max(1, Math.ceil(result.rows.length / PAGE_SIZE)) : 1);
 	let pageRows = $derived(
@@ -87,89 +130,154 @@
 	}
 </script>
 
-<div class="sql-workbench">
-	<PageHeader title={i18n.t('sqlWorkbench.title')} subtitle={i18n.t('sqlWorkbench.subtitle')} />
+<!-- saiku#2599: the app shell is height:100vh with overflow:hidden, so this page provides its
+     own scroll container; the results table scrolls horizontally inside its own wrapper. -->
+<div class="sql-workbench-scroll">
+	<div class="sql-workbench">
+		<PageHeader title={i18n.t('sqlWorkbench.title')} subtitle={i18n.t('sqlWorkbench.subtitle')} />
 
-	{#if datasourcesError}
-		<FeedbackBanner tone="error">{datasourcesError}</FeedbackBanner>
-	{/if}
-
-	<div class="sql-workbench__toolbar">
-		<FormField label={i18n.t('sqlWorkbench.datasource')}>
-			<Select bind:value={selectedDatasource} aria-label={i18n.t('sqlWorkbench.datasource')}>
-				<option value="" disabled>{i18n.t('sqlWorkbench.datasource.placeholder')}</option>
-				{#each datasources as ds (ds.name)}
-					<option value={ds.name}>{ds.name}</option>
-				{/each}
-			</Select>
-		</FormField>
-		<Button onclick={run} disabled={running || !selectedDatasource || !sql.trim()}>
-			{running ? i18n.t('sqlWorkbench.running') : i18n.t('sqlWorkbench.run')}
-		</Button>
-		<Button variant="outline" onclick={exportCsv} disabled={!result || result.rows.length === 0}>
-			{i18n.t('sqlWorkbench.exportCsv')}
-		</Button>
-	</div>
-
-	<p class="sql-workbench__notice">{i18n.t('sqlWorkbench.readOnlyNotice')}</p>
-
-	<MonacoEditor value={sql} language="sql" minHeight="200px" onChange={(v) => (sql = v)} />
-
-	{#if queryError}
-		<FeedbackBanner tone="error">{queryError}</FeedbackBanner>
-	{/if}
-
-	{#if result}
-		<div class="sql-workbench__meta">
-			<span>{rowsShownLabel(result)}</span>
-			{#if result.truncated}
-				<span class="sql-workbench__truncated">{truncatedLabel(result)}</span>
-			{/if}
-		</div>
-		{#if result.rows.length === 0}
-			<p class="sql-workbench__empty">{i18n.t('sqlWorkbench.empty')}</p>
-		{:else}
-			<table class="data-grid">
-				<thead>
-					<tr>
-						{#each result.columns as col (col)}
-							<th>{col}</th>
-						{/each}
-					</tr>
-				</thead>
-				<tbody>
-					{#each pageRows as row, i (i)}
-						<tr>
-							{#each row as cell, j (j)}
-								<td>{cell ?? ''}</td>
-							{/each}
-						</tr>
-					{/each}
-				</tbody>
-			</table>
-			{#if totalPages > 1}
-				<div class="sql-workbench__pager">
-					<Button variant="outline" size="sm" disabled={page === 0} onclick={() => page--}>
-						{i18n.t('sqlWorkbench.prev')}
-					</Button>
-					<span>{pageLabel()}</span>
-					<Button
-						variant="outline"
-						size="sm"
-						disabled={page >= totalPages - 1}
-						onclick={() => page++}
-					>
-						{i18n.t('sqlWorkbench.next')}
-					</Button>
-				</div>
-			{/if}
+		{#if datasourcesError}
+			<FeedbackBanner tone="error">{datasourcesError}</FeedbackBanner>
 		{/if}
-	{:else}
-		<p class="sql-workbench__empty">{i18n.t('sqlWorkbench.empty')}</p>
-	{/if}
+
+		<div class="sql-workbench__toolbar">
+			<FormField label={i18n.t('sqlWorkbench.datasource')}>
+				<Select bind:value={selectedDatasource} aria-label={i18n.t('sqlWorkbench.datasource')}>
+					<option value="" disabled>{i18n.t('sqlWorkbench.datasource.placeholder')}</option>
+					{#each datasources as ds (ds.name)}
+						<option value={ds.name}>{ds.name}</option>
+					{/each}
+				</Select>
+			</FormField>
+			<Button onclick={run} disabled={running || !selectedDatasource || !sql.trim()}>
+				{running ? i18n.t('sqlWorkbench.running') : i18n.t('sqlWorkbench.run')}
+			</Button>
+			<Button variant="outline" onclick={exportCsv} disabled={!result || result.rows.length === 0}>
+				{i18n.t('sqlWorkbench.exportCsv')}
+			</Button>
+		</div>
+
+		{#if selectedDatasource}
+			<p class="sql-workbench__ds-info" data-testid="ds-info">
+				{#if dsInfo}
+					<span class="sql-workbench__ds-target">
+						{dsInfo.name} → {dsInfo.databaseProductName ?? '?'} · {dsInfo.catalog ??
+							'?'}.{dsInfo.schema ?? '?'}
+					</span>
+					{#if dsInfo.url}
+						<span class="sql-workbench__ds-url" title={dsInfo.url}>{dsInfo.url}</span>
+					{/if}
+				{:else if dsInfoError}
+					<span class="sql-workbench__ds-missing">
+						{i18n.t(
+							'sqlWorkbench.infoUnavailable',
+							'Could not load what this datasource connects to.'
+						)}
+					</span>
+				{/if}
+			</p>
+		{/if}
+
+		{#if tables.length > 0 || tablesLoading}
+			<details class="sql-workbench__tables" bind:open={tablesOpen} data-testid="table-list">
+				<summary>
+					{i18n.t('sqlWorkbench.tables', 'Tables')}
+					{#if tablesLoading}
+						<span class="sql-workbench__tables-loading">…</span>
+					{:else}
+						({tables.length})
+					{/if}
+				</summary>
+				<ul class="sql-workbench__tables-list">
+					{#each tables as t (t)}
+						<li>
+							<button
+								type="button"
+								class="sql-workbench__table-name"
+								data-table={t}
+								onclick={() => insertTable(t)}
+								title={selectAllSql(t)}
+							>
+								{t}
+							</button>
+						</li>
+					{/each}
+				</ul>
+			</details>
+		{/if}
+
+		<p class="sql-workbench__notice">{i18n.t('sqlWorkbench.readOnlyNotice')}</p>
+
+		<MonacoEditor value={sql} language="sql" minHeight="200px" onChange={(v) => (sql = v)} />
+
+		{#if queryError}
+			<FeedbackBanner tone="error">{queryError}</FeedbackBanner>
+		{/if}
+
+		{#if result}
+			<div class="sql-workbench__meta">
+				<span>{rowsShownLabel(result)}</span>
+				{#if result.truncated}
+					<span class="sql-workbench__truncated">{truncatedLabel(result)}</span>
+				{/if}
+			</div>
+			{#if result.rows.length === 0}
+				<p class="sql-workbench__empty">{i18n.t('sqlWorkbench.empty')}</p>
+			{:else}
+				<div class="sql-workbench__results">
+					<table class="data-grid">
+						<thead>
+							<tr>
+								{#each result.columns as col (col)}
+									<th>{col}</th>
+								{/each}
+							</tr>
+						</thead>
+						<tbody>
+							{#each pageRows as row, i (i)}
+								<tr>
+									{#each row as cell, j (j)}
+										<td>{cell ?? ''}</td>
+									{/each}
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+				{#if totalPages > 1}
+					<div class="sql-workbench__pager">
+						<Button variant="outline" size="sm" disabled={page === 0} onclick={() => page--}>
+							{i18n.t('sqlWorkbench.prev')}
+						</Button>
+						<span>{pageLabel()}</span>
+						<Button
+							variant="outline"
+							size="sm"
+							disabled={page >= totalPages - 1}
+							onclick={() => page++}
+						>
+							{i18n.t('sqlWorkbench.next')}
+						</Button>
+					</div>
+				{/if}
+			{/if}
+		{:else}
+			<p class="sql-workbench__empty">{i18n.t('sqlWorkbench.empty')}</p>
+		{/if}
+	</div>
 </div>
 
 <style>
+	.sql-workbench-scroll {
+		flex: 1 1 auto;
+		min-height: 0;
+		min-width: 0;
+		overflow-y: auto;
+	}
+	.sql-workbench__results {
+		max-width: 100%;
+		overflow-x: auto;
+	}
 	.sql-workbench {
 		display: flex;
 		flex-direction: column;
@@ -184,6 +292,72 @@
 		align-items: flex-end;
 		gap: 0.75rem;
 		flex-wrap: wrap;
+	}
+	/* saiku#2599 C2: the selector's effect, spelled out — product · catalog.schema, plus the
+   credential-redacted JDBC URL as secondary text. */
+	.sql-workbench__ds-info {
+		margin: 0;
+		display: flex;
+		align-items: baseline;
+		gap: 0.75rem;
+		flex-wrap: wrap;
+		font-size: 0.8125rem;
+		color: hsl(var(--fg-muted));
+	}
+	.sql-workbench__ds-target {
+		color: hsl(var(--fg));
+		font-weight: 500;
+	}
+	.sql-workbench__ds-url {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		display: inline-block;
+		max-width: 100%;
+		font-family: var(--font-mono, monospace);
+	}
+	.sql-workbench__ds-missing {
+		font-style: italic;
+	}
+	/* saiku#2599 C3: the default schema's tables, collapsed by default. */
+	.sql-workbench__tables {
+		border: 1px solid hsl(var(--border));
+		border-radius: 0.5rem;
+		padding: 0.5rem 0.75rem;
+		align-self: flex-start;
+		min-width: 260px;
+		max-width: 100%;
+	}
+	.sql-workbench__tables summary {
+		cursor: pointer;
+		font-size: 0.8125rem;
+		font-weight: 500;
+		color: hsl(var(--fg-muted));
+		user-select: none;
+	}
+	.sql-workbench__tables-loading {
+		color: hsl(var(--fg-muted));
+	}
+	.sql-workbench__tables-list {
+		margin: 0.5rem 0 0;
+		padding: 0;
+		list-style: none;
+		max-height: 16rem;
+		overflow-y: auto;
+		display: flex;
+		flex-direction: column;
+		gap: 0.125rem;
+	}
+	.sql-workbench__table-name {
+		all: unset;
+		cursor: pointer;
+		padding: 0.25rem 0.375rem;
+		border-radius: 0.25rem;
+		font-size: 0.8125rem;
+		font-family: var(--font-mono, monospace);
+	}
+	.sql-workbench__table-name:hover {
+		background: hsl(var(--bg-subtle));
 	}
 	.sql-workbench__notice {
 		margin: 0;

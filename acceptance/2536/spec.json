@@ -1,0 +1,32 @@
+{
+  "issue": 2536,
+  "title": "Share links, embed tokens and public embed grants bind to the content that was shared — content written by anyone other than the minter is refused (409), minter writes re-arm the binding",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "the dedicated repository tests",
+      "then": "reproduce the #2536 scenario for dashboards, notebooks and embed tokens: content changed after the link was minted is refused (409 CONTENT_CHANGED), unchanged content still serves"
+    },
+    {
+      "id": "C2",
+      "given": "every share token, embed token and public embed grant record",
+      "then": "carries a mint-time SHA-256 content binding plus a poison flag, and the guest read path (ShareViewResource, NotebookShareViewResource, EmbedViewResource) refuses with 409 when the served content no longer matches or a non-minter has written it"
+    },
+    {
+      "id": "C3",
+      "given": "a repository file save that flows through DatasourceService.saveFile",
+      "then": "a listener re-binds the stored content hash when the writer is the minter (links to objects only the minter writes keep working) and marks the record changed-by-other when anyone else wrote it"
+    },
+    {
+      "id": "C4",
+      "given": "the sharing and embed documentation",
+      "then": "describes the chosen rule: links bind the minted content; non-minter edits invalidate; minter edits re-arm; pre-binding tokens bind on first use"
+    }
+  ],
+  "command": [
+    "node",
+    "check.mjs"
+  ],
+  "timeoutSeconds": 60
+}

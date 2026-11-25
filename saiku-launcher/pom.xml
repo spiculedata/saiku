@@ -6,7 +6,7 @@
     <parent>
         <groupId>org.saikuanalytics</groupId>
         <artifactId>saiku</artifactId>
-        <version>4.9.1</version>
+        <version>4.10.0</version>
     </parent>
 
     <artifactId>saiku-launcher</artifactId>
@@ -15,7 +15,7 @@
     <description>Executable Saiku distribution: Picocli CLI + embedded Jetty serving the Saiku webapp.</description>
 
     <properties>
-        <jetty.version>12.1.14</jetty.version>
+        <jetty.version>12.1.15</jetty.version>
         <picocli.version>4.7.7</picocli.version>
         <maven.compiler.release>21</maven.compiler.release>
         <!-- Default: skip launcher ITs so a bare local `mvn verify` stays fast.

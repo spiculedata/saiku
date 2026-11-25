@@ -31,7 +31,7 @@ import org.slf4j.LoggerFactory;
  * <p>Two shapes accepted:
  * <ul>
  *   <li><b>POST /rest/saiku/api/graphql</b> — body {@code {query, variables?, operationName?}}.
- *       The standard GraphQL-over-HTTP surface. Introspection queries work out of the box.</li>
+ *       The standard GraphQL-over-HTTP surface. Introspection requires ROLE_ADMIN.</li>
  *   <li><b>GET /rest/saiku/api/graphql?query=...&variables=...&operationName=...</b> —
  *       shareable, for queries an operator wants to bookmark. Variables come URL-encoded.</li>
  * </ul>
@@ -134,6 +134,14 @@ public class GraphQlResource {
      * Returns the raw SDL for the running schema so operators + codegen tools can grab it
      * without an introspection query. Static within a process lifecycle — a container-level
      * ETag cache is safe.
+     *
+     * <p>saiku#2550k: <b>admin-only</b>. The per-cube schema is built ONCE from the full cube
+     * estate with no request principal (SaikuGraphQlService/SaikuGraphQlFetchers), so where
+     * Mondrian roles hide schema elements the SDL still names every cube, dimension, hierarchy
+     * and level on the server — a non-admin reading it learns element names their role is meant
+     * to hide. Execution (the POST/GET query endpoints) still goes through each fetcher's own
+     * role checks; introspection is restricted by the service as well. Does not rely on the JAX-RS
+     * RolesAllowed feature — the check is explicit, like the other per-method gates.
      */
     @GET
     @Path("/schema.graphql")
@@ -141,6 +149,19 @@ public class GraphQlResource {
     public Response schema() {
         if (graphQlService == null) {
             return unavailable("GraphQL engine not wired");
+        }
+        org.springframework.security.core.Authentication auth =
+                org.springframework.security.core.context.SecurityContextHolder.getContext()
+                        .getAuthentication();
+        boolean admin = auth != null
+                && auth.isAuthenticated()
+                && !(auth instanceof org.springframework.security.authentication.AnonymousAuthenticationToken)
+                && auth.getAuthorities().stream().anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
+        if (!admin) {
+            return Response.status(Response.Status.FORBIDDEN)
+                    .type(MediaType.APPLICATION_JSON)
+                    .entity(Map.of("errors", List.of(Map.of("message", "admin only"))))
+                    .build();
         }
         return Response.ok(graphQlService.getSdl()).type(MediaType.TEXT_PLAIN).build();
     }

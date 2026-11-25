@@ -185,7 +185,14 @@ persist with the dashboard.
   hidden. A "last updated" badge shows freshness.
 - **Export** — export the whole dashboard to **PDF** or **PNG** from the toolbar.
 - **Share** — mint a read-only **share link** so people can view a dashboard
-  without an account, scoped to that dashboard.
+  without an account, scoped to that dashboard. The link binds the dashboard
+  **content**, not just its path (saiku#2536): queries on a shared dashboard
+  run under your roles, so a collaborator's later edit to the dashboard or a
+  saved query referenced by one of its tiles is refused
+  (`409 CONTENT_CHANGED`) rather than executed for the viewer — re-mint the
+  link after anyone else changes either file. Your own dashboard edits keep
+  the link working, but cannot re-arm a changed referenced query; you must
+  save that query yourself or mint a new link.
 - **Collaborate** — leave **comments** on a tile, and browse the dashboard's
   **version history** to see (and restore) earlier states.
 

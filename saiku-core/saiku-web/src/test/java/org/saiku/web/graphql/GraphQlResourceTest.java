@@ -122,12 +122,35 @@ public class GraphQlResourceTest {
     }
 
     @Test
-    public void schema_serves_the_sdl() {
+    public void schema_serves_the_sdl_to_an_admin() {
         StubGraphQlService service = new StubGraphQlService();
-        Response response = wired(service).schema();
+        Response response = asCaller("ROLE_ADMIN", () -> wired(service).schema());
 
         assertEquals(200, response.getStatus());
         assertEquals("type Query { ok: Boolean }", response.getEntity());
+    }
+
+    /** saiku#2550: the SDL names hidden cube elements, so only an admin may download it. */
+    @Test
+    public void schema_is_refused_to_a_non_admin_and_to_an_anonymous_caller() {
+        StubGraphQlService service = new StubGraphQlService();
+
+        assertEquals(403, asCaller("ROLE_USER", () -> wired(service).schema()).getStatus());
+        assertEquals(403, wired(service).schema().getStatus());
+    }
+
+    private static Response asCaller(String role, java.util.function.Supplier<Response> call) {
+        org.springframework.security.core.context.SecurityContextHolder.getContext()
+                .setAuthentication(new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                        "caller",
+                        "N/A",
+                        java.util.List.of(
+                                new org.springframework.security.core.authority.SimpleGrantedAuthority(role))));
+        try {
+            return call.get();
+        } finally {
+            org.springframework.security.core.context.SecurityContextHolder.clearContext();
+        }
     }
 
     @Test

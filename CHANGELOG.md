@@ -5,7 +5,56 @@ All notable changes to Saiku are documented here. This project follows
 
 ## Unreleased
 
+## 4.10.0 — 2026-11-25
+
+A security-hardening release with the fixes from the November security review, plus the Model IDE for Ossie YAML, a working upgrade banner, and the Cube Designer on OpenAI-compatible and Ollama providers. Every fix ships with an acceptance spec. The deployed demo was checked against the read-only ones before release.
+
+### Upgrade notes (read before upgrading)
+
+- **OAuth/MCP bearer tokens now require an audience (saiku#2543).** An issuer configured without `saiku.oauth.audience` is fail-closed: the resource server stays disabled and every bearer token gets `401`. Roles are granted only through explicit `saiku.oauth.roleMapping`.
+- **`GET`/`POST /login` is gone (saiku#2523).** The only login is `POST /rest/saiku/session`, plus HTTP Basic. The login body is capped at 16 KiB by default, configurable up to 64 KiB (saiku#2535).
+- **REST request bodies are size-capped (saiku#2535).** The default is 10 MiB per `/rest/*` body and 50 MiB on documented upload routes. A deployment that posts larger bodies must raise `saiku.http.maxBodyBytes` (see `docs/operator-hardening.md`).
+- **SCIM groups grant roles only from an allow-list (saiku#2537).** A group whose name isn't a grantable role no longer grants it, including groups that existed before the upgrade.
+- **Ossie datasources' `ossieYaml` must live in the model directories (saiku#2534).**
+- **Outbound MCP servers must be `https` on public addresses (saiku#2542).** `http://` and private-network registrations are refused at save time and checked again before every send.
+- **`/schema.graphql` and GraphQL introspection are admin-only (saiku#2550).**
+- **Chart export rasters are bounded (saiku#2527).** Exports are capped at 2000×2000 px by default (`saiku.export.chart.*`). An unsized oversize export gets `400`, and a busy server answers `503`.
+
+### Security
+
+- **SQL workbench executes exactly what the read-only guard validated (saiku#2522).** Comment, JDBC-escape and `SHOW` shortcuts can no longer hide a second statement, and the workbench connection runs with escape processing off.
+- **Ossie field-level `saiku.roles` can't be bypassed by naming the physical column (saiku#2526).** Every shelf identifier must resolve against the model. Unqualified filters use the declaring dataset's expression, and GraphQL `ossieModel`, export and ontology return the role-filtered model.
+- **Result caches are keyed per caller on pass-through datasources (saiku#2538),** and fail closed when roles can't be resolved.
+- **Share links, embed tokens and public grants are bound to the shared content (saiku#2536).** That includes saved queries referenced by tiles. A collaborator's edit, move or delete disables the link until the creator re-saves.
+- **Share and embed token swaps no longer rewrite a session-backed security context (saiku#2520).**
+- **Unauthenticated `401`s and failed logins create no session (saiku#2524),** and `GET /rest/saiku/session` no longer returns the servlet session id (saiku#2546).
+- **The `acl.json` sidecar is reserved on every content door** and carries its entries across moves (saiku#2525).
+- **`.sds` descriptor writes are gated on the resolved file name (saiku#2521).**
+- **Deleting a datasource removes its descriptor, cache entry and live connection (saiku#2533).**
+- **The AI schema cache key is normalised and bounded (saiku#2539),** and AI/MCP surface follow-ups landed (saiku#2542): MCP protocol-version clamping, outbound SSRF checks at send time, and catalogue gates.
+- **CSV header cells get formula neutralisation (saiku#2544),** and the App Builder validates `app.id` before using it in a CSS selector (saiku#2545).
+- **Twelve smaller review follow-ups (saiku#2550)** include the what-if level/member check, admin-only GraphQL introspection, per-dashboard sidecar keying, result-size caps in the workbench, and Sheets formula neutralisation.
+- **CI and supply chain:** release publishing restores no Actions cache, and the docker push job restores none (saiku#2530). Auto-review applies only comments from real collaborators, with `.git` locked down (saiku#2531). Dependabot updates wait 7 days, and build-plugin and Actions bumps are never auto-merged (saiku#2548).
+
+### Added
+
+- **Model IDE edits Ossie semantic-model YAML (saiku#1428),** with completion scoped to the open datasource.
+- **The upgrade banner works (saiku#2579).** The launcher's update check reaches the UI, the release-notes link points at this repo, and dismissal is per version.
+- **The Cube Designer agent runs on `ai.provider=openai`/`ollama` (follow-up to saiku#904).**
+- **A Sponsor link** in the top bar, the launcher banner and the README (saiku#2577). Turn it off with `SAIKU_SPONSOR_LINK=false`.
+
 ### Fixed
+
+- **SQL workbench results scroll** instead of running off the page (saiku#2599, part).
+- **TESTING.md** matches CI (saiku#2396), and test coverage for saiku-web and the launcher is above 70% (saiku#2496).
+
+### Dependencies
+
+avatica-server 1.29.0, fop 2.12, jacoco 0.8.16, spotless 3.11.0, setup-java 6.3.0, dependency-review-action 5.0.1.
+
+### Details from the individual changes
+
+#### Fixed
 
 - **MCP tool calls are recorded in the AI audit log (saiku#2540).**
   Every `tools/call` now writes one `ai-audit.jsonl` entry carrying the user,
@@ -18,7 +67,7 @@ All notable changes to Saiku are documented here. This project follows
   `/ai/members/search`, ...) or model (`/ai/ossie/query`,
   `/ai/ossie/schema/{connection}/{model}`, ...).
 
-### Security
+#### Security
 
 - **Credentials redacted from connection error logs (saiku#2547, CWE-532).**
   When a Mondrian connection failed, the logged exception's message carried the
@@ -65,7 +114,7 @@ All notable changes to Saiku are documented here. This project follows
   properties, or on external image hosts, need the operator to allow those
   sources explicitly.
 
-### Fixed
+#### Fixed
 
 - **The generated Spring `/login` endpoint is gone (saiku#2523).** The main
   security chain no longer declares `auto-config`, which silently registered
