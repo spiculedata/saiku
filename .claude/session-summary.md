@@ -75,6 +75,12 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-11-25 — feature/share-bind-content-2536 — PR #2565 CI fixture rework
+**Was doing:** wired valid share-token store records into the older dashboard and notebook resource tests after CI reported 409 instead of their expected 200/404 responses.
+**Now:** check PR #2565 CI on the pushed head for the Java tests and Docker image job.
+**Watch out:** local Maven stops before compilation on GitHub Packages 401; the previous Docker job hit Maven Central 429 while downloading the telemetry agent.
+**Refs:** #2536, PR #2565
+
 ## 2026-11-24 — feature/2535-rest-body-size-limits — PR #2566 review rework
 **Was doing:** formatted the REST body filter test and corrected the operator guide; local Spotless, licence, and static acceptance checks pass. Maven service/web tests stop at GitHub Packages 401 before compilation.
 **Now:** check PR #2566 CI on the rework commit for the full build and Java tests.
