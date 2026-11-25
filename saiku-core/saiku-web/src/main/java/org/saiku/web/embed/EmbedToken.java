@@ -6,6 +6,8 @@ package org.saiku.web.embed;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * A persisted embed-token record — the server-side authority for a
@@ -83,6 +85,27 @@ public class EmbedToken {
      *  sensitivity resources where some need stricter redaction than the
      *  tenant default. */
     public RedactionPolicy redactionPolicy = RedactionPolicy.TENANT_DEFAULT;
+
+    /** saiku#2536 — lowercase SHA-256 hex of the pinned content (as read
+     *  under the minter's scope) at mint time. Binds the token to WHAT was
+     *  shared, not only to its path: a later edit by a collaborator changes
+     *  the hash and the guest read is refused instead of executing the new
+     *  content under the minter's roles. Null for cube-pinned kinds
+     *  ({@code ai}, {@code authoring}) and tokens minted before this
+     *  binding existed — the latter bind to current content on first use. */
+    public String contentSha256;
+
+    /** Mint-time hashes of saved queries referenced by dashboard/app tiles. */
+    public Map<String, String> referenceSha256;
+
+    /** Referenced files written by someone other than the minter. */
+    public Set<String> referencesChangedByOther;
+
+    /** saiku#2536 — set once a user other than the minter has saved the
+     *  pinned content since minting. Refuses the guest read even if the
+     *  bytes were later restored to match the pinned hash: the token must
+     *  be re-minted. Cleared only by the minter writing again. */
+    public boolean contentChangedByOther;
 
     public EmbedToken() {}
 

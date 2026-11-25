@@ -21,6 +21,9 @@ import org.saiku.web.rest.resources.dashboards.DashboardTile;
 import org.saiku.web.rest.resources.dashboards.TileQuery;
 import org.saiku.web.security.share.ShareTokenAuthFilter.ShareGuestDetails;
 import org.saiku.web.service.SessionService;
+import org.saiku.web.share.ContentBinding;
+import org.saiku.web.share.ShareToken;
+import org.saiku.web.share.ShareTokenStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
@@ -38,6 +41,18 @@ import org.springframework.security.core.context.SecurityContextHolder;
  * share owner's data scope via {@link SessionService#runAs} — a delegation by
  * someone who held GRANT — so the guest sees exactly what was shared, but with
  * no ability to author a query or widen the cube.
+ *
+ * <p><b>saiku#2536 — the link binds CONTENT, not only a path.</b> The pinned
+ * dashboard is re-read on every view and its tile queries run under the
+ * minter's roles, so a collaborator with {@code WRITE} on the shared object
+ * could otherwise swap a tile for a saved query the minter can read and read
+ * the result through the link. The mint-time content hash (plus the
+ * changed-by-other flag recorded by the repository save hook) is enforced
+ * before anything is served or executed: content that no longer matches the
+ * binding, or that anyone other than the minter has written since minting,
+ * is refused with {@code 409 CONTENT_CHANGED}. The minter's own edits re-arm
+ * the binding (see {@code SharedContentBindingListener}), so iterating on a
+ * shared dashboard never breaks its links.
  */
 @Path("/saiku/share/view")
 public class ShareViewResource {
@@ -48,6 +63,9 @@ public class ShareViewResource {
     private DatasourceService datasourceService;
     private SessionService sessionService;
     private AiQueryResource aiQueryResource;
+    /** saiku#2536 — resolves the minted record the token names, for the
+     *  content binding (and the legacy first-use binding). */
+    private ShareTokenStore shareTokenStore;
 
     public void setDatasourceService(DatasourceService s) {
         this.datasourceService = s;
@@ -61,6 +79,10 @@ public class ShareViewResource {
         this.aiQueryResource = r;
     }
 
+    public void setShareTokenStore(ShareTokenStore s) {
+        this.shareTokenStore = s;
+    }
+
     /** The pinned dashboard's layout, so the viewer can render its tiles. */
     @GET
     @Path("/dashboard")
@@ -69,6 +91,10 @@ public class ShareViewResource {
         ShareGuestDetails g = guest();
         if (g == null) {
             return invalid();
+        }
+        Response conflict = contentBindingError(g);
+        if (conflict != null) {
+            return harden(conflict);
         }
         Dashboard dash = loadDashboard(g);
         if (dash == null) {
@@ -90,6 +116,10 @@ public class ShareViewResource {
         ShareGuestDetails g = guest();
         if (g == null) {
             return invalid();
+        }
+        Response conflict = contentBindingError(g);
+        if (conflict != null) {
+            return harden(conflict);
         }
         Dashboard dash = loadDashboard(g);
         if (dash == null || dash.layout == null || dash.layout.tiles == null) {
@@ -137,6 +167,72 @@ public class ShareViewResource {
     }
 
     /* --------------------------- helpers ---------------------------- */
+
+    /**
+     * saiku#2536 — enforce the mint-time content binding BEFORE anything from
+     * the pinned dashboard is served or executed. Reads the content once (as
+     * the owner) and compares it against the binding recorded on the token:
+     * <ul>
+     *   <li>{@code contentChangedByOther} — a non-minter has saved the shared
+     *       object since minting → 409, even if the bytes now match the
+     *       pinned hash again;</li>
+     *   <li>{@code contentSha256} set and the hash differs → 409;</li>
+     *   <li>{@code contentSha256} null (a legacy record, minted before the
+     *       binding existed) → bind it to the current content once, then
+     *       serve. This closes the window for pre-upgrade links on their
+     *       first post-upgrade read.</li>
+     * </ul>
+     * Returns null when the read may proceed (or when the content itself is
+     * unreadable — the caller's existing null-content handling applies).
+     */
+    private Response contentBindingError(ShareGuestDetails g) {
+        ShareToken t = shareTokenStore == null ? null : shareTokenStore.load(g.token);
+        if (t == null) {
+            // The filter validated this token a moment ago; a concurrent
+            // revoke must not turn a missing record into a data read. Refuse.
+            return ContentBinding.conflict();
+        }
+        if (t.contentChangedByOther) {
+            log.warn(
+                    "refusing share read of {} — content was written by someone other than the minter"
+                            + " (saiku#2536)",
+                    t.dashboardPath);
+            return ContentBinding.conflict();
+        }
+        // Read the content as the owner, exactly as loadDashboard will.
+        String raw;
+        try {
+            raw = datasourceService.getFileData(g.dashboardPath, g.ownerUser, g.ownerRoles);
+        } catch (RuntimeException e) {
+            return null; // unreadable → the load path produces the 404.
+        }
+        if (raw == null || raw.isEmpty()) {
+            return null;
+        }
+        if (t.contentSha256 == null) {
+            shareTokenStore.bindContentSha256(g.token, ContentBinding.sha256Hex(raw));
+        } else if (!ContentBinding.matches(t.contentSha256, raw)) {
+            log.warn(
+                    "refusing share read of {} — content no longer matches the minted binding (saiku#2536)",
+                    t.dashboardPath);
+            return ContentBinding.conflict();
+        }
+        if (t.referenceSha256 == null) {
+            shareTokenStore.bindReferences(
+                    g.token,
+                    ContentBinding.referenceHashes(
+                            "dashboard", raw, path -> datasourceService.getFileData(path, g.ownerUser, g.ownerRoles)));
+            t = shareTokenStore.load(g.token);
+        }
+        if (t.referencesChangedByOther != null && !t.referencesChangedByOther.isEmpty()) {
+            return ContentBinding.conflict();
+        }
+        if (!ContentBinding.referencesMatch(
+                t.referenceSha256, path -> datasourceService.getFileData(path, g.ownerUser, g.ownerRoles))) {
+            return ContentBinding.conflict();
+        }
+        return null;
+    }
 
     private Dashboard loadDashboard(ShareGuestDetails g) {
         // Defence-in-depth: re-assert the pinned path is a dashboard at the

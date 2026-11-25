@@ -300,13 +300,60 @@ public final class WebhookUrlValidator {
                 return true; // 0.0.0.0/8 "this host"
             }
         }
-        // IPv6 unique-local fc00::/7 (ULA is not flagged by isSiteLocalAddress).
+        // IPv6 extras: unique-local fc00::/7 (ULA is not flagged by isSiteLocalAddress)
+        // and the transition-mechanism ranges that tunnel an IPv4 target inside an IPv6
+        // literal (saiku#2550g) — NAT64, 6to4 and IPv4-compatible. In each the trailing
+        // 4 bytes are an IPv4 address an IPv6-literal SSRF can smuggle past a naive
+        // "is it IPv6? skip IPv4 checks" gate, so re-run the IPv4 checks on the embedded
+        // bytes (and block NAT64's 96-bit prefix wholesale: its /96 is only ever used to
+        // synthesise addresses from DNS64 answers, never a legitimate webhook target).
         if (a.length == 16) {
             int b0 = a[0] & 0xff;
             if ((b0 & 0xfe) == 0xfc) {
                 return true; // fc00::/7
             }
+            // NAT64 64:ff9b::/96
+            if (b0 == 0x00
+                    && (a[1] & 0xff) == 0x64
+                    && (a[2] & 0xff) == 0xff
+                    && (a[3] & 0xff) == 0x9b
+                    && (a[4] & 0xff) == 0
+                    && (a[5] & 0xff) == 0
+                    && (a[6] & 0xff) == 0
+                    && (a[7] & 0xff) == 0
+                    && (a[8] & 0xff) == 0
+                    && (a[9] & 0xff) == 0
+                    && (a[10] & 0xff) == 0
+                    && (a[11] & 0xff) == 0) {
+                return true;
+            }
+            // 6to4 2002::/16 — the embedded IPv4 sits in bytes 2..5.
+            if (b0 == 0x20 && (a[1] & 0xff) == 0x02) {
+                return blockedEmbeddedIpv4(a[2], a[3], a[4], a[5]);
+            }
+            // IPv4-compatible ::a.b.c.d — the first 12 bytes are all zero and the
+            // last 4 are an IPv4 address (never mind deprecated, it still parses).
+            boolean first12Zero = true;
+            for (int i = 0; i < 12; i++) {
+                if ((a[i] & 0xff) != 0) {
+                    first12Zero = false;
+                    break;
+                }
+            }
+            if (first12Zero) {
+                return blockedEmbeddedIpv4(a[12], a[13], a[14], a[15]);
+            }
         }
         return false;
+    }
+
+    /** The IPv4 checks of {@link #isBlockedAddress} applied to an embedded IPv4 address. */
+    private static boolean blockedEmbeddedIpv4(byte b0, byte b1, byte b2, byte b3) {
+        try {
+            return isBlockedAddress(InetAddress.getByAddress(new byte[] {b0, b1, b2, b3}));
+        } catch (java.net.UnknownHostException e) {
+            // Four bytes always form a valid InetAddress; unreachable.
+            return true;
+        }
     }
 }

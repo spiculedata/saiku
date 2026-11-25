@@ -36,7 +36,7 @@ FROM cgr.dev/concepttocloud.com/jre:openjdk-21@sha256:4dbbdd8c594eca71b6d9f78686
 # Build stage: everything that needs a shell happens here, on the free public
 # wolfi-base, and is staged into /rootfs for a plain COPY into the final image.
 # ---------------------------------------------------------------------------
-FROM cgr.dev/chainguard/wolfi-base:latest@sha256:be019c1c74fe69204a42c4e10bc4d886a49bf5403ffa74374ef7baa408fc9a26 AS rootfs
+FROM cgr.dev/chainguard/wolfi-base:latest@sha256:28c39be5a5e1e9b85081c10740e8495f6518a865b23bc6a486637c4b21e74b43 AS rootfs
 ARG OTEL_AGENT_VERSION=2.28.1
 ARG OTEL_AGENT_SHA256=faa89bdeebf9b1f52be4a4374689176717b02a59df2d8f8b6eb9aa39f9292589
 

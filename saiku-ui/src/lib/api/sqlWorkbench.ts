@@ -13,6 +13,19 @@ export interface SqlDatasource {
 	type: string | null;
 }
 
+/** Mirrors SqlWorkbenchService.DatasourceInfo on the server (saiku#2599). The URL is already
+ *  credential-redacted server-side (cf. #2547); the password itself is never sent at all. */
+export interface SqlDatasourceInfo {
+	name: string;
+	databaseProductName: string | null;
+	databaseProductVersion: string | null;
+	driverName: string | null;
+	driverVersion: string | null;
+	catalog: string | null;
+	schema: string | null;
+	url: string | null;
+}
+
 /** Mirrors SqlWorkbenchService.SqlQueryResult on the server. A cell may be a string, number,
  *  boolean, or null — whatever the JDBC driver's ResultSet.getObject() returned. */
 export interface SqlQueryResult {
@@ -42,6 +55,39 @@ export async function listDatasources(): Promise<SqlDatasource[]> {
 		);
 	}
 	return (await res.json()) as SqlDatasource[];
+}
+
+/** saiku#2599 — what the datasource connects to: database product, catalog, default schema
+ *  (and a credential-redacted URL) read live from the driver's DatabaseMetaData. */
+export async function datasourceInfo(name: string): Promise<SqlDatasourceInfo> {
+	const res = await fetch(`${REST_BASE}/datasources/${encodeURIComponent(name)}/info`, CREDS);
+	if (!res.ok) {
+		throw new SqlWorkbenchApiError(
+			'INFO_UNAVAILABLE',
+			`Could not load datasource info (${res.status})`
+		);
+	}
+	return (await res.json()) as SqlDatasourceInfo;
+}
+
+/** saiku#2599 — the datasource's default-schema tables (read-only metadata), for the
+ *  workbench's collapsible table list. */
+export async function listTables(name: string): Promise<string[]> {
+	const res = await fetch(`${REST_BASE}/datasources/${encodeURIComponent(name)}/tables`, CREDS);
+	if (!res.ok) {
+		throw new SqlWorkbenchApiError(
+			'TABLES_UNAVAILABLE',
+			`Could not load the table list (${res.status})`
+		);
+	}
+	return (await res.json()) as string[];
+}
+
+/** saiku#2599 — the statement the table list inserts when a table is clicked. ANSI double-quote
+ *  identifier quoting; embedded quotes are escaped by doubling (the "account" vs 'account'
+ *  confusion from #2598). */
+export function selectAllSql(table: string): string {
+	return `SELECT * FROM "${table.replace(/"/g, '""')}"`;
 }
 
 export async function runQuery(

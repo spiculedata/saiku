@@ -19,6 +19,8 @@ import org.saiku.web.rest.resources.dashboards.DashboardTile;
 import org.saiku.web.rest.resources.dashboards.TileQuery;
 import org.saiku.web.security.share.ShareTokenAuthFilter.ShareGuestDetails;
 import org.saiku.web.service.SessionService;
+import org.saiku.web.share.ShareToken;
+import org.saiku.web.share.ShareTokenStore;
 
 /** Unit tests for {@link ShareViewResource}. */
 public class ShareViewResourceTest {
@@ -28,6 +30,7 @@ public class ShareViewResourceTest {
     private ShareViewResource resource;
     private StubDatasources datasources;
     private StubAiQuery aiQuery;
+    private ShareTokenStore tokenStore;
     private Dashboard dash;
 
     @Before
@@ -38,6 +41,8 @@ public class ShareViewResourceTest {
         resource.setDatasourceService(datasources);
         resource.setSessionService(new StubSessionService());
         resource.setAiQueryResource(aiQuery);
+        tokenStore = new ShareTokenStore(null);
+        resource.setShareTokenStore(tokenStore);
         dash = new Dashboard();
         dash.id = "d1";
         dash.name = "Board";
@@ -84,9 +89,10 @@ public class ShareViewResourceTest {
     }
 
     private void asGuest(String dashboardPath) {
+        ShareToken token = tokenStore.create(dashboardPath, "owner", List.of("ROLE_USER"), 3600_000L, null);
         org.springframework.security.authentication.TestingAuthenticationToken auth =
-                new org.springframework.security.authentication.TestingAuthenticationToken("guest", "tok");
-        auth.setDetails(new ShareGuestDetails("tok", dashboardPath, "owner", List.of("ROLE_USER")));
+                new org.springframework.security.authentication.TestingAuthenticationToken("guest", token.token);
+        auth.setDetails(new ShareGuestDetails(token.token, dashboardPath, "owner", List.of("ROLE_USER")));
         org.springframework.security.core.context.SecurityContextHolder.getContext()
                 .setAuthentication(auth);
     }

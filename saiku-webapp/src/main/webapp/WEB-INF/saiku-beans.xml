@@ -107,6 +107,13 @@
 
     <bean id="datasourceServiceBean" class="org.saiku.service.datasource.DatasourceService">
         <property name="connectionManager" ref="connectionManager"/>
+        <!-- saiku#2536: every repository file save notifies the share/embed content-binding
+             listener so minted bindings stay honest (minter writes re-arm, other writes poison). -->
+        <property name="repositoryFileListeners">
+            <list>
+                <ref bean="sharedContentBindingListener"/>
+            </list>
+        </property>
     </bean>
 
     <bean id="userDaoDataSource"
@@ -1318,6 +1325,8 @@
         <property name="datasourceService" ref="datasourceServiceBean"/>
         <property name="sessionService" ref="sessionService"/>
         <property name="aiQueryResource" ref="aiQueryResource"/>
+        <!-- saiku#2536: the read path enforces the mint-time content binding -->
+        <property name="shareTokenStore" ref="shareTokenStore"/>
     </bean>
 
     <!-- Notebook counterpart of shareViewResource (issue #1108), sitting under
@@ -1333,6 +1342,19 @@
         <property name="sessionService" ref="sessionService"/>
         <property name="query2Resource" ref="queryResource2"/>
         <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
+        <!-- saiku#2536: the read path enforces the mint-time content binding -->
+        <property name="shareTokenStore" ref="shareTokenStore"/>
+    </bean>
+
+    <!-- saiku#2536: keeps the share/embed minted content bindings honest. Fires on
+         every repository file save (wired onto datasourceServiceBean above): the
+         minter's own writes re-arm the record's content hash; writes by anyone
+         else poison the record so the guest read is refused until re-minted. -->
+    <bean id="sharedContentBindingListener"
+          class="org.saiku.web.share.SharedContentBindingListener">
+        <property name="shareTokenStore" ref="shareTokenStore"/>
+        <property name="embedTokenStore" ref="embedTokenStore"/>
+        <property name="embedPublicRegistry" ref="embedPublicRegistry"/>
     </bean>
 
     <!-- ====================================================================
@@ -1416,6 +1438,9 @@
              gated on the plugin being referenced by the pinned app doc. Same trusted
              registry the in-app TilePluginResource serves — never author-supplied HTML. -->
         <property name="pluginRegistry" ref="tilePluginRegistryBean"/>
+        <!-- saiku#2536: the read path enforces the mint-time content binding -->
+        <property name="tokenStore" ref="embedTokenStore"/>
+        <property name="publicRegistry" ref="embedPublicRegistry"/>
     </bean>
 
     <!-- saiku#1435 Creator Mode. The only embed surface that writes: an
