@@ -75,11 +75,11 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
-## 2026-11-24 — feature/share-bind-content-2536 — PR #2565 reference rework
-**Was doing:** merged development and fixed the parent-save reference rehash hole; successful removes and moves now notify binding listeners. Added share, embed-token, public-grant, and service regression tests.
-**Now:** check PR #2565 CI on the pushed head, especially the Java build and new resource tests.
-**Watch out:** local Maven cannot resolve private Mondrian/olap4j packages (401); 24 isolated binding/store/listener tests, Spotless, and acceptance #2536 passed.
-**Refs:** #2536, #2565
+## 2026-11-24 — feature/2535-rest-body-size-limits — PR #2566 review rework
+**Was doing:** formatted the REST body filter test and corrected the operator guide; local Spotless, licence, and static acceptance checks pass. Maven service/web tests stop at GitHub Packages 401 before compilation.
+**Now:** check PR #2566 CI on the rework commit for the full build and Java tests.
+**Watch out:** local JDK 22 and Maven are available under `/data/agents/quality/.tools/`, but private package dependencies do not resolve with this workspace's credentials.
+**Refs:** #2535, PR #2566
 
 ## 2026-11-24 — feature/2540-mcp-ai-audit — PR #2563 review rework
 **Was doing:** merged current development into the PR branch, retaining both session-summary entries, and added assertions for the MCP validation error's `status`, `field` and `available` fields.
@@ -274,8 +274,3 @@ the tree first.
 **Was doing:** added `acceptance/2543` to prove the OAuth audience, explicit role mapping, and session-context requirements that the existing PR implements. The command spec passes on the PR head and fails on the current development base; there is no merge conflict.
 **Now:** check CI after the push. Local focused Maven tests stopped before compilation because GitHub Packages returned 401 for private Mondrian and olap4j artifacts.
 **Refs:** #2543, #2574
-
-## 2026-11-24 — feature/share-bind-content-2536 — PR #2565 review rework
-**Was doing:** extended share and embed content bindings to saved queries referenced by dashboard and app tiles, including public grants; normalized save paths and limited save notifications to successful writes. Added regression tests for referenced-query rewrites and owner edits.
-**Now:** check PR #2565 CI after the push. The focused Maven test run stopped before compilation because GitHub Packages returned 401 for Mondrian and olap4j; 21 isolated binding/store/listener tests passed locally.
-**Refs:** #2536, #2565
