@@ -280,3 +280,8 @@ the tree first.
 **Was doing:** added `acceptance/2543` to prove the OAuth audience, explicit role mapping, and session-context requirements that the existing PR implements. The command spec passes on the PR head and fails on the current development base; there is no merge conflict.
 **Now:** check CI after the push. Local focused Maven tests stopped before compilation because GitHub Packages returned 401 for private Mondrian and olap4j artifacts.
 **Refs:** #2543, #2574
+
+## 2026-11-24 — feature/2599-sql-workbench-scroll-ds-info — PR #2609 CI rework
+**Was doing:** fixed the SQL result grid's flex shrink so the page reaches its pager, bounded the grid's own scrolling to keep headers sticky, and strengthened the Playwright scroll assertions.
+**Now:** check PR #2609 CI after the push; local Chromium cannot launch because this host lacks `libglib-2.0.so.0`, and focused Maven tests stop at GitHub Packages 401 before compilation.
+**Refs:** #2599, #2609

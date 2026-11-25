@@ -33,7 +33,10 @@ const ROW_COUNT = 300;
 function bigResult(rowCount: number) {
 	return {
 		columns: ['id', 'label'],
-		rows: Array.from({ length: rowCount }, (_, i) => [i, `row-${i}`]),
+		rows: Array.from({ length: rowCount }, (_, i) => [
+			i,
+			i === 0 ? `row-${i}-${'wide'.repeat(100)}` : `row-${i}`
+		]),
 		rowCount,
 		truncated: false,
 		durationMs: 1
@@ -184,18 +187,41 @@ test.describe('SQL workbench (mocked backend)', () => {
 		const grid = page.getByTestId('results-grid');
 		await expect(grid).toBeVisible();
 
-		// C5: the scroll container's content is taller than its viewport (the page itself is
-		// the scroller — `.app` is overflow:hidden and nothing else scrolls).
+		// C5: the page scrolls to the pager even though `.app` hides overflow.
 		const scroller = page.locator('.sql-workbench');
-		const metrics = await scroller.evaluate((el) => ({
+		await expect
+			.poll(() => scroller.evaluate((el) => el.scrollHeight - el.clientHeight))
+			.toBeGreaterThan(0);
+
+		// The result has its own bounded scroll area so its header stays at the top
+		// while the last row can be reached. A wide value also needs horizontal scroll.
+		const gridMetrics = await grid.evaluate((el) => ({
 			scrollHeight: el.scrollHeight,
-			clientHeight: el.clientHeight
+			clientHeight: el.clientHeight,
+			scrollWidth: el.scrollWidth,
+			clientWidth: el.clientWidth
 		}));
-		expect(metrics.scrollHeight).toBeGreaterThan(metrics.clientHeight);
+		expect(gridMetrics.scrollHeight).toBeGreaterThan(gridMetrics.clientHeight);
+		expect(gridMetrics.scrollWidth).toBeGreaterThan(gridMetrics.clientWidth);
+		await grid.scrollIntoViewIfNeeded();
+		const headerTop = await grid
+			.locator('th')
+			.first()
+			.evaluate((el) => el.getBoundingClientRect().top);
+		await grid.evaluate((el) => el.scrollTo(0, el.scrollHeight));
+		await expect(grid.locator('tbody tr').last()).toBeInViewport();
+		expect(
+			await grid
+				.locator('th')
+				.first()
+				.evaluate((el) => el.getBoundingClientRect().top)
+		).toBeCloseTo(headerTop, 0);
+		await grid.evaluate((el) => (el.scrollLeft = el.scrollWidth));
+		expect(await grid.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
 
 		// Scrolling reaches the pager.
 		await scroller.evaluate((el) => el.scrollTo(0, el.scrollHeight));
-		await expect(page.getByRole('button', { name: 'Next' })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Next' })).toBeInViewport();
 	});
 
 	test('C4: no topbar item is clipped at 1024px or 1280px', async ({ page }) => {

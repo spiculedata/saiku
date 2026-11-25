@@ -350,17 +350,19 @@
 	.sql-workbench__table-name:hover {
 		background: hsl(var(--bg-subtle));
 	}
-	/* saiku#2599 C1: a wide result scrolls horizontally inside its own wrapper instead of
-   being clipped by `.app`'s overflow:hidden. */
+	/* Keep the grid from shrinking to fit the flex column. Its own scroll area keeps
+	   the headers visible over long results, while the page can scroll to the pager. */
 	.sql-workbench__grid-wrap {
-		overflow-x: auto;
+		flex: none;
+		max-height: 50vh;
+		overflow: auto;
 		max-width: 100%;
 	}
 	.sql-workbench__grid-wrap :global(table.data-grid) {
 		min-width: max-content;
 	}
-	/* The column headers stay visible while the page (this container's nearest scrolling
-   ancestor) scrolls the rows underneath; the th background comes from .data-grid. */
+	/* The grid wrapper scrolls in both directions; its column headers stay visible
+	   while the rows move underneath. The background comes from .data-grid. */
 	.sql-workbench__grid-wrap :global(table.data-grid th) {
 		position: sticky;
 		top: 0;
