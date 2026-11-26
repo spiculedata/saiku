@@ -340,6 +340,68 @@ public class JdbcUrlPolicyTest {
     }
 
     @Test
+    public void rejectDeniedInfoProperties_rejectsDuckDbConfinementKeys() {
+        // saiku#2320: a confinement key arriving through the info map would be applied
+        // case-insensitively in hash order alongside the URL's own options.
+        for (String key :
+                new String[] {"enable_external_access", "ENABLE_EXTERNAL_ACCESS", "lock_configuration", "allowed_paths"
+                }) {
+            java.util.Properties p = new java.util.Properties();
+            p.setProperty(key, key.toLowerCase().contains("lock") ? "false" : "true");
+            try {
+                JdbcUrlPolicy.rejectDeniedInfoProperties("jdbc:duckdb:db", p);
+                fail("info key " + key + " must be rejected on a DuckDB URL");
+            } catch (IllegalArgumentException expected) {
+                assertTrue(expected.getMessage(), expected.getMessage().contains("confinement"));
+            }
+        }
+        // the confined defaults themselves are benign
+        java.util.Properties safe = new java.util.Properties();
+        safe.setProperty("enable_external_access", "false");
+        safe.setProperty("lock_configuration", "true");
+        JdbcUrlPolicy.rejectDeniedInfoProperties("jdbc:duckdb:db", safe); // no throw
+    }
+
+    @Test
+    public void rejectDeniedInfoProperties_rejectsDuckDbConfinementKeyInMondrianWrapper() {
+        java.util.Properties p = new java.util.Properties();
+        p.setProperty("jdbc.enable_external_access", "true");
+        try {
+            JdbcUrlPolicy.rejectDeniedInfoProperties(
+                    "jdbc:mondrian:Jdbc=jdbc:duckdb:db;Catalog=file:/s.xml;JdbcDrivers=org.duckdb.DuckDBDriver", p);
+            fail("a jdbc.-forwarded confinement key must be rejected for a DuckDB driver");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage(), expected.getMessage().contains("confinement"));
+        }
+    }
+
+    @Test
+    public void rejectDeniedInfoProperties_allowsDuckDbConfinementKeyOnOtherBackend() {
+        java.util.Properties p = new java.util.Properties();
+        p.setProperty("lock_configuration", "false"); // a different driver's ordinary option
+        JdbcUrlPolicy.rejectDeniedInfoProperties("jdbc:postgresql://h/db", p); // no throw
+    }
+
+    @Test
+    public void duckDbUserConfinementKeysAreRefusedAtValidateTime() {
+        for (String url : new String[] {
+            "jdbc:duckdb:db?enable_external_access=true",
+            "jdbc:duckdb:db;lock_configuration=false",
+            "jdbc:duckdb:db?ALLOWED_DIRECTORIES=['/etc']",
+            "jdbc:duckdb:db?allowed_paths=/etc",
+            "jdbc:duckdb:db?allowed_configs=*",
+            "jdbc:duckdb:db?allowed_paths=%2Fetc"
+        }) {
+            try {
+                JdbcUrlPolicy.validate(url);
+                fail("expected rejection of " + url);
+            } catch (IllegalArgumentException expected) {
+                assertTrue(expected.getMessage(), expected.getMessage().contains("confinement"));
+            }
+        }
+    }
+
+    @Test
     public void quoteMondrianValue_leavesPlainValuesAlone() {
         assertEquals("secret", JdbcUrlPolicy.quoteMondrianValue("secret"));
     }

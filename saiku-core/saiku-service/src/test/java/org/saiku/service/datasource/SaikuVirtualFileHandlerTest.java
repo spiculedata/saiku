@@ -158,6 +158,70 @@ public class SaikuVirtualFileHandlerTest {
         }
     }
 
+    // --- saiku#2320: http(s) catalogs are refused ---------------------------------------
+
+    @Test
+    public void httpCatalogIsRefused() throws Exception {
+        // A Catalog= of http:// is fetched BY the server (the delegated VFS handler) — an admin
+        // schema must not be able to turn it into an SSRF primitive.
+        SaikuVirtualFileHandler.setRepositoryReader(p -> null);
+        boolean[] delegateTouched = {false};
+        VirtualFileHandler wouldFetchAnything = url -> {
+            delegateTouched[0] = true;
+            return new java.io.ByteArrayInputStream("<Schema/>".getBytes(StandardCharsets.UTF_8));
+        };
+
+        for (String url : new String[] {
+            "http://169.254.169.254/latest/meta-data/schema.xml",
+            "https://internal.corp/schemas/x.xml",
+            "HTTP://internal.corp/schemas/x.xml",
+            "  https://internal.corp/schemas/x.xml"
+        }) {
+            try {
+                new SaikuVirtualFileHandler(wouldFetchAnything).readVirtualFile(url);
+                fail("an http(s) catalog must be refused: " + url);
+            } catch (FileNotFoundException expected) {
+                assertTrue("delegate must not be consulted for " + url, !delegateTouched[0]);
+                assertTrue(expected.getMessage(), expected.getMessage().contains("allowHttpCatalogs"));
+            }
+        }
+    }
+
+    @Test
+    public void httpCatalogIsAllowedOnlyWithAnExplicitOperatorOptIn() throws Exception {
+        SaikuVirtualFileHandler.setRepositoryReader(p -> null);
+        VirtualFileHandler fakeFetch =
+                url -> new java.io.ByteArrayInputStream("<Schema name='FromHttp'/>".getBytes(StandardCharsets.UTF_8));
+
+        String previous = System.getProperty(SaikuVirtualFileHandler.ALLOW_HTTP_CATALOG_PROPERTY);
+        try {
+            System.setProperty(SaikuVirtualFileHandler.ALLOW_HTTP_CATALOG_PROPERTY, "true");
+            try (InputStream in =
+                    new SaikuVirtualFileHandler(fakeFetch).readVirtualFile("http://internal.corp/schemas/x.xml")) {
+                assertEquals("<Schema name='FromHttp'/>", read(in));
+            }
+        } finally {
+            if (previous == null) {
+                System.clearProperty(SaikuVirtualFileHandler.ALLOW_HTTP_CATALOG_PROPERTY);
+            } else {
+                System.setProperty(SaikuVirtualFileHandler.ALLOW_HTTP_CATALOG_PROPERTY, previous);
+            }
+        }
+    }
+
+    @Test
+    public void fileCatalogsAreUnaffectedByTheHttpRefusal() throws Exception {
+        // The seeded data sources use Catalog=file: — delegation and the file guard stay as-is.
+        File tmp = File.createTempFile("saiku-vfs", ".xml");
+        tmp.deleteOnExit();
+        Files.writeString(tmp.toPath(), "<Schema name='OnDisk'/>", StandardCharsets.UTF_8);
+        SaikuVirtualFileHandler.setRepositoryReader(p -> null);
+        try (InputStream in =
+                new SaikuVirtualFileHandler().readVirtualFile(tmp.toURI().toString())) {
+            assertEquals("<Schema name='OnDisk'/>", read(in));
+        }
+    }
+
     // --- saiku#1845 containment -------------------------------------------------
 
     @Test

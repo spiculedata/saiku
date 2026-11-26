@@ -17,6 +17,26 @@
       "id": "C3",
       "given": "an operator who needs the previous behaviour",
       "then": "an explicit saiku.jdbc.fileEngineConfinement=false opt-out exists and is documented in docs/operator-hardening.md"
+    },
+    {
+      "id": "C4",
+      "given": "an SQLite, Derby or HSQLDB datasource URL whose database file lies outside saiku.home",
+      "then": "the JdbcUrlPolicy chokepoint rejects it unless the operator has opted out"
+    },
+    {
+      "id": "C5",
+      "given": "a Mondrian datasource whose Catalog references an http(s):// URL",
+      "then": "SaikuVirtualFileHandler refuses to fetch it from the network unless the operator has explicitly opted in with saiku.mondrian.allowHttpCatalogs"
+    },
+    {
+      "id": "C6",
+      "given": "a connection opened through JdbcUrlPolicy.openConnection(String, Properties) on a DuckDB datasource",
+      "then": "the URL gets the same confinement rewrite as the (url, user, password) overload, so no open path reaches the driver unconfined"
+    },
+    {
+      "id": "C7",
+      "given": "a DuckDB or Quack URL (or info property) carrying a user-supplied enable_external_access, allowed_directories, allowed_paths, allowed_configs or lock_configuration key",
+      "then": "the chokepoint rejects it, so a caller cannot pre-empt or undo the confinement defaults"
     }
   ],
   "command": ["node", "check.mjs"],

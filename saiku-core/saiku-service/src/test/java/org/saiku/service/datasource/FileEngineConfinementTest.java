@@ -84,7 +84,70 @@ public class FileEngineConfinementTest {
     @Test
     public void duckDbOptionsWinOverUserSuppliedOnes() {
         String out = JdbcUrlPolicy.confineFileEngines("jdbc:duckdb:;enable_external_access=true");
-        assertTrue(out, out.indexOf("enable_external_access=false") > out.indexOf("enable_external_access=true"));
+        // The user-supplied copy is stripped outright, not merely overridden by position —
+        // duckdb-java applies options case-insensitively in hash order.
+        assertFalse(out, out.contains("enable_external_access=true"));
+        assertTrue(out, out.contains("enable_external_access=false"));
+    }
+
+    @Test
+    public void duckDbConfinementKeysAreStrippedInAnySpelling() {
+        for (String supplied : new String[] {
+            "jdbc:duckdb:db?ENABLE_EXTERNAL_ACCESS=TRUE&x=1",
+            "jdbc:duckdb:db;Lock_Configuration=false;x=1",
+            "jdbc:duckdb:db?allowed_directories=['/']&x=1",
+            "jdbc:duckdb:db?allowed_paths=/etc;x=1",
+            "jdbc:duckdb:db?allowed_configs=*;x=1",
+            "jdbc:duckdb:?lock_configuration=false"
+        }) {
+            String out = JdbcUrlPolicy.confineFileEngines(supplied);
+            assertTrue(out, out.endsWith(";lock_configuration=true"));
+            assertFalse(supplied, out.contains("external_access=true"));
+            assertFalse(supplied, out.contains("Lock_Configuration=false"));
+            assertFalse(supplied, out.contains("allowed_directories=['/']"));
+            assertFalse(supplied, out.contains("allowed_paths=/etc"));
+            assertFalse(supplied, out.contains("allowed_configs=*"));
+            if (supplied.contains("x=1")) {
+                assertTrue(out, out.contains("x=1")); // other options survive
+            }
+        }
+    }
+
+    @Test
+    public void aConfinedDuckDbUrlStillValidates() {
+        String confined =
+                JdbcUrlPolicy.confineFileEngines("jdbc:duckdb:/data/w.duckdb?x=1&enable_external_access=true");
+        JdbcUrlPolicy.validate(confined); // our own defaults are the safe values
+        assertEquals(confined, JdbcUrlPolicy.confineFileEngines(confined));
+    }
+
+    @Test
+    public void duckDbUserConfinementKeysAreRefusedAtValidateTime() {
+        for (String url : new String[] {
+            "jdbc:duckdb:db?enable_external_access=true",
+            "jdbc:duckdb:db;lock_configuration=false",
+            "jdbc:duckdb:db?ALLOWED_DIRECTORIES=['/etc']",
+            "jdbc:duckdb:db?allowed_paths=/etc",
+            "jdbc:duckdb:db?allowed_configs=*",
+            "jdbc:duckdb:db?allowed_paths=%2Fetc",
+            "jdbc:mondrian:Jdbc=jdbc:duckdb:db;CatalogContent=<x/>;jdbc.enable_external_access=true"
+        }) {
+            try {
+                JdbcUrlPolicy.validate(url);
+                fail("expected rejection of " + url);
+            } catch (IllegalArgumentException expected) {
+                assertTrue(expected.getMessage(), expected.getMessage().contains("confinement"));
+            }
+        }
+    }
+
+    @Test
+    public void duckDbSafeUserCopiesOfTheDefaultsPass() {
+        JdbcUrlPolicy.validate("jdbc:duckdb:db?enable_external_access=false");
+        JdbcUrlPolicy.validate("jdbc:duckdb:db;lock_configuration=true");
+        String ours = JdbcUrlPolicy.confineFileEngines("jdbc:duckdb:db");
+        String dirs = ours.replaceAll(".*allowed_directories=([^;]*);.*", "$1");
+        JdbcUrlPolicy.validate("jdbc:duckdb:db?allowed_directories=" + dirs);
     }
 
     @Test
@@ -137,6 +200,49 @@ public class FileEngineConfinementTest {
     public void mondrianWrappedOtherEngineIsNotRewritten() {
         String url = "jdbc:mondrian:Jdbc=jdbc:h2:mem:x;Catalog=file:/x.xml;JdbcDrivers=org.h2.Driver";
         assertEquals(url, JdbcUrlPolicy.confineFileEngines(url));
+    }
+
+    @Test
+    public void mondrianWrappedQuotedJdbcValueIsConfined() throws Exception {
+        // A quoted inner URL — the ';'-bearing spelling Mondrian itself produces — must be read
+        // with Mondrian's parser, not with a first-unquoted-match regex.
+        String url = "jdbc:mondrian:Jdbc='jdbc:duckdb:/data/w.duckdb;EVENTS=x';Catalog=file:" + home
+                + "/s.xml;JdbcDrivers=org.duckdb.DuckDBDriver";
+        String out = JdbcUrlPolicy.confineFileEngines(url);
+        JdbcUrlPolicy.validate(out);
+        mondrian.olap.Util.PropertyList parsed =
+                mondrian.olap.Util.parseConnectString(out.substring("jdbc:mondrian:".length()));
+        String jdbc = parsed.get("Jdbc");
+        assertTrue(jdbc, jdbc.startsWith("jdbc:duckdb:/data/w.duckdb;"));
+        assertTrue(jdbc, jdbc.contains("EVENTS=x"));
+        assertTrue(jdbc, jdbc.contains("enable_external_access=false"));
+        assertTrue(jdbc, jdbc.endsWith(";lock_configuration=true"));
+    }
+
+    @Test
+    public void mondrianWrapperKeysAroundJdbcDoNotCutTheValue() throws Exception {
+        // The end-of-value bound must come from Mondrian's own grammar, not a key list that can
+        // lag behind RolapConnectionProperties.
+        String url = "jdbc:mondrian:Jdbc=jdbc:duckdb:/data/w.duckdb;Foo=bar;Catalog=file:" + home + "/s.xml";
+        String out = JdbcUrlPolicy.confineFileEngines(url);
+        JdbcUrlPolicy.validate(out);
+        mondrian.olap.Util.PropertyList parsed =
+                mondrian.olap.Util.parseConnectString(out.substring("jdbc:mondrian:".length()));
+        String jdbc = parsed.get("Jdbc");
+        assertTrue(jdbc, jdbc.endsWith(";lock_configuration=true"));
+        assertEquals("bar", parsed.get("Foo"));
+    }
+
+    @Test
+    public void mondrianWrappedDuckDbUserConfinementKeyIsRefused() {
+        String url = "jdbc:mondrian:Jdbc='jdbc:duckdb:db;EVENTS=x;lock_configuration=false';Catalog=file:" + home
+                + "/s.xml;JdbcDrivers=org.duckdb.DuckDBDriver";
+        try {
+            JdbcUrlPolicy.validate(url);
+            fail("expected rejection");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage(), expected.getMessage().contains("confinement"));
+        }
     }
 
     /* ------------------------------------------------------------------ H2 */
@@ -196,6 +302,140 @@ public class FileEngineConfinementTest {
         JdbcUrlPolicy.validate("jdbc:h2:mem:test");
         JdbcUrlPolicy.validate("jdbc:h2:mem:;DB_CLOSE_DELAY=-1");
         JdbcUrlPolicy.validate("jdbc:h2:tcp://localhost:9092/warehouse");
+        // H2's memory-only file systems and ssl: remote protocol are not disk files either.
+        JdbcUrlPolicy.validate("jdbc:h2:memFS:~/test");
+        JdbcUrlPolicy.validate("jdbc:h2:memLZF:~/test");
+        JdbcUrlPolicy.validate("jdbc:h2:nioMemFS:~/test");
+        JdbcUrlPolicy.validate("jdbc:h2:nioMemLZF:~/test");
+        JdbcUrlPolicy.validate("jdbc:h2:ssl://localhost:9092/warehouse");
+    }
+
+    @Test
+    public void h2PrefixMatchingIsCaseSensitiveLikeH2sOwnGrammar() {
+        // H2 matches its prefixes case-sensitively: MEM: is a relative FILE path (cwd-dependent),
+        // so it must not be waved through as an in-memory database.
+        for (String url : new String[] {
+            "jdbc:h2:MEM:/etc/evil",
+            "jdbc:h2:Mem:/etc/evil",
+            "jdbc:h2:TCP://localhost/warehouse",
+            "jdbc:h2:SSL://localhost/warehouse",
+            "jdbc:h2://shared/data"
+        }) {
+            try {
+                JdbcUrlPolicy.validate(url);
+                fail("expected rejection of " + url);
+            } catch (IllegalArgumentException expected) {
+                assertTrue(expected.getMessage(), expected.getMessage().contains("saiku.home"));
+            }
+        }
+    }
+
+    @Test
+    public void h2UnknownFileSystemPrefixesAreRefusedNotCwdRelative() {
+        // nio: is not an H2 2.x scheme; any other unknown scheme: prefix would resolve against the
+        // working directory — refuse rather than guess.
+        for (String url : new String[] {
+            "jdbc:h2:nio:/etc/evil",
+            "jdbc:h2:nioMapped:/etc/evil",
+            "jdbc:h2:async:/etc/evil",
+            "jdbc:h2:retry:/etc/evil",
+            "jdbc:h2:whatever:/etc/evil"
+        }) {
+            try {
+                JdbcUrlPolicy.validate(url);
+                fail("expected rejection of " + url);
+            } catch (IllegalArgumentException expected) {
+                assertTrue(expected.getMessage(), expected.getMessage().contains("saiku.home"));
+            }
+        }
+    }
+
+    /* ------------------------------------------- SQLite / Derby / HSQLDB */
+
+    @Test
+    public void otherFileEnginesAreConfinedToSaikuHome() {
+        for (String url : new String[] {
+            "jdbc:sqlite:/etc/evil.db",
+            "jdbc:sqlite:file:/etc/evil.db",
+            "jdbc:sqlite:../evil.db",
+            "jdbc:sqlite:file:../evil.db?cache=shared",
+            "jdbc:derby:/etc/evil",
+            "jdbc:derby:directory:/etc/evil",
+            "jdbc:derby:jar:/etc/evil.jar!db",
+            "jdbc:derby:jar:(/etc/evil.jar)db",
+            "jdbc:derby:directory:../../evil",
+            "jdbc:hsqldb:/etc/evil",
+            "jdbc:hsqldb:file:/etc/evil",
+            "jdbc:hsqldb:../evil",
+            "jdbc:mondrian:Jdbc=jdbc:sqlite:/etc/evil.db;Catalog=file:" + home + "/s.xml;JdbcDrivers=org.sqlite.JDBC"
+        }) {
+            try {
+                JdbcUrlPolicy.validate(url);
+                fail("expected rejection of " + url);
+            } catch (IllegalArgumentException expected) {
+                assertTrue(expected.getMessage(), expected.getMessage().contains("saiku.home"));
+            }
+        }
+    }
+
+    @Test
+    public void otherFileEnginesKeepTheirInMemoryAndRemoteForms() {
+        JdbcUrlPolicy.validate("jdbc:sqlite::memory:");
+        JdbcUrlPolicy.validate("jdbc:sqlite:file::memory:?cache=shared");
+        JdbcUrlPolicy.validate("jdbc:sqlite:" + home + "/data/warehouse.db");
+        JdbcUrlPolicy.validate("jdbc:sqlite:file:" + home + "/data/warehouse.db");
+        JdbcUrlPolicy.validate("jdbc:derby:memory:scratch");
+        JdbcUrlPolicy.validate("jdbc:derby:classpath:db/warehouse");
+        JdbcUrlPolicy.validate("jdbc:derby:" + home + "/data/warehouse;create=true");
+        JdbcUrlPolicy.validate("jdbc:derby:directory:" + home + "/data/warehouse");
+        JdbcUrlPolicy.validate("jdbc:derby://warehouse.internal:1527/db");
+        JdbcUrlPolicy.validate("jdbc:derby:net://warehouse.internal:1527/db");
+        JdbcUrlPolicy.validate("jdbc:hsqldb:mem:scratch");
+        JdbcUrlPolicy.validate("jdbc:hsqldb:res:/seed/warehouse");
+        JdbcUrlPolicy.validate("jdbc:hsqldb:hsql://warehouse.internal:9001/db");
+        JdbcUrlPolicy.validate("jdbc:hsqldb:hsqls://warehouse.internal:9002/db");
+        JdbcUrlPolicy.validate("jdbc:hsqldb:" + home + "/data/warehouse");
+        JdbcUrlPolicy.validate("jdbc:hsqldb:file:" + home + "/data/warehouse");
+    }
+
+    @Test
+    public void otherFileEnginesRefuseUnknownSubprotocolPrefixes() {
+        for (String url : new String[] {
+            "jdbc:derby:http://internal/db", "jdbc:derby:sneaky:/etc/evil", "jdbc:hsqldb:sneaky:/etc/evil"
+        }) {
+            try {
+                JdbcUrlPolicy.validate(url);
+                fail("expected rejection of " + url);
+            } catch (IllegalArgumentException expected) {
+                assertTrue(expected.getMessage(), expected.getMessage().contains("saiku.home"));
+            }
+        }
+    }
+
+    @Test
+    public void otherFileEnginesFailClosedWithoutSaikuHome() {
+        System.clearProperty("saiku.home");
+        for (String url : new String[] {
+            "jdbc:sqlite:/anywhere/db.db", "jdbc:derby:directory:/anywhere/db", "jdbc:hsqldb:file:/anywhere/db"
+        }) {
+            try {
+                JdbcUrlPolicy.validate(url);
+                fail("must fail closed without saiku.home: " + url);
+            } catch (IllegalArgumentException expected) {
+                assertTrue(expected.getMessage(), expected.getMessage().contains("saiku.home"));
+            }
+        }
+        System.setProperty(FileEngineConfinement.CONFINEMENT_PROPERTY, "false");
+        JdbcUrlPolicy.validate("jdbc:sqlite:/anywhere/db.db"); // explicit opt-out
+    }
+
+    @Test
+    public void otherFileEngineOperatorRootsAreHonoured() throws Exception {
+        Path extra = Files.createTempDirectory("saiku-extra").toRealPath();
+        System.setProperty(FileEngineConfinement.ALLOWED_ROOTS_PROPERTY, extra.toString());
+        JdbcUrlPolicy.validate("jdbc:sqlite:" + extra + "/w.db");
+        JdbcUrlPolicy.validate("jdbc:derby:directory:" + extra + "/db");
+        JdbcUrlPolicy.validate("jdbc:hsqldb:file:" + extra + "/db");
     }
 
     @Test
