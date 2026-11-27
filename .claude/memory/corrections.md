@@ -22,14 +22,20 @@ When tracking credential files by path, include `tee`, in-place edits, and scrip
 **Why:** redirect-only tracking let a later PR-controlled build read a token written by common commands while the gate reported no finding.
 **Source:** PR #2494 review of #2459
 
-## 2026-11-24 — CI security gates: test ordinary workflow and credential spellings
-When a gate parses GitHub Actions, cover scalar and mapping `on:` triggers, both `secrets.GITHUB_TOKEN` and `github.token`, `permissions: write-all`, and credential files supplied through tool flags or `.npmrc`.
-**Why:** a gate that recognizes only one valid spelling can pass while an equivalent credential-bearing PR build runs.
-**Source:** PR #2494 reviews of the #2459 credential-lifecycle gate
 ## 2026-11-25 — SQL workbench: reconcile separately merged issue criteria
 Before updating a PR that spans several acceptance criteria, check whether another PR has already landed one of them. For #2599, preserve #2610's C1 scroll implementation on `development` and keep #2609 focused on its remaining datasource work.
 **Why:** carrying both scroll implementations through a base merge creates conflicting containers and duplicate browser coverage.
 **Source:** PR #2609 maintainer feedback; merged PR #2610
+
+## 2026-11-24 — AI named sets: validate names and reachable PII levels
+Treat both `namedSets[].name` and `expression` as untrusted MDX inputs. Validate names as identifiers before writing `WITH SET`; reject references to a hierarchy containing a PII level, since navigation can reach that level without naming it literally. Reject string-to-MDX functions that hide references in quoted text.
+**Why:** a name could inject a calculated `MEMBER` even after expression validation, while hierarchy navigation and `StrToSet` bypassed literal level matching.
+**Source:** PR #2593 review of #2541
+
+## 2026-11-24 — CI security gates: test ordinary workflow and credential spellings
+When a gate parses GitHub Actions, cover scalar and mapping `on:` triggers, both `secrets.GITHUB_TOKEN` and `github.token`, `permissions: write-all`, and credential files supplied through tool flags or `.npmrc`.
+**Why:** a gate that recognizes only one valid spelling can pass while an equivalent credential-bearing PR build runs.
+**Source:** PR #2494 reviews of the #2459 credential-lifecycle gate
 
 ## 2026-11-24 — Mondrian errors: redact parsed password values through the next field
 Mondrian's connection error writes parsed values without Saiku's connect-string quoting. Treat `JdbcPassword=` as a raw value ending at the next `; Key=` field boundary; spaces, `;` without a following key, `&`, and quotes can all be part of the password.

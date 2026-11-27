@@ -455,6 +455,25 @@
         },
         "type" : "array"
       },
+      "namedSets" : {
+        "description" : "Optional named sets, emitted ahead of the SELECT as WITH SET [name] AS (expression). Names contain 1-64 letters, digits, spaces, underscores or hyphens, with one optional surrounding bracket pair. Reference a set by its name. The MDX set expression is validated server-side: no statement keywords (MEMBER, SET, SELECT, WITH, FROM, WHERE, CREATE, DROP, DIMENSION), StrTo* functions, global Dimensions/Levels lookups, MDX comments (--, /*, //), or unbalanced parentheses and braces. Every bracketed or bare identifier reference must resolve against the cube or an earlier named set. References to a hierarchy containing any PII level, or to a PII measure, are refused.",
+        "items" : {
+          "description" : "A named set for the WITH SET clause.",
+          "properties" : {
+            "expression" : {
+              "description" : "MDX set expression, e.g. {[Product].[Products].[Product Family].Members} or Head([Product].[Products].Members, 5). Validated — see the array description.",
+              "type" : "string"
+            },
+            "name" : {
+              "description" : "Set identifier: 1-64 letters, digits, spaces, underscores or hyphens, optionally surrounded by brackets. Unique within the request; referenced later as [name].",
+              "type" : "string"
+            }
+          },
+          "required" : [ "name", "expression" ],
+          "type" : "object"
+        },
+        "type" : "array"
+      },
       "nonEmpty" : {
         "default" : true,
         "description" : "If true (default), strip rows/columns whose every cell is empty.",

@@ -63,6 +63,19 @@ public final class AiRequestJsonSchema {
                         false,
                         "If true, wrap the rows axis in VISUALTOTALS so parent totals reflect only the visible members."));
         properties.put("nonEmpty", boolField(true, "If true (default), strip rows/columns whose every cell is empty."));
+        properties.put(
+                "namedSets",
+                arrayOf(
+                        namedSet(),
+                        "Optional named sets, emitted ahead of the SELECT as WITH SET [name] AS (expression). "
+                                + "Names contain 1-64 letters, digits, spaces, underscores or hyphens, with one "
+                                + "optional surrounding bracket pair. Reference a set by its name. The MDX set "
+                                + "expression is validated server-side: no statement keywords (MEMBER, SET, "
+                                + "SELECT, WITH, FROM, WHERE, CREATE, DROP, DIMENSION), StrTo* functions, global "
+                                + "Dimensions/Levels lookups, MDX comments (--, /*, //), or unbalanced parentheses "
+                                + "and braces. Every bracketed or bare identifier reference must resolve against "
+                                + "the cube or an earlier named set. References "
+                                + "to a hierarchy containing any PII level, or to a PII measure, are refused."));
         root.put("properties", properties);
 
         Map<String, Object> exampleRoot = new LinkedHashMap<>();
@@ -101,6 +114,21 @@ public final class AiRequestJsonSchema {
         props.put("name", stringField("Measure name (canonical or display)."));
         Map<String, Object> o = obj("Measure on the COLUMNS axis.", props);
         o.put("required", List.of("name"));
+        return o;
+    }
+
+    private static Map<String, Object> namedSet() {
+        Map<String, Object> props = new LinkedHashMap<>();
+        props.put(
+                "name",
+                stringField("Set identifier: 1-64 letters, digits, spaces, underscores or hyphens, optionally "
+                        + "surrounded by brackets. Unique within the request; referenced later as [name]."));
+        props.put(
+                "expression",
+                stringField("MDX set expression, e.g. {[Product].[Products].[Product Family].Members} or "
+                        + "Head([Product].[Products].Members, 5). Validated — see the array description."));
+        Map<String, Object> o = obj("A named set for the WITH SET clause.", props);
+        o.put("required", List.of("name", "expression"));
         return o;
     }
 

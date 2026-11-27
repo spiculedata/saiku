@@ -718,6 +718,20 @@ public class McpResource {
             + "\"limit\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":" + SEARCH_MEMBERS_MAX + ",\"default\":20}"
             + "},\"additionalProperties\":false}";
 
+    /** saiku#2541: namedSets is declared on run_query / preview_query so
+     *  hosts advertise it instead of treating it as an untyped pass-through;
+     *  the expression itself is validated by AiSchemaConverter (no MEMBER,
+     *  no comments, balanced delimiters, known-dimension references, PII
+     *  gate) and a bad one comes back as a typed VALIDATION_ERROR. */
+    private static final String NAMED_SETS_SCHEMA =
+            "\"namedSets\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"required\":[\"name\",\"expression\"],"
+                    + "\"properties\":{"
+                    + "\"name\":{\"type\":\"string\",\"description\":\"Set name, unique in the request.\"},"
+                    + "\"expression\":{\"type\":\"string\",\"description\":\"MDX set expression "
+                    + "(e.g. {[Product].[Products].Members}). Validated server-side: no MEMBER/SELECT/WITH "
+                    + "keywords, no comments, balanced () and {}, references must resolve to known "
+                    + "dimensions or an earlier named set; PII-annotated levels/measures are refused.\"}}}}";
+
     private static final String RUN_QUERY_SCHEMA = "{\"type\":\"object\",\"required\":[\"cube\",\"measures\"],"
             + "\"properties\":{"
             + "\"cube\":{\"description\":\"Cube id (string from list_cubes) or "
@@ -735,6 +749,7 @@ public class McpResource {
             + ".\"},"
             + "\"visualTotals\":{\"type\":\"boolean\"},"
             + "\"nonEmpty\":{\"type\":\"boolean\"},"
+            + NAMED_SETS_SCHEMA + ","
             + "\"format\":{\"type\":\"string\",\"enum\":[\"records\",\"matrix\"],"
             + "\"description\":\"Default records.\"}"
             + "},\"additionalProperties\":true}";
@@ -745,7 +760,8 @@ public class McpResource {
             + "\"columns\":{\"type\":\"array\"},\"filters\":{\"type\":\"array\"},"
             + "\"order\":{\"type\":\"array\"},\"limit\":{\"type\":\"integer\",\"default\":" + RUN_QUERY_DEFAULT_LIMIT
             + "},"
-            + "\"visualTotals\":{\"type\":\"boolean\"},\"nonEmpty\":{\"type\":\"boolean\"}"
+            + "\"visualTotals\":{\"type\":\"boolean\"},\"nonEmpty\":{\"type\":\"boolean\"},"
+            + NAMED_SETS_SCHEMA
             + "},\"additionalProperties\":true}";
 
     // ---- Ossie tool schemas (parallel to the MDX ones above) ----

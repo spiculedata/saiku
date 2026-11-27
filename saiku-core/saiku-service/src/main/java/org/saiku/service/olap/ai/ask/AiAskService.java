@@ -1144,6 +1144,11 @@ public class AiAskService {
      * an alias that resolves to a PII column is caught here too. A name that resolves to nothing
      * contributes nothing — an unresolvable axis is the converter's problem to report, not this
      * method's to guess at.
+     *
+     * <p>saiku#2541: named-set expressions need no policy here. The converter validates them
+     * (no statement keywords or comments, references must resolve, PII levels/measures refused)
+     * and throws before any query is executed, so a request with a PII named set never produces
+     * a digest to redact.
      */
     private static CellsetDigestBuilder.DigestPolicy piiDigestPolicy(AiQueryRequest req, AiSchema schema) {
         if (req == null || schema == null) return CellsetDigestBuilder.DigestPolicy.NONE;

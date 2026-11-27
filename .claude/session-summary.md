@@ -86,10 +86,6 @@ pushed down; normal sessions append and the history stays useful.
 **Now:** check PR #2494 CI on the pushed head; the Python suite and acceptance command pass locally.
 **Refs:** #2459, PR #2494
 
-## 2026-11-24 — feature/2459-ci-secret-lifecycle-gate — trusted checkout rework
-**Was doing:** tightened PR #2494's trusted-base detection to require the base SHA as the full checkout ref and added regression fixtures for comment, path-only, and checkout-action cases.
-**Now:** check PR #2494 CI after the push; the Python script suite and acceptance check pass locally.
-**Refs:** #2459, #2494
 ## 2026-11-25 — feature/2547-redact-connection-error-logs — PR #2594 base merge
 **Was doing:** merged current development into the existing PR branch and retained its earlier redaction fixes and tests.
 **Now:** check PR #2594 CI after the push, especially the Maven suites and acceptance spec.
@@ -108,6 +104,16 @@ pushed down; normal sessions append and the history stays useful.
 **Watch out:** local Maven stops before compilation on GitHub Packages 401; the previous Docker job hit Maven Central 429 while downloading the telemetry agent.
 **Refs:** #2536, PR #2565
 
+## 2026-11-24 — fix/2541-named-set-expression-validation — PR #2593 review rework
+**Was doing:** closed the named-set name injection and hierarchy-navigation PII gaps, corrected acceptance C3 to use seeded FoodMart, and added regression tests.
+**Now:** check PR #2593 CI after the rework push, especially acceptance C3 and `AiSchemaConverterTest`.
+**Watch out:** local Maven tests stop before compilation: GitHub Packages returns 401 for Mondrian and olap4j; Spotless and static checks pass.
+**Refs:** #2541, PR #2593
+
+## 2026-11-24 — feature/2459-ci-secret-lifecycle-gate — trusted checkout rework
+**Was doing:** tightened PR #2494's trusted-base detection to require the base SHA as the full checkout ref and added regression fixtures for comment, path-only, and checkout-action cases.
+**Now:** check PR #2494 CI after the push; the Python script suite and acceptance check pass locally.
+**Refs:** #2459, #2494
 ## 2026-11-24 — feature/2535-rest-body-size-limits — PR #2566 review rework
 **Was doing:** formatted the REST body filter test and corrected the operator guide; local Spotless, licence, and static acceptance checks pass. Maven service/web tests stop at GitHub Packages 401 before compilation.
 **Now:** check PR #2566 CI on the rework commit for the full build and Java tests.
