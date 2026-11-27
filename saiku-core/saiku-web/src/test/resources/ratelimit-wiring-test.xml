@@ -21,6 +21,15 @@
           factory-method="shared">
         <constructor-arg value="ai.query.ask"/>
     </bean>
+    <!-- saiku#2529: test ceilings are deliberately small (2 calls, 1k user tokens, 100k instance
+         tokens, 1 chain) so the wiring test can trip them in-process. Production uses the
+         no-arg constructor, which reads the saiku.ai.budget.* system properties. -->
+    <bean id="aiCostBudget" class="org.saiku.web.security.ratelimit.AiCostBudget">
+        <constructor-arg value="2"/>
+        <constructor-arg value="1000"/>
+        <constructor-arg value="100000"/>
+        <constructor-arg value="1"/>
+    </bean>
     <bean id="aiOssieAskRateLimiter" class="org.saiku.web.security.ratelimit.AiRateLimiter"
           factory-method="shared">
         <constructor-arg value="ai.ossie.ask"/>
@@ -102,9 +111,19 @@
     </bean>
     <bean id="aiQueryResource" class="org.saiku.web.rest.resources.AiQueryResource">
         <property name="askRateLimiter" ref="aiQueryAskRateLimiter"/>
+        <property name="aiCostBudget" ref="aiCostBudget"/>
+    </bean>
+    <!-- A second instance of the SAME resource: two "requests" in production (saiku#2529). -->
+    <bean id="aiQueryResource2" class="org.saiku.web.rest.resources.AiQueryResource">
+        <property name="askRateLimiter" ref="aiQueryAskRateLimiter"/>
+        <property name="aiCostBudget" ref="aiCostBudget"/>
     </bean>
     <bean id="aiOssieResource" class="org.saiku.web.rest.resources.AiOssieResource">
         <property name="askRateLimiter" ref="aiOssieAskRateLimiter"/>
+        <property name="aiCostBudget" ref="aiCostBudget"/>
+    </bean>
+    <bean id="aiExplainResource" class="org.saiku.web.rest.resources.AiExplainResource">
+        <property name="aiCostBudget" ref="aiCostBudget"/>
     </bean>
 
 </beans>

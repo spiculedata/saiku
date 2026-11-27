@@ -27,14 +27,19 @@ import org.saiku.service.datasource.DatasourceService;
 import org.saiku.service.olap.ai.AiFilterSelection;
 import org.saiku.service.olap.ai.AiQueryRequest;
 import org.saiku.service.olap.ai.AiSavedQueryRequest;
+import org.saiku.service.olap.ai.ask.AiAskApi;
 import org.saiku.service.olap.ai.audit.AiAuditEntry;
 import org.saiku.service.olap.ai.audit.AiAuditLog;
 import org.saiku.web.rest.resources.AiQueryResource;
 import org.saiku.web.security.embed.EmbedAuthFilter.EmbedGuestDetails;
+import org.saiku.web.security.ratelimit.AiRequestPrincipal;
 import org.saiku.web.service.SessionService;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.preauth.PreAuthenticatedAuthenticationToken;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 /**
  * Resource-level coverage of {@link EmbedViewResource} — the guest read
@@ -87,6 +92,26 @@ public class EmbedViewResourceTest {
     @After
     public void tearDown() {
         SecurityContextHolder.clearContext();
+        RequestContextHolder.resetRequestAttributes();
+    }
+
+    @Test
+    public void aiAsk_stampsTokenBucketBeforeDelegatingToOwner() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr("10.0.7.2529");
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
+        pinGuest("ai", "/foodmart/FoodMart/FoodMart/Sales", "owner", List.of("ROLE_USER"));
+        EmbedViewResource.AiAskBody body = new EmbedViewResource.AiAskBody();
+        body.question = "guest question";
+
+        Response response = resource.aiAsk("foodmart/FoodMart/FoodMart/Sales", body);
+
+        assertEquals(200, response.getStatus());
+        assertEquals("owner", session.lastRunAsUser);
+        assertEquals("guest question", ai.lastAskRequest.getQuestion());
+        assertTrue(ai.lastAskBucket.matches("embed:token:[0-9a-f]{64}"));
+        assertFalse(ai.lastAskBucket.contains("token-xyz"));
+        assertEquals(ai.lastAskBucket, request.getAttribute(AiRequestPrincipal.EMBED_BUCKET_ATTRIBUTE));
     }
 
     /* ---------------------------- query ---------------------------- */
@@ -1188,6 +1213,8 @@ public class EmbedViewResourceTest {
         AiSavedQueryRequest lastSavedRequest;
         String lastSavedFormat;
         AiQueryRequest lastAiRequest;
+        AiAskApi.AskRequest lastAskRequest;
+        String lastAskBucket;
         // Override the saved-query response to simulate executeSaved's own RLS fail-closed (403).
         Response savedResponseOverride;
 
@@ -1207,6 +1234,15 @@ public class EmbedViewResourceTest {
         public Response executeAi(AiQueryRequest body, String format) {
             lastAiRequest = body;
             return Response.ok(Map.of("status", "OK", "data", List.of()))
+                    .type(jakarta.ws.rs.core.MediaType.APPLICATION_JSON)
+                    .build();
+        }
+
+        @Override
+        public Response ask(AiAskApi.AskRequest body) {
+            lastAskRequest = body;
+            lastAskBucket = AiRequestPrincipal.currentEmbedBucket();
+            return Response.ok(Map.of("status", "OK"))
                     .type(jakarta.ws.rs.core.MediaType.APPLICATION_JSON)
                     .build();
         }

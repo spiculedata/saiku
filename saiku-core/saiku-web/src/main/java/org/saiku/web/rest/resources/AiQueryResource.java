@@ -729,6 +729,21 @@ public class AiQueryResource {
                     .build();
         }
 
+        // saiku#2529: describe-query reaches the paid provider with the query structure, so it
+        // sits behind the same per-minute limiter and daily cost budget as /ai/ask. Until now it
+        // had neither — an agent priced out of /ai/ask could describe-query for free.
+        if (!askRateLimiter.tryAcquire(askRateKey())) {
+            return askLimitResponse(
+                    429,
+                    "Too many AI ask requests — limit is " + askRateLimiter.getMaxCalls() + " per "
+                            + (askRateLimiter.getWindowMs() / 1000) + "s. Please retry shortly.");
+        }
+        org.saiku.web.security.ratelimit.AiCostBudget.Denial budgetDenial =
+                aiCostBudget.tryStartCall(askBudgetPrincipal());
+        if (budgetDenial != org.saiku.web.security.ratelimit.AiCostBudget.Denial.ALLOWED) {
+            return askLimitResponse(429, costBudgetReason(budgetDenial));
+        }
+
         String structureJson = org.saiku.service.olap.ai.describe.QueryStructureSummarizer.summarize(req, schema);
         org.saiku.service.olap.ai.describe.DescribeQueryResult result = describeService.describe(structureJson);
         if (result.degraded()) {
@@ -738,6 +753,9 @@ public class AiQueryResource {
                     .type(MediaType.APPLICATION_JSON)
                     .build();
         }
+        // saiku#2529: charge the provider-reported usage for the turn — or the nominal amount when
+        // the provider reported none — so this endpoint costs the budget like every other one.
+        aiCostBudget.recordUsage(askBudgetPrincipal(), result.promptTokens(), result.responseTokens());
 
         org.saiku.service.olap.ai.describe.DescribeQueryApiResponse resp =
                 new org.saiku.service.olap.ai.describe.DescribeQueryApiResponse();
@@ -1767,6 +1785,13 @@ public class AiQueryResource {
                             + (askRateLimiter.getWindowMs() / 1000) + "s. Please retry shortly.",
                     null);
         }
+        // saiku#2529: the daily budget gates this endpoint too — it was limiter-only, so the
+        // budget's per-user and instance ceilings never applied to dashboard narration.
+        org.saiku.web.security.ratelimit.AiCostBudget.Denial budgetDenial =
+                aiCostBudget.tryStartCall(askBudgetPrincipal());
+        if (budgetDenial != org.saiku.web.security.ratelimit.AiCostBudget.Denial.ALLOWED) {
+            return narrativeDegraded(429, costBudgetReason(budgetDenial), null);
+        }
         if (askService == null) {
             return narrativeDegraded(503, ASK_NOT_CONFIGURED_REASON, null);
         }
@@ -1819,6 +1844,13 @@ public class AiQueryResource {
                 List.of(),
                 combined.toString().stripTrailing(),
                 org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool.INSIGHT);
+
+        // saiku#2529: a successful narrative was a real provider turn — charge it. Degraded means
+        // the turn produced nothing chargeable in tokens; the CALL was already counted by the
+        // budget gate above.
+        if (!outcome.degraded()) {
+            chargeAsk(outcome);
+        }
 
         if (outcome.degraded()) {
             return narrativeDegraded(200, outcome.reason(), outcome.model());
@@ -3984,14 +4016,7 @@ public class AiQueryResource {
      * out of the API.
      */
     private String costBudgetReason(org.saiku.web.security.ratelimit.AiCostBudget.Denial denial) {
-        if (denial == org.saiku.web.security.ratelimit.AiCostBudget.Denial.DAILY_CALL_LIMIT) {
-            return "Daily AI ask request budget exhausted (limit " + aiCostBudget.getMaxCallsPerUserPerDay()
-                    + " requests per day). Please retry tomorrow.";
-        }
-        if (denial == org.saiku.web.security.ratelimit.AiCostBudget.Denial.DAILY_TOKEN_LIMIT) {
-            return "Daily AI token budget exhausted. Please retry tomorrow.";
-        }
-        return "The AI service is at its daily capacity. Please retry later.";
+        return aiCostBudget.clientReason(denial);
     }
 
     /**
@@ -4328,16 +4353,24 @@ public class AiQueryResource {
      * the only identity it has.
      */
     private String askRateKey() {
+        // saiku#2529 (review of PR #2556): an embed AI guest is limited to the EMBED's own
+        // bucket, never the token owner's — the embed path runs under runAs(owner), so the
+        // security context names the owner, and without this the owner's per-minute
+        // allowance could be exhausted by any viewer of the widget.
+        String embed = org.saiku.web.security.ratelimit.AiRequestPrincipal.currentEmbedBucket();
+        if (embed != null) {
+            return embed;
+        }
+        // saiku#2529: the principal comes from the Spring Security context FIRST — the request's
+        // getRemoteUser() can be null on the unwrapped container request, which used to send every
+        // authenticated caller behind one address to the shared IP bucket.
+        String user = org.saiku.web.security.ratelimit.AiRequestPrincipal.currentName();
+        if (user != null) {
+            return user;
+        }
         jakarta.servlet.http.HttpServletRequest req = currentRequest();
         if (req == null) {
             return "anon:unknown";
-        }
-        String user = req.getRemoteUser();
-        if (user == null && req.getUserPrincipal() != null) {
-            user = req.getUserPrincipal().getName();
-        }
-        if (user != null && !user.isBlank()) {
-            return user;
         }
         String ip = req.getRemoteAddr();
         return "ip:" + (ip == null ? "unknown" : ip);
@@ -4347,15 +4380,21 @@ public class AiQueryResource {
      * saiku#1918 (17d): the identity the daily cost budget is charged to. The principal alone —
      * never the IP — for the same reason {@link #askRateKey()} dropped it. Returns {@code null}
      * when no principal can be derived, which the budget treats as fail-open.
+     *
+     * <p>saiku#2529: the name is resolved from the Spring Security context first (see
+     * {@link org.saiku.web.security.ratelimit.AiRequestPrincipal}); the unwrapped container
+     * request often has no {@code getRemoteUser()}, which used to leave the budget principal null
+     * — and a null principal is fail-open — even though the caller was fully authenticated.
      */
     private String askBudgetPrincipal() {
-        jakarta.servlet.http.HttpServletRequest req = currentRequest();
-        if (req == null) return null;
-        String user = req.getRemoteUser();
-        if (user == null && req.getUserPrincipal() != null) {
-            user = req.getUserPrincipal().getName();
+        // saiku#2529 (review of PR #2556): embed guests are charged to the embed's own bucket
+        // ("embed:token:…" / "embed:grant:…") so viewers of a shared AI embed cannot exhaust
+        // the token owner's personal daily allowance. The instance ceiling still bounds them.
+        String embed = org.saiku.web.security.ratelimit.AiRequestPrincipal.currentEmbedBucket();
+        if (embed != null) {
+            return embed;
         }
-        return (user == null || user.isBlank()) ? null : user;
+        return org.saiku.web.security.ratelimit.AiRequestPrincipal.currentName();
     }
 
     /**

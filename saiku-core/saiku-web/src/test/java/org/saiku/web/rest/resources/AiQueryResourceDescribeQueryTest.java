@@ -13,6 +13,7 @@ import jakarta.ws.rs.core.Response;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.saiku.service.olap.ai.AiAxisSelection;
@@ -92,6 +93,35 @@ public class AiQueryResourceDescribeQueryTest {
 
         resource = new AiQueryResource();
         resource.setCubeMetadataService(ref -> schema);
+        // saiku#2529: the budget keys on the authenticated principal; give these tests a stable one.
+        org.springframework.security.core.context.SecurityContextHolder.getContext()
+                .setAuthentication(new org.springframework.security.authentication.TestingAuthenticationToken(
+                        "describe-budget-user", "pw"));
+    }
+
+    @After
+    public void clearSecurityContext() {
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
+    }
+
+    /**
+     * saiku#2529: describe-query reaches the paid provider, so it sits behind the daily cost
+     * budget — until now it had neither the limiter nor the budget, and an agent priced out of
+     * /ai/ask could describe-query for free.
+     */
+    @Test
+    public void exhaustedBudgetIsRejectedWith429() {
+        FakeDescriber fake =
+                new FakeDescriber(true, DescribeQueryResult.ok("Sales by year", "Sales over time.", "claude-x", 10, 5));
+        resource.setDescribeService(fake);
+        resource.setAiCostBudget(new org.saiku.web.security.ratelimit.AiCostBudget(1, 0, 0, 0));
+
+        DescribeQueryApiRequest body = new DescribeQueryApiRequest();
+        body.setQuery(baseQuery());
+        assertEquals(200, resource.describeQuery(body).getStatus());
+
+        Response second = resource.describeQuery(body);
+        assertEquals(429, second.getStatus());
     }
 
     private AiQueryRequest baseQuery() {

@@ -176,15 +176,23 @@ model path is refused. The launcher always sets `saiku.home`.
 
 ## AI ask cost budget (`saiku.ai.budget.*`)
 
-The AI ask endpoints used to be capped by call frequency only: 30 requests per
-minute per `(user, IP)`. Frequency is not cost. A chained ask is one request and
-up to `maxSteps` provider round-trips, each re-sending the whole cube schema and
-the accumulated tool transcript, and it holds a Jetty request thread for the
-duration. Thirty of those a minute is a five-figure month and a thread-pool
-stall, and no counter ever reached a ceiling because nothing was counting
-tokens.
+The AI endpoints that reach the LLM provider used to be capped by call frequency
+only: 30 requests per minute per `(user, IP)`. Frequency is not cost. A chained
+ask is one request and up to `maxSteps` provider round-trips, each re-sending
+the whole cube schema and the accumulated tool transcript, and it holds a Jetty
+request thread for the duration. Thirty of those a minute is a five-figure
+month and a thread-pool stall, and no counter ever reached a ceiling because
+nothing was counting tokens.
 
-Three independent ceilings now sit on top of the per-minute limiter:
+The daily budget is ONE singleton bean (`aiCostBudget` in `saiku-beans.xml`)
+shared by every endpoint that reaches the provider: `/ai/ask` (sync, streaming,
+chained and in-space), `/ai/ossie/ask`, `/ai/narrate-dashboard`,
+`/ai/describe-query` and `/ai/explain`. saiku#2529 documents both halves of why
+it needed to move there: as a per-request field of the resource bean its
+counters were rebuilt empty on every request (no ceiling could ever trip), and
+the four non-ask endpoints carried no budget at all.
+
+Four independent ceilings sit on top of the per-minute limiter:
 
 | Ceiling | Default | Property | Disable with |
 |---|---|---|---|
@@ -211,10 +219,25 @@ Notes on the semantics, because they matter when you tune them:
   at the same wall-clock moment; a calendar day is also the number an operator
   can reason about ("yesterday cost this much").
 - **Both rate limiting and the budget key on the authenticated principal**,
-  never on `(user, IP)`. Including the IP meant a caller who changed address —
-  a new NAT egress, a VPN, a per-request source NAT — got a brand-new bucket
-  and could run the per-minute allowance several times over. Unauthenticated
-  traffic still buckets by IP, which is the only identity it has.
+  never on `(user, IP)`. The principal is resolved from the Spring Security
+  context first (`AiRequestPrincipal`); the older derivation via the request's
+  `getRemoteUser()` read the unwrapped container request and came back null even
+  for authenticated callers, which sent users behind one NAT egress to the
+  shared IP bucket and left the budget principal null (fail-open). Including
+  the IP in the key meant a caller who changed address — a new NAT egress, a
+  VPN, a per-request source NAT — got a brand-new bucket and could run the
+  per-minute allowance several times over. Outside the embed AI path,
+  unauthenticated traffic still buckets by IP, which is the only identity it has.
+- **Embed AI guests do not touch the token owner's allowance** (saiku#2529,
+  review of PR #2556). An AI embed calls the ask endpoint under the token
+  owner's identity, so a naive keying would let one anonymous viewer of the
+  widget (or a script on the embedding page) exhaust the owner's per-minute
+  bucket and daily AI budget. The embed view resource stamps an embed-specific
+  bucket on the request (`embed:token:<sha256 of the token>`, or
+  `embed:grant:<sub|ip|unknown>` for a public-grant) and the limiter and budget use it
+  first, so guests share the embed's own per-minute and daily bucket and the
+  owner's interactive use is unaffected. The instance-level ceiling still
+  bounds every guest together with all other callers.
 - **A caller whose identity can't be derived is allowed through** (fail-open on
   a wiring gap, matching the existing rate limiter) but still consumes the
   shared instance token budget, so "unattributable" never means "free".
@@ -222,6 +245,11 @@ Notes on the semantics, because they matter when you tune them:
   is a single provider turn, but `DashboardSpec` does not carry the provider's
   reported usage, so no tokens are recorded for it. The per-day call ceiling
   still bounds it; only the token ceilings under-count that one endpoint.
+- **Known gap: `/ai/ossie/ask` and `/ai/explain` are charged unpriced.**
+  Neither result object carries the provider's usage report, so each LLM turn
+  on those endpoints is charged the nominal token amount rather than the real
+  spend. The call ceiling and the per-minute limiter bound their frequency; the
+  token ceilings under-count those two endpoints.
 - **Multi-node deployments get per-node budgets.** The counters are in-memory,
   single-node and lazy, like the rate limiter they sit on. That is the right
   trade for a guardrail whose job is to bound the worst case, but it means N
@@ -239,12 +267,14 @@ exit path, including a mid-chain client disconnect.
 
 ### Reading the refusals
 
-`429` with a `degraded` AskResponse. The per-user refusals say which of the two
-user ceilings was hit, because the user can act on it. The instance-wide refusal
-does **not** — telling one tenant that other tenants are spending is nobody's
-useful information, and "try later" is the only actionable answer either way.
-No refusal carries a token count, so the API can't be used to read the ceiling
-back out.
+`429` with a `degraded` AskResponse on the ask surfaces (sync/streaming/space),
+a degraded narrative envelope on `/ai/narrate-dashboard`, and a `{status,
+error, code}` error body with `code: RATE_LIMITED` on `/ai/explain`. The
+per-user refusals say which of the two user ceilings was hit, because the user
+can act on it. The instance-wide refusal does **not** — telling one tenant that
+other tenants are spending is nobody's useful information, and "try later" is
+the only actionable answer either way. No refusal carries a token count, so the
+API can't be used to read the ceiling back out.
 
 ---
 

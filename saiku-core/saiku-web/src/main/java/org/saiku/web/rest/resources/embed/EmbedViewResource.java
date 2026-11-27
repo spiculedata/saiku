@@ -714,6 +714,12 @@ public class EmbedViewResource {
                     .type(MediaType.APPLICATION_JSON)
                     .build());
         }
+        // saiku#2529 (review of PR #2556): stamp the embed's own limiter/budget bucket on the
+        // request BEFORE delegating into the AI resource — inside ask()/askInSpace() the caller
+        // looks like the token OWNER (runAs below), and without the stamp every guest's ask
+        // would key and charge on the owner's identity, letting one anonymous viewer of the
+        // widget exhaust the owner's per-minute bucket and daily AI allowance.
+        stampEmbedAiBucket(g);
         try {
             Response result = sessionService.runAs(g.ownerUser, g.ownerRoles, () -> {
                 org.saiku.service.olap.ai.AiCubeRef ref =
@@ -1299,6 +1305,59 @@ public class EmbedViewResource {
             log.error("embedded app {} tile lookup failed", g.resourcePath, e);
             return null;
         }
+    }
+
+    /**
+     * saiku#2529 (review of PR #2556) — stamp the embed AI bucket onto the current request so
+     * {@link org.saiku.web.security.ratelimit.AiRequestPrincipal#currentEmbedBucket()} finds it
+     * when the AI resource resolves the limiter key and the budget principal.
+     */
+    private static void stampEmbedAiBucket(EmbedGuestDetails g) {
+        jakarta.servlet.http.HttpServletRequest req = currentRequest();
+        if (req == null) {
+            return; // no request bound (unit tests / async): the AI resource falls back
+        }
+        req.setAttribute(org.saiku.web.security.ratelimit.AiRequestPrincipal.EMBED_BUCKET_ATTRIBUTE, embedAiBucket(g));
+    }
+
+    /**
+     * The embed's own limiter/budget bucket: {@code embed:token:<sha256 of the token>} for a
+     * token-pinned embed (the raw token never appears in keys or logs), or
+     * {@code embed:grant:<sub|ip|unknown>} for a public-grant embed, where the JWT {@code sub}
+     * gives per-end-user attribution when the embedder supplies one.
+     */
+    static String embedAiBucket(EmbedGuestDetails g) {
+        if (g.token != null && !g.token.isBlank()) {
+            try {
+                byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                        .digest(g.token.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                StringBuilder hex = new StringBuilder(digest.length * 2);
+                for (byte b : digest) {
+                    hex.append(Character.forDigit((b >> 4) & 0xf, 16));
+                    hex.append(Character.forDigit(b & 0xf, 16));
+                }
+                return "embed:token:" + hex;
+            } catch (java.security.NoSuchAlgorithmException impossible) {
+                throw new IllegalStateException("JVM without SHA-256", impossible);
+            }
+        }
+        String sub = g.jwtSub == null ? null : g.jwtSub.trim();
+        if (sub != null && !sub.isEmpty()) {
+            return "embed:grant:" + sub;
+        }
+        jakarta.servlet.http.HttpServletRequest req = currentRequest();
+        String ip = req == null ? null : req.getRemoteAddr();
+        return "embed:grant:" + (ip == null || ip.isBlank() ? "unknown" : ip);
+    }
+
+    /** The request bound to the current thread via Spring, or {@code null} outside a request. */
+    private static jakarta.servlet.http.HttpServletRequest currentRequest() {
+        org.springframework.web.context.request.RequestAttributes attrs =
+                org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+        if (attrs instanceof org.springframework.web.context.request.ServletRequestAttributes sra) {
+            return sra.getRequest();
+        }
+        return null;
     }
 
     private EmbedGuestDetails guest() {

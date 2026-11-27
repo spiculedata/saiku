@@ -45,18 +45,45 @@ public class AiExplainResource {
         this.explainService = explainService;
     }
 
+    /**
+     * saiku#2529: the shared daily cost budget, injected from {@code saiku-beans.xml}. The
+     * explain endpoint reaches the paid provider through the ask service (the narrative turn),
+     * so it sits behind the same per-user and instance ceilings as every other ask surface —
+     * until now it had no budget at all. The default per-request instance only exists for
+     * hand-built resources (tests); it can never trip, which is why production must inject the
+     * singleton.
+     */
+    private org.saiku.web.security.ratelimit.AiCostBudget aiCostBudget =
+            new org.saiku.web.security.ratelimit.AiCostBudget();
+
+    public void setAiCostBudget(org.saiku.web.security.ratelimit.AiCostBudget b) {
+        this.aiCostBudget = b;
+    }
+
     @POST
     @Path("/explain")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response explain(CellExplainRequest request) {
+        // saiku#2529: the daily cost budget gates this endpoint too. The call is counted even when
+        // the turn later degrades to the deterministic narrative (the gate runs before we know
+        // whether the LLM will be used) — a cheap pre-flight refusal beats a free ride.
+        String principal = org.saiku.web.security.ratelimit.AiRequestPrincipal.currentName();
+        org.saiku.web.security.ratelimit.AiCostBudget.Denial budgetDenial = aiCostBudget.tryStartCall(principal);
+        if (budgetDenial != org.saiku.web.security.ratelimit.AiCostBudget.Denial.ALLOWED) {
+            return error(429, "RATE_LIMITED", aiCostBudget.clientReason(budgetDenial));
+        }
         if (explainService == null) {
             return error(503, "NOT_CONFIGURED", "the explain service is not wired on this deployment");
         }
         try {
-            return Response.ok(explainService.explain(request))
-                    .type(MediaType.APPLICATION_JSON)
-                    .build();
+            CellExplainResult result = explainService.explain(request);
+            // saiku#2529: the narrative was a real provider turn. CellExplainResult carries no
+            // usage report, so this is the nominal unpriced charge when the LLM actually wrote it.
+            if (result.getNarrativeSource() == CellExplainResult.NarrativeSource.LLM) {
+                aiCostBudget.recordUsage(principal, 0L, 0L);
+            }
+            return Response.ok(result).type(MediaType.APPLICATION_JSON).build();
         } catch (CellExplainException e) {
             return error(e.code().status(), e.code().code(), e.getMessage());
         } catch (RuntimeException e) {

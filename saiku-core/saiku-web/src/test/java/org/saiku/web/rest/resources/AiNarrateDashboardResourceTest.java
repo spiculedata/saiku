@@ -11,6 +11,7 @@ import static org.junit.Assert.assertTrue;
 import jakarta.ws.rs.core.Response;
 import java.util.Collections;
 import java.util.List;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.saiku.olap.dto.resultset.AbstractBaseCell;
@@ -106,6 +107,30 @@ public class AiNarrateDashboardResourceTest {
         assertEquals(200, resp.getStatus());
         AiDashboardNarrativeApi.Response out = (AiDashboardNarrativeApi.Response) resp.getEntity();
         assertEquals("No data to summarise.", out.getNarrative());
+    }
+
+    @After
+    public void clearSecurityContext() {
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
+    }
+
+    /**
+     * saiku#2529: the daily cost budget gates narrate-dashboard too — it was limiter-only, so the
+     * budget's per-user and instance ceilings never applied to dashboard narration.
+     */
+    @Test
+    public void exhaustedBudgetIsRejectedWith429() {
+        org.springframework.security.core.context.SecurityContextHolder.getContext()
+                .setAuthentication(new org.springframework.security.authentication.TestingAuthenticationToken(
+                        "narrate-budget-user", "pw"));
+        resource.setAiCostBudget(new org.saiku.web.security.ratelimit.AiCostBudget(1, 0, 0, 0));
+        assertEquals(200, resource.narrateDashboard(bodyWithOneTile()).getStatus());
+
+        Response second = resource.narrateDashboard(bodyWithOneTile());
+        assertEquals(429, second.getStatus());
+        AiDashboardNarrativeApi.Response out = (AiDashboardNarrativeApi.Response) second.getEntity();
+        assertTrue(out.isDegraded());
+        assertTrue(out.getReason().contains("Daily AI ask request budget exhausted"));
     }
 
     @Test

@@ -1,0 +1,34 @@
+{
+  "issue": 2529,
+  "title": "The daily AI cost budget is one shared singleton wired into every provider-reaching endpoint, and the principal comes from the Spring Security context",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "the budget is declared as a singleton bean and injected into aiQueryResource",
+      "then": "a wired-context test proves the third ask from one user answers 429 with the budget reason while another user is unaffected"
+    },
+    {
+      "id": "C2",
+      "given": "the token ceilings and the chain-concurrency cap",
+      "then": "they are enforced against the shared singleton across request boundaries (a wired Spring context test, not a hand-built resource)"
+    },
+    {
+      "id": "C3",
+      "given": "/ai/explain, /ai/describe-query, /ai/ossie/ask and /ai/narrate-dashboard",
+      "then": "each endpoint runs the budget gate (tryStartCall) before its provider call"
+    },
+    {
+      "id": "C4",
+      "given": "the budget and the per-minute limiter identity",
+      "then": "both resolve the caller from the Spring Security context first, and a test proves two users behind one address get separate buckets"
+    },
+    {
+      "id": "C5",
+      "given": "docs/operator-hardening.md",
+      "then": "it documents the singleton coverage of the four endpoints, the principal-first identity, and the unpriced-charge gaps on /ai/ossie/ask and /ai/explain"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 30
+}

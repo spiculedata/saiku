@@ -75,6 +75,12 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-11-25 — feature/ai-budget-shared-wired — PR #2556 base merge
+**Was doing:** merged current development into the existing PR branch; preserved both sides' session entries and the existing AI budget changes and tests.
+**Now:** check PR #2556 CI after the push for the Java build and AI budget, embed, and Ossie tests.
+**Watch out:** focused local Maven tests stop before compilation because GitHub Packages returns 401 for Mondrian and olap4j; Spotless, acceptance/2529, and Spring XML parsing pass.
+**Refs:** #2529, PR #2556
+
 ## 2026-11-25 — feature/2459-ci-secret-lifecycle-gate — PR #2494 base conflict rework
 **Was doing:** merged current development into the PR branch, retaining both sides of the corrections and session entries; the credential gate remains unchanged.
 **Now:** check PR #2494 CI after the push, especially the Python scripts and acceptance gate.
@@ -108,6 +114,16 @@ pushed down; normal sessions append and the history stays useful.
 **Watch out:** local Maven stops before compilation on GitHub Packages 401; the previous Docker job hit Maven Central 429 while downloading the telemetry agent.
 **Refs:** #2536, PR #2565
 
+## 2026-11-24 — feature/ai-budget-shared-wired — PR #2556 base conflict rework
+**Was doing:** merged current development into the existing PR branch, keeping the Ossie AI audit enrichment, AI budget wiring, and both handoff entries.
+**Now:** check PR #2556 CI for the JDK 22 build and AI budget, embed, and Ossie tests after the push.
+**Watch out:** local focused Maven tests stop before compilation because GitHub Packages returns 401 for Mondrian and olap4j; Spotless and acceptance/2529 pass.
+**Refs:** #2529, PR #2556
+
+## 2026-11-24 — feature/ai-budget-shared-wired — PR #2556 embed budget CI rework
+**Was doing:** corrected the refused-call counter assertion, covered the embed request stamp, and applied Spotless formatting for the CI failure.
+**Now:** check PR #2556 CI for the Java build and focused tests; local Maven dependency resolution stops at GitHub Packages 401.
+**Refs:** #2529, PR #2556
 ## 2026-11-24 — feature/2535-rest-body-size-limits — PR #2566 review rework
 **Was doing:** formatted the REST body filter test and corrected the operator guide; local Spotless, licence, and static acceptance checks pass. Maven service/web tests stop at GitHub Packages 401 before compilation.
 **Now:** check PR #2566 CI on the rework commit for the full build and Java tests.

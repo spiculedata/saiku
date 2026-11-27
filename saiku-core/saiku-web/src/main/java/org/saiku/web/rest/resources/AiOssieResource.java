@@ -150,12 +150,25 @@ public class AiOssieResource {
     private org.saiku.web.security.ratelimit.AiRateLimiter askRateLimiter =
             new org.saiku.web.security.ratelimit.AiRateLimiter();
 
+    /**
+     * saiku#2529: the shared daily cost budget, injected from {@code saiku-beans.xml} like
+     * {@code askRateLimiter} above. The default per-request instance exists only for hand-built
+     * resources (tests) — it can never trip, which is exactly why production must inject the
+     * singleton.
+     */
+    private org.saiku.web.security.ratelimit.AiCostBudget aiCostBudget =
+            new org.saiku.web.security.ratelimit.AiCostBudget();
+
     public void setAiPolicyGuard(org.saiku.service.olap.ai.AiPolicyGuard g) {
         this.aiPolicyGuard = g;
     }
 
     public void setAskRateLimiter(org.saiku.web.security.ratelimit.AiRateLimiter l) {
         this.askRateLimiter = l;
+    }
+
+    public void setAiCostBudget(org.saiku.web.security.ratelimit.AiCostBudget b) {
+        this.aiCostBudget = b;
     }
 
     /** A degraded JSON error at the given status (413 oversize, 400 bad shape, 429 rate). */
@@ -197,27 +210,37 @@ public class AiOssieResource {
     }
 
     /**
-     * Rate-limit identity = caller principal + client IP, matching {@link AiQueryResource} so a
-     * client's spend across the MDX and Ossie ask endpoints shares one budget when the same
-     * limiter bean is wired into both. Falls back to a constant when no request is bound (tests).
+     * Rate-limit identity = the authenticated principal alone; falls back to the client IP only
+     * for genuinely anonymous traffic, matching {@link AiQueryResource#askRateKey()} so a
+     * caller's spend across the MDX and Ossie ask endpoints keys the same way.
+     *
+     * <p>saiku#2529: the key used to be {@code user:ip}, built from the request's
+     * {@code getRemoteUser()} — which can be null on the unwrapped container request even when the
+     * caller is authenticated, sending users behind one NAT egress to the shared IP bucket. The
+     * principal now comes from the Spring Security context first (see
+     * {@link org.saiku.web.security.ratelimit.AiRequestPrincipal}).
      */
     private String askRateKey() {
-        jakarta.servlet.http.HttpServletRequest req = null;
+        String user = org.saiku.web.security.ratelimit.AiRequestPrincipal.currentName();
+        if (user != null) {
+            return user;
+        }
+        String ip = null;
         org.springframework.web.context.request.RequestAttributes attrs =
                 org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
-        if (attrs instanceof org.springframework.web.context.request.ServletRequestAttributes) {
-            req = ((org.springframework.web.context.request.ServletRequestAttributes) attrs).getRequest();
+        if (attrs instanceof org.springframework.web.context.request.ServletRequestAttributes sra) {
+            ip = sra.getRequest().getRemoteAddr();
         }
-        String user = null;
-        String ip = null;
-        if (req != null) {
-            user = req.getRemoteUser();
-            if (user == null && req.getUserPrincipal() != null) {
-                user = req.getUserPrincipal().getName();
-            }
-            ip = req.getRemoteAddr();
-        }
-        return (user == null ? "anon" : user) + ":" + (ip == null ? "unknown" : ip);
+        return "anon:" + (ip == null ? "unknown" : ip);
+    }
+
+    /**
+     * saiku#2529: the identity the daily cost budget is charged to — the authenticated principal
+     * alone, never the IP. {@code null} (unauthenticated) is fail-open in the budget, but still
+     * consumes the shared instance token ceiling.
+     */
+    private String budgetPrincipal() {
+        return org.saiku.web.security.ratelimit.AiRequestPrincipal.currentName();
     }
 
     // -------------------------------------------------------------------
@@ -704,6 +727,13 @@ public class AiOssieResource {
                     "Too many AI ask requests — limit is " + askRateLimiter.getMaxCalls() + " per "
                             + (askRateLimiter.getWindowMs() / 1000) + "s. Please retry shortly.");
         }
+        // saiku#2529: the daily cost budget gates this endpoint too — it was limiter-only, so the
+        // budget's per-user and instance ceilings never applied to the Ossie ask surface.
+        org.saiku.web.security.ratelimit.AiCostBudget.Denial budgetDenial =
+                aiCostBudget.tryStartCall(budgetPrincipal());
+        if (budgetDenial != org.saiku.web.security.ratelimit.AiCostBudget.Denial.ALLOWED) {
+            return askLimitResponse(429, aiCostBudget.clientReason(budgetDenial));
+        }
         // #1398 — optional history: [{role, content}] for multi-turn conversations.
         // saiku#1918 (17c, CWE-74): `role` is a closed enum, not free text. It used to be forwarded
         // to the provider verbatim, and on an OpenAI-compatible endpoint a role:"system" turn IS a
@@ -742,6 +772,12 @@ public class AiOssieResource {
 
             org.saiku.service.ossie.ai.OssieAiAskService.AskResult ar =
                     askService.ask(question, schema, connection, modelName, history);
+            // saiku#2529: the ask reached the provider — charge the budget. AskResult does not
+            // carry the provider's usage report, so this is the nominal unpriced charge (the
+            // per-minute limiter and the call ceiling still bound the spend).
+            if (ar.error() == null) {
+                aiCostBudget.recordUnpricedCall(budgetPrincipal());
+            }
             if (ar.error() != null) {
                 Map<String, Object> err = new LinkedHashMap<>();
                 err.put("error", "ASK_FAILED");

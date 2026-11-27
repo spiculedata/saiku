@@ -9,6 +9,7 @@ import static org.junit.Assert.assertEquals;
 import jakarta.ws.rs.core.Response;
 import java.util.List;
 import java.util.Map;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.saiku.service.ossie.ai.OssieAiAskService;
@@ -61,6 +62,28 @@ public class AiOssieAskGuardTest {
         });
         Response resp = resource.ask(body("show sales by region"));
         assertEquals(429, resp.getStatus());
+    }
+
+    @After
+    public void clearSecurityContext() {
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
+    }
+
+    /**
+     * saiku#2529: the daily cost budget gates the Ossie ask too — it was limiter-only, so the
+     * budget's per-user and instance ceilings never applied on this surface. The first ask passes
+     * the budget gate (it fails later, on the unwired discover service); the second is refused by
+     * the budget before anything else runs.
+     */
+    @Test
+    public void exhaustedBudgetIsRejectedWith429() {
+        org.springframework.security.core.context.SecurityContextHolder.getContext()
+                .setAuthentication(new org.springframework.security.authentication.TestingAuthenticationToken(
+                        "ossie-budget-user", "pw"));
+        resource.setAiCostBudget(new org.saiku.web.security.ratelimit.AiCostBudget(1, 0, 0, 0));
+        resource.ask(body("show sales by region"));
+        Response second = resource.ask(body("show sales by region"));
+        assertEquals(429, second.getStatus());
     }
 
     @Test
