@@ -143,6 +143,8 @@ export interface ImportedWorkbenchCube {
 	factsCalcs: ImportedWorkbenchCalc[];
 	/** Declarative <TimeCalc> metrics read back from the schema. */
 	timeCalcs?: SchemaCanvasTimeCalc[];
+	/** Mondrian 4 `defaultMeasure` read back from <Cube> (#2302). */
+	defaultMeasure?: string;
 }
 
 export interface MondrianImportResult {
@@ -1678,6 +1680,12 @@ function parseM4(schemaEl: Element, opts: ImportOpts): MondrianImportResult {
 			});
 		}
 		if (timeCalcs.length > 0) workCube.timeCalcs = timeCalcs;
+
+		// Mondrian 4 `defaultMeasure` (#2302) — carried through the import so
+		// the inspector can edit it and the export re-emit it. A blank
+		// attribute means "unset"; leave it off entirely.
+		const defaultMeasure = cubeEl.getAttribute('defaultMeasure')?.trim() ?? '';
+		if (defaultMeasure.length > 0) workCube.defaultMeasure = defaultMeasure;
 
 		workbenchCubes.push(workCube);
 	}

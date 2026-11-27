@@ -1,0 +1,34 @@
+{
+  "issue": 2302,
+  "title": "Cube designer - Facts & Measures - default measure",
+  "kind": "ui",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "a canvas cube whose default measure is set to a measure the cube exposes",
+      "then": "the Mondrian 4 exporter emits that measure as the defaultMeasure attribute on the cube's <Cube> element, and omits the attribute when the named measure no longer exists on the cube"
+    },
+    {
+      "id": "C2",
+      "given": "a Mondrian 4 schema whose <Cube> carries a defaultMeasure attribute",
+      "then": "the importer reads it onto the imported workbench cube so it survives a round-trip"
+    },
+    {
+      "id": "C3",
+      "given": "an imported schema with a defaultMeasure",
+      "then": "the workbench seed mapping carries it onto the doc cube so the inspector can edit it and re-export it"
+    },
+    {
+      "id": "C4",
+      "given": "a cube root node selected in the designer's Properties inspector",
+      "then": "the <Cube> properties panel offers a default-measure select listing the cube's measures, with an empty option that clears the setting"
+    },
+    {
+      "id": "C5",
+      "given": "the designer store",
+      "then": "it exposes a setDefaultMeasure mutator on the doc cube, and the workbench write-back (setCubes) preserves an existing defaultMeasure like it already preserves timeCalcs"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 30
+}

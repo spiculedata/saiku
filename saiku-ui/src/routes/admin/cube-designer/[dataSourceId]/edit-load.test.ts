@@ -55,4 +55,15 @@ describe('hydrateFromMondrianXml', () => {
 		const store = new SchemaCanvasStore('test-ds-3');
 		expect(() => hydrateFromMondrianXml(store, 'not xml at all', 'test-ds-3')).toThrow();
 	});
+
+	it('carries the <Cube defaultMeasure> onto the doc cube through the seed mapping (#2302)', () => {
+		const store = new SchemaCanvasStore('test-ds-4');
+		hydrateFromMondrianXml(
+			store,
+			SCHEMA_XML.replace('<Cube name="C">', '<Cube name="C" defaultMeasure="Cnt">'),
+			'test-ds-4'
+		);
+
+		expect(store.cubes[0]?.defaultMeasure).toBe('Cnt');
+	});
 });

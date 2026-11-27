@@ -1622,9 +1622,18 @@ export class SchemaCanvasStore {
 		// would silently wipe them. Incoming timeCalcs win when present (e.g. an
 		// import); otherwise inherit the existing doc cube's by id.
 		const existingTimeCalcs = new Map((this.doc.cubes ?? []).map((c) => [c.id, c.timeCalcs]));
-		this.doc.cubes = cubes.map((c) =>
-			c.timeCalcs !== undefined ? c : { ...c, timeCalcs: existingTimeCalcs.get(c.id) }
+		// Same preservation for the cube's Mondrian 4 default measure (#2302):
+		// `cubeToDoc` doesn't carry it (edited via the inspector's store method
+		// on the doc), so inherit the existing doc cube's value by id.
+		const existingDefaultMeasure = new Map(
+			(this.doc.cubes ?? []).map((c) => [c.id, c.defaultMeasure])
 		);
+		this.doc.cubes = cubes.map((c) => ({
+			...c,
+			timeCalcs: c.timeCalcs !== undefined ? c.timeCalcs : existingTimeCalcs.get(c.id),
+			defaultMeasure:
+				c.defaultMeasure !== undefined ? c.defaultMeasure : existingDefaultMeasure.get(c.id)
+		}));
 		this.touch();
 	}
 
@@ -1659,6 +1668,17 @@ export class SchemaCanvasStore {
 		const c = this.cubes.find((c) => c.id === cubeId);
 		if (!c) return;
 		c.name = name;
+		this.touch();
+	}
+
+	/** Set / clear the cube's Mondrian 4 `defaultMeasure` (#2302). A blank
+	 *  name clears it — the engine then falls back to the first measure on
+	 *  the cube. */
+	setDefaultMeasure(cubeId: string, measure: string | null | undefined): void {
+		const c = this.findCube(cubeId);
+		if (!c) return;
+		const name = (measure ?? '').trim();
+		c.defaultMeasure = name.length > 0 ? name : undefined;
 		this.touch();
 	}
 

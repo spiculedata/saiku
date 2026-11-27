@@ -876,6 +876,36 @@ describe('SchemaCanvasStore — cubes / groups / calcs / timeCalcs (#1180)', () 
 		expect(store.cubes[0].timeCalcs).toHaveLength(1); // preserved by id
 		expect(store.cubes[0].timeCalcs?.[0].name).toBe('Rev YoY');
 	});
+
+	it('setDefaultMeasure sets, replaces and clears the cube default measure (#2302)', () => {
+		const { store, cubeId } = cubeWithGroup();
+		store.setMeasureColumns(cubeId, store.cubes[0].measureGroups[0].id, ['amount', 'qty']);
+		store.setDefaultMeasure(cubeId, 'amount');
+		expect(store.cubes[0].defaultMeasure).toBe('amount');
+		store.setDefaultMeasure(cubeId, 'qty');
+		expect(store.cubes[0].defaultMeasure).toBe('qty');
+		// Blank / null clears — the engine falls back to the first measure.
+		store.setDefaultMeasure(cubeId, '   ');
+		expect(store.cubes[0].defaultMeasure).toBeUndefined();
+		store.setDefaultMeasure(cubeId, 'amount');
+		store.setDefaultMeasure(cubeId, null);
+		expect(store.cubes[0].defaultMeasure).toBeUndefined();
+		// Unknown cube id is a no-op.
+		expect(() => store.setDefaultMeasure('nope', 'amount')).not.toThrow();
+	});
+
+	it('setCubes preserves the cube default measure by id (#2302)', () => {
+		const { store, cubeId } = cubeWithGroup();
+		store.setDefaultMeasure(cubeId, 'amount');
+		// Simulate the workbench persisting via cubeToDoc (which drops it).
+		store.setCubes([{ id: cubeId, name: 'Sales', measureGroups: [], calcs: [] }]);
+		expect(store.cubes[0].defaultMeasure).toBe('amount');
+		// An incoming value (e.g. a re-import) wins over the stale doc value.
+		store.setCubes([
+			{ id: cubeId, name: 'Sales', measureGroups: [], calcs: [], defaultMeasure: 'qty' }
+		]);
+		expect(store.cubes[0].defaultMeasure).toBe('qty');
+	});
 });
 
 // ── Focus + interaction (issue #1180, bucket 6) ─────────────────────────────
