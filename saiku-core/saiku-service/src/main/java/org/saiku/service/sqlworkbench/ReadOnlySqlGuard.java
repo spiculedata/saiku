@@ -7,8 +7,11 @@
 package org.saiku.service.sqlworkbench;
 
 import java.util.EnumSet;
+import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.apache.calcite.avatica.util.Quoting;
 import org.apache.calcite.sql.SqlCall;
 import org.apache.calcite.sql.SqlKind;
@@ -45,6 +48,11 @@ import org.apache.calcite.sql.parser.SqlParser;
  *       {@code DESC <table>} — which keep a single-statement lexical check only. Those are
  *       read-only in every dialect Saiku ships drivers for.
  * </ol>
+ *
+ * <p>saiku#2598: a statement neither grammar can parse is STILL rejected — the guard stays
+ * fail-closed — but it is reported as a <b>syntactic</b> problem (see {@link
+ * SqlSyntaxException}): the message carries the standard grammar's line/column and a short
+ * reason, so a typo does not read like a permission problem.
  *
  * <p>saiku#2522: a parse of the raw text is NOT enough, because the validated statement and the
  * executed one can still differ where a dialect's comment or escape semantics disagree with the
@@ -148,6 +156,23 @@ public final class ReadOnlySqlGuard {
     private static final SqlParser.Config BACKTICK_CONFIG =
             SqlParser.configBuilder().setQuoting(Quoting.BACK_TICK).build();
 
+    /**
+     * saiku#2598: a statement the guard could not parse is a SYNTAX problem, not a permission
+     * problem — the caller must fix the SQL, not look for a grant they do not have. Still an
+     * {@link IllegalArgumentException} (the guard stays fail-closed, and every existing catch of
+     * that type keeps working), but distinguishable so {@link SqlWorkbenchService} can answer
+     * {@code SQL_SYNTAX_ERROR} instead of {@code READ_ONLY_VIOLATION}. The message is safe to
+     * show a {@code ROLE_SQL_EXEC} user: it never carries a stack trace or Java class name.
+     */
+    public static final class SqlSyntaxException extends IllegalArgumentException {
+
+        private static final long serialVersionUID = 1L;
+
+        private SqlSyntaxException(String message) {
+            super(message);
+        }
+    }
+
     private ReadOnlySqlGuard() {}
 
     /**
@@ -204,32 +229,206 @@ public final class ReadOnlySqlGuard {
         if (scan.stacked()) {
             throw new IllegalArgumentException("Only a single SQL statement is allowed in the SQL workbench");
         }
+        // saiku#2598: a quote still open at end of input is its own, concrete syntax error —
+        // the user must fix the string, not hunt for a permission problem.
         if (scan.unbalancedQuote()) {
-            throw new IllegalArgumentException(
-                    "Only read-only queries are allowed here; the statement could not be parsed as one");
+            throw new SqlSyntaxException(
+                    "Unterminated string or identifier quote: a quote is still open at the end of the statement. "
+                            + "Only read-only statements can be run in the SQL workbench.");
         }
 
         String statement = stripTrailingSemicolon(scan.strippedText()).strip();
-        SqlNode parsed = parse(statement);
-        if (parsed != null) {
-            if (!ALLOWED_TOP_LEVEL_KINDS.contains(parsed.getKind())) {
+        ParseResult parsed = parse(statement);
+        if (parsed.node() != null) {
+            if (!ALLOWED_TOP_LEVEL_KINDS.contains(parsed.node().getKind())) {
                 throw new IllegalArgumentException(
                         "Only read-only queries (SELECT / WITH / VALUES / TABLE / DESCRIBE) are allowed here");
             }
-            checkTree(parsed);
+            checkTree(parsed.node());
             return statement;
         }
 
         // Neither grammar reads it. The only allowance left is a strict lexical one: a single,
         // comment-free statement starting with a read-only introspection keyword. Anything else
-        // fails closed.
+        // fails closed — but as a SYNTAX error the caller can act on (saiku#2598), with the
+        // standard grammar's position and reason, not as a read-only violation.
         if (LEXICAL_ALLOWLIST.contains(firstWord(statement).toUpperCase(Locale.ROOT))) {
             return statement;
         }
-        throw new IllegalArgumentException(
-                "Only read-only queries are allowed here; the statement could not be parsed as one");
+        // EXPLAIN is refused by policy, and PostgreSQL data-modifying CTEs must also keep the
+        // #2318 read-only verdict even though Calcite cannot parse their DML bodies.
+        if ("EXPLAIN".equalsIgnoreCase(firstWord(statement)) || containsDataModifyingCte(statement)) {
+            throw new IllegalArgumentException(
+                    "Only read-only queries are allowed here; the statement could not be parsed as one");
+        }
+        throw new SqlSyntaxException(syntaxMessage(parsed.error()));
     }
 
+    /** Outcome of the two-pass parse: a node when some grammar accepted the statement, otherwise
+     *  the STANDARD grammar's exception — its position is the one the message reports (saiku#2598). */
+    private record ParseResult(SqlNode node, SqlParseException error) {}
+
+    /** Upper bound on the caller-facing syntax message — a pathological parser message cannot flood
+     *  the response, and the message stays one safe-to-show line-shaped string (saiku#2598). */
+    private static final int MAX_SYNTAX_MESSAGE_LENGTH = 400;
+
+    /** JavaCC's "Encountered <token image> at line L, column C" — the offending token, escaped. */
+    private static final Pattern ENCOUNTERED =
+            Pattern.compile("Encountered \"((?:[^\"\\\\]|\\\\.)*)\" at line (\\d+), column (\\d+)");
+
+    /** PostgreSQL permits writes inside CTE bodies, which Calcite cannot parse as a statement. */
+    private static final Pattern DATA_MODIFYING_CTE = Pattern.compile(
+            "\\bAS\\s*(?:(?:NOT\\s+)?MATERIALIZED\\s*)?\\(\\s*(?:INSERT|UPDATE|DELETE|MERGE)\\b",
+            Pattern.CASE_INSENSITIVE);
+
+    /** The DML keyword must start a CTE body, not appear inside a string or quoted identifier. */
+    private static boolean containsDataModifyingCte(String statement) {
+        if (!"WITH".equalsIgnoreCase(firstWord(statement))) {
+            return false;
+        }
+        StringBuilder unquoted = new StringBuilder(statement.length());
+        char quote = 0;
+        for (int i = 0; i < statement.length(); i++) {
+            char c = statement.charAt(i);
+            if (quote != 0) {
+                unquoted.append(' ');
+                if (c == quote) {
+                    if (i + 1 < statement.length() && statement.charAt(i + 1) == quote) {
+                        unquoted.append(' ');
+                        i++;
+                    } else {
+                        quote = 0;
+                    }
+                }
+            } else if (c == '\'' || c == '"' || c == '`') {
+                quote = c;
+                unquoted.append(' ');
+            } else {
+                unquoted.append(c);
+            }
+        }
+        return DATA_MODIFYING_CTE.matcher(unquoted).find();
+    }
+
+    /** Builds the caller-safe message for a statement neither grammar could parse: the standard
+     *  grammar's position, a short reason, and the standing read-only sentence. No stack trace,
+     *  no Java class name, and truncated so a pathological parser message cannot flood the
+     *  response (saiku#2598). */
+    private static String syntaxMessage(SqlParseException error) {
+        String raw = error.getMessage() == null ? "" : error.getMessage();
+        String near = encounteredToken(raw);
+        String where = "SQL syntax error at line " + posLine(error) + ", column " + posColumn(error);
+        if (near != null) {
+            where += " near \"" + near + "\"";
+        }
+        return truncate(where + ": " + reason(error, raw, near)
+                + ". Only read-only statements can be run in the SQL workbench.");
+    }
+
+    /** A short, safe reason for the parse failure. The one shape this is specific about is the
+     *  classic single-quote-around-a-identifier mistake the issue is titled after: the parser
+     *  met a string literal where an identifier was expected. */
+    private static String reason(SqlParseException error, String raw, String near) {
+        if (near != null && isStringLiteral(near) && expectsIdentifier(error)) {
+            String bare = near.substring(1, near.length() - 1);
+            return "table names are identifiers — use " + bare + " or \"" + bare + "\", not " + near;
+        }
+        if (near != null) {
+            String expected = expectedTokens(error);
+            return expected.isEmpty() ? "unexpected token" : "expected one of: " + expected;
+        }
+        // No "Encountered …" sentence (e.g. Calcite's own semantic failures): the first line of
+        // the parser's message is the reason. Sanitized — never a class name or stack frame.
+        return firstSentence(sanitize(raw));
+    }
+
+    private static int posLine(SqlParseException error) {
+        return error.getPos() == null ? 1 : error.getPos().getLineNum();
+    }
+
+    private static int posColumn(SqlParseException error) {
+        return error.getPos() == null ? 1 : error.getPos().getColumnNum();
+    }
+
+    /** The offending token from a JavaCC "Encountered …" sentence, JavaCC escapes removed. */
+    private static String encounteredToken(String message) {
+        Matcher m = ENCOUNTERED.matcher(message);
+        if (!m.find()) {
+            return null;
+        }
+        return unescape(m.group(1));
+    }
+
+    /** A string literal in an identifier slot looks like 'text' — single-quoted, never empty. */
+    private static boolean isStringLiteral(String token) {
+        return token.length() >= 2 && token.charAt(0) == '\'' && token.charAt(token.length() - 1) == '\'';
+    }
+
+    /** Whether the parser was expecting any form of identifier where it hit {@code near}. */
+    private static boolean expectsIdentifier(SqlParseException error) {
+        try {
+            return error.getExpectedTokenNames().stream().anyMatch(name -> name != null && name.contains("IDENTIFIER"));
+        } catch (RuntimeException noTokenNames) {
+            return false;
+        }
+    }
+
+    /** A compact, capped "expected one of: …" summary from the parser's token expectations. */
+    private static String expectedTokens(SqlParseException error) {
+        try {
+            Set<String> names = new LinkedHashSet<>();
+            for (String name : error.getExpectedTokenNames()) {
+                if (name != null && !name.isBlank()) {
+                    names.add(name);
+                }
+                if (names.size() == 5) {
+                    break;
+                }
+            }
+            return String.join(", ", names) + (names.size() == 5 ? ", …" : "");
+        } catch (RuntimeException noTokenNames) {
+            return "";
+        }
+    }
+
+    /** Removes the JavaCC backslash escapes the lexer puts into a reported token image. */
+    private static String unescape(String tokenText) {
+        StringBuilder out = new StringBuilder(tokenText.length());
+        for (int i = 0; i < tokenText.length(); i++) {
+            char c = tokenText.charAt(i);
+            if (c == '\\' && i + 1 < tokenText.length()) {
+                out.append(tokenText.charAt(++i));
+            } else {
+                out.append(c);
+            }
+        }
+        return out.toString();
+    }
+
+    /** Strips fully-qualified class names a parser message could carry (saiku#2598: never a
+     *  class name in a caller-facing message). */
+    private static String sanitize(String message) {
+        return message == null
+                ? ""
+                : message.replaceFirst("\\b[A-Za-z_$][A-Za-z0-9_$]*(?:\\.[A-Za-z_$][A-Za-z0-9_$]*){2,}\\b", "")
+                        .strip();
+    }
+
+    private static String firstSentence(String message) {
+        if (message.isEmpty()) {
+            return "the statement is not valid SQL";
+        }
+        int cut = message.indexOf('\n');
+        String first = cut < 0 ? message : message.substring(0, cut);
+        first = first.strip();
+        return first.isEmpty() ? "the statement is not valid SQL" : first;
+    }
+
+    private static String truncate(String message) {
+        return message.length() <= MAX_SYNTAX_MESSAGE_LENGTH
+                ? message
+                : message.substring(0, MAX_SYNTAX_MESSAGE_LENGTH - 3) + "...";
+    }
     /**
      * Convenience for callers that only need the verdict (tests, future callers): validates as
      * {@link #validatedStatement(String)} and discards the returned text.
@@ -369,17 +568,19 @@ public final class ReadOnlySqlGuard {
     /**
      * Parse under the standard (double-quote) grammar first, then under MySQL backtick quoting —
      * the two identifier-quote styles are mutually exclusive in a single parser config, and a
-     * statement using both is rejected rather than guessed at. Returns {@code null} when neither
-     * grammar accepts the statement (fail closed).
+     * statement using both is rejected rather than guessed at. When neither grammar accepts the
+     * statement the STANDARD grammar's exception is returned (saiku#2598): it is the mainstream
+     * error, so its position and reason are the ones the caller sees.
      */
-    private static SqlNode parse(String sql) {
+    private static ParseResult parse(String sql) {
         try {
-            return SqlParser.create(sql, SqlParser.Config.DEFAULT).parseStmt();
+            return new ParseResult(
+                    SqlParser.create(sql, SqlParser.Config.DEFAULT).parseStmt(), null);
         } catch (SqlParseException standard) {
             try {
-                return SqlParser.create(sql, BACKTICK_CONFIG).parseStmt();
+                return new ParseResult(SqlParser.create(sql, BACKTICK_CONFIG).parseStmt(), standard);
             } catch (SqlParseException backtick) {
-                return null;
+                return new ParseResult(null, standard);
             }
         }
     }

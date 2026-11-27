@@ -75,6 +75,12 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-11-25 — fix/2598-workbench-syntax-error — PR #2608 latest base merge
+**Was doing:** merged development through 5ce354285 into the PR branch, keeping #2598 syntax tests, #2599 datasource tests, #2550 result-size tests, and every handoff entry; combined their test floors.
+**Now:** check PR #2608 CI on the latest merge commit; the prior merge's CI passed before the base advanced again.
+**Watch out:** local Maven tests stop at GitHub Packages 401; local Chromium lacks `libglib-2.0.so.0`. UI check, 2,732 Vitest tests, lint, build, and Java Spotless passed.
+**Refs:** #2598, #2599, #2550, PR #2608
+
 ## 2026-11-25 — feature/2459-ci-secret-lifecycle-gate — PR #2494 base conflict rework
 **Was doing:** merged current development into the PR branch, retaining both sides of the corrections and session entries; the credential gate remains unchanged.
 **Now:** check PR #2494 CI after the push, especially the Python scripts and acceptance gate.
@@ -90,6 +96,7 @@ pushed down; normal sessions append and the history stays useful.
 **Was doing:** tightened PR #2494's trusted-base detection to require the base SHA as the full checkout ref and added regression fixtures for comment, path-only, and checkout-action cases.
 **Now:** check PR #2494 CI after the push; the Python script suite and acceptance check pass locally.
 **Refs:** #2459, #2494
+
 ## 2026-11-25 — feature/2547-redact-connection-error-logs — PR #2594 base merge
 **Was doing:** merged current development into the existing PR branch and retained its earlier redaction fixes and tests.
 **Now:** check PR #2594 CI after the push, especially the Maven suites and acceptance spec.
@@ -107,6 +114,12 @@ pushed down; normal sessions append and the history stays useful.
 **Now:** check PR #2565 CI on the pushed head for the Java tests and Docker image job.
 **Watch out:** local Maven stops before compilation on GitHub Packages 401; the previous Docker job hit Maven Central 429 while downloading the telemetry agent.
 **Refs:** #2536, PR #2565
+
+## 2026-11-24 — fix/2598-workbench-syntax-error — PR #2608 CI rework
+**Was doing:** restored `READ_ONLY_VIOLATION` for PostgreSQL data-modifying CTEs that Calcite cannot parse, with guard and REST regression coverage; pushed to the existing PR branch.
+**Now:** check PR #2608 CI, especially `acceptance/2318` and the Maven service/web tests.
+**Watch out:** local Maven tests stop before compilation because GitHub Packages returns 401 for private Mondrian/olap4j dependencies; focused guard tests and Spotless pass locally.
+**Refs:** #2598, #2318, PR #2608
 
 ## 2026-11-24 — feature/2535-rest-body-size-limits — PR #2566 review rework
 **Was doing:** formatted the REST body filter test and corrected the operator guide; local Spotless, licence, and static acceptance checks pass. Maven service/web tests stop at GitHub Packages 401 before compilation.

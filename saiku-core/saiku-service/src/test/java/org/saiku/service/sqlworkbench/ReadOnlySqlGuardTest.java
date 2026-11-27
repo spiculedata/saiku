@@ -7,7 +7,9 @@
 package org.saiku.service.sqlworkbench;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
@@ -116,9 +118,19 @@ public class ReadOnlySqlGuardTest {
 
     @Test
     public void dataModifyingCte_isRejected() {
-        assertThrows(
+        IllegalArgumentException ex = assertThrows(
                 IllegalArgumentException.class,
                 () -> ReadOnlySqlGuard.checkReadOnly("WITH d AS (DELETE FROM customer RETURNING 1) SELECT * FROM d"));
+        assertFalse(ex instanceof ReadOnlySqlGuard.SqlSyntaxException);
+        assertTrue(ex.getMessage().contains("Only read-only queries"));
+    }
+
+    @Test
+    public void malformedCteWithQuotedDmlText_isStillASyntaxError() {
+        assertThrows(
+                ReadOnlySqlGuard.SqlSyntaxException.class,
+                () -> ReadOnlySqlGuard.checkReadOnly(
+                        "WITH d AS (SELECT 'AS (DELETE FROM customer)' FROM) SELECT * FROM d"));
     }
 
     @Test
@@ -441,5 +453,86 @@ public class ReadOnlySqlGuardTest {
     @Test
     public void validatedStatement_quotedContentIsPreservedVerbatim() {
         assertEquals("SELECT ';' AS separator", ReadOnlySqlGuard.validatedStatement("SELECT ';' AS separator"));
+    }
+
+    // ---- saiku#2598: a statement that cannot be parsed is a SYNTAX error, not a permission problem ----
+
+    @Test
+    public void quotedTable_isASyntaxErrorWithTheParserPosition_andTheIdentifierHint() {
+        ReadOnlySqlGuard.SqlSyntaxException ex = assertThrows(
+                ReadOnlySqlGuard.SqlSyntaxException.class,
+                () -> ReadOnlySqlGuard.checkReadOnly("select * from 'account'"));
+        assertTrue(ex.getMessage().contains("SQL syntax error at line 1, column 15"));
+        assertTrue(ex.getMessage().contains("near \"'account'\""));
+        assertTrue(ex.getMessage().contains("table names are identifiers — use account or \"account\", not 'account'"));
+        assertTrue(ex.getMessage().contains("Only read-only statements can be run"));
+    }
+
+    @Test
+    public void typo_isASyntaxErrorWithTheParserPosition() {
+        ReadOnlySqlGuard.SqlSyntaxException ex = assertThrows(
+                ReadOnlySqlGuard.SqlSyntaxException.class, () -> ReadOnlySqlGuard.checkReadOnly("selec 1"));
+        assertTrue(ex.getMessage().contains("SQL syntax error at line 1, column 1"));
+        assertTrue(ex.getMessage().contains("Only read-only statements can be run"));
+    }
+
+    @Test
+    public void unbalancedQuote_getsItsOwnMessage() {
+        ReadOnlySqlGuard.SqlSyntaxException ex = assertThrows(
+                ReadOnlySqlGuard.SqlSyntaxException.class,
+                () -> ReadOnlySqlGuard.checkReadOnly("select * from account where name = 'o"));
+        assertTrue(ex.getMessage().contains("Unterminated string or identifier quote"));
+        assertTrue(ex.getMessage().contains("Only read-only statements can be run"));
+    }
+
+    @Test
+    public void unbalancedDoubleQuote_getsTheSameUnterminatedMessage() {
+        ReadOnlySqlGuard.SqlSyntaxException ex = assertThrows(
+                ReadOnlySqlGuard.SqlSyntaxException.class,
+                () -> ReadOnlySqlGuard.checkReadOnly("SELECT \"unterminated FROM customer"));
+        assertTrue(ex.getMessage().contains("Unterminated string or identifier quote"));
+    }
+
+    @Test
+    public void syntaxMessage_isTruncated_andCarriesNoClassNamesOrStackFrames() {
+        // "SELECT … INTO OUTFILE" is unparseable; whatever the parser reports, the caller-facing
+        // message must stay a bounded, class-name-free sentence.
+        ReadOnlySqlGuard.SqlSyntaxException ex = assertThrows(
+                ReadOnlySqlGuard.SqlSyntaxException.class,
+                () -> ReadOnlySqlGuard.checkReadOnly("SELECT id INTO OUTFILE '/tmp/x' FROM customer"));
+        assertTrue(ex.getMessage().length() <= 400);
+        assertFalse(ex.getMessage().matches("(?s).*\\w+\\.\\w+\\.\\w+.*")); // no a.b.c dotted class path
+        assertFalse(ex.getMessage().contains("Exception"));
+        assertFalse(ex.getMessage().contains("at line \n")); // no stack frame shape
+    }
+
+    @Test
+    public void aRealWrite_isStillAReadOnlyViolation_notASyntaxError() {
+        // DELETE parses fine — the refusal is about permissions, and keeps its own wording/code.
+        IllegalArgumentException ex = assertThrows(
+                IllegalArgumentException.class, () -> ReadOnlySqlGuard.checkReadOnly("DELETE FROM customer"));
+        assertFalse(ex instanceof ReadOnlySqlGuard.SqlSyntaxException);
+        assertTrue(ex.getMessage().contains("Only read-only queries"));
+    }
+
+    @Test
+    public void theBypassRefusals_keepTheirOwnWording_notTheSyntaxMessage() {
+        // #2318/#2522 refusals are statements the parser CAN read (or scans reject) — they are
+        // permission problems, not syntax problems.
+        IllegalArgumentException cr = assertThrows(
+                IllegalArgumentException.class, () -> ReadOnlySqlGuard.checkReadOnly("SELECT 1 AS a --\r, 2 AS b"));
+        assertFalse(cr instanceof ReadOnlySqlGuard.SqlSyntaxException);
+        assertTrue(cr.getMessage().contains("Line comments"));
+
+        IllegalArgumentException escape = assertThrows(
+                IllegalArgumentException.class,
+                () -> ReadOnlySqlGuard.checkReadOnly("SELECT {fn DATABASE_PATH()} AS p"));
+        assertFalse(escape instanceof ReadOnlySqlGuard.SqlSyntaxException);
+        assertTrue(escape.getMessage().contains("JDBC escape"));
+
+        IllegalArgumentException stacked = assertThrows(
+                IllegalArgumentException.class, () -> ReadOnlySqlGuard.checkReadOnly("SELECT 1; DROP TABLE t"));
+        assertFalse(stacked instanceof ReadOnlySqlGuard.SqlSyntaxException);
+        assertTrue(stacked.getMessage().contains("single SQL statement"));
     }
 }

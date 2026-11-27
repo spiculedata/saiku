@@ -88,8 +88,9 @@ This is one layer of a few:
    Mondrian role, or whose `security.type` is unrecognised (the same
    fail-closed rule connection creation applies).
 
-A rejected statement returns `400` with `{code: "READ_ONLY_VIOLATION",
-message}` and never reaches a connection.
+A statement refused by read-only policy returns `400` with
+`{code: "READ_ONLY_VIOLATION", message}`; a syntax error returns
+`SQL_SYNTAX_ERROR`. Neither reaches a connection.
 
 **Dedicated read-only credentials — and the trust that remains in
 `ROLE_SQL_EXEC`.** The strongest layer remains the warehouse's own, and it is
@@ -118,7 +119,8 @@ A failed request returns `400` with `{code, message}`:
 | `code` | Meaning |
 | --- | --- |
 | `INVALID_REQUEST` | Missing `sql` or `datasource` in the body. |
-| `READ_ONLY_VIOLATION` | The statement failed `ReadOnlySqlGuard`. |
+| `READ_ONLY_VIOLATION` | The statement failed `ReadOnlySqlGuard` — a refused write or a construct the guard rejects outright (JDBC escapes, executable comments, stacked statements, `EXPLAIN`, or a data-modifying CTE whose body Calcite cannot parse). |
+| `SQL_SYNTAX_ERROR` | The statement could not be parsed as read-only SQL and is not a policy-rejected form (saiku#2598) — still a 400 refusal, but the message is a syntax error carrying the standard grammar's line/column and a short reason (e.g. `SQL syntax error at line 1, column 15 near "'account'": table names are identifiers — use account or "account", not 'account'. Only read-only statements can be run in the SQL workbench.`), so a typo does not read like a permission problem. An unterminated quote gets its own message. No stack trace or class name, bounded to 400 chars. |
 | `UNKNOWN_DATASOURCE` | No datasource matches the given name/id. |
 | `QUERY_FAILED` | The statement reached the driver and failed — `message` is the driver's own error text (bounded to 500 chars), which is deliberately **not** scrubbed the way other resources scrub SQL/exception detail from responses (see `add-rest-endpoint.prompt.md`): a query tool that hides why a query failed isn't usable, and the caller already holds an elevated grant equivalent to direct warehouse access. It never carries a Java stack trace or class name. The same code is used when a backend with a session read-only switch refuses that session: the caller's statement was **not** executed. |
 
