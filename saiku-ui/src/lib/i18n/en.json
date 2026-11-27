@@ -934,5 +934,21 @@
 	"sqlWorkbench.prev": "Previous",
 	"sqlWorkbench.next": "Next",
 	"sqlWorkbench.infoUnavailable": "Could not load what this datasource connects to.",
-	"sqlWorkbench.tables": "Tables"
+	"sqlWorkbench.tables": "Tables",
+	"admin.tabs.features": "Features",
+	"features.denied": "This feature has been turned off for your account by an administrator.",
+	"features.intro": "Turn the main product surfaces on or off per role. Admins always keep access, and a denied caller is refused by the server even with a direct link. Every change is audited.",
+	"features.columnFeature": "Feature",
+	"features.columnAccess": "Access",
+	"features.grantEveryone": "Everyone",
+	"features.grantAdmins": "Admins only",
+	"features.grantRoles": "Selected roles",
+	"features.uiOnly": "Enforced in the UI only (this surface shares an API with a feature that stays on).",
+	"features.saved": "Feature updated",
+	"features.saveFailed": "Save failed",
+	"features.auditTitle": "Audit trail",
+	"features.auditWhen": "When",
+	"features.auditActor": "Actor",
+	"features.auditChange": "Change",
+	"features.auditEmpty": "No changes recorded yet."
 }

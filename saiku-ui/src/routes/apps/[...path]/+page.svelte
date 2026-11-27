@@ -10,6 +10,10 @@
 
 	import { session } from '$lib/stores/session.svelte';
 	import LoginForm from '$lib/views/LoginForm.svelte';
+	// saiku#2618: a denied caller with a direct link gets the refusal panel —
+	// the nav hiding in the topbar is cosmetic, not the enforcement.
+	import FeatureDenied from '$lib/components/FeatureDenied.svelte';
+	import { i18n } from '$lib/stores/i18n.svelte';
 	import AppEditor from '$lib/views/app/AppEditor.svelte';
 	import AppIndex from '$lib/views/app/AppIndex.svelte';
 	// App Builder Phase 2 (saiku#1441): register built-in custom tile renderers
@@ -25,7 +29,9 @@
 {#if session.loading}
 	<div class="m-auto text-fg-muted">Loading…</div>
 {:else if session.current}
-	{#if !data.appPath}
+	{#if !session.hasFeature('apps')}
+		<FeatureDenied featureLabel={i18n.t('topbar.apps', 'Apps')} />
+	{:else if !data.appPath}
 		<AppIndex />
 	{:else}
 		<AppEditor appPath={data.appPath} />

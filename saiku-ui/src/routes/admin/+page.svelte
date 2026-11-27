@@ -10,10 +10,20 @@
 	import AgentSpacesAdmin from '$lib/views/admin/AgentSpacesAdmin.svelte';
 	import ApiAccessAdmin from '$lib/views/admin/ApiAccessAdmin.svelte';
 	import RolesAdmin from '$lib/views/admin/RolesAdmin.svelte';
+	import FeaturesAdmin from '$lib/views/admin/FeaturesAdmin.svelte';
 	import LoginForm from '$lib/views/LoginForm.svelte';
 
 	type Tab =
-		'users' | 'roles' | 'datasources' | 'schemas' | 'logs' | 'stats' | 'evals' | 'spaces' | 'api';
+		| 'users'
+		| 'roles'
+		| 'features'
+		| 'datasources'
+		| 'schemas'
+		| 'logs'
+		| 'stats'
+		| 'evals'
+		| 'spaces'
+		| 'api';
 	let tab = $state<Tab>('users');
 </script>
 
@@ -40,6 +50,12 @@
 				role="tab"
 				class:active={tab === 'roles'}
 				onclick={() => (tab = 'roles')}>{i18n.t('admin.tabs.roles')}</button
+			>
+			<button
+				type="button"
+				role="tab"
+				class:active={tab === 'features'}
+				onclick={() => (tab = 'features')}>{i18n.t('admin.tabs.features', 'Features')}</button
 			>
 			<button
 				type="button"
@@ -86,6 +102,8 @@
 				<UsersAdmin />
 			{:else if tab === 'roles'}
 				<RolesAdmin />
+			{:else if tab === 'features'}
+				<FeaturesAdmin />
 			{:else if tab === 'datasources'}
 				<DatasourcesAdmin />
 			{:else if tab === 'schemas'}

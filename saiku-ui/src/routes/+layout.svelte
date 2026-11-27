@@ -54,6 +54,13 @@
 	// Now every destination is always present, in a stable order, and the
 	// current one is marked rather than hidden. Admin still only appears for
 	// admins — that's permission, not navigation state.
+	// saiku#2618: the toggleable product surfaces (Dashboards, Apps, Notebooks,
+	// the MDX workbench, the SQL workbench) are also gated on the caller's
+	// effective feature map from the session response — the admin panel can turn
+	// each off per role. Admin itself is deliberately NOT feature-gated: the
+	// admin panel must always be reachable for an admin. The server's
+	// FeatureGateFilter enforces the same contract on the REST surface, so a
+	// hidden entry is a navigation affordance, not the boundary.
 	const navItems = $derived([
 		{
 			href: `${base}/`,
@@ -61,25 +68,29 @@
 			icon: Table2,
 			// Exact match: every other route is a prefix of "/" and would
 			// otherwise light this up everywhere.
-			active: page.url.pathname === `${base}/` || page.url.pathname === base
+			active: page.url.pathname === `${base}/` || page.url.pathname === base,
+			visible: true
 		},
 		{
 			href: `${base}/dashboards`,
 			label: i18n.t('topbar.dashboards', 'Dashboards'),
 			icon: LayoutDashboard,
-			active: page.url.pathname.startsWith(`${base}/dashboards`)
+			active: page.url.pathname.startsWith(`${base}/dashboards`),
+			visible: session.hasFeature('dashboards')
 		},
 		{
 			href: `${base}/apps`,
 			label: i18n.t('topbar.apps', 'Apps'),
 			icon: AppWindow,
-			active: page.url.pathname.startsWith(`${base}/apps`)
+			active: page.url.pathname.startsWith(`${base}/apps`),
+			visible: session.hasFeature('apps')
 		},
 		{
 			href: `${base}/notebooks`,
 			label: i18n.t('topbar.notebooks', 'Notebooks'),
 			icon: FileText,
-			active: page.url.pathname.startsWith(`${base}/notebooks`)
+			active: page.url.pathname.startsWith(`${base}/notebooks`),
+			visible: session.hasFeature('notebooks')
 		},
 		// saiku#1106: MDX workbench — promoted out of the toolbar's MDXModal
 		// into its own route. Always present, same posture as Dashboards/Apps
@@ -89,18 +100,20 @@
 			href: `${base}/workbench`,
 			label: i18n.t('topbar.workbench', 'MDX Workbench'),
 			icon: Braces,
-			active: page.url.pathname.startsWith(`${base}/workbench`)
+			active: page.url.pathname.startsWith(`${base}/workbench`),
+			visible: session.hasFeature('workbench')
 		},
 		// saiku#1107: SQL workbench — same permission-not-navigation-state posture as Admin.
 		// hasRole() treats ROLE_ADMIN as a superset, so admins see this without being granted
 		// ROLE_SQL_EXEC explicitly.
-		...(session.hasRole('ROLE_SQL_EXEC')
+		...(session.hasRole('ROLE_SQL_EXEC') && session.hasFeature('sql-workbench')
 			? [
 					{
 						href: `${base}/sql-workbench`,
 						label: i18n.t('topbar.sqlWorkbench', 'SQL Workbench'),
 						icon: Database,
-						active: page.url.pathname.startsWith(`${base}/sql-workbench`)
+						active: page.url.pathname.startsWith(`${base}/sql-workbench`),
+						visible: true
 					}
 				]
 			: []),
@@ -110,7 +123,8 @@
 						href: `${base}/admin`,
 						label: i18n.t('topbar.admin'),
 						icon: Shield,
-						active: page.url.pathname.startsWith(`${base}/admin`)
+						active: page.url.pathname.startsWith(`${base}/admin`),
+						visible: true
 					}
 				]
 			: [])
@@ -232,7 +246,7 @@
 						<UserRound size={14} />
 						{session.current.username}
 					</span>
-					{#each navItems as item (item.href)}
+					{#each navItems.filter((item) => item.visible) as item (item.href)}
 						<a
 							class={buttonVariants({ variant: item.active ? 'secondary' : 'outline', size: 'sm' })}
 							href={item.href}

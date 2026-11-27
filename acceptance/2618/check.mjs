@@ -49,6 +49,9 @@ const FEATURE_KEYS = ['dashboards', 'apps', 'notebooks', 'workbench', 'sql-workb
 const registry = read(
   'saiku-core/saiku-service/src/main/java/org/saiku/service/features/FeatureToggles.java',
 );
+const catalogue = read(
+  'saiku-core/saiku-service/src/main/java/org/saiku/service/features/FeatureCatalogue.java',
+);
 const gate = read(
   'saiku-core/saiku-web/src/main/java/org/saiku/web/rest/features/FeatureGateFilter.java',
 );
@@ -76,7 +79,7 @@ claim(
     /ROLE_ADMIN/.test(registry),
 );
 for (const key of FEATURE_KEYS) {
-  claim('C1', `feature catalogue covers "${key}"`, registry.includes(`"${key}"`));
+  claim('C1', `feature catalogue covers "${key}"`, catalogue.includes(`"${key}"`));
 }
 claim(
   'C4',
@@ -176,11 +179,11 @@ if (baseUrl && adminUser && adminPassword) {
   // C4 + C1: deny notebooks to everyone but admin; a non-admin ROLE_USER caller
   // is refused on the backing REST surface even with a direct link, while an
   // unimpacted feature stays open and the session exposes the split.
-  const deny = await call('/rest/saiku/admin/features', {
+  const deny = await call('/rest/saiku/admin/features/notebooks', {
     user: adminUser,
     password: adminPassword,
     method: 'PUT',
-    body: { features: { notebooks: { roles: ['ROLE_NOTEBOOKS'] } } }
+    body: { roles: ['ROLE_NOTEBOOKS'] }
   });
   claim('C2', `PUT /admin/features accepts a grant rewrite (got HTTP ${deny.status})`, deny.status === 200);
 
@@ -204,11 +207,11 @@ if (baseUrl && adminUser && adminPassword) {
   );
 
   // C1: granting the caller's own role re-opens the feature for them.
-  const grant = await call('/rest/saiku/admin/features', {
+  const grant = await call('/rest/saiku/admin/features/notebooks', {
     user: adminUser,
     password: adminPassword,
     method: 'PUT',
-    body: { features: { notebooks: { roles: ['ROLE_USER'] } } }
+    body: { roles: ['ROLE_USER'] }
   });
   claim('C2', `PUT accepts a role the caller holds (got HTTP ${grant.status})`, grant.status === 200);
   const bobGranted = await call('/rest/saiku/api/notebooks', { user: 'bob', password: 'dylan' });
@@ -232,11 +235,11 @@ if (baseUrl && adminUser && adminPassword) {
   claim('C4', `an anonymous caller is refused 401 (got HTTP ${anon.status})`, anon.status === 401);
 
   // Leave the install as we found it: notebooks unrestricted again.
-  const reset = await call('/rest/saiku/admin/features', {
+  const reset = await call('/rest/saiku/admin/features/notebooks', {
     user: adminUser,
     password: adminPassword,
     method: 'PUT',
-    body: { features: { notebooks: { roles: null } } }
+    body: { roles: null }
   });
   claim('C2', `PUT restores an unrestricted grant (got HTTP ${reset.status})`, reset.status === 200);
   const bobAfter = await call('/rest/saiku/api/notebooks', { user: 'bob', password: 'dylan' });

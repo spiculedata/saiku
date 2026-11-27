@@ -134,5 +134,21 @@
 	"tile.empty.filtered": "Keine Daten entsprechen den aktuellen Filtern.",
 	"tile.resetFilters": "Filter zurücksetzen",
 	"panels.topN": "Top N…",
-	"panels.sortBy": "Sortieren…"
+	"panels.sortBy": "Sortieren…",
+	"admin.tabs.features": "Funktionen",
+	"features.denied": "Diese Funktion wurde für Ihr Konto von einem Administrator deaktiviert.",
+	"features.intro": "Hauptfunktionen pro Rolle ein- oder ausschalten. Administratoren behalten immer Zugriff, und ein abgelehnter Aufrufer wird auch mit einem direkten Link vom Server abgewiesen. Jede Änderung wird protokolliert.",
+	"features.columnFeature": "Funktion",
+	"features.columnAccess": "Zugriff",
+	"features.grantEveryone": "Alle",
+	"features.grantAdmins": "Nur Administratoren",
+	"features.grantRoles": "Ausgewählte Rollen",
+	"features.uiOnly": "Nur in der Oberfläche durchgesetzt (diese Fläche teilt eine API mit einer bleibend aktiven Funktion).",
+	"features.saved": "Funktion aktualisiert",
+	"features.saveFailed": "Speichern fehlgeschlagen",
+	"features.auditTitle": "Audit-Protokoll",
+	"features.auditWhen": "Wann",
+	"features.auditActor": "Akteur",
+	"features.auditChange": "Änderung",
+	"features.auditEmpty": "Noch keine Änderungen protokolliert."
 }

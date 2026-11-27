@@ -91,5 +91,12 @@ public class SaikuJerseyApplication extends ResourceConfig {
         if (ctx.containsBean("aiAuditFilter")) {
             register(ctx.getBean("aiAuditFilter"));
         }
+
+        // saiku#2618: the feature-toggle gate refuses denied callers on each
+        // feature's REST prefixes even with a direct link. Same posture as the
+        // AI audit filter — a Spring-wired provider the class scan misses.
+        if (ctx.containsBean("featureGateFilter")) {
+            register(ctx.getBean("featureGateFilter"));
+        }
     }
 }

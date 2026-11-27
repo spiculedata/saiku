@@ -7,6 +7,10 @@
 
 	import { session } from '$lib/stores/session.svelte';
 	import LoginForm from '$lib/views/LoginForm.svelte';
+	// saiku#2618: a denied caller with a direct link gets the refusal panel —
+	// the nav hiding in the topbar is cosmetic, not the enforcement.
+	import FeatureDenied from '$lib/components/FeatureDenied.svelte';
+	import { i18n } from '$lib/stores/i18n.svelte';
 	import NotebookEditor from '$lib/views/notebook/NotebookEditor.svelte';
 	import NotebookIndex from '$lib/views/notebook/NotebookIndex.svelte';
 
@@ -16,7 +20,9 @@
 {#if session.loading}
 	<div class="m-auto text-fg-muted">Loading…</div>
 {:else if session.current}
-	{#if !data.notebookPath}
+	{#if !session.hasFeature('notebooks')}
+		<FeatureDenied featureLabel={i18n.t('topbar.notebooks', 'Notebooks')} />
+	{:else if !data.notebookPath}
 		<NotebookIndex />
 	{:else}
 		<NotebookEditor notebookPath={data.notebookPath} />
