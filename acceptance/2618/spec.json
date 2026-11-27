@@ -1,0 +1,30 @@
+{
+  "issue": 2618,
+  "title": "Admins can toggle the main UI features (Dashboards, Apps, Notebooks, MDX workbench, SQL workbench) per role, users see only what they are granted, denied callers are refused even with a direct link, and every change is audited",
+  "kind": "ui",
+  "auth": "session",
+  "criteria": [
+    {
+      "id": "C1",
+      "given": "two authenticated callers with different roles on a default install",
+      "then": "the server resolves feature visibility per caller (ROLE_ADMIN always passes; a restricted feature is visible only to the roles it lists) and the session surface exposes the caller's own effective feature map"
+    },
+    {
+      "id": "C2",
+      "given": "an admin in the admin panel",
+      "then": "GET /rest/saiku/admin/features returns the feature catalogue with the current per-role grants, and PUT /rest/saiku/admin/features rewrites them; the admin surface itself is never feature-gated"
+    },
+    {
+      "id": "C3",
+      "given": "an admin changes a feature's role grants",
+      "then": "the change is recorded in the feature-toggle audit trail served at GET /rest/saiku/admin/features/audit with the actor, feature, and before/after grants"
+    },
+    {
+      "id": "C4",
+      "given": "a caller denied a feature follows a direct link",
+      "then": "the backing REST surface refuses the request (403 for an authenticated non-granted caller), so the denial does not depend on the SPA hiding the nav entry"
+    }
+  ],
+  "command": ["node", "check.mjs"],
+  "timeoutSeconds": 120
+}
