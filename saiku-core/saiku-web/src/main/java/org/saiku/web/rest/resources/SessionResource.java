@@ -22,9 +22,14 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.Response.Status;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 import org.apache.commons.lang3.StringUtils;
 import org.saiku.service.ISessionService;
+import org.saiku.service.features.FeatureCatalogue;
+import org.saiku.service.features.FeatureToggles;
 import org.saiku.service.user.UserService;
 import org.saiku.web.security.audit.AuditLogger;
 import org.saiku.web.security.ratelimit.LoginRateLimiter;
@@ -55,6 +60,8 @@ public class SessionResource {
     private ISessionService sessionService;
     private UserService userService;
     private LoginRateLimiter rateLimiter = new LoginRateLimiter();
+    /** saiku#2618: optional — null (legacy wiring) means no feature map in the session response. */
+    private FeatureToggles featureToggles;
 
     public ISessionService getSessionService() {
         return sessionService;
@@ -70,6 +77,49 @@ public class SessionResource {
 
     public void setRateLimiter(LoginRateLimiter rateLimiter) {
         if (rateLimiter != null) this.rateLimiter = rateLimiter;
+    }
+
+    public void setFeatureToggles(FeatureToggles featureToggles) {
+        this.featureToggles = featureToggles;
+    }
+
+    /**
+     * saiku#2618 — the caller's effective feature map for the SPA (nav + route
+     * gates). {@code true} for a feature the caller's authorities see; admins
+     * always see every feature. Best-effort: a failure to resolve never breaks
+     * the session response (the SPA then treats every feature as enabled, which
+     * is the pre-#2618 behaviour; the server-side {@code FeatureGateFilter}
+     * still enforces the toggles regardless of what the UI shows).
+     */
+    private Map<String, Boolean> effectiveFeatures() {
+        if (featureToggles == null) {
+            return null;
+        }
+        Map<String, Boolean> out = new LinkedHashMap<>();
+        try {
+            Set<String> authorities = new HashSet<>();
+            org.springframework.security.core.Authentication auth =
+                    org.springframework.security.core.context.SecurityContextHolder.getContext() == null
+                            ? null
+                            : org.springframework.security.core.context.SecurityContextHolder
+                                    .getContext()
+                                    .getAuthentication();
+            if (auth != null
+                    && auth.isAuthenticated()
+                    && !(auth instanceof org.springframework.security.authentication.AnonymousAuthenticationToken)) {
+                for (org.springframework.security.core.GrantedAuthority ga : auth.getAuthorities()) {
+                    if (ga != null && ga.getAuthority() != null) {
+                        authorities.add(ga.getAuthority());
+                    }
+                }
+            }
+            for (FeatureCatalogue feature : FeatureCatalogue.values()) {
+                out.put(feature.key, featureToggles.isEnabled(feature.key, authorities));
+            }
+        } catch (RuntimeException e) {
+            log.debug("Could not resolve the caller's effective features", e);
+        }
+        return out;
     }
 
     /**
@@ -144,6 +194,14 @@ public class SessionResource {
             sess.put("isadmin", userService.isAdmin());
         } catch (Exception e) {
             // throw new UnsupportedOperationException();
+        }
+        try {
+            Map<String, Boolean> features = effectiveFeatures();
+            if (features != null) {
+                sess.put("features", features);
+            }
+        } catch (Exception e) {
+            log.debug("Could not attach the effective feature map to the session", e);
         }
         try {
             userService.checkFolders();

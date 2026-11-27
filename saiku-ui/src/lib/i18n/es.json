@@ -156,5 +156,21 @@
 	"tile.empty.filtered": "Ningún dato coincide con los filtros actuales.",
 	"tile.resetFilters": "Restablecer filtros",
 	"panels.topN": "Top N…",
-	"panels.sortBy": "Ordenar…"
+	"panels.sortBy": "Ordenar…",
+	"admin.tabs.features": "Funciones",
+	"features.denied": "Un administrador ha desactivado esta función para su cuenta.",
+	"features.intro": "Active o desactive las funciones principales por rol. Los administradores siempre conservan el acceso y un servidor rechaza a un llamador denegado incluso con un enlace directo. Cada cambio queda registrado.",
+	"features.columnFeature": "Función",
+	"features.columnAccess": "Acceso",
+	"features.grantEveryone": "Todos",
+	"features.grantAdmins": "Solo administradores",
+	"features.grantRoles": "Roles seleccionados",
+	"features.uiOnly": "Aplicado solo en la interfaz (esta superficie comparte una API con una función que permanece activa).",
+	"features.saved": "Función actualizada",
+	"features.saveFailed": "Error al guardar",
+	"features.auditTitle": "Registro de auditoría",
+	"features.auditWhen": "Cuándo",
+	"features.auditActor": "Actor",
+	"features.auditChange": "Cambio",
+	"features.auditEmpty": "Aún no hay cambios registrados."
 }

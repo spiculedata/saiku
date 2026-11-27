@@ -10,7 +10,6 @@ import { selection } from '$lib/stores/selection.svelte';
 class SessionStore {
 	current = $state<SaikuSession | null>(null);
 	loading = $state<boolean>(true);
-
 	async bootstrap(): Promise<void> {
 		this.loading = true;
 		try {
@@ -42,6 +41,20 @@ class SessionStore {
 	hasRole(role: string): boolean {
 		return this.isAdmin || this.current?.roles.includes(role) === true;
 	}
+
+	/** saiku#2618: true when the caller may use a toggleable UI feature (Dashboards, Apps,
+	 *  Notebooks, the MDX workbench, the SQL workbench). The backend session response carries
+	 *  the caller's effective feature map — admins always pass, and a feature the admin has
+	 *  denied for the caller's roles is false. An absent map (older backend, or the session
+	 *  response failed to carry it) means every feature is on — the pre-#2618 posture. The
+	 *  server-side FeatureGateFilter enforces the same contract on the REST surface regardless
+	 *  of what the UI shows, so this is a navigation affordance, not the boundary. */
+	hasFeature(feature: string): boolean {
+		const features = this.current?.features;
+		if (!features) return true;
+		return features[feature] !== false;
+	}
 }
 
+export { SessionStore };
 export const session = new SessionStore();

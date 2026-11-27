@@ -134,5 +134,21 @@
 	"tile.empty.filtered": "Aucune donnée ne correspond aux filtres actuels.",
 	"tile.resetFilters": "Réinitialiser les filtres",
 	"panels.topN": "Top N…",
-	"panels.sortBy": "Trier…"
+	"panels.sortBy": "Trier…",
+	"admin.tabs.features": "Fonctions",
+	"features.denied": "Cette fonction a été désactivée pour votre compte par un administrateur.",
+	"features.intro": "Activez ou désactivez les fonctions principales par rôle. Les administrateurs gardent toujours l’accès, et un appelant refusé est rejeté par le serveur même avec un lien direct. Chaque modification est auditée.",
+	"features.columnFeature": "Fonction",
+	"features.columnAccess": "Accès",
+	"features.grantEveryone": "Tout le monde",
+	"features.grantAdmins": "Administrateurs uniquement",
+	"features.grantRoles": "Rôles sélectionnés",
+	"features.uiOnly": "Appliqué uniquement dans l’interface (cette surface partage une API avec une fonction qui reste active).",
+	"features.saved": "Fonction mise à jour",
+	"features.saveFailed": "Échec de l’enregistrement",
+	"features.auditTitle": "Journal d’audit",
+	"features.auditWhen": "Quand",
+	"features.auditActor": "Acteur",
+	"features.auditChange": "Changement",
+	"features.auditEmpty": "Aucun changement enregistré pour le moment."
 }

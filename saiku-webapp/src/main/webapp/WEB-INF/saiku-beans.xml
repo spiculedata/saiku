@@ -1164,6 +1164,33 @@
         <property name="sessionService" ref="sessionService"/>
         <property name="userService" ref="userServiceBean"/>
         <property name="rateLimiter" ref="loginRateLimiter"/>
+        <!-- saiku#2618: the SPA reads its effective feature map from the session response. -->
+        <property name="featureToggles" ref="featureTogglesBean"/>
+    </bean>
+
+    <!-- ====================================================================
+         Feature toggles (saiku#2618) — per-role on/off switches for the main UI
+         features (Dashboards, Apps, Notebooks, MDX workbench, SQL workbench).
+         One JSON doc at <saiku.home>/feature-toggles.json; absent file = every
+         feature on for everyone. Enforced server-side by FeatureGateFilter on
+         each feature's REST prefixes (the UI's nav hiding is cosmetic, not
+         enforcement). Every admin change is audited to
+         <saiku.home>/logs/feature-toggle-audit.jsonl.
+         ==================================================================== -->
+    <bean id="featureTogglesBean" class="org.saiku.service.features.FeatureToggles">
+        <constructor-arg value="${saiku.home:./saiku-home}/feature-toggles.json"/>
+    </bean>
+
+    <bean id="featureToggleAuditLogBean" class="org.saiku.service.features.FeatureToggleAuditLog"/>
+
+    <bean id="featureAdminResource" class="org.saiku.web.rest.resources.FeatureAdminResource">
+        <property name="toggles" ref="featureTogglesBean"/>
+        <property name="auditLog" ref="featureToggleAuditLogBean"/>
+        <property name="userService" ref="userServiceBean"/>
+    </bean>
+
+    <bean id="featureGateFilter" class="org.saiku.web.rest.features.FeatureGateFilter">
+        <constructor-arg ref="featureTogglesBean"/>
     </bean>
 
     <bean id="repository2bean" scope="request"

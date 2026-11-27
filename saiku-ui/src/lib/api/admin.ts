@@ -332,6 +332,49 @@ export const adminAgentSpaces = {
 	remove: (id: string) => json<null>('DELETE', `/agent-spaces/${encodeURIComponent(id)}`)
 };
 
+/* ---------------- Feature toggles (saiku#2618) ---------------- */
+
+/** One toggleable product surface, as the server's FeatureCatalogue describes it. */
+export interface AdminFeature {
+	key: string;
+	label: string;
+	description: string;
+	uiRoute: string;
+	restPrefixes: string[];
+	/** False when the feature has no REST surface of its own and is UI-enforced only. */
+	serverEnforced: boolean;
+	/** null = unrestricted; empty = admins only; listed = those roles + admins. */
+	roles: string[] | null;
+}
+
+export interface FeatureOverview {
+	features: AdminFeature[];
+	knownRoles: string[];
+}
+
+export const adminFeatures = {
+	overview: () => get<FeatureOverview>('/features'),
+	/** Rewrite one feature's grant. `roles: null` resets the feature to unrestricted. */
+	setGrant: (key: string, roles: string[] | null) =>
+		json<{ status: string; feature: string; roles: string[] | null }>(
+			'PUT',
+			`/features/${encodeURIComponent(key)}`,
+			{ roles }
+		) as Promise<{ status: string; feature: string; roles: string[] | null }>,
+	audit: () => get<FeatureAuditEntry[]>('/features/audit')
+};
+
+/** One feature-toggle audit record (server `FeatureToggleAuditEntry`). */
+export interface FeatureAuditEntry {
+	ts: string;
+	actor: string;
+	feature: string;
+	action: 'update' | 'reset';
+	/** null = unrestricted. */
+	before: string[] | null;
+	after: string[] | null;
+}
+
 /* ---------------- Mondrian role security (saiku#779) ---------------- */
 
 /** How a datasource resolves Spring roles to Mondrian roles (server `MondrianRolePolicy.Mode`). */

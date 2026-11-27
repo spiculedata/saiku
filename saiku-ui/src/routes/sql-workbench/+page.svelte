@@ -3,12 +3,15 @@
 	import { i18n } from '$lib/stores/i18n.svelte';
 	import SqlWorkbench from '$lib/views/SqlWorkbench.svelte';
 	import LoginForm from '$lib/views/LoginForm.svelte';
+	import FeatureDenied from '$lib/components/FeatureDenied.svelte';
 </script>
 
 {#if session.loading}
 	<div class="m-auto text-fg-muted">{i18n.t('cubes.loading')}</div>
 {:else if !session.current}
 	<LoginForm />
+{:else if !session.hasFeature('sql-workbench')}
+	<FeatureDenied featureLabel={i18n.t('topbar.sqlWorkbench', 'SQL Workbench')} />
 {:else if !session.hasRole('ROLE_SQL_EXEC')}
 	<div class="m-auto text-center">
 		<h1>{i18n.t('sqlWorkbench.title')}</h1>

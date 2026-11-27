@@ -4,6 +4,9 @@ export interface SaikuSession {
 	sessionid: string;
 	language: string;
 	isadmin: boolean;
+	/** saiku#2618: the caller's effective feature map (feature key -> enabled), served by
+	 *  the session endpoint. Absent (older backend) means every feature is on. */
+	features?: Record<string, boolean>;
 }
 
 const REST_BASE = '/rest/saiku';
