@@ -75,6 +75,12 @@ pushed down; normal sessions append and the history stays useful.
 
 ## Log
 
+## 2026-11-25 — hive/2532-workbench-datasource-security — PR #2568 base merge
+**Was doing:** merged current development into PR #2568, preserving the service security fix, both SQL workbench test sets, and both session-summary entries.
+**Now:** verify CI on the merged head; a maintainer must decide whether #2532's denied-query response should be 400 or 403.
+**Watch out:** local Maven tests stop before compilation on GitHub Packages 401; the acceptance check and service Spotless check pass.
+**Refs:** #2532, PR #2568
+
 ## 2026-11-25 — feature/2459-ci-secret-lifecycle-gate — PR #2494 base conflict rework
 **Was doing:** merged current development into the PR branch, retaining both sides of the corrections and session entries; the credential gate remains unchanged.
 **Now:** check PR #2494 CI after the push, especially the Python scripts and acceptance gate.
@@ -90,11 +96,6 @@ pushed down; normal sessions append and the history stays useful.
 **Was doing:** tightened PR #2494's trusted-base detection to require the base SHA as the full checkout ref and added regression fixtures for comment, path-only, and checkout-action cases.
 **Now:** check PR #2494 CI after the push; the Python script suite and acceptance check pass locally.
 **Refs:** #2459, #2494
-## 2026-11-25 — feature/2547-redact-connection-error-logs — PR #2594 base merge
-**Was doing:** merged current development into the existing PR branch and retained its earlier redaction fixes and tests.
-**Now:** check PR #2594 CI after the push, especially the Maven suites and acceptance spec.
-**Watch out:** local dependency resolution stops at GitHub Packages HTTP 401.
-**Refs:** #2547, PR #2594
 
 ## 2026-11-25 — feature/2599-sql-workbench-scroll-ds-info — PR #2609 overlap rework
 **Was doing:** merged current development, kept #2610's scroll implementation and test, removed this PR's duplicate scroll code and test, and retained datasource info, table-list, and topbar coverage.
@@ -107,6 +108,12 @@ pushed down; normal sessions append and the history stays useful.
 **Now:** check PR #2565 CI on the pushed head for the Java tests and Docker image job.
 **Watch out:** local Maven stops before compilation on GitHub Packages 401; the previous Docker job hit Maven Central 429 while downloading the telemetry agent.
 **Refs:** #2536, PR #2565
+
+## 2026-11-24 — hive/2532-workbench-datasource-security — PR #2568 base rework
+**Was doing:** merged development through ee0560b1bb, retaining both #2522 and #2532 SQL workbench regressions; documented the lookup grant's raw SQL scope.
+**Now:** check PR #2568 CI and resolve the issue #2532 acceptance criterion's 403 versus the implementation's 400 with a maintainer.
+**Watch out:** this workspace has no Java or Maven, so local verification is limited to the acceptance script; CI must compile and run the Java tests.
+**Refs:** #2532, PR #2568
 
 ## 2026-11-24 — feature/2535-rest-body-size-limits — PR #2566 review rework
 **Was doing:** formatted the REST body filter test and corrected the operator guide; local Spotless, licence, and static acceptance checks pass. Maven service/web tests stop at GitHub Packages 401 before compilation.

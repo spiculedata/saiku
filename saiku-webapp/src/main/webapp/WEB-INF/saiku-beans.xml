@@ -1712,6 +1712,10 @@
         <constructor-arg ref="schemaGenConnectionProvider"/>
         <constructor-arg ref="datasourceServiceBean"/>
         <constructor-arg ref="sqlWorkbenchAuditLog"/>
+        <!-- saiku#2532: optional — lets the workbench reproduce the OLAP path's admin exemption
+             when it re-derives the datasource security decision. Null/unavailable admin roles
+             fail closed (non-admin). -->
+        <property name="userService" ref="userServiceBean"/>
     </bean>
 
     <bean id="sqlWorkbenchResource" class="org.saiku.web.rest.resources.sqlworkbench.SqlWorkbenchResource">

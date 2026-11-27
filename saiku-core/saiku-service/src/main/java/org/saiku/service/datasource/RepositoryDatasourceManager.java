@@ -526,6 +526,12 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
      * {@code security.type} is unrecognised. {@code one2one} stays visible — deciding it needs the
      * schema's role list, which only the connection path can read, and that path still denies.
      * Security-disabled datasources (every default install) are unaffected.
+     *
+     * <p>saiku#2532: this visibility is the OLAP-side contract only. The SQL workbench opens raw
+     * JDBC with the stored credentials and never walks the connection path, so it re-derives the
+     * connection decision itself in {@code SqlWorkbenchService.isWorkbenchAccessible} — there
+     * {@code one2one}, {@code passthrough} and {@code unknown} are refused, rather than deferred
+     * to a denial that would never fire.
      */
     @Override
     public Map<String, SaikuDatasource> getDatasources(String[] roles) {
